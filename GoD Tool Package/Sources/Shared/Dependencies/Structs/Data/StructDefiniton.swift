@@ -12,7 +12,7 @@ public enum StructAlignmentStyles: String, Equatable, Codable {
     case cStyle
 }
 
-public struct StructDefinition: Equatable {
+public struct StructDefinition: Equatable, Nameable {
 
     public struct Property: Equatable {
         public let name: String
@@ -93,7 +93,7 @@ public struct StructDefinition: Equatable {
     public func offset(for keypath: String) -> Int? {
         let keypathParts = keypath
             .split(separator: ".")
-            .map { self.keyFor(String($0)) }
+            .map { Self.keyFor(String($0)) }
         let currentKey = keypathParts[0]
         let remainingKeyPath = keypathParts.count == 1 ? nil : keypathParts[1...].joined(separator: ".")
 
@@ -108,7 +108,7 @@ public struct StructDefinition: Equatable {
                 }
             }
 
-            if keyFor(property.name) == currentKey {
+            if Self.keyFor(property.name) == currentKey {
                 if let keypath = remainingKeyPath {
                     if case .subStruct(let substruct) = property.type {
                         if let subOffset = substruct.offset(for: keypath) {
@@ -130,12 +130,12 @@ public struct StructDefinition: Equatable {
     public func property(for keypath: String) -> StructProperty? {
         let keypathParts = keypath
             .split(separator: ".")
-            .map { self.keyFor(String($0)) }
+            .map { Self.keyFor(String($0)) }
         let currentKey = keypathParts[0]
         let remainingKeyPath = keypathParts.count == 1 ? nil : keypathParts[1...].joined(separator: ".")
 
         for property in properties {
-            if keyFor(property.name) == currentKey {
+            if Self.keyFor(property.name) == currentKey {
                 if let keypath = remainingKeyPath {
                     if case .subStruct(let substruct) = property.type {
                         return substruct.property(for: keypath)
@@ -150,8 +150,11 @@ public struct StructDefinition: Equatable {
         return nil
     }
     
-    private func keyFor(_ propertyName: String) -> String {
-        propertyName.replacingOccurrences(of: " ", with: "").lowercased()
+    private static func keyFor(_ propertyName: String) -> String {
+        propertyName
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "_", with: "")
+            .lowercased()
     }
 }
 

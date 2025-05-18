@@ -1,124 +1,178 @@
-//
-//  Engine.swift
-//  
-//
-//  Created by Stars Momodu on 09/08/2022.
-//
-
-import Foundation
 import GoDFoundation
 import Structs
 
-public protocol Engine: AnyObject {
+public protocol EngineEnums: ValidatedSet where Item == Enum {
+    var entries: [Enum] { get }
+}
+
+public protocol EngineStructs: ValidatedSet where Item == StructMap {
+    var entries: [StructMap] { get }
+}
+
+public protocol Engine {
+    associatedtype DataType: Codable
+    associatedtype EnumsType: EngineEnums
+    associatedtype StructsType: EngineStructs
+    
     var name: String { get }
-    var description: String { get }
+    var data: DataType { get }
+    var enums: EnumsType { get }
+    var structs: StructsType { get }
     
-    var boolEntries: [EngineEntry<Bool>] { get }
-    var integerEntries: [EngineEntry<Int>] { get }
-    var doubleEntries: [EngineEntry<Double>] { get }
-    var stringEntries: [EngineEntry<String>] { get }
-    var enumEntries: [EngineEntry<Enum>] { get }
-    var structEntries: [EngineEntry<StructMap>] { get }
-    
-    func get(_ name: String) throws -> Bool
-    func get(_ name: String) throws -> Int
-    func get(_ name: String) throws -> Double
-    func get(_ name: String) throws -> String
-    func get(_ name: String) throws -> Enum
-    func get(_ name: String) throws -> StructDefinition
+    init(data: DataType, enums: EnumsType, structs: StructsType) throws
 }
 
 public extension Engine {
-    func get(_ name: String) throws -> Bool {
-        for entry in boolEntries {
-            if let value = entry.match(name) {
-                return value
-            }
-        }
-        throw EngineError.MissingConfig(key: name, type: Bool.self, engine: self)
+    func getEnum(_ name: String) -> Enum? {
+        enums.entries.first(where: { $0.name == name })
     }
-    func get(_ name: String) throws -> Int {
-        for entry in integerEntries {
-            if let value = entry.match(name) {
-                return value
-            }
-        }
-        throw EngineError.MissingConfig(key: name, type: Int.self, engine: self)
+    
+    private func getStruct(_ name: String) -> StructMap? {
+        structs.entries.first(where: { $0.name == name })
     }
-    func get(_ name: String) throws -> Double {
-        for entry in doubleEntries {
-            if let value = entry.match(name) {
-                return value
-            }
+    
+    func getStruct(_ name: String) throws -> StructDefinition {
+        guard let result = try getStruct(name, callerChain: []) else {
+            throw EngineDecodingError.missingStructs([name], .init())
         }
-        throw EngineError.MissingConfig(key: name, type: Double.self, engine: self)
+        return result
     }
-    func get(_ name: String) throws -> String {
-        for entry in stringEntries {
-            if let value = entry.match(name) {
-                return value
-            }
-        }
-        throw EngineError.MissingConfig(key: name, type: String.self, engine: self)
-    }
-
-    func get(_ name: String) throws -> Enum {
-        for entry in enumEntries {
-            if let value = entry.match(name) {
-                return value
-            }
-        }
-        throw EngineError.MissingConfig(key: name, type: Enum.self, engine: self)
-    }
-    func get(_ name: String) throws -> StructMap {
-        for entry in structEntries {
-            if let value = entry.match(name) {
-                return value
-            }
-        }
-        throw EngineError.MissingConfig(key: name, type: StructMap.self, engine: self)
-    }
-    func get(_ name: String) throws -> StructDefinition {
-        for entry in structEntries {
-            if let map = entry.values[name] {
-                func mapToDefinition(field: StructMap.Property) throws -> StructDefinition.Property {
-                    let name = field.name
-                    let description = field.description
-                    
-                    func toProperty(field: StructField) throws -> StructProperty {
-                        switch field {
-                        case .primitive(let type):
-                            return .primitive(type)
-                        case .array(let field, let count):
-                            let property = try toProperty(field: field)
-                            return .array(property, count: count)
-                        case .subStruct(let name):
-                            let subDef: StructDefinition = try get(name)
-                            return .subStruct(subDef)
-                        case .enumeration(let name):
-                            let def: Enum = try get(name)
-                            return .enumeration(def)
-                        case .padding(let length):
-                            return .padding(length: length)
-                        }
+    
+    private func getStruct(_ name: String, callerChain: [String]) throws -> StructDefinition? {
+        guard let map: StructMap = getStruct(name) else { return nil }
+        func mapToDefinition(field: StructMap.Property) throws -> StructDefinition.Property {
+            let fieldName = field.name
+            let description = field.description
+            
+            func toProperty(field: StructField) throws -> StructProperty {
+                switch field {
+                case .primitive(let type):
+                    return .primitive(type)
+                case .array(let field, let count):
+                    let property = try toProperty(field: field)
+                    return .array(property, count: count)
+                case .subStruct(let substructName):
+                    guard !callerChain.contains(substructName) else {
+                        throw EngineDecodingError.cyclicDependency(name, substructName, .init())
                     }
-                    let type = try toProperty(field: field.type)
-                    return .init(name: name, type: type, description: description)
+                    guard let subDef: StructDefinition = try getStruct(fieldName, callerChain: callerChain + [name]) else {
+                        throw EngineDecodingError.missingStructProperty(structName: name, property: fieldName, substructName: substructName, .init())
+                    }
+                    return .subStruct(subDef)
+                case .enumeration(let enumName):
+                    guard let def: Enum = getEnum(enumName) else {
+                        throw EngineDecodingError.missingEnumProperty(structName: name, property: fieldName, enumName: enumName, .init())
+                    }
+                    return .enumeration(def)
+                case .padding(let length):
+                    return .padding(length: length)
                 }
-                let name = map.name
-                let wordSize = map.wordSize
-                let alignmentStyle = map.alignmentStyle
-                let properties = try map.properties.map { try mapToDefinition(field: $0) }
-                let description = map.description
-                return .init(
-                    name: name,
-                    wordSize: wordSize,
-                    alignmentStyle: alignmentStyle,
-                    properties: properties,
-                    description: description
-                )
+            }
+            let type = try toProperty(field: field.type)
+            return .init(name: fieldName, type: type, description: description)
+        }
+        
+        return .init(
+            name: map.name,
+            wordSize: map.wordSize,
+            alignmentStyle: map.alignmentStyle,
+            properties: try map.properties.map(mapToDefinition)
+        )
+    }
+    
+    @discardableResult
+    func write(to fst: FileSystemTree, in folder: Folder, overwrite: Bool) -> Bool {
+        let engineFolder = folder.folder(name)
+        _ = fst.createFolder(at: engineFolder, overwrite: overwrite)
+        let dataFile = engineFolder.file(name + ".json")
+        guard fst.writeFile(data, at: dataFile, overwrite: overwrite) else {
+            return false
+        }
+        
+        let enumsFolder = engineFolder.folder("Enumerations")
+        fst.createFolder(at: enumsFolder, overwrite: overwrite)
+        for enumData in enums.entries {
+            let enumFile = enumsFolder.file(enumData.name + ".json")
+            guard fst.writeFile(enumData, at: enumFile, overwrite: overwrite) else {
+                return false
             }
         }
-        throw EngineError.MissingConfig(key: name, type: StructMap.self, engine: self)
+        
+        let structsFolder = engineFolder.folder("Structs")
+        fst.createFolder(at: structsFolder, overwrite: overwrite)
+        for structMap in structs.entries {
+            let structFile = structsFolder.file(structMap.name + ".json")
+            guard fst.writeFile(structMap, at: structFile, overwrite: overwrite) else {
+                return false
+            }
+        }
+        
+        return true
+    }
+    
+    init(from folder: Folder, in fst: FileSystemTree) throws {
+        guard let folderContents = fst.inspectFolder(at: folder) else {
+            throw EngineDecodingError.missingFolder(folder, .init())
+        }
+        guard let engineDataFile = folderContents.files.first(where: { $0.fileType == "json" }) else {
+            throw EngineDecodingError.missingData(.init())
+        }
+        
+        guard let rawEngineData = fst.readFile(at: engineDataFile) else {
+            throw EngineDecodingError.couldntReadData(engineDataFile, .init())
+        }
+        
+        var decodedEngineData: DataType?
+        do {
+            decodedEngineData = try JSONDecoder().decode(DataType.self, from: rawEngineData)
+        } catch let error {
+            throw EngineDecodingError.dataDecodingFailed(error, .init())
+        }
+        guard let engineData = decodedEngineData else {
+            throw EngineDecodingError.generic(.init())
+        }
+        
+        var enumEntries = [Enum]()
+        let enumsFolder = folder.folder("Enumerations")
+        if folderContents.subFolders.contains(enumsFolder),
+           let enumsFolderContents = fst.inspectFolder(at: enumsFolder)?.files.withExtension("json") {
+            for file in enumsFolderContents {
+                guard let rawEnumData: GoDData = fst.readFile(at: file) else {
+                    throw EngineDecodingError.couldntReadEnumData(file, .init())
+                }
+                do {
+                    let enumData = try JSONDecoder().decode(Enum.self, from: rawEnumData)
+                    enumEntries.append(enumData)
+                } catch let error {
+                    throw EngineDecodingError.couldntDecodeEnum(file, error, .init())
+                }
+            }
+        }
+        let enums = try EnumsType(validated: enumEntries)
+        
+        var structEntries = [StructMap]()
+        let structsFolder = folder.folder("Structs")
+        if folderContents.subFolders.contains(structsFolder),
+           let structsFolderContents = fst.inspectFolder(at: structsFolder)?.files.withExtension("json") {
+            for file in structsFolderContents {
+                guard let rawStructData: GoDData = fst.readFile(at: file) else {
+                    throw EngineDecodingError.couldntReadStructData(file, .init())
+                }
+                do {
+                    let structData = try JSONDecoder().decode(StructMap.self, from: rawStructData)
+                    structEntries.append(structData)
+                } catch let error {
+                    throw EngineDecodingError.couldntDecodeStruct(file, error, .init())
+                }
+            }
+        }
+        
+        let structs = try StructsType(validated: structEntries)
+        
+        try self.init(
+            data: engineData,
+            enums: enums,
+            structs: structs
+        )
     }
 }

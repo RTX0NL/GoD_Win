@@ -15,12 +15,12 @@ public class DolphinFST: FileFormat {
     public var files = [File: (offsetInUserSection: Int, size: Int)]()
     public var folders = [Folder]()
     
-    public init(tocData: GoDData, userSectionOffset: Int, engine: Engine) throws {
-        let offsetMultiplier: Int = try engine.get("FST Offset Multiplier")
+    public init(tocData: GoDData, userSectionOffset: Int, dolphinEngine: DolphinEngine) throws {
+        let offsetMultiplier: Int = max(dolphinEngine.data.systemFiles.fstOffsetMultiplier, 1)
         
-        let rootStruct: StructDefinition = try engine.get("FST Root Struct")
-        let fileStruct: StructDefinition = try engine.get("FST File Struct")
-        let folderStruct: StructDefinition = try engine.get("FST Folder Struct")
+        let rootStruct: StructDefinition = dolphinEngine.fstRootEntryStruct
+        let fileStruct: StructDefinition = dolphinEngine.fstFileEntryStruct
+        let folderStruct: StructDefinition = dolphinEngine.fstDirectoryEntryStruct
         guard let root = tocData.read(struct: rootStruct, atAddress: 0) else {
             throw Self.invalidFileError
         }
@@ -33,7 +33,7 @@ public class DolphinFST: FileFormat {
             tocData.readString(atAddress: stringTableOffset + offset, format: .utf8)
         }
         
-        var currentFolder = Folder(try engine.get("files folder path"))
+        var currentFolder = dolphinEngine.data.userFiles.filesFolder
         var subfolderEndIndexes = [Int]()
         for index in 1 ..< entryCount {
             if index == subfolderEndIndexes.last {
@@ -74,27 +74,33 @@ public class DolphinFST: FileFormat {
     
     public init(fileSystem: FileSystemTree, root: Folder = Folder("/")) {
         var currentOffset = 0
-        func add(_ item: FolderMetaData.Item) {
-            switch item {
-            case .file(let file):
-                guard let data = fileSystem.readFile(at: file) else { return }
-                files[file] = (currentOffset, data.length)
-                currentOffset += data.length
-            case .folder(let folder):
-                guard let contents = fileSystem.inspectFolder(at: folder)?.contents else { return }
-                if folder != root {
-                    folders.append(folder)
-                }
-                add(contents)
-            }
-            
-            while currentOffset % 4 != 0 {
-                currentOffset += 1
-            }
+        func align() {
+            currentOffset = currentOffset.aligned(to: 4)
+        }
+        func add(_ file: File) {
+            guard let data = fileSystem.readFile(at: file) else { return }
+            files[file] = (currentOffset, data.length)
+            currentOffset += data.length
+            align()
         }
         
-        func add(_ items: [FolderMetaData.Item]) {
-            items
+        func add(_ folder: Folder) {
+            guard let contents = fileSystem.inspectFolder(at: folder) else { return }
+            if folder != root {
+                folders.append(folder)
+            }
+            add(contents.files)
+            add(contents.subFolders)
+            
+            align()
+        }
+        
+        func add(_ files: [File]) {
+            files.forEach(add)
+        }
+        
+        func add(_ folders: [Folder]) {
+            folders
                 .sorted { item1, item2 in
                     item1.path < item2.path
                 }
@@ -103,10 +109,7 @@ public class DolphinFST: FileFormat {
                 }
         }
         
-        guard let rootContents = fileSystem.inspectFolder(at: root)?.contents else {
-            return
-        }
-        add(rootContents)
+        add(root)
     }
     
     public var tocDataEntryCount: Int {
@@ -118,15 +121,15 @@ public class DolphinFST: FileFormat {
             return tocDataEntryCount * entrySize + stringTableLength
     }
     
-    public func tocData(userOffset: Int, engine: Engine) throws -> GoDData {
-        let offsetMultiplier: Int = try engine.get("FST Offset Multiplier")
+    public func tocData(userOffset: Int, dolphinEngine: DolphinEngine) throws -> GoDData {
+        let offsetMultiplier = max(dolphinEngine.data.systemFiles.fstOffsetMultiplier, 1)
         
         let tocData = GoDData(length: tocDataLength, byteOrder: .big)
         
         let entrySize = 12
-        let rootStruct: StructDefinition = try engine.get("FST Root Struct")
-        let fileStruct: StructDefinition = try engine.get("FST File Struct")
-        let folderStruct: StructDefinition = try engine.get("FST Folder Struct")
+        let rootStruct = dolphinEngine.fstRootEntryStruct
+        let fileStruct = dolphinEngine.fstFileEntryStruct
+        let folderStruct = dolphinEngine.fstDirectoryEntryStruct
         
         let rootData = StructData(definition: rootStruct, byteOrder: .big)
         rootData.isDirectory = true

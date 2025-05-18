@@ -1,27 +1,41 @@
-//
-//  File.swift
-//  
-//
-//  Created by Stars Momodu on 09/06/2024.
-//
-
 import GoDFoundation
-import GoDEngine
+import Dolphin
 import GameCube
 
 extension Gamecube {
-    static func build(config: BuildConfig, settings: GoddessSettings) throws {
-        let engine = CombinedEngine.from(files: config.engines)
-        let fileSystem = FileSystem.shared
+    static func build(
+        config: BuildConfig,
+        settings: GoddessSettings,
+        fileSystem: FileSystemTree
+    ) throws {
         try config.operations.enabledEntries.forEach { operation in
             switch operation {
-            case .buildISO(let fstPath, let isoPath, let overwrite):
-                let iso = GamecubeISO(fst: fileSystem, rootFolder: fstPath, engine: engine)
+            case let .buildISO(
+                fstPath,
+                isoPath,
+                overwrite,
+                dolphinEnginePath,
+                gamecubeEnginePath
+            ):
+                let dolphinEngine = try DolphinEngine(from: dolphinEnginePath, in: fileSystem)
+                let gamecubeEngine = try GamecubeEngine(from: gamecubeEnginePath, in: fileSystem)
+                
+                let iso = GamecubeISO(
+                    fst: fileSystem,
+                    rootFolder: fstPath,
+                    dolphinEngine: dolphinEngine,
+                    gamecubeEngine: gamecubeEngine
+                )
                 let data = try iso.data
-                fileSystem.writeFile(data, at: isoPath, overwrite: overwrite)
-            case .fillISO(let isoPath, let size):
+                guard fileSystem.writeFile(data, at: isoPath, overwrite: overwrite) else {
+                    throw FSTErrors.failedToWriteFile(isoPath, .init())
+                }
+            case let .fillISO(
+                isoPath,
+                size
+            ):
                 guard let iso = FileSystem.shared.readFile(at: isoPath) else {
-                    throw FSTErrors.fileNotFound(isoPath)
+                    throw FSTErrors.fileNotFound(isoPath, .init())
                 }
                 let remaining = size - iso.length
                 if remaining > 0 {

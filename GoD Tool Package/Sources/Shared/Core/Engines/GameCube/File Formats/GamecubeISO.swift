@@ -13,7 +13,8 @@ import Structs
 public final class GamecubeISO: FileSystemTree, FileFormat {
     public static let formatName = "Gamecube.iso"
     
-    private let engine: Engine
+    private let dolphinEngine: DolphinEngine
+    private let gamecubeEngine: GamecubeEngine
     private let fst = InMemoryFST()
     
     public var fstManifest: DolphinFST {
@@ -57,8 +58,13 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
         fst.deleteFolder(at: path)
     }
     
-    public init(data: GoDData, engine: Engine) throws {
-        self.engine = engine
+    public init(
+        data: GoDData,
+        dolphinEngine: DolphinEngine,
+        gamecubeEngine: GamecubeEngine
+    ) throws {
+        self.dolphinEngine = dolphinEngine
+        self.gamecubeEngine = gamecubeEngine
         data.setByteOrder(.big)
         
         // Create root folders
@@ -66,28 +72,28 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
         fst.createFolder(at: filesFolder, overwrite: true)
         
         // Get boot.bin
-        let bootDataStruct: StructDefinition = try engine.get("Boot Data Struct")
-        let bootDataOffset: Int = try engine.get("boot data offset")
-        let bootFile: String = try engine.get("boot path")
+        let bootDataStruct = dolphinEngine.bootDataStruct
+        let bootDataOffset = dolphinEngine.data.systemFiles.bootDataOffset
+        let bootFile = dolphinEngine.data.systemFiles.bootFile
         guard let bootData = data.read(struct: bootDataStruct, atAddress: bootDataOffset) else {
             throw Self.invalidFileError
         }
         
-        fst.writeFile(bootData.data, at: File(bootFile), overwrite: true)
+        fst.writeFile(bootData.data, at: bootFile, overwrite: true)
         
         // Get fst.bin
         let fstOffset: Int = try bootData.fstOffset
         let fstSize: Int = try bootData.fstSize
-        let fstFile: String = try engine.get("fst path")
+        let fstFile = dolphinEngine.data.systemFiles.fstFile
         guard let fstData = data.read(atAddress: fstOffset, length: fstSize) else {
             throw Self.invalidFileError
         }
         
-        fst.writeFile(fstData, at: File(fstFile), overwrite: true)
+        fst.writeFile(fstData, at: fstFile, overwrite: true)
         
         // Get main.dol
         let dolOffset: Int = try bootData.mainExecutableOffset
-        let dolHeaderStruct: StructDefinition = try engine.get("Dol Header Struct")
+        let dolHeaderStruct = dolphinEngine.dolHeaderStruct
         guard let dolHeader = data.read(struct: dolHeaderStruct, atAddress: dolOffset) else {
             throw Self.invalidFileError
         }
@@ -101,39 +107,55 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
         guard let dolData = data.read(atAddress: dolOffset, length: dolSize) else {
             throw Self.invalidFileError
         }
-        let dolFile: String = try engine.get("executable path")
+        let dolFile = dolphinEngine.data.systemFiles.executableFile
         
-        fst.writeFile(dolData, at: File(dolFile), overwrite: true)
+        fst.writeFile(dolData, at: dolFile, overwrite: true)
         
         // Get bi2.bin
-        let bi2DataStruct: StructDefinition = try engine.get("Bi2 Struct")
-        let bi2DataOffset: Int = try engine.get("bi2 data offset")
-        let bi2File: String = try engine.get("bi2 path")
+        let bi2DataStruct = dolphinEngine.bi2Struct
+        let bi2DataOffset = dolphinEngine.data.systemFiles.bi2DataOffset
+        let bi2File = dolphinEngine.data.systemFiles.bi2File
         guard let bi2Data = data.read(struct: bi2DataStruct, atAddress: bi2DataOffset) else {
             throw Self.invalidFileError
         }
         
-        fst.writeFile(bi2Data.data, at: File(bi2File), overwrite: true)
+        fst.writeFile(bi2Data.data, at: bi2File, overwrite: true)
         
         // Get apploader.img
-        let apploaderHeaderStruct: StructDefinition = try engine.get("Apploader Header Struct")
-        let apploaderOffset: Int = try engine.get("apploader offset")
+        let apploaderHeaderStruct = dolphinEngine.apploaderHeaderStruct
+        let apploaderOffset = dolphinEngine.data.systemFiles.apploaderOffset
         guard let apploaderHeader = data.read(struct: apploaderHeaderStruct, atAddress: apploaderOffset) else {
             throw Self.invalidFileError
         }
         let appSize: Int = try apploaderHeader.size
         let trailerSize: Int = try apploaderHeader.trailerSize
-        let apploaderFile: String = try engine.get("apploader path")
+        let apploaderFile = dolphinEngine.data.systemFiles.apploaderFile
         
         let apploaderSize = apploaderHeader.length + appSize + trailerSize
         guard let apploader = data.read(atAddress: apploaderOffset, length: apploaderSize) else {
             throw Self.invalidFileError
         }
         
-        fst.writeFile(apploader, at: File(apploaderFile), overwrite: true)
+        fst.writeFile(apploader, at: apploaderFile, overwrite: true)
         
         let userSectionOffset: Int = try bootData.userDataOffset
-        let fstManifest = try DolphinFST(tocData: fstData, userSectionOffset: userSectionOffset, engine: engine)
+        
+        let shouldPreserveJunkData = dolphinEngine.data.systemFiles.preserveJunkData
+        if shouldPreserveJunkData, fstOffset > dolOffset {
+            let fstEnd = fstOffset + fstData.length
+            let junkLength = userSectionOffset - fstEnd
+            if junkLength > 0 {
+                guard let junkData = data.read(atAddress: fstEnd, length: junkLength) else {
+                    throw Self.invalidFileError
+                }
+                if !junkData.isNull {
+                    let junkFile = dolphinEngine.data.systemFiles.junkFile
+                    fst.writeFile(junkData, at: junkFile, overwrite: true)
+                }
+            }
+        }
+        
+        let fstManifest = try DolphinFST(tocData: fstData, userSectionOffset: userSectionOffset, dolphinEngine: dolphinEngine)
         
         fstManifest.folders.sorted().forEach { folder in
             fst.createFolder(at: folder, overwrite: true)
@@ -145,8 +167,14 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
         }
     }
     
-    public init(fst: FileSystemTree, rootFolder: Folder, engine: Engine) {
-        self.engine = engine
+    public init(
+        fst: FileSystemTree,
+        rootFolder: Folder,
+        dolphinEngine: DolphinEngine,
+        gamecubeEngine: GamecubeEngine
+    ) {
+        self.dolphinEngine = dolphinEngine
+        self.gamecubeEngine = gamecubeEngine
         importFST(fst, from: rootFolder, to: Folder("/"), overwrite: true)
     }
     
@@ -155,63 +183,69 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
             let isoData = GoDData(length: 0, byteOrder: .big)
             
             // Get boot.bin
-            let bootFile = File(try engine.get("boot path"))
-            let bootDataStruct: StructDefinition = try engine.get("Boot Data Struct")
+            let bootFile = dolphinEngine.data.systemFiles.bootFile
+            let bootDataStruct = dolphinEngine.bootDataStruct
             guard let bootData = readFile(at: bootFile),
                   let bootStruct = bootData.read(struct: bootDataStruct, atAddress: 0) else {
                 throw Self.failedToEncodeError(target: ".iso")
             }
             
             // Set bi2.bin
-            let bi2DataStruct: StructDefinition = try engine.get("Bi2 Struct")
-            let bi2File = File(try engine.get("bi2 path"))
+            let bi2DataStruct = dolphinEngine.bi2Struct
+            let bi2File = dolphinEngine.data.systemFiles.bi2File
             guard let bi2Data = readFile(at: bi2File),
                   let bi2Struct = bi2Data.read(struct: bi2DataStruct, atAddress: 0) else {
                 throw Self.failedToEncodeError(target: ".iso")
             }
             
-            let bi2DataOffset: Int = try engine.get("bi2 data offset")
+            let bi2DataOffset = dolphinEngine.data.systemFiles.bi2DataOffset
             isoData.write(struct: bi2Struct, atAddress: bi2DataOffset)
             
             // Set apploader.img
-            let apploaderFile = File(try engine.get("apploader path"))
+            let apploaderFile = dolphinEngine.data.systemFiles.apploaderFile
             guard let apploaderData = readFile(at: apploaderFile) else {
                 throw Self.failedToEncodeError(target: ".iso")
             }
             
-            let apploaderOffset: Int = try engine.get("apploader offset")
+            let apploaderOffset = dolphinEngine.data.systemFiles.apploaderOffset
             isoData.write(apploaderData, atAddress: apploaderOffset)
             
             // Set main.dol
-            var dolOffset = apploaderOffset + apploaderData.length
-            let dolAlignment: Int = try engine.get("dol offset alignment")
-            while dolOffset % dolAlignment != 0 { dolOffset += 1 }
+            let dolAlignment = max(dolphinEngine.data.systemFiles.dolOffsetAlignment, 1)
+            let dolOffset = (apploaderOffset + apploaderData.length).aligned(to: dolAlignment)
             bootStruct.mainExecutableOffset = dolOffset
             
-            let dolFile = File(try engine.get("executable path"))
+            let dolFile = dolphinEngine.data.systemFiles.executableFile
             guard let dolData = readFile(at: dolFile) else {
                 throw Self.failedToEncodeError(target: ".iso")
             }
             isoData.write(dolData, atAddress: dolOffset)
             
             // Set fst.bin
-            var fstOffset = dolOffset + dolData.length
-            let fstAlignment: Int = try engine.get("fst offset alignment")
-            while fstOffset % fstAlignment != 0 { fstOffset += 1 }
+            let fstAlignment = max(dolphinEngine.data.systemFiles.fstOffsetMultiplier, 1)
+            let fstOffset = (dolOffset + dolData.length).aligned(to: fstAlignment)
             bootStruct.fstOffset = fstOffset
             
             let fstSize = fstManifest.tocDataLength
             bootStruct.fstSize = fstSize
             bootStruct.maxFstSize = fstSize
             
-            var userOffset = fstOffset + fstSize + 0x20
-            let userAlignment: Int = try engine.get("user offset alignment")
-            while userOffset % userAlignment != 0 { userOffset += 1 }
+            var junkData = GoDData(length: 0)
+            if dolphinEngine.data.systemFiles.preserveJunkData {
+                let junkFile = dolphinEngine.data.systemFiles.junkFile
+                if let preservedJunkData = readFile(at: junkFile) {
+                    junkData = preservedJunkData
+                }
+            }
+            
+            let userAlignment = dolphinEngine.data.userFiles.userOffsetAlignment
+            let userOffset = (fstOffset + fstSize + junkData.length).aligned(to: userAlignment)
             bootStruct.userDataOffset = userOffset
             
-            let fstData = try fstManifest.tocData(userOffset: userOffset, engine: engine)
+            let fstData = try fstManifest.tocData(userOffset: userOffset, dolphinEngine: dolphinEngine)
             
             isoData.write(fstData, atAddress: fstOffset)
+            isoData.write(junkData, atAddress: fstOffset + fstData.length)
             
             // Set user files
             let userData = GoDData(byteOrder: .big)
@@ -226,14 +260,14 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
                     }
                     userData.write(fileData, atAddress: offset)
                 }
-            let alignment = 0x10 - (userData.length % 0x10)
-            userData.append(.init(length: alignment))
+            
+            userData.align(to: 0x10)
             bootStruct.userDataLength = userData.length
             
             isoData.write(userData, atAddress: userOffset)
             
             // Write boot.bin
-            let bootDataOffset: Int = try engine.get("boot data offset")
+            let bootDataOffset = dolphinEngine.data.systemFiles.bootDataOffset
             isoData.write(struct: bootStruct, atAddress: bootDataOffset)
             
             return isoData
@@ -241,10 +275,10 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
     }
     
     public var filesFolder: Folder {
-        Folder((try? engine.get("files folder path")) ?? "/files")
+        dolphinEngine.data.userFiles.filesFolder
     }
     
     public var systemFolder: Folder {
-        Folder((try? engine.get("system folder path")) ?? "/sys")
+        dolphinEngine.data.systemFiles.systemFolder
     }
 }

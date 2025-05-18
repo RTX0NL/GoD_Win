@@ -5,7 +5,7 @@
 //  Created by Stars Momodu on 09/06/2024.
 //
 
-import Foundation
+import GoDFoundation
 
 struct GoddessSettings: Codable {
     var verbose = false

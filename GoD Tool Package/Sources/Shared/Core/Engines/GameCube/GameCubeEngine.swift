@@ -1,23 +1,29 @@
-//
-//  GameCubeEngine.swift
-//  
-//
-//  Created by Stars Momodu on 01/06/2022.
-//
 @_exported import GoDEngine
 import GoDFoundation
+import Structs
 
-public enum GameCube {
-    public static let engine: CustomEngine = {
-        CustomEngine(
-            name: "GameCube",
-            description: "View and edit files specific to the Nintendo GameCube platform",
-            boolEntries: BooleanEntries.entries,
-            integerEntries: IntegerEntries.entries,
-            doubleEntries: DoubleEntries.entries,
-            stringEntries: StringEntries.entries,
-            enumEntries: EnumEntries.entries,
-            structEntries: StructEntries.entries
-        )
-    }()
+public struct GamecubeEngine: Engine {
+    public typealias DataType = GamecubeEngine.Data
+    public typealias EnumsType = GamecubeEngine.Enums
+    public typealias StructsType = GamecubeEngine.Structs
+    
+    public let name = "Gamecube Engine"
+    public private(set) var data = GamecubeEngine.Data()
+    public private(set) var enums = GamecubeEngine.Enums()
+    public private(set) var structs = GamecubeEngine.Structs()
+    private(set) var definitions: [StructDefinition]!
+    
+    public init(data: Data, enums: Enums, structs: Structs) throws {
+        self.data = data
+        self.enums = enums
+        self.structs = structs
+        definitions = try structs.entries.map(\.name).map { structName in
+            try getStruct(structName)
+        }
+    }
+    
+    public static func defaults() throws -> GamecubeEngine {
+        try .init(data: Data(), enums: Enums(), structs: Structs())
+    }
 }
+

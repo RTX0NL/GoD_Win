@@ -1,38 +1,31 @@
-//
-//  File.swift
-//  
-//
-//  Created by Stars Momodu on 09/06/2024.
-//
-
 import GoDFoundation
 import GoDEngine
+import Dolphin
 import GameCube
 
 extension Gamecube {
-    static func dump(config: DumpConfig, settings: GoddessSettings) throws {
-        let engine = CombinedEngine.from(files: config.engines)
-        let fileSystem = FileSystem.shared
+    static func dump(
+        config: DumpConfig,
+        settings: GoddessSettings,
+        fileSystem: FileSystemTree
+    ) throws {
         try config.operations.enabledEntries.forEach { operation in
             switch operation {
-            case .unpackISO(let isoPath, let fstFolder, let overwrite):
+            case let .unpackISO(
+                isoPath,
+                fstFolder,
+                overwrite,
+                dolphinEnginePath,
+                gamecubeEnginePath
+            ):
                 guard let data = fileSystem.readFile(at: isoPath) else {
-                    throw FSTErrors.fileNotFound(isoPath)
+                    throw FSTErrors.fileNotFound(isoPath, .init())
                 }
-                let iso = try GamecubeISO(data: data, engine: engine)
-                fileSystem.write(iso, at: fstFolder, overwrite: overwrite)
-            case .dumpXD(let fstFolder, let outputFolder, let overwrite):
-                // TODO: option to use dolphin file names for images
-                let inputFST = InMemoryFST()
-                inputFST.importFST(fileSystem, from: fstFolder, to: "/", overwrite: true)
-                try dumpColosseumXD(
-                    inputFST: inputFST,
-                    outputFST: fileSystem,
-                    outputFolder: outputFolder,
-                    overwrite: overwrite,
-                    engine: CombinedEngine.from(files: config.engines),
-                    settings: settings
-                )
+                let dolphinEngine = try DolphinEngine(from: dolphinEnginePath, in: fileSystem)
+                let gamecubeEngine = try GamecubeEngine(from: gamecubeEnginePath, in: fileSystem)
+                let iso = try GamecubeISO(data: data, dolphinEngine: dolphinEngine, gamecubeEngine: gamecubeEngine)
+                
+                fileSystem.importFST(iso, from: "/", to: fstFolder, overwrite: overwrite)
             }
         }
     }

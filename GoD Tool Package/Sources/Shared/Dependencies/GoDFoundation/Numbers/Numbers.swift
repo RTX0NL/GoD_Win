@@ -110,6 +110,12 @@ public extension Int {
         }
         return value
     }
+    
+    func aligned(to boundary: Int) -> Int {
+        guard boundary > 0, self % boundary != 0 else { return self }
+        let remainder = boundary - (self % boundary)
+        return self + remainder
+    }
 }
 
 public extension UInt8 {

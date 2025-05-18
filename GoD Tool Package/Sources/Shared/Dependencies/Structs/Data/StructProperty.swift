@@ -8,7 +8,7 @@
 import Foundation
 import GoDFoundation
 
-public enum IntegerProperties: Codable, Equatable, CaseIterable {
+public enum IntegerProperties: String, Codable, Equatable, CaseIterable {
     case uint8, int8
     case uint16, int16
     case uint24, int24

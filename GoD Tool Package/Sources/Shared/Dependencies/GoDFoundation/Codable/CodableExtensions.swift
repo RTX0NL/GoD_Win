@@ -9,7 +9,9 @@ import Foundation
 
 public extension Encodable {
     func encodeJSON() -> GoDData? {
-        try? JSONEncoder().encode(self)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try? encoder.encode(self)
     }
     
     func encodeJSONString() -> String? {

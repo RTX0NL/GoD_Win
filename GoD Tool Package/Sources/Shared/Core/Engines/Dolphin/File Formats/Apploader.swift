@@ -12,16 +12,16 @@ import Structs
 public final class Apploader: FileFormat {
     public static let formatName = "Apploader.img"
     
-    private let engine: Engine
+    private let dolphinEngine: DolphinEngine
     
     public let date: String
     public let entryPoint: UInt32
     public let appCode: GoDData
     public let trailerCode: GoDData
     
-    public init(data: GoDData, engine: Engine) throws {
-        self.engine = engine
-        let apploaderHeaderStruct: StructDefinition = try engine.get("Apploader Header Struct")
+    public init(data: GoDData, engine: DolphinEngine) throws {
+        self.dolphinEngine = engine
+        let apploaderHeaderStruct = dolphinEngine.apploaderHeaderStruct
         guard let apploaderHeader = data.read(struct: apploaderHeaderStruct, atAddress: 0) else {
             throw Self.invalidFileError
         }
@@ -38,7 +38,7 @@ public final class Apploader: FileFormat {
     
     public var data: GoDData {
         get throws {
-            let apploaderHeaderStruct: StructDefinition = try engine.get("Apploader Header Struct")
+            let apploaderHeaderStruct = dolphinEngine.apploaderHeaderStruct
             let header = StructData(definition: apploaderHeaderStruct, data: GoDData(length: apploaderHeaderStruct.length, byteOrder: .big))
             
             header.date = date.data(format: .ascii_big)

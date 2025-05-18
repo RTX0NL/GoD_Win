@@ -7,7 +7,7 @@
 
 import GoDFoundation
 
-public final class StructMap {
+public final class StructMap: Nameable {
     
     public struct Property: Equatable {
         public let name: String
@@ -15,7 +15,7 @@ public final class StructMap {
         public let type: StructField
 
         public init(name: String, type: StructField, description: String? = nil) {
-            self.name = name
+            self.name = name.replacingOccurrences(of: " ", with: "")
             self.description = description
             self.type = type
         }
@@ -101,7 +101,7 @@ extension StructMap: Decodable {
             let typeToken = String(text.prefix(upTo: lastSpace))
             let nameToken =  String(text.suffix(from: lastSpace)).substring(from: 1)
             let type = try getType(typeToken)
-            return .init(name: nameToken.unsnakeCased, type: type)
+            return .init(name: nameToken, type: type)
         }
         self.init(
             name: name,

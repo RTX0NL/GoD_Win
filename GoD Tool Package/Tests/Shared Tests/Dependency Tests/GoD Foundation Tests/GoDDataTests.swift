@@ -338,4 +338,23 @@ class GoDDataTests: XCTestCase {
         let sut2: Float? = data2.readPrimtive(atAddress: 0)
         XCTAssertEqual(sut2, 1.0)
     }
+    
+    func testAlignment() {
+        let data1 = GoDData(length: 0)
+        let data2 = GoDData(length: 1)
+        let data3 = GoDData(length: 9)
+        let data4 = GoDData(length: 16)
+        let data5 = GoDData(length: 20)
+        
+        [data1, data2, data3, data4, data5].forEach {
+            $0.align(to: 16)
+        }
+        
+        XCTAssertEqual(data1.length, 0)
+        XCTAssertEqual(data2.length, 16)
+        XCTAssertEqual(data3.length, 16)
+        XCTAssertEqual(data4.length, 16)
+        XCTAssertEqual(data5.length, 32)
+        
+    }
 }

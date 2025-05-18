@@ -8,7 +8,8 @@
 import Foundation
 
 enum RunModes {
-    case commandLine, development(args: [String])
+    case commandLine
+    case development(args: [String])
     
     var arguments: [String] {
         switch self {

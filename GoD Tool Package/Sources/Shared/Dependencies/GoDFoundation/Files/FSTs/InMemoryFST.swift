@@ -65,24 +65,27 @@ public class InMemoryFST: FileSystemTree {
         guard keys.count > 0 else { return nil }
         
         var totalSize = 0
-        let contents: [FolderMetaData.Item] = keys.compactMap { subpath in
+        var files = [File]()
+        var folders = [Folder]()
+        
+        keys.forEach { subpath in
             let file = File(subpath)
             let folder = Folder(subpath)
             if let metaData = inspectFile(at: file) {
+                guard file.parentFolder == path else { return }
                 totalSize += metaData.filesize ?? 0
-                guard file.parentFolder == path else { return nil }
-                return .file(path: file)
+                files.append(file)
             } else if let _ = inspectFolder(at: folder) {
-                guard folder.parentFolder == path else { return nil }
-                return .folder(path: folder)
+                guard folder.parentFolder == path else { return }
+                folders.append(folder)
             }
-            return nil
         }
         return .init(
             name: path.folderName,
-            contents: contents,
-            size: nil,
-            notes: nil
+            size: totalSize,
+            notes: nil,
+            files: files,
+            subFolders: folders
         )
     }
     

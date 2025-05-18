@@ -42,4 +42,22 @@ extension File: Codable {
     enum CodingKeys: String, CodingKey {
         case path
     }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(path)
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let path = try container.decode(String.self)
+        self.init(path)
+    }
+}
+
+extension [File] {
+    public func withExtension(_ ext: String) -> [File] {
+        let cleanExtension = ext.removingOccurences(of: ".")
+        return self.filter { $0.fileType == cleanExtension }
+    }
 }

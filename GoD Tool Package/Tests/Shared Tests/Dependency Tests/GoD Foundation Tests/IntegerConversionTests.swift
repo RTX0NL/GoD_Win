@@ -214,4 +214,18 @@ class IntegerConversionTests: XCTestCase {
         XCTAssertEqual(arraySut2, [0x1234, 0x5678])
         XCTAssertEqual(arraySut3, [0x12345678])
     }
+    
+    func testAlignment() {
+        let number1 = 0
+        let number2 = 1
+        let number3 = 9
+        let number4 = 16
+        let number5 = 20
+        
+        XCTAssertEqual(number1.aligned(to: 16), 0)
+        XCTAssertEqual(number2.aligned(to: 16), 16)
+        XCTAssertEqual(number3.aligned(to: 16), 16)
+        XCTAssertEqual(number4.aligned(to: 16), 16)
+        XCTAssertEqual(number5.aligned(to: 16), 32)
+    }
 }

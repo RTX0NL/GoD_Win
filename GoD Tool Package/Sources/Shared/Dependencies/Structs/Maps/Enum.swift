@@ -8,7 +8,7 @@
 import GoDFoundation
 
 @dynamicMemberLookup
-public struct Enum: Codable, Equatable {
+public struct Enum: Codable, Equatable, Nameable {
     public enum Errors: Error, CustomStringConvertible {
         case InvalidEnumIndex(index: Int, enumeration: Enum)
         case InvalidEnumCase(caseName: String, enumeration: Enum)
@@ -26,12 +26,32 @@ public struct Enum: Codable, Equatable {
     public struct Case: Codable, Equatable {
         public let name: String
         public let rawValue: Int
+        
+        public init(
+            name: String,
+            rawValue: Int
+        ) {
+            self.name = name
+            self.rawValue = rawValue
+        }
     }
 
     public let name: String
     public let allowUnknownCases: Bool
     public let values: [Case]
     public let propertyType: IntegerProperties
+    
+    public init(
+        name: String,
+        allowUnknownCases: Bool,
+        values: [Case],
+        propertyType: IntegerProperties
+    ) {
+        self.name = name
+        self.allowUnknownCases = allowUnknownCases
+        self.values = values
+        self.propertyType = propertyType
+    }
 
     public subscript(dynamicMember caseName: String) -> Case {
         get throws {

@@ -7,13 +7,13 @@
 
 import GoDFoundation
 
-enum ConfigErrors: Error, CustomStringConvertible {
-    case settingsFileNotFound(File)
+enum ConfigErrors: GoDError {
+    case settingsFileNotFound(File, ErrorTrace)
     
     var description: String {
         switch self {
-        case .settingsFileNotFound(let file):
-            return "Error: Couldn't read settings file at: \(file)"
+        case let .settingsFileNotFound(file, errorTrace):
+            return "Error: Couldn't read settings file at: \(file)\n\(errorTrace)"
         }
     }
 }

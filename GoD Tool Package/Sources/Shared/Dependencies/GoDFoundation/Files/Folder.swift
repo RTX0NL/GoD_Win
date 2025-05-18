@@ -15,6 +15,13 @@ public struct Folder: PathRepresentable, Hashable, Equatable {
         if cleanPath.last == "/", cleanPath != "/" {
             cleanPath.removeLast()
         }
+        if cleanPath.first != "/",
+           !cleanPath.startsWith("../"),
+           !cleanPath.startsWith("./"),
+           cleanPath != "..",
+           cleanPath != "."{
+            cleanPath = "/" + cleanPath
+        }
         self.path = cleanPath
     }
     
@@ -28,6 +35,7 @@ public struct Folder: PathRepresentable, Hashable, Equatable {
         if first.last == "/" {
             first.removeLast()
         }
+        
         var last = relativePath
         if last.first == "/" {
             last.removeFirst()
@@ -41,7 +49,7 @@ public struct Folder: PathRepresentable, Hashable, Equatable {
         file(relativePath.path)
     }
     
-    /// Get a folder contained in this folder
+    /// Get a folder relative to this folder
     public func folder(_ relativePath: String) -> Folder {
         var first = self.path
         if first.last == "/" {
@@ -52,7 +60,19 @@ public struct Folder: PathRepresentable, Hashable, Equatable {
             last.removeFirst()
         }
         
-        return Folder(first + "/" + last)
+        var firstComponents = first.split(separator: "/")
+        var lastComponents = last.split(separator: "/")
+        
+        while lastComponents.first == ".." || lastComponents.first == "." {
+            if lastComponents.first == ".." {
+                firstComponents.removeLast()
+            }
+            lastComponents.removeFirst()
+        }
+        
+        let prefix = self.path.startsWith("/") ? "/" : ""
+        let path = prefix + (firstComponents + lastComponents).joined(separator: "/")
+        return Folder(path)
     }
     
     /// Get a folder contained in this folder
@@ -78,5 +98,16 @@ extension Folder: Comparable {
 extension Folder: Codable {
     enum CodingKeys: String, CodingKey {
         case path
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(path)
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let path = try container.decode(String.self)
+        self.init(path)
     }
 }

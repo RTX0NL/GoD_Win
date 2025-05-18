@@ -51,6 +51,7 @@ let package = Package(
                 "Dolphin",
                 "XD",
                 "Colosseum",
+                "GeniusSonority",
                 "GoDFoundation"
             ],
             path: "Sources/Products/GODSDK"

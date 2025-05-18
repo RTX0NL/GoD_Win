@@ -57,6 +57,10 @@ public extension String {
         guard substring.count <= self.count else { return false }
         return self.substring(from: self.count - substring.count, to: self.count) == substring
     }
+    
+    func removingOccurences(of subString: any StringProtocol) -> String {
+        self.replacingOccurrences(of: subString, with: "")
+    }
 }
 
 public enum StringFormats: String, Equatable, Codable {

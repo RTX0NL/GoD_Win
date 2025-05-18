@@ -34,10 +34,13 @@ extension GoDWritable {
     
     @discardableResult
     public func write<T: DataConvertible & ExpressibleByInteger>(_ value: Int?, AsType: T.Type, atAddress address: Int) -> Bool {
-        guard let value = value else {
-            return true
+        guard let value else { return true }
+        let asInt = T(integer: value)
+        let data = asInt.rawData
+        if byteOrder != .unspecified, byteOrder != data.byteOrder {
+            data.switchByteOrder(boundary: Environment.wordSize)
         }
-        return write(T(integer: value), atAddress: address)
+        return write(data, atAddress: address)
     }
     
     @discardableResult

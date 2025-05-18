@@ -12,7 +12,7 @@ import Structs
 public final class Dol: FileFormat {
     public static let formatName = ".dol"
     
-    private let engine: Engine
+    private let dolphinEngine: DolphinEngine
     
     public var bssSize: UInt32
     public var bssRAMAddress: UInt32
@@ -20,10 +20,10 @@ public final class Dol: FileFormat {
     public var textSections: [TextSection]
     public var dataSections: [DataSection]
     
-    public init(data: GoDData, engine: Engine) throws {
-        self.engine = engine
+    public init(data: GoDData, dolphinEngine: DolphinEngine) throws {
+        self.dolphinEngine = dolphinEngine
         
-        let dolHeaderStruct: StructDefinition = try engine.get("Dol Header Struct")
+        let dolHeaderStruct = dolphinEngine.dolHeaderStruct
         guard let dolHeader = data.read(struct: dolHeaderStruct, atAddress: 0) else {
             throw Self.invalidFileError
         }
@@ -65,7 +65,7 @@ public final class Dol: FileFormat {
     
     public var data: GoDData {
         get throws {
-            let dolHeaderStruct: StructDefinition = try engine.get("Dol Header Struct")
+            let dolHeaderStruct = dolphinEngine.dolHeaderStruct
             let header = StructData(definition: dolHeaderStruct, byteOrder: .big)
             
             header.bssSize = bssSize

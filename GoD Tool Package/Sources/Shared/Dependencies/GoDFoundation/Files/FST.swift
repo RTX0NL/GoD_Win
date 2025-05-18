@@ -15,35 +15,25 @@ public struct FileMetaData {
 }
 
 public struct FolderMetaData {
-    public enum Item {
-        case file(path: File)
-        case folder(path: Folder)
-        
-        public var path: String {
-            switch self {
-            case .file(let path): return path.path
-            case .folder(let path): return path.path
-            }
-        }
-    }
-    
     public let name: String
-    public let contents: [Item]
     public let size: Int?
     public let notes: String?
+    
+    public let files: [File]
+    public let subFolders: [Folder]
 }
 
 public protocol FileSystemTree {
     func inspectFile(at path: File) -> FileMetaData?
     func readFile(at path: File) -> GoDData?
-    func moveFile(at path: File, to newPath: File, overwrite: Bool) -> Bool
-    func writeFile(_ file: GoDData, at path: File, overwrite: Bool) -> Bool
-    func deleteFile(at path: File) -> Bool
+    @discardableResult func moveFile(at path: File, to newPath: File, overwrite: Bool) -> Bool
+    @discardableResult func writeFile(_ file: GoDData, at path: File, overwrite: Bool) -> Bool
+    @discardableResult func deleteFile(at path: File) -> Bool
     
     func inspectFolder(at path: Folder) -> FolderMetaData?
-    func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) -> Bool
-    func createFolder(at path: Folder, overwrite: Bool) -> Bool
-    func deleteFolder(at path: Folder) -> Bool
+    @discardableResult func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) -> Bool
+    @discardableResult func createFolder(at path: Folder, overwrite: Bool) -> Bool
+    @discardableResult func deleteFolder(at path: Folder) -> Bool
 }
 
 public extension FileSystemTree {
@@ -69,9 +59,20 @@ public extension FileSystemTree {
         return moveFolder(at: path, to: newFolder, overwrite: overwrite)
     }
     
+    func readFile<T: Decodable>(at path: File) -> T? {
+        guard let data: GoDData = readFile(at: path) else { return nil }
+        return T.decodeJSON(from: data)
+    }
+    
+    @discardableResult
+    func writeFile(_ item: Encodable, at path: File, overwrite: Bool) -> Bool {
+        guard let data = item.encodeJSON() else { return false }
+        return writeFile(data, at: path, overwrite: overwrite)
+    }
+    
     var root: FolderMetaData {
         let rootFolder = Folder("/")
-        return inspectFolder(at: rootFolder) ?? .init(name: "/", contents: [], size: nil, notes: nil)
+        return inspectFolder(at: rootFolder) ?? .init(name: "/", size: nil, notes: nil, files: [], subFolders: [])
     }
     
     func importFST(
@@ -80,37 +81,37 @@ public extension FileSystemTree {
         to targetFolder: Folder,
         overwrite: Bool
     ) {
-        func add(_ item: FolderMetaData.Item) {
-            switch item {
-            case .file(let file):
+        func add(_ files: [File]) {
+            for file in files {
                 guard let data = fileSystem.readFile(at: file) else { return }
                 var newFile = file
                 if file.path.startsWith(rootFolder.path) {
                     let relativePath = file.path.substring(from: rootFolder.path.count)
                     newFile = targetFolder.file(relativePath)
                 }
-                _ = writeFile(data, at: newFile, overwrite: overwrite)
-            case .folder(let folder):
-                guard let contents = fileSystem.inspectFolder(at: folder)?.contents else { return }
+                writeFile(data, at: newFile, overwrite: overwrite)
+            }
+        }
+        
+        func add(_ folders: [Folder]) {
+            for folder in folders {
+                guard let contents = fileSystem.inspectFolder(at: folder) else { return }
                 var newFolder = folder
                 if folder.path.startsWith(rootFolder.path) {
                     let relativePath = folder.path.substring(from: rootFolder.path.count)
                     newFolder = targetFolder.folder(relativePath)
                 }
-                _ = createFolder(at: newFolder, overwrite: overwrite)
-                add(contents)
+                createFolder(at: newFolder, overwrite: overwrite)
+                
+                add(contents.files)
+                add(contents.subFolders)
             }
         }
         
-        func add(_ items: [FolderMetaData.Item]) {
-            items.forEach { item in
-                add(item)
-            }
-        }
-        
-        guard let rootContents = fileSystem.inspectFolder(at: rootFolder)?.contents else {
+        guard let rootContents = fileSystem.inspectFolder(at: rootFolder) else {
             return
         }
-        add(rootContents)
+        add(rootContents.files)
+        add(rootContents.subFolders)
     }
 }

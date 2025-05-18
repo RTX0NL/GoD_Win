@@ -40,7 +40,7 @@ public class StructData {
     public subscript(dynamicMember member: String) -> GoDData {
         get throws {
             guard let data: GoDData = self.get(member) else {
-                throw StructError.MissingKey(key: member, struct: self)
+                throw StructError.MissingKey(key: member, struct: self, .init())
             }
             return data
         }
@@ -58,7 +58,7 @@ public class StructData {
     public subscript(dynamicMember member: String) -> StructData {
         get throws {
             guard let data: StructData = self.get(member) else {
-                throw StructError.MissingKey(key: member, struct: self)
+                throw StructError.MissingKey(key: member, struct: self, .init())
             }
             return data
         }
@@ -78,7 +78,7 @@ public class StructData {
             let data: GoDData = try self[dynamicMember: member]
             guard let value = T(data: data) else {
                 let type = definition.property(for: member) ?? .void
-                throw StructError.TypeMismatch(key: member, propertyType: type, type: T.self, struct: self)
+                throw StructError.TypeMismatch(key: member, propertyType: type, type: T.self, struct: self, .init())
             }
             return value
         }
@@ -120,7 +120,8 @@ public class StructData {
             switch type {
             case .enumeration(let enumeration):
                 if let enumCase = try? enumeration.get(newValue) {
-                    set(member, to: enumCase.rawValue)
+                    let value: Int? = enumCase.rawValue
+                    set(member, to: value)
                 }
             default:
                 set(member, to: newValue, format: .utf8)
@@ -131,10 +132,10 @@ public class StructData {
     public subscript(dynamicMember member: String) -> Enum.Case {
         get throws {
             guard let type = definition.property(for: member) else {
-                throw StructError.MissingKey(key: member, struct: self)
+                throw StructError.MissingKey(key: member, struct: self, .init())
             }
             guard case .enumeration(let enumDef) = type else {
-                throw StructError.TypeMismatch(key: member, propertyType: type, type: Enum.Case.self, struct: self)
+                throw StructError.TypeMismatch(key: member, propertyType: type, type: Enum.Case.self, struct: self, .init())
             }
 
             let rawValue: Int = try self[dynamicMember: member]

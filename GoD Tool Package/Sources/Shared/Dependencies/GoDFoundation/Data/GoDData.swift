@@ -66,8 +66,10 @@ public final class GoDData: ExpressibleByStringLiteral {
     public convenience init(string: String, format: StringFormats) {
         if let data = string.data(using: format.encoding) {
             self.init(data: data, byteOrder: Environment.byteOrder)
-            if !Environment.byteOrder.matches(format.byteOrder) {
+            if format.byteOrder != .unspecified, !Environment.byteOrder.matches(format.byteOrder) {
                 self.switchByteOrder(boundary: format.characterLength)
+            } else {
+                self.byteOrder = format.byteOrder
             }
         } else {
             self.init()
@@ -212,7 +214,7 @@ extension GoDData: GoDWritable {
         }
         if startIndex + data.length > self.length {
             let required = startIndex + data.length - self.length
-            self.append(.init(length: required))
+            self.pad(by: required)
         }
         let endIndex = min(startIndex + data.length, self.length)
         self.data.replaceSubrange(startIndex ..< endIndex, with: data.data)
@@ -262,7 +264,17 @@ extension GoDData: Equatable {
 
 }
 
-
+extension GoDData {
+    public func align(to boundary: Int) {
+        guard boundary > 0, self.length % boundary != 0 else { return }
+        let remainder = boundary - (self.length % boundary)
+        return self.append(.init(length: remainder))
+    }
+    
+    public func pad(by length: Int) {
+        self.append(.init(length: length))
+    }
+}
 
 
 

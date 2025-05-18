@@ -9,12 +9,14 @@ import Foundation
 
 public class FileSystem: FileSystemTree {
     
+    private(set) var currentDirectory = Folder("/")
+    private let fm = FileManager.default
+    
     public static let shared = FileSystem()
     private init() {}
     
     public func inspectFile(at path: File) -> FileMetaData? {
-        let fm = FileManager.default
-        let filePath = path.path
+        let filePath = extendPath(path).path
         
         let exists = fm.fileExists(atPath: filePath)
         guard exists else { return nil }
@@ -34,7 +36,8 @@ public class FileSystem: FileSystemTree {
     }
     
     public func readFile(at path: File) -> GoDData? {
-        guard let data = try? Data(contentsOf: path.url) else  {
+        let filePath = extendPath(path)
+        guard let data = try? Data(contentsOf: filePath.url) else  {
             return nil
         }
         return GoDData(data: data)
@@ -42,14 +45,16 @@ public class FileSystem: FileSystemTree {
     
     @discardableResult
     public func moveFile(at path: File, to newPath: File, overwrite: Bool) -> Bool {
-        guard let parentFolder = newPath.parentFolder else {
+        let fullPath = extendPath(path)
+        let fullNewPath = extendPath(newPath)
+        guard let parentFolder = fullNewPath.parentFolder else {
             return false
         }
         do {
             if !itemExists(at: parentFolder) {
                 createFolder(at: parentFolder, overwrite: overwrite)
             }
-            try FileManager.default.moveItem(atPath: path.path, toPath: newPath.path)
+            try fm.moveItem(atPath: fullPath.path, toPath: fullNewPath.path)
             return true
         } catch {
             return false
@@ -58,13 +63,14 @@ public class FileSystem: FileSystemTree {
     
     @discardableResult
     public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) -> Bool {
-        guard let parentFolder = path.parentFolder else { return false }
+        let fullPath = extendPath(path)
+        guard let parentFolder = fullPath.parentFolder else { return false }
         if !itemExists(at: parentFolder) {
             createFolder(at: parentFolder, overwrite: overwrite)
         }
-        guard !itemExists(at: path) || overwrite else { return false }
+        guard !itemExists(at: fullPath) || overwrite else { return false }
         do {
-            try file.data.write(to: path.url)
+            try file.data.write(to: fullPath.url)
             return true
         } catch {
             return false
@@ -73,9 +79,9 @@ public class FileSystem: FileSystemTree {
     
     @discardableResult
     public func deleteFile(at path: File) -> Bool {
-        let fm = FileManager.default
+        let fullPath = extendPath(path)
         do {
-            try fm.removeItem(at: path.url)
+            try fm.removeItem(at: fullPath.url)
             return true
         } catch {
             return false
@@ -83,41 +89,47 @@ public class FileSystem: FileSystemTree {
     }
     
     public func inspectFolder(at path: Folder) -> FolderMetaData? {
-        let fm = FileManager.default
-        guard let paths = try? fm.contentsOfDirectory(atPath: path.path) else {
+        let fullPath = extendPath(path)
+        guard let paths = try? fm.contentsOfDirectory(atPath: fullPath.path) else {
             return nil
         }
         let folder = path
-        let contents = paths.map { path in
+        var files = [File]()
+        var folders = [Folder]()
+        
+        paths.forEach { path in
             var isDirectory: ObjCBool = false
-            _ = fm.fileExists(atPath: folder.file(path).path, isDirectory: &isDirectory)
+            _ = fm.fileExists(atPath: fullPath.file(path).path, isDirectory: &isDirectory)
             if isDirectory.boolValue {
-                let folderPath = folder.folder(path)
-                return FolderMetaData.Item.folder(path: folderPath)
+                let subFolder = folder.folder(path)
+                folders.append(subFolder)
             } else {
-                let filePath = folder.file(path)
-                return FolderMetaData.Item.file(path: filePath)
+                let file = folder.file(path)
+                files.append(file)
             }
         }
         return .init(
             name: path.folderName,
-            contents: contents,
             size: nil,
-            notes: nil
+            notes: nil,
+            files: files,
+            subFolders: folders
         )
     }
     
     @discardableResult
     public func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) -> Bool {
-        guard let parentFolder = newPath.parentFolder else {
+        let fullPath = extendPath(path)
+        let fullNewPath = extendPath(newPath)
+        guard let parentFolder = fullNewPath.parentFolder else {
             return false
         }
         do {
             if !itemExists(at: parentFolder) {
                 createFolder(at: parentFolder, overwrite: overwrite)
             }
-            guard !itemExists(at: path) || overwrite else { return false }
-            try FileManager.default.moveItem(atPath: path.path, toPath: newPath.path)
+            guard !itemExists(at: fullPath) || overwrite else { return false }
+            try fm.moveItem(atPath: fullPath.path, toPath: fullNewPath.path)
             return true
         } catch {
             return false
@@ -126,10 +138,10 @@ public class FileSystem: FileSystemTree {
     
     @discardableResult
     public func createFolder(at path: Folder, overwrite: Bool) -> Bool {
-        guard !itemExists(at: path) || overwrite else { return false }
-        let fm = FileManager.default
+        let fullPath = extendPath(path)
+        guard !itemExists(at: fullPath) || overwrite else { return false }
         do {
-            try fm.createDirectory(atPath: path.path, withIntermediateDirectories: true)
+            try fm.createDirectory(atPath: fullPath.path, withIntermediateDirectories: true)
             return true
         } catch {
             return false
@@ -138,10 +150,10 @@ public class FileSystem: FileSystemTree {
     
     @discardableResult
     public func deleteFolder(at path: Folder) -> Bool {
-        guard itemExists(at: path) else { return true }
-        let fm = FileManager.default
+        let fullPath = extendPath(path)
+        guard itemExists(at: fullPath) else { return true }
         do {
-            try fm.removeItem(atPath: path.path)
+            try fm.removeItem(atPath: fullPath.path)
             return true
         } catch {
             return false
@@ -161,43 +173,41 @@ public class FileSystem: FileSystemTree {
         )
     }
     
-    public var currentWorkingDirectory: Folder {
-        Folder (
-            FileManager.default.currentDirectoryPath
-        )
-    }
-    
-    public func write(_ fst: FileSystemTree, at path: Folder, overwrite: Bool) {
-        func write(_ folderInfo: FolderMetaData, to folder: Folder) {
-            folderInfo.contents.forEach { item in
-                switch item {
-                case .file(let file):
-                    if let fileData = fst.readFile(at: file) {
-                        self.writeFile(fileData, at: folder.file(file.fileName), overwrite: overwrite)
-                    }
-                case .folder(let path):
-                    if let folderData = fst.inspectFolder(at: path) {
-                        let subfolder = folder.folder(path.folderName)
-                        self.createFolder(at: subfolder, overwrite: false)
-                        write(folderData, to: subfolder)
-                    }
-                }
-            }
+    public func changeDirectory(_ newDirectory: Folder) {
+        if newDirectory.path.startsWith("/") {
+                currentDirectory = newDirectory
+        } else {
+            currentDirectory = currentDirectory.folder(newDirectory.path)
         }
-        write(fst.root, to: path)
     }
     
     public func setExecutable(file: File) {
-        guard itemExists(at: file) else { return }
-        let fm = FileManager.default
-        try? fm.setAttributes([FileAttributeKey.posixPermissions: 0o777], ofItemAtPath: file.path)
+        let fullPath = currentDirectory.file(file.path)
+        guard itemExists(at: fullPath) else { return }
+        try? fm.setAttributes([FileAttributeKey.posixPermissions: 0o777], ofItemAtPath: fullPath.path)
+    }
+    
+    private func extendPath(_ file: File) -> File {
+        if file.path.startsWith("./") || file.path.startsWith("../") {
+            return currentDirectory.file(file)
+        } else {
+            return file
+        }
+    }
+    
+    private func extendPath(_ folder: Folder) -> Folder {
+        if folder.path.startsWith("./") || folder.path.startsWith("../") {
+            return currentDirectory.folder(folder)
+        } else {
+            return folder
+        }
     }
 }
 
 public extension FileSystemTree {
     func decodeJSON<T: Decodable>(from file: File) throws -> T {
         guard let data = readFile(at: file) else {
-            throw FSTErrors.fileNotFound(file)
+            throw FSTErrors.fileNotFound(file, .init())
         }
         let decoder = JSONDecoder()
         return try decoder.decode(T.self, from: data)
@@ -207,7 +217,7 @@ public extension FileSystemTree {
 public extension FileSystemTree {
     func encodeJSON<Value: Encodable>(_ value: Value, to file: File, overwrite: Bool) throws {
         let encoder = JSONEncoder()
-        encoder.outputFormatting = .prettyPrinted
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data: GoDData = try encoder.encode(value)
         _ = writeFile(data, at: file, overwrite: overwrite)
     }
