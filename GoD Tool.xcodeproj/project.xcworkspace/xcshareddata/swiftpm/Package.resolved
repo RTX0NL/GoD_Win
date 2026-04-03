@@ -50,7 +50,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/kelvin13/swift-png",
       "state" : {
-        "revision" : "075dfb248ae327822635370e9d4f94a5d3fe93b2",
+        "revision" : "29ca80c64ccca61118c126de598fd84fa693b2a0",
         "version" : "4.0.2"
       }
     },

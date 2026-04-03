@@ -72,15 +72,31 @@ public extension FileSystemTree {
     
     var root: FolderMetaData {
         let rootFolder = Folder("/")
-        return inspectFolder(at: rootFolder) ?? .init(name: "/", size: nil, notes: nil, files: [], subFolders: [])
+        return inspectFolder(at: rootFolder) ?? .init(
+            name: "/",
+            size: nil,
+            notes: nil,
+            files: [],
+            subFolders: []
+        )
     }
     
     func importFST(
         _ fileSystem: FileSystemTree,
         from rootFolder: Folder,
         to targetFolder: Folder,
-        overwrite: Bool
+        overwrite: Bool,
+        logger: Logger? = nil
     ) {
+        
+        guard let rootContents = fileSystem.inspectFolder(at: rootFolder) else {
+            return
+        }
+        
+        let totalSize = rootContents.size ?? 0
+        var sizeProcessed = 0
+        let shouldTrackProgress = totalSize > 0 && logger != nil
+        
         func add(_ files: [File]) {
             for file in files {
                 guard let data = fileSystem.readFile(at: file) else { return }
@@ -90,6 +106,12 @@ public extension FileSystemTree {
                     newFile = targetFolder.file(relativePath)
                 }
                 writeFile(data, at: newFile, overwrite: overwrite)
+                
+                if shouldTrackProgress {
+                    sizeProcessed += data.length
+                    let percentage = Percentage(min(Double(sizeProcessed) / Double(totalSize) * 100, 100))
+                    logger?.log(.taskStatus(taskName: "Import FST", status: .progress(percentage)))
+                }
             }
         }
         
@@ -108,10 +130,12 @@ public extension FileSystemTree {
             }
         }
         
-        guard let rootContents = fileSystem.inspectFolder(at: rootFolder) else {
-            return
-        }
+        logger?.log(.info("Importing \(rootFolder.path) to \(targetFolder.path)"))
+        logger?.log(.taskStatus(taskName: "Import FST", status: .started))
+        
         add(rootContents.files)
         add(rootContents.subFolders)
+        
+        logger?.log(.taskStatus(taskName: "Import FST", status: .completed(true)))
     }
 }

@@ -10,15 +10,18 @@ import GoDFoundation
 @dynamicMemberLookup
 public struct Enum: Codable, Equatable, Nameable {
     public enum Errors: Error, CustomStringConvertible {
-        case InvalidEnumIndex(index: Int, enumeration: Enum)
-        case InvalidEnumCase(caseName: String, enumeration: Enum)
+        case InvalidEnumIndex(index: Int, enumeration: Enum, ErrorTrace)
+        case InvalidEnumCase(caseName: String, enumeration: Enum, ErrorTrace)
+        case InvalidEnumCaseDefinition(input: String, ErrorTrace)
         
         public var description: String {
             switch self {
-            case .InvalidEnumIndex(let index, let enumeration):
-                return "Invalid index '\(index)' in enum '\(enumeration.name)'"
-            case .InvalidEnumCase(let caseName, let enumeration):
-                return "Invalid case '\(caseName)' in enum '\(enumeration.name)'"
+            case .InvalidEnumIndex(let index, let enumeration, let errorTrace):
+                return "Invalid index '\(index)' in enum '\(enumeration.name)'\n\(errorTrace)"
+            case .InvalidEnumCase(let caseName, let enumeration, let errorTrace):
+                return "Invalid case '\(caseName)' in enum '\(enumeration.name)'\n\(errorTrace)"
+            case .InvalidEnumCaseDefinition(let input, let errorTrace):
+                return "Couldn't decode enum case: '\(input)'\nExpected format: \"case_name = raw_value\" e.g. \"Monday = 1\"\n\(errorTrace)"
             }
         }
     }
@@ -32,6 +35,22 @@ public struct Enum: Codable, Equatable, Nameable {
             rawValue: Int
         ) {
             self.name = name
+            self.rawValue = rawValue
+        }
+        
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            try container.encode("\(name) = \(rawValue)")
+        }
+        
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            let string = try container.decode(String.self)
+            let parts = string.split(separator: " = ").map(String.init)
+            guard parts.count == 2, let rawValue = parts[1].integerValue else {
+                throw Errors.InvalidEnumCaseDefinition(input: string, .init())
+            }
+            self.name = parts[0]
             self.rawValue = rawValue
         }
     }
@@ -67,7 +86,7 @@ public struct Enum: Codable, Equatable, Nameable {
     
     public func get(_ caseName: String) throws -> Case {
         guard let value = values.first(where: { $0.name.lowercased() == caseName.lowercased() }) else {
-            throw Errors.InvalidEnumCase(caseName: caseName, enumeration: self)
+            throw Errors.InvalidEnumCase(caseName: caseName, enumeration: self, .init())
         }
         return value
     }
@@ -75,7 +94,7 @@ public struct Enum: Codable, Equatable, Nameable {
     public func get(_ index: Int) throws -> Case {
         guard let value = values.first(where: { $0.rawValue == index }) else {
             guard allowUnknownCases else {
-                throw Errors.InvalidEnumIndex(index: index, enumeration: self)
+                throw Errors.InvalidEnumIndex(index: index, enumeration: self, .init())
             }
             return unknown(index)
         }

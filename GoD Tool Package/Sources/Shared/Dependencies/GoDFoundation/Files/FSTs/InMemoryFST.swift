@@ -72,8 +72,8 @@ public class InMemoryFST: FileSystemTree {
             let file = File(subpath)
             let folder = Folder(subpath)
             if let metaData = inspectFile(at: file) {
-                guard file.parentFolder == path else { return }
                 totalSize += metaData.filesize ?? 0
+                guard file.parentFolder == path else { return }
                 files.append(file)
             } else if let _ = inspectFolder(at: folder) {
                 guard folder.parentFolder == path else { return }

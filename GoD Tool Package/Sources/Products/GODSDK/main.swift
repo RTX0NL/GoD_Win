@@ -11,14 +11,14 @@ import GameCube
 import Dolphin
 import GeniusSonority
 
-let mode = RunModes.development(args: [
+// For development, uncomment and set args:
+//let mode = RunModes.development(args: [
 //    "/Users/stars/Documents/GoD Tool/XD.iso",
-    "/Users/stars/Documents/GoD Tool/XD project/Config/Dump-Config.json",
-//    "/Users/stars/Documents/GoD Tool/XD project/Config/Build-Config.json"
-//    "/Users/stars/Documents/GoD Tool/XD project/Build/Contents/files/common.fsys",
-])
+//    "/Users/stars/Documents/GoD Tool/XD project/Config/Dump-Config.json",
+//    "/Users/stars/Documents/GoD Tool/XD project/Config/Build-Config.json",
+//])
 
-//let mode = RunModes.commandLine
+let mode = RunModes.commandLine
 
 do {
     let arguments = mode.arguments
@@ -43,21 +43,25 @@ do {
                 return try fileSystem.decodeJSON(from: file)
             } ?? GoddessSettings.default
             
+            let logger = PrintLogger(verbose: settings.verbose)
+            
             try config.operations
                 .enabledEntries
                 .forEach { operation in
                     fileSystem.changeDirectory(config.rootFolder)
                     switch operation {
                     case .gamecubeDump(let dumpConfig):
-                        try Gamecube.dump(config: dumpConfig, settings: settings, fileSystem: fileSystem)
+                        try Gamecube.dump(config: dumpConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     case .gamecubeBuild(let buildConfig):
                         try Gamecube.build(config: buildConfig, settings: settings, fileSystem: fileSystem)
                     case .coloXDDump(let dumpConfig):
-                        try ColoXD.dump(config: dumpConfig, settings: settings, fileSystem: fileSystem)
+                        try ColoXD.dump(config: dumpConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     case .coloXDBuild(let buildConfig):
                         try ColoXD.build(config: buildConfig, settings: settings, fileSystem: fileSystem)
                     }
                 }
+        
+        // Temporary
         case "fsys":
             let gsEngine = GeniusSonorityEngine.defaultEngine(for: .galeOfDarkness)
             let inputData = fileSystem.readFile(at: inputFile)!
@@ -68,6 +72,8 @@ do {
             let recreated = try fsys.data(groupID: 0x5742, engine: gsEngine)
             let outputFile = inputFile.parentFolder!.file(inputFile.fileName.withoutExtension + " dupe." + inputFile.fileType)
             fileSystem.writeFile(recreated, at: outputFile, overwrite: true)
+           
+            
         default:
             print("Unsupported file type '\(inputFile.fileType)' for file \(inputFile)")
         }

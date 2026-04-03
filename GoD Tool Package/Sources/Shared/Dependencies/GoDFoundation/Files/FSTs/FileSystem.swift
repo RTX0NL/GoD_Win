@@ -108,9 +108,13 @@ public class FileSystem: FileSystemTree {
                 files.append(file)
             }
         }
+        
+        let attributes = try? fm.attributesOfItem(atPath: fullPath.path)
+        let size: Int? = attributes?[.size] as? Int
+        
         return .init(
             name: path.folderName,
-            size: nil,
+            size: size,
             notes: nil,
             files: files,
             subFolders: folders
@@ -217,7 +221,7 @@ public extension FileSystemTree {
 public extension FileSystemTree {
     func encodeJSON<Value: Encodable>(_ value: Value, to file: File, overwrite: Bool) throws {
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data: GoDData = try encoder.encode(value)
         _ = writeFile(data, at: file, overwrite: overwrite)
     }

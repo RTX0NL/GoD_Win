@@ -62,15 +62,6 @@
         "revision" : "f1cbfcf073e2675566b0e9aa337441357d40d88a",
         "version" : "0.11.1"
       }
-    },
-    {
-      "identity" : "wamr-swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/swiftwasm/wamr-swift",
-      "state" : {
-        "revision" : "d321f5edd13a47d5e4da005515d08617957c32c9",
-        "version" : "0.1.1"
-      }
     }
   ],
   "version" : 2

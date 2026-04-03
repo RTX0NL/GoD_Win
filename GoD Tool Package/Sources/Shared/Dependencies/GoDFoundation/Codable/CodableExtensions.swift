@@ -10,7 +10,7 @@ import Foundation
 public extension Encodable {
     func encodeJSON() -> GoDData? {
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         return try? encoder.encode(self)
     }
     
@@ -26,5 +26,26 @@ public extension Decodable {
     
     static func decodeJSON(from string: String) -> Self? {
         return decodeJSON(from: string.data(format: .utf8))
+    }
+}
+
+public struct CustomCodingKeys: CodingKey, ExpressibleByStringLiteral {
+    public var stringValue: String
+    public var intValue: Int?
+    
+    public init(stringLiteral value: String) {
+        stringValue = value
+    }
+    
+    public init(_ stringValue: String) {
+        self.stringValue = stringValue
+    }
+    
+    public init?(stringValue: String) {
+        self.stringValue = stringValue
+    }
+    
+    public init?(intValue: Int) {
+        return nil
     }
 }

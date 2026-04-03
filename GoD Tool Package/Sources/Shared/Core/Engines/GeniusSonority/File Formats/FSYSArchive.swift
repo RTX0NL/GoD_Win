@@ -5,7 +5,7 @@ import Structs
 public final class FSYSArchive: FileFormat {
     public static let formatName = "fsys"
     
-    public struct MetaData {
+    public struct MetaData: Codable {
         public let unknownFlag1: Bool
         public let unknownFlag2: Bool
         public let debugFlag: Bool
@@ -17,12 +17,37 @@ public final class FSYSArchive: FileFormat {
     }
     
     public struct Entry {
-        public let name: String
+        public struct MetaData: Codable {
+            public let name: String
+            public let fileType: String
+            public let identifier: Int
+            public let compress: Bool
+            public let includesFullFilename: Bool?
+            
+            public init(
+                name: String,
+                fileType: String,
+                identifier: Int,
+                compress: Bool,
+                includesFullFilename: Bool?
+            ) {
+                self.name = name
+                self.fileType = fileType
+                self.identifier = identifier
+                self.compress = compress
+                self.includesFullFilename = includesFullFilename == true ? true : nil
+            }
+        }
+        
+        public let metadata: MetaData
         public let filename: String
-        public let fileType: String
-        public let identifier: Int
-        public let compress: Bool
         public let data: GoDData
+        
+        public init(metadata: MetaData, filename: String, data: GoDData) {
+            self.metadata = metadata
+            self.filename = filename
+            self.data = data
+        }
     }
     
     public var metaData: MetaData
@@ -70,7 +95,7 @@ public final class FSYSArchive: FileFormat {
         self.entries = try fileMetaDataList.map { metaData in
             guard let metaData else { throw Self.invalidFileError }
             
-            let fileType: Enum.Case = try metaData.fileType
+            let fileType: Enum.Case? = metaData.fileType
             let identifier: Int = try metaData.identifier
             
             let fileNameOffset: Int = try metaData.filenamePointer
@@ -87,7 +112,12 @@ public final class FSYSArchive: FileFormat {
                 }
                 fileName = name
             } else {
-                let fileExtension = fileType.name.count > 0 ? "." + fileType.name : ""
+                let fileTypeReplacements = engine.data.fsys.fileTypeReplacements
+                var fileTypeName = fileType?.name ?? ""
+                if let replacement = fileTypeReplacements[fileTypeName] {
+                    fileTypeName = replacement
+                }
+                let fileExtension = fileType != nil ? "." + fileTypeName : ""
                 
                  if engine.data.fsys.fileExtensionSuffixes.contains(where: { entryName.endsWith("_" + $0) }) {
                     var nameParts = entryName.split(separator: "_")
@@ -121,11 +151,14 @@ public final class FSYSArchive: FileFormat {
             }
             
             return Entry(
-                name: entryName,
+                metadata: Entry.MetaData(
+                    name: entryName,
+                    fileType: fileType?.name ?? "", // make sure to use actual unique file type, not the displayed file type
+                    identifier: identifier,
+                    compress: isCompressed,
+                    includesFullFilename: fullFilenameOffset != 0
+                ),
                 filename: fileName,
-                fileType: fileType.name,
-                identifier: identifier,
-                compress: isCompressed,
                 data: entryData
             )
         }
@@ -167,7 +200,7 @@ public final class FSYSArchive: FileFormat {
         var nameOffsetsByEntryFilename = [String: Int]()
         entries.forEach { entry in
             nameOffsetsByEntryFilename[entry.filename] = result.length
-            result.appendString(entry.name, format: .utf8, includeTerminator: true)
+            result.appendString(entry.metadata.name, format: .utf8, includeTerminator: true)
         }
         var fullnameOffsetsByEntryName = [String: Int]()
         entries.forEach { entry in
@@ -197,19 +230,19 @@ public final class FSYSArchive: FileFormat {
         
         let fileTypesEnum = engine.fileTypesEnum
         
-        try entries.forEach { entry in
+        entries.forEach { entry in
             let currentEntryAddress = result.length
             let metaData = StructData(definition: entryMetadataStruct, byteOrder: .big)
-            metaData.identifier = entry.identifier
-            metaData.fileType = entry.fileType
-            let fileTypeCase = try fileTypesEnum.get(entry.fileType)
-            metaData.fileTypeIndex = fileTypeCase.rawValue / 2
+            metaData.identifier = entry.metadata.identifier
+            metaData.fileType = entry.metadata.fileType
+            let fileTypeCase = try? fileTypesEnum.get(entry.metadata.fileType)
+            metaData.fileTypeIndex = (fileTypeCase?.rawValue ?? 0) / 2
             metaData.dataAddress = currentEntryAddress
-            metaData.flags = entry.compress ? 0x80000000 : 0
+            metaData.flags = entry.metadata.compress ? 0x80000000 : 0
             metaData.fullFilenamePointer = fullnameOffsetsByEntryName[entry.filename] ?? 0
             metaData.filenamePointer = nameOffsetsByEntryFilename[entry.filename] ?? 0
             
-            if entry.compress {
+            if entry.metadata.compress {
                 let lzssHeader = StructData(definition: lzssHeaderStruct, byteOrder: .big)
                 lzssHeader.magicBytes = engine.data.lzss.magicBytes
                 

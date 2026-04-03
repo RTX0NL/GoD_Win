@@ -1,11 +1,3 @@
-//
-//  CStructParser.swift
-//  
-//
-//  Created by Stars Momodu on 11/06/2022.
-//
-
-import Foundation
 import GoDFoundation
 
 @dynamicMemberLookup
@@ -346,5 +338,175 @@ extension StructData: CustomStringConvertible {
         }
         result.removeLast()
         return result
+    }
+}
+
+extension StructData: Encodable {
+    
+    public func encode(to encoder: Encoder) throws {
+        func readInt(subType: IntegerProperties, from data: GoDData) -> Int {
+            switch subType {
+            case .uint8: return data.readTypeAsInt(UInt8.self, atAddress: 0)
+            case .int8: return data.readTypeAsInt(Int8.self, atAddress: 0)
+            case .uint16: return data.readTypeAsInt(UInt16.self, atAddress: 0)
+            case .int16: return data.readTypeAsInt(Int16.self, atAddress: 0)
+            case .uint24, .int24:
+                let extended = GoDData(length: 4, byteOrder: data.byteOrder)
+                extended.write(data, atAddress: 1)
+                return extended.readTypeAsInt(Int32.self, atAddress: 0)
+            case .uint32: return data.readTypeAsInt(UInt32.self, atAddress: 0)
+            case .int32: return data.readTypeAsInt(Int32.self, atAddress: 0)
+            case .uint64: return data.readTypeAsInt(UInt64.self, atAddress: 0)
+            case .int64: return data.readTypeAsInt(Int64.self, atAddress: 0)
+            }
+        }
+        
+        func readEnum(definition: Enum, from data: GoDData) throws -> String {
+            let value = readInt(subType: definition.propertyType, from: data)
+            let enumCase = try definition.get(value)
+            return enumCase.name
+        }
+        
+        func encode(
+            data: GoDData,
+            type: StructProperty,
+            count: Int,
+            container: inout UnkeyedEncodingContainer
+        ) throws {
+            switch type {
+            case .padding:
+                return
+            case .primitive(let type):
+                switch type {
+                case .void:
+                    return
+                case .integer(let subType):
+                    var offset = 0
+                    for _ in 0 ..< count {
+                        if let data: GoDData = data.read(atAddress: offset, length: subType.length) {
+                            let value = readInt(subType: subType, from: data)
+                            try container.encode(value)
+                        }
+                        offset += subType.length
+                    }
+                case .float:
+                    var offset = 0
+                    for _ in 0 ..< count {
+                        if let value: Float = data.readPrimtive(atAddress: offset) {
+                            try container.encode(value)
+                        }
+                        offset += Float.byteLength
+                    }
+                case .double:
+                    var offset = 0
+                    for _ in 0 ..< count {
+                        if let value: Double = data.readPrimtive(atAddress: offset) {
+                            try container.encode(value)
+                        }
+                        offset += Double.byteLength
+                    }
+                case .boolean:
+                    var offset = 0
+                    for _ in 0 ..< count {
+                        if let value: Bool = data.readPrimtive(atAddress: offset) {
+                            try container.encode(value)
+                        }
+                        offset += Bool.byteLength
+                    }
+                case .character(let format):
+                    if let value: String = data.readString(atAddress: 0, format: format, maxCharacters: count) {
+                        try container.encode(value)
+                    }
+                }
+            case .enumeration(let definition):
+                var offset = 0
+                for _ in 0 ..< count {
+                    if let data: GoDData = data.read(atAddress: offset, length: definition.propertyType.length) {
+                        let value = try readEnum(definition: definition, from: data)
+                        try container.encode(value)
+                    }
+                    offset += definition.propertyType.length
+                }
+            case .array(let subProperty, let subCount):
+                var offset = 0
+                for _ in 0 ..< count {
+                    if let data: GoDData = data.read(atAddress: offset, length: subProperty.length * subCount) {
+                        var container = container.nestedUnkeyedContainer()
+                        try encode(data: data, type: subProperty, count: subCount, container: &container)
+                    }
+                    offset += subProperty.length * subCount
+                }
+            case .subStruct(let definition):
+                var offset = 0
+                for _ in 0 ..< count {
+                    if let data: GoDData = data.read(atAddress: offset, length: definition.length) {
+                        var container = container.nestedContainer(keyedBy: CustomCodingKeys.self)
+                        let structData = StructData(definition: definition, data: data)
+                        try definition.properties.forEach { property in
+                            if let data: GoDData = structData.get(property.name) {
+                                try encode(data: data, type: property.type, key: .init(property.name), container: &container)
+                            }
+                        }
+                    }
+                    offset += definition.length
+                }
+                var container = container.nestedContainer(keyedBy: CustomCodingKeys.self)
+                let structData = StructData(definition: definition, data: data)
+                try definition.properties.forEach { property in
+                    guard let data: GoDData = structData.get(property.name) else { return }
+                    try encode(data: data, type: property.type, key: .init(property.name), container: &container)
+                }
+            }
+        }
+        
+        func encode(
+            data: GoDData,
+            type: StructProperty,
+            key: CustomCodingKeys,
+            container: inout KeyedEncodingContainer<CustomCodingKeys>
+        ) throws {
+            switch type {
+            case .padding:
+                return
+            case .primitive(let type):
+                switch type {
+                case .void:
+                    return
+                case .integer(let subType):
+                    let value = readInt(subType: subType, from: data)
+                    try container.encode(value, forKey: key)
+                case .float:
+                    let value: Float = data.readPrimtive(atAddress: 0)!
+                    try container.encode(value, forKey: key)
+                case .double:
+                    let value: Double = data.readPrimtive(atAddress: 0)!
+                    try container.encode(value, forKey: key)
+                case .boolean:
+                    let value: Bool = !data.isNull
+                    try container.encode(value, forKey: key)
+                case .character(let format):
+                    let value: String = data.readString(atAddress: 0, format: format, maxCharacters: 1)!
+                    try container.encode(value, forKey: key)
+                }
+            case .enumeration(let definition):
+                let value = try readEnum(definition: definition, from: data)
+                try container.encode(value, forKey: key)
+            case .array(let subProperty, let count):
+                var container = container.nestedUnkeyedContainer(forKey: key)
+                try encode(data: data, type: subProperty, count: count, container: &container)
+            case .subStruct(let definition):
+                var container = container.nestedContainer(keyedBy: CustomCodingKeys.self, forKey: key)
+                let structData = StructData(definition: definition, data: data)
+                try definition.properties.forEach { property in
+                    guard let data: GoDData = structData.get(property.name) else { return }
+                    try encode(data: data, type: property.type, key: .init(property.name), container: &container)
+                }
+            }
+        }
+        
+        var container = encoder.container(keyedBy: CustomCodingKeys.self)
+        
+        try container.encode(definition.name, forKey: "type")
+        try encode(data: self.data, type: .subStruct(self.definition), key: "data", container: &container)
     }
 }

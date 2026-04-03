@@ -6,8 +6,7 @@ extension GeniusSonorityEngine.Enums.Defaults {
         name: "FileTypes",
         allowUnknownCases: false,
         values: [
-            .init(name: "", rawValue: 0x00),
-            .init(name: "rdat", rawValue: 0x02),
+            .init(name: "mdat", rawValue: 0x02),
             .init(name: "dat", rawValue: 0x04),
             .init(name: "col", rawValue: 0x06),
             .init(name: "samp", rawValue: 0x08),
@@ -39,7 +38,6 @@ extension GeniusSonorityEngine.Enums.Defaults {
         name: "FileTypes",
         allowUnknownCases: false,
         values: [
-            .init(name: "", rawValue: 0x00),
             .init(name: "bin", rawValue: 0x02),
             .init(name: "sdr", rawValue: 0x04),
             .init(name: "odr", rawValue: 0x06),

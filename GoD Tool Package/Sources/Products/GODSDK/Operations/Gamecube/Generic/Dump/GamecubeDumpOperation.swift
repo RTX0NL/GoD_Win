@@ -7,7 +7,8 @@ extension Gamecube {
     static func dump(
         config: DumpConfig,
         settings: GoddessSettings,
-        fileSystem: FileSystemTree
+        fileSystem: FileSystemTree,
+        logger: Logger? = nil
     ) throws {
         try config.operations.enabledEntries.forEach { operation in
             switch operation {
@@ -25,7 +26,13 @@ extension Gamecube {
                 let gamecubeEngine = try GamecubeEngine(from: gamecubeEnginePath, in: fileSystem)
                 let iso = try GamecubeISO(data: data, dolphinEngine: dolphinEngine, gamecubeEngine: gamecubeEngine)
                 
-                fileSystem.importFST(iso, from: "/", to: fstFolder, overwrite: overwrite)
+                fileSystem.importFST(
+                    iso,
+                    from: "/",
+                    to: fstFolder,
+                    overwrite: overwrite,
+                    logger: logger
+                )
             }
         }
     }

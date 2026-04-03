@@ -1,10 +1,3 @@
-//
-//  File.swift
-//  
-//
-//  Created by Stars Momodu on 10/06/2024.
-//
-
 import GoDFoundation
 import GoDEngine
 import Dolphin
@@ -65,7 +58,21 @@ enum Project {
             gsGame = .galeOfDarkness
         }
         
-        let gsEngine = GeniusSonorityEngine.defaultEngine(for: gsGame ?? .colosseum)
+        var gsEngine = GeniusSonorityEngine.defaultEngine(for: gsGame ?? .colosseum)
+        if (isGeniusSonority) {
+            let gsfsysFile = gsEngine.data.fsys.GSfsysFile
+            
+            if gsGame == .battleRevolution {
+                
+            } else {
+                let isoFileSystem = try? GamecubeISO(data: isoData, dolphinEngine: dolphinEngine, gamecubeEngine: gamecubeEngine)
+                if let tocData = isoFileSystem?.readFile(at: gsfsysFile),
+                   let toc = try? FsysTOC(tocData: tocData, engine: gsEngine) {
+                    gsEngine = try GeniusSonorityEngine(data: gsEngine.data, enums: gsEngine.enums, structs: gsEngine.structs, toc: toc)
+                }
+            }
+            
+        }
         
         let engines: [any Engine] = [
             gamecubeEngine,
