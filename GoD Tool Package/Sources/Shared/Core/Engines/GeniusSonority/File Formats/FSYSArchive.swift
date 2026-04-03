@@ -146,8 +146,8 @@ public final class FSYSArchive: FileFormat {
                       let compressedData = entryData.read(atAddress: lzssHeader.length, length: compressedSize - lzssHeader.length) else {
                     throw Self.invalidFileError
                 }
-                
-                entryData = compressor.decompress(compressedData)
+                let uncompressedSize: Int? = lzssHeader.uncompressedSize
+                entryData = compressor.decompress(compressedData, expectedSize: uncompressedSize)
             }
             
             return Entry(

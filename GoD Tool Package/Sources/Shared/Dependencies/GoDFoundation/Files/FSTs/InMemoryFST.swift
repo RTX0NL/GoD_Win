@@ -12,11 +12,28 @@ public class InMemoryFST: FileSystemTree {
         case file(GoDData)
         case folder
     }
-    
+
     private var fst = [String: Node]()
-    
+    private var children = [String: Set<String>]() // folder path → direct child paths
+
     public init() {}
-    
+
+    private func registerChild(path: String) {
+        guard path != "/" else { return }
+        // Walk up from the path and register each segment as a child of its parent
+        var current = path
+        while let slashIndex = current.lastIndex(of: "/") {
+            if slashIndex == current.startIndex {
+                // Parent is root "/"
+                children["/", default: []].insert(current)
+                break
+            }
+            let parentPath = String(current[current.startIndex..<slashIndex])
+            children[parentPath, default: []].insert(current)
+            current = parentPath
+        }
+    }
+
     public func inspectFile(at path: File) -> FileMetaData? {
         guard let node = fst[path.path],
               case .file(let data) = node else {
@@ -29,7 +46,7 @@ public class InMemoryFST: FileSystemTree {
             notes: nil
         )
     }
-    
+
     public func readFile(at path: File) -> GoDData? {
         guard let node = fst[path.path],
               case .file(let data) = node else {
@@ -37,80 +54,135 @@ public class InMemoryFST: FileSystemTree {
         }
         return data
     }
-    
+
+    private func parentPath(of path: String) -> String? {
+        guard let slashIndex = path.lastIndex(of: "/"), slashIndex != path.startIndex else {
+            return path == "/" ? nil : "/"
+        }
+        return String(path[path.startIndex..<slashIndex])
+    }
+
     @discardableResult
     public func moveFile(at path: File, to newPath: File, overwrite: Bool) -> Bool {
         guard !itemExists(at: newPath) || overwrite else { return false }
         guard let node = fst[path.path], case .file = node else { return false }
         fst[newPath.path] = node
         fst[path.path] = nil
+        if let parent = parentPath(of: path.path) {
+            children[parent]?.remove(path.path)
+        }
+        registerChild(path: newPath.path)
         return true
     }
-    
+
     @discardableResult
     public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) -> Bool {
         guard !itemExists(at: path) || overwrite else { return false }
         fst[path.path] = .file(file)
+        registerChild(path: path.path)
         return true
     }
-    
+
     @discardableResult
     public func deleteFile(at path: File) -> Bool {
         fst[path.path] = nil
+        if let parent = parentPath(of: path.path) {
+            children[parent]?.remove(path.path)
+        }
         return true
     }
-    
+
     public func inspectFolder(at path: Folder) -> FolderMetaData? {
-        let keys = fst.keys.filter { $0.startsWith(path.path) && $0 != path.path }
-        guard keys.count > 0 else { return nil }
-        
+        guard let directChildren = children[path.path], !directChildren.isEmpty else {
+            // Fall back: folder exists as explicit node but has no children
+            if case .folder = fst[path.path] {
+                return .init(name: path.folderName, size: 0, notes: nil, files: [], subFolders: [])
+            }
+            return nil
+        }
+
         var totalSize = 0
         var files = [File]()
         var folders = [Folder]()
-        
-        keys.forEach { subpath in
-            let file = File(subpath)
-            let folder = Folder(subpath)
-            if let metaData = inspectFile(at: file) {
-                totalSize += metaData.filesize ?? 0
-                guard file.parentFolder == path else { return }
-                files.append(file)
-            } else if let _ = inspectFolder(at: folder) {
-                guard folder.parentFolder == path else { return }
-                folders.append(folder)
+
+        for childPath in directChildren {
+            if let node = fst[childPath] {
+                switch node {
+                case .file(let data):
+                    totalSize += data.length
+                    files.append(File(childPath))
+                case .folder:
+                    folders.append(Folder(childPath))
+                }
+            } else if children[childPath] != nil {
+                // Implicit folder (not explicitly created but has children)
+                folders.append(Folder(childPath))
             }
         }
+
+        // Also compute deep size for files in subfolders
+        func deepSize(_ folderPath: String) -> Int {
+            guard let kids = children[folderPath] else { return 0 }
+            var size = 0
+            for kid in kids {
+                if let node = fst[kid], case .file(let data) = node {
+                    size += data.length
+                } else {
+                    size += deepSize(kid)
+                }
+            }
+            return size
+        }
+        let deepTotal = totalSize + folders.reduce(0) { $0 + deepSize($1.path) }
+
         return .init(
             name: path.folderName,
-            size: totalSize,
+            size: deepTotal,
             notes: nil,
             files: files,
             subFolders: folders
         )
     }
-    
+
     @discardableResult
     public func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) -> Bool {
         guard !itemExists(at: newPath) || overwrite else { return false }
         guard let node = fst[path.path], case .folder = node else { return false }
         fst[newPath.path] = node
         fst[path.path] = nil
+        if let parent = parentPath(of: path.path) {
+            children[parent]?.remove(path.path)
+        }
+        children[newPath.path] = children[path.path]
+        children[path.path] = nil
+        registerChild(path: newPath.path)
         return true
     }
-    
+
     @discardableResult
     public func createFolder(at path: Folder, overwrite: Bool) -> Bool {
         guard !itemExists(at: path) || overwrite else { return false }
         fst[path.path] = .folder
+        registerChild(path: path.path)
         return true
     }
-    
+
     @discardableResult
     public func deleteFolder(at path: Folder) -> Bool {
+        // Remove all descendants
+        func removeRecursive(_ folderPath: String) {
+            if let kids = children[folderPath] {
+                for kid in kids {
+                    fst[kid] = nil
+                    removeRecursive(kid)
+                }
+                children[folderPath] = nil
+            }
+        }
         fst[path.path] = nil
-        let keys = fst.keys.filter { $0.startsWith(path.path) }
-        keys.forEach { subpath in
-            fst[subpath] = nil
+        removeRecursive(path.path)
+        if let parent = parentPath(of: path.path) {
+            children[parent]?.remove(path.path)
         }
         return true
     }

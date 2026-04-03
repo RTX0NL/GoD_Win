@@ -25,6 +25,10 @@ public class LZSSCompressor: Compressor {
     }
 
     public func decompress(_ data: GoDData) -> GoDData {
+        decompress(data, expectedSize: nil)
+    }
+
+    public func decompress(_ data: GoDData, expectedSize: Int?) -> GoDData {
         var N = 1 << EI
         var F = 1 << EJ
         let rless = 2
@@ -35,6 +39,9 @@ public class LZSSCompressor: Compressor {
         var inputPosition = 0
         let inputBytes = data.rawBytes
         var outputBytes = [UInt8]()
+        if let expectedSize {
+            outputBytes.reserveCapacity(expectedSize)
+        }
 
         func readChar() -> UInt8 {
             let char = inputBytes[inputPosition]
@@ -127,8 +134,7 @@ public class LZSSCompressor: Compressor {
             Note 'node' plays double role, as tree node and position in buffer. */
 
             var cmp = 1
-            let key = Array(textBuffer.suffix(from: node))
-            var parent = N + 1 + Int(key[0])
+            var parent = N + 1 + Int(textBuffer[node])
 
             rightChildren[node] = NIL
             leftChildren[node] = NIL
@@ -155,7 +161,7 @@ public class LZSSCompressor: Compressor {
 
                 var i = 1
                 while i < F {
-                    cmp = Int(key[i]) - Int(textBuffer[parent + i])
+                    cmp = Int(textBuffer[node + i]) - Int(textBuffer[parent + i])
                     if cmp != 0 {
                         break
                     }

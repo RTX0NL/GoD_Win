@@ -41,26 +41,39 @@ public extension PrimitiveDataType {
    
 public extension PrimitiveDataType {
     init?(data: GoDData) {
+        // Fast path: data is exactly the right size or larger, just needs optional byte-swap
+        if data.length >= Self.byteLength {
+            if data.byteOrder.matches(Environment.byteOrder) || data.byteOrder == .unspecified {
+                self = data.data.withUnsafeBytes { buffer in
+                    buffer.load(as: Self.self)
+                }
+            } else {
+                var bytes = [UInt8](data.data.prefix(Self.byteLength))
+                bytes.reverse()
+                self = bytes.withUnsafeBytes { $0.load(as: Self.self) }
+            }
+            return
+        }
+
+        // Slow path: data is smaller than expected, needs padding
         let copy = data.copy
         if !copy.byteOrder.matches(Environment.byteOrder) {
             copy.switchByteOrder(boundary: Environment.wordSize)
         }
-        if data.length < Self.byteLength {
-            let extra = Self.byteLength - data.length
-            let extraWords = extra / Environment.wordSize
-            let extraBytes = extra % Environment.wordSize
-            
-            let extraBytesData = GoDData(length: extraBytes)
-            if Environment.byteOrder == .little {
-                copy.append(extraBytesData)
-            } else {
-                copy.insert(extraBytesData, atOffset: 0)
-            }
-            
-            let extraWordsData = GoDData(length: extraWords * Environment.wordSize)
-            copy.insert(extraWordsData, atOffset: 0)
-            
+        let extra = Self.byteLength - data.length
+        let extraWords = extra / Environment.wordSize
+        let extraBytes = extra % Environment.wordSize
+
+        let extraBytesData = GoDData(length: extraBytes)
+        if Environment.byteOrder == .little {
+            copy.append(extraBytesData)
+        } else {
+            copy.insert(extraBytesData, atOffset: 0)
         }
+
+        let extraWordsData = GoDData(length: extraWords * Environment.wordSize)
+        copy.insert(extraWordsData, atOffset: 0)
+
         let bytesPointer = UnsafeMutableRawBufferPointer.allocate(byteCount: copy.length, alignment: Environment.wordSize)
         copy.data.copyBytes(to: bytesPointer)
         let value = bytesPointer.load(as: Self.self)

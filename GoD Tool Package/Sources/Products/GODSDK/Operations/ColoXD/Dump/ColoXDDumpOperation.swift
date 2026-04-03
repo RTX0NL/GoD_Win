@@ -90,6 +90,53 @@ extension ColoXD {
         )
     }
     
+    /// Result of processing a single FSYS archive
+    private struct FsysResult {
+        let registry: FSYSRegistry
+        let registryFile: File
+        let extractedFiles: [(file: File, data: GoDData)]
+    }
+
+    /// Processes a single FSYS archive (parsing + LZSS decompression).
+    /// Pure function with no side effects — safe to call from any thread.
+    private static func processFsys(
+        data: GoDData,
+        fileName: String,
+        toc: FsysTOC,
+        gsEngine: GeniusSonorityEngine
+    ) throws -> FsysResult {
+        let archive = try FSYSArchive(data: data, engine: gsEngine)
+        let archiveName = fileName.withoutExtensions
+        let groupID = toc.fsysID(for: archiveName) ?? 0
+
+        var entries = [FSYSRegistry.Entry]()
+        var extractedFiles = [(file: File, data: GoDData)]()
+
+        for entry in archive.entries {
+            let targetFolder = gsEngine.resolveFolder(
+                forFileType: entry.metadata.fileType,
+                entryFilename: entry.filename,
+                archiveName: archiveName
+            )
+            let targetFile = targetFolder.file(entry.filename)
+            entries.append(.init(metadata: entry.metadata, file: targetFile))
+            extractedFiles.append((file: targetFile, data: entry.data))
+        }
+
+        let registry = FSYSRegistry(
+            groupID: groupID,
+            metaData: archive.metaData,
+            entries: entries
+        )
+        let registryFile = fsysRegistryFolder.file(fileName + ".json")
+
+        return FsysResult(
+            registry: registry,
+            registryFile: registryFile,
+            extractedFiles: extractedFiles
+        )
+    }
+
     private static func dumpColosseumXD(
         fileSystem: FileSystemTree,
         rootFolder: Folder,
@@ -98,7 +145,7 @@ extension ColoXD {
         settings: GoddessSettings,
         logger: Logger? = nil
     ) throws -> FileSystemTree {
-        
+
         let projectFileSystem = InMemoryFST()
 
         // Derive the set of output folders from engine config
@@ -121,101 +168,90 @@ extension ColoXD {
             throw ColoXDDumpErrors.missingToC(file: gsfsysFile, .init())
         }
         let toc = try FsysTOC(tocData: gsfsysData, engine: gsEngine)
-        var fstEntries = [FSTRegistry.Entry]()
-
-        var totalFileCount = 0
-        var filesProcessed = 0
-        var shouldTrackProgress = false
-        if logger != nil {
-            func countFiles(_ folder: Folder) -> Int {
-                guard let info = fileSystem.inspectFolder(at: folder) else {
-                    return 0
-                }
-                var count = info.files.count
-                info.subFolders.forEach { count += countFiles($0) }
-                return count
-            }
-
-            totalFileCount = countFiles(rootFolder)
-            shouldTrackProgress = totalFileCount > 0
-        }
-
-        func dump(folder: Folder) throws {
-            guard let folderData = fileSystem.inspectFolder(at: folder) else {
-                throw FSTErrors.folderNotFound(folder, .init())
-            }
-
-            try folderData.files.forEach { path in
-                guard let file = fileSystem.readFile(at: path) else { return }
-                let fileName = path.fileName
-                let groupID = toc.fsysID(for: fileName.withoutExtensions) ?? 0
-
-                switch path.fileType {
-                case "fsys":
-                    let archive = try FSYSArchive(data: file, engine: gsEngine)
-                    let archiveName = fileName.withoutExtensions
-
-                    var entries = [FSYSRegistry.Entry]()
-
-                    archive.entries.forEach { entry in
-                        let targetFolder = gsEngine.resolveFolder(
-                            forFileType: entry.metadata.fileType,
-                            entryFilename: entry.filename,
-                            archiveName: archiveName
-                        )
-
-                        let targetFile = targetFolder.file(entry.filename)
-                        entries.append(
-                            .init(
-                                metadata: entry.metadata,
-                                file: targetFile
-                            )
-                        )
-                        _ = projectFileSystem.writeFile(
-                            entry.data,
-                            at: targetFile,
-                            overwrite: true
-                        )
-                    }
-
-                    let registry = FSYSRegistry(
-                        groupID: groupID,
-                        metaData: archive.metaData,
-                        entries: entries
-                    )
-
-                    let registryFile = fsysRegistryFolder.file(fileName + ".json")
-                    _ = projectFileSystem.writeFile(
-                        registry,
-                        at: registryFile,
-                        overwrite: true
-                    )
-                    fstEntries.append(.init(type: .fsys, file: registryFile))
-
-                default:
-                    let outputFile = fsysConfig.defaultFolder.file(fileName)
-                    _ = projectFileSystem.writeFile(
-                        file,
-                        at: outputFile,
-                        overwrite: true
-                    )
-                    fstEntries.append(.init(type: .binary, file: outputFile))
-                }
-
-                if shouldTrackProgress {
-                    filesProcessed += 1
-                    let percentage = Percentage(min(Double(filesProcessed) / Double(totalFileCount) * 100, 100))
-                    logger?.log(.taskStatus(taskName: "Decode Colosseum/XD File System", status: .progress(percentage)))
-                }
-            }
-
-            try folderData.subFolders.forEach(dump)
-        }
 
         logger?.log(.info("Decoding Colosseum/XD File System"))
         logger?.log(.taskStatus(taskName: "Decode Colosseum/XD File System", status: .started))
 
-        try dump(folder: rootFolder)
+        // Phase 1: Collect file paths from the source filesystem (no data loaded yet)
+        var fsysPaths = [(path: File, data: GoDData)]()
+        var otherPaths = [(path: File, data: GoDData)]()
+
+        func collectPaths(folder: Folder) throws {
+            guard let folderData = fileSystem.inspectFolder(at: folder) else {
+                throw FSTErrors.folderNotFound(folder, .init())
+            }
+            for path in folderData.files {
+                guard let data = fileSystem.readFile(at: path) else { continue }
+                if path.fileType == "fsys" {
+                    fsysPaths.append((path: path, data: data))
+                } else {
+                    otherPaths.append((path: path, data: data))
+                }
+            }
+            for subFolder in folderData.subFolders {
+                try collectPaths(folder: subFolder)
+            }
+        }
+        try collectPaths(folder: rootFolder)
+
+        let totalCount = fsysPaths.count + otherPaths.count
+        var fstEntries = [FSTRegistry.Entry]()
+
+        // Phase 2: Process non-FSYS files sequentially (fast, small files)
+        for other in otherPaths {
+            let outputFile = fsysConfig.defaultFolder.file(other.path.fileName)
+            _ = projectFileSystem.writeFile(other.data, at: outputFile, overwrite: true)
+            fstEntries.append(.init(type: .binary, file: outputFile))
+        }
+
+        // Phase 3: Process FSYS archives in parallel batches
+        // Batch to limit memory: process N archives at a time
+        let batchSize = max(1, ProcessInfo.processInfo.activeProcessorCount * 2)
+        var fsysIndex = 0
+
+        while fsysIndex < fsysPaths.count {
+            let batchEnd = min(fsysIndex + batchSize, fsysPaths.count)
+            let batch = Array(fsysPaths[fsysIndex..<batchEnd])
+
+            var batchResults = [Result<FsysResult, Error>?](repeating: nil, count: batch.count)
+
+            DispatchQueue.concurrentPerform(iterations: batch.count) { i in
+                let source = batch[i]
+                do {
+                    batchResults[i] = .success(try processFsys(
+                        data: source.data,
+                        fileName: source.path.fileName,
+                        toc: toc,
+                        gsEngine: gsEngine
+                    ))
+                } catch {
+                    batchResults[i] = .failure(error)
+                }
+            }
+
+            // Merge batch results into the InMemoryFST
+            for result in batchResults {
+                guard let result else { continue }
+                switch result {
+                case .success(let fsysResult):
+                    for extracted in fsysResult.extractedFiles {
+                        _ = projectFileSystem.writeFile(extracted.data, at: extracted.file, overwrite: true)
+                    }
+                    _ = projectFileSystem.writeFile(fsysResult.registry, at: fsysResult.registryFile, overwrite: true)
+                    fstEntries.append(.init(type: .fsys, file: fsysResult.registryFile))
+                case .failure(let error):
+                    throw error
+                }
+            }
+
+            fsysIndex = batchEnd
+
+            if logger != nil {
+                let processed = otherPaths.count + fsysIndex
+                let percentage = Percentage(min(Double(processed) / Double(totalCount) * 100, 100))
+                logger?.log(.taskStatus(taskName: "Decode Colosseum/XD File System", status: .progress(percentage)))
+            }
+        }
 
         logger?.log(.taskStatus(taskName: "Decode Colosseum/XD File System", status: .completed(true)))
 

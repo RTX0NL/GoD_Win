@@ -9,7 +9,7 @@ import Foundation
 
 fileprivate extension Data {
     var rawBytes: [UInt8] {
-        return self.map { $0 }
+        return [UInt8](self)
     }
 }
 
@@ -44,7 +44,12 @@ public final class GoDData: ExpressibleByStringLiteral {
 
     public init(data: Data = Data(), byteOrder: ByteOrder = .unspecified) {
         self.byteOrder = byteOrder
-        self.data = data
+        // Normalize slices so indices always start at 0
+        if data.startIndex != 0 {
+            self.data = Data(data)
+        } else {
+            self.data = data
+        }
     }
     
     public convenience init(data: GoDData) {
@@ -124,11 +129,15 @@ public final class GoDData: ExpressibleByStringLiteral {
     }
 
     public var copy: GoDData {
-        GoDData(byteStream: rawBytes, byteOrder: byteOrder)
+        GoDData(data: Data(data), byteOrder: byteOrder)
     }
-    
+
     public var isNull: Bool {
-        rawBytes.firstIndex { $0 != 0 } == nil
+        !data.contains(where: { $0 != 0 })
+    }
+
+    public func withUnsafeBytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R {
+        try data.withUnsafeBytes(body)
     }
     
     public subscript(index: Int) -> UInt8 {
@@ -180,16 +189,30 @@ public final class GoDData: ExpressibleByStringLiteral {
             return
         }
         byteOrder = byteOrder.swapped
-        guard boundary > 1 else { return }
-        let loops = ((length - 1) / boundary) + 1
-        for i in 0 ..< loops {
-            var swappedBytes = [UInt8]()
-            for j in 0 ..< boundary {
-                if let nextByte = self[safe: (i * boundary) + j] {
-                    swappedBytes = [nextByte] + swappedBytes
+        guard boundary > 1, length > 0 else { return }
+        data.withUnsafeMutableBytes { buffer in
+            let bytes = buffer.bindMemory(to: UInt8.self)
+            let count = bytes.count
+            var offset = 0
+            while offset + boundary <= count {
+                var lo = offset
+                var hi = offset + boundary - 1
+                while lo < hi {
+                    bytes.swapAt(lo, hi)
+                    lo += 1
+                    hi -= 1
+                }
+                offset += boundary
+            }
+            if offset < count {
+                var lo = offset
+                var hi = count - 1
+                while lo < hi {
+                    bytes.swapAt(lo, hi)
+                    lo += 1
+                    hi -= 1
                 }
             }
-            self.write(swappedBytes, atAddress: i * boundary)
         }
     }
     
@@ -200,8 +223,10 @@ public final class GoDData: ExpressibleByStringLiteral {
 
 extension GoDData: GoDReadable {
     public func read(atAddress address: UInt, length: UInt) -> GoDData? {
-        guard address >= 0, Int(address + length) <= self.length else { return nil }
-        return GoDData(data: Data(data.suffix(from: Int(address)).prefix(Int(length))), byteOrder: byteOrder)
+        let start = Int(address)
+        let end = start + Int(length)
+        guard start >= 0, end <= self.length else { return nil }
+        return GoDData(data: data.subdata(in: start..<end), byteOrder: byteOrder)
     }
 }
 
@@ -229,7 +254,7 @@ extension GoDData: GoDMutableData {
 
 
     public func insert(_ data: GoDData, atOffset offset: UInt) {
-        self.data.insert(contentsOf: data.rawBytes, at: Int(offset))
+        self.data.insert(contentsOf: data.data, at: Int(offset))
     }
 
     public func delete(start: Int, count: Int) {
@@ -258,10 +283,8 @@ extension GoDData: Codable {
 
 extension GoDData: Equatable {
     public static func == (lhs: GoDData, rhs: GoDData) -> Bool {
-        lhs.rawBytes == rhs.rawBytes
+        lhs.data == rhs.data
     }
-
-
 }
 
 extension GoDData {
