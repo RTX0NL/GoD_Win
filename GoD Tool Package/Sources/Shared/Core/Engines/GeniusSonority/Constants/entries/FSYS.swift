@@ -25,16 +25,25 @@ extension GeniusSonorityEngine.Data {
         /// Checked before `fileTypeFolders` during folder resolution.
         public internal(set) var archiveFileTypeFolders: [String: [String: Folder]] = [:]
 
+        /// Folder where FSYS archive registry JSON files are written during dump
+        public internal(set) var archivesFolder: Folder = "/Archives"
+
+        /// Folder where relocatable modules are written during dump
+        public internal(set) var relocatableModulesFolder: Folder = "/Relocatable Modules"
+
+        /// Folder where disassembled code is written
+        public internal(set) var codeFolder: Folder = "/Code"
+
         public static let defaultFileTypeFolders: [String: Folder] = [
             "mdat": "/Assets/Models/Maps/models",
             "dat":  "/Assets/Models/characters-and-objects",
             "col":  "/Assets/Models/Maps/models",
-            "samp": "/Assets/Sounds/sound_fonts",
+            "samp": "/Assets/Sounds/sequenced",
             "msg":  "/Assets/Text/messages",
             "fnt":  "/Assets/Text/fonts",
-            "scd":  "/Data/Maps",
+            "scd":  "/Assets/Scripts",
             "dats": "/Assets/Models/characters-and-objects",
-            "gtx":  "/Assets/Images",
+            "gtx":  "/Assets/Images/misc",
             "cam":  "/Assets/Models/cameras",
             "pkx":  "/Assets/Models/battle_models",
             "wzx":  "/Assets/Models/effects",
@@ -43,9 +52,11 @@ extension GeniusSonorityEngine.Data {
             "thh":  "/Assets/Videos",
             "thd":  "/Assets/Videos",
             "gsw":  "/Assets/Flash-menus",
-            "atx":  "/Assets/Images",
+            "atx":  "/Assets/Images/misc",
             "pool": "/Assets/Sounds/streamed",
             "proj": "/Assets/Sounds/streamed",
+            "rel":  "/Relocatable Modules",
+            "drel": "/Relocatable Modules",
         ]
     }
 }

@@ -10,9 +10,6 @@ import Dolphin
 import GeniusSonority
 
 extension ColoXD {
-    /// Structural output folders for operation metadata (not file-type routing)
-    private static let fsysRegistryFolder: Folder = "/Data/Archives"
-    private static let dataFolder: Folder = "/Data"
     
     static func dump(
         config: DumpConfig,
@@ -128,7 +125,7 @@ extension ColoXD {
             metaData: archive.metaData,
             entries: entries
         )
-        let registryFile = fsysRegistryFolder.file(fileName + ".json")
+        let registryFile = gsEngine.data.fsys.archivesFolder.file(fileName + ".json")
 
         return FsysResult(
             registry: registry,
@@ -156,8 +153,7 @@ extension ColoXD {
         for overrideMap in fsysConfig.archiveFileTypeFolders.values {
             outputFolders.formUnion(overrideMap.values)
         }
-        outputFolders.insert(fsysRegistryFolder)
-        outputFolders.insert(dataFolder)
+        outputFolders.insert(fsysConfig.archivesFolder)
 
         outputFolders.forEach { folder in
             _ = projectFileSystem.createFolder(at: folder, overwrite: true)
@@ -172,13 +168,16 @@ extension ColoXD {
         logger?.log(.info("Decoding Colosseum/XD File System"))
         logger?.log(.taskStatus(taskName: "Decode Colosseum/XD File System", status: .started))
 
-        // Phase 1: Collect file paths from the source filesystem (no data loaded yet)
+        // Phase 1: Collect file paths from the files/ subfolder only.
+        // System files (boot.bin, main.dol, etc.) in sys/ are handled by the GameCube dump layer.
+        let filesFolder = rootFolder.folder("files")
+
         var fsysPaths = [(path: File, data: GoDData)]()
         var otherPaths = [(path: File, data: GoDData)]()
 
         func collectPaths(folder: Folder) throws {
             guard let folderData = fileSystem.inspectFolder(at: folder) else {
-                throw FSTErrors.folderNotFound(folder, .init())
+                return
             }
             for path in folderData.files {
                 guard let data = fileSystem.readFile(at: path) else { continue }
@@ -192,14 +191,20 @@ extension ColoXD {
                 try collectPaths(folder: subFolder)
             }
         }
-        try collectPaths(folder: rootFolder)
+
+        try collectPaths(folder: filesFolder)
 
         let totalCount = fsysPaths.count + otherPaths.count
         var fstEntries = [FSTRegistry.Entry]()
 
-        // Phase 2: Process non-FSYS files sequentially (fast, small files)
+        // Phase 2: Write non-FSYS game files, routing by file type
         for other in otherPaths {
-            let outputFile = fsysConfig.defaultFolder.file(other.path.fileName)
+            let targetFolder = gsEngine.resolveFolder(
+                forFileType: other.path.fileType,
+                entryFilename: other.path.fileName,
+                archiveName: ""
+            )
+            let outputFile = targetFolder.file(other.path.fileName)
             _ = projectFileSystem.writeFile(other.data, at: outputFile, overwrite: true)
             fstEntries.append(.init(type: .binary, file: outputFile))
         }
@@ -257,7 +262,7 @@ extension ColoXD {
 
         _ = projectFileSystem.writeFile(
             FSTRegistry(entries: fstEntries),
-            at: dataFolder.file("FST.json"),
+            at: Folder("/").file("FST.json"),
             overwrite: true
         )
 

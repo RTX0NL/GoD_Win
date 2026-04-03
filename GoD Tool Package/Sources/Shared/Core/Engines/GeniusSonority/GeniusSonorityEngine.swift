@@ -92,12 +92,13 @@ public struct GeniusSonorityEngine: Engine {
         case .colosseum:
             data.fsys.archiveFileTypeFolders = [
                 "poke_face": ["gtx": "/Assets/Images/pokemon/faces"],
-                "poke_body": ["gtx": "/Assets/Images/pokemon/pc-box"],
+                "poke_body": ["gtx": "/Assets/Images/pokemon/pc-box", "atx": "/Assets/Images/pokemon/pc-box"],
             ]
         case .galeOfDarkness:
             data.fsys.archiveFileTypeFolders = [
                 "poke_face": ["gtx": "/Assets/Images/pokemon/faces"],
-                "poke_dance": ["gtx": "/Assets/Images/pokemon/pc-box"],
+                "poke_body": ["gtx": "/Assets/Images/pokemon/pc-box", "atx": "/Assets/Images/pokemon/pc-box"],
+                "poke_dance": ["gtx": "/Assets/Images/pokemon/purify-chamber", "atx": "/Assets/Images/pokemon/purify-chamber"],
             ]
         case .battleRevolution:
             break
