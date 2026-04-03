@@ -191,9 +191,21 @@ enum Project {
                         )
                     ]
                 )
+            + [
+                OperationConfig(
+                    operation: .dolDisassembly(
+                        config: DolDisassembly.Config(
+                            dolPath: contentsFolder.folder("sys").file("main.dol").prefixed("."),
+                            outputFolder: sourceFolder.folder("Code").prefixed("."),
+                            symbolMapPath: enginesFolder.folder(dolphinEngine.name).file(gameID + ".map").prefixed("."),
+                            dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed(".")
+                        )
+                    ),
+                    enabled: .yes
+                )
+            ]
             )
-                               
-        
+
         let buildConfigFile = configFolder.file("Build-Config.json")
         try projectFileSystem.encodeJSON(buildConfig, to: buildConfigFile, overwrite: false)
         

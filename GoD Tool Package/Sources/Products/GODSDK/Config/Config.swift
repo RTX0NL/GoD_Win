@@ -13,6 +13,7 @@ struct GoddessConfig: Codable {
         case gamecubeBuild(config: Gamecube.BuildConfig)
         case coloXDDump(config: ColoXD.DumpConfig)
         case coloXDBuild(config: ColoXD.BuildConfig)
+        case dolDisassembly(config: DolDisassembly.Config)
     }
     
     let name: String

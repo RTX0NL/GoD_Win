@@ -22,7 +22,8 @@ public final class Dol: FileFormat {
     
     public init(data: GoDData, dolphinEngine: DolphinEngine) throws {
         self.dolphinEngine = dolphinEngine
-        
+
+        data.setByteOrder(.big)
         let dolHeaderStruct = dolphinEngine.dolHeaderStruct
         guard let dolHeader = data.read(struct: dolHeaderStruct, atAddress: 0) else {
             throw Self.invalidFileError
