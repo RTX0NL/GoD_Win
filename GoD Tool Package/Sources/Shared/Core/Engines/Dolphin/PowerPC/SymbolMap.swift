@@ -6,12 +6,33 @@ public struct PPCSymbol {
     public let address: UInt32
     public let size: UInt32
     public let section: String?
+    /// Source file path (e.g. "dbgMenuCamera.o" or "os.a __start.o")
+    public let sourceFile: String?
 
-    public init(name: String, address: UInt32, size: UInt32, section: String? = nil) {
+    public init(name: String, address: UInt32, size: UInt32, section: String? = nil, sourceFile: String? = nil) {
         self.name = name
         self.address = address
         self.size = size
         self.section = section
+        self.sourceFile = sourceFile
+    }
+
+    /// The object file name suitable for use as a folder name.
+    /// Extracts the .o filename from paths like "os.a __start.o" or
+    /// "fight.a C:\pxdvs\...\fightPokemon.o" → "fightPokemon"
+    public var objectFileName: String? {
+        guard let sf = sourceFile, !sf.isEmpty else { return nil }
+        // Find the last .o file in the path
+        let parts = sf.split(separator: " ")
+        for part in parts.reversed() {
+            let s = String(part)
+            if s.hasSuffix(".o") {
+                // Strip path separators and .o extension
+                let filename = s.split(separator: "\\").last ?? s.split(separator: "/").last ?? Substring(s)
+                return String(filename.dropLast(2)) // remove .o
+            }
+        }
+        return nil
     }
 }
 
@@ -51,9 +72,9 @@ public struct SymbolMapParser {
 private extension SymbolMapParser {
     /// Parses Dolphin emulator .map format:
     /// ```
-    /// 80003100 000000e4 80003100  0 __start
+    /// 80003100 000000e4 80003100  0 __start\tos.a __start.o
     /// ```
-    /// Fields: address size vaddr section_index name
+    /// Fields: address size vaddr section_index name [TAB library]
     func parseDolphinFormat(_ lines: [String]) -> [PPCSymbol] {
         var symbols = [PPCSymbol]()
         var currentSection: String?
@@ -68,7 +89,12 @@ private extension SymbolMapParser {
                 continue
             }
 
-            let parts = trimmed.split(separator: " ", omittingEmptySubsequences: true)
+            // Split on tab first to separate name from library info
+            let tabParts = trimmed.split(separator: "\t", maxSplits: 1)
+            let mainPart = String(tabParts[0])
+            let sourceFile = tabParts.count > 1 ? String(tabParts[1]).trimmingCharacters(in: .whitespaces) : nil
+
+            let parts = mainPart.split(separator: " ", omittingEmptySubsequences: true)
             guard parts.count >= 5 else { continue }
 
             guard let address = UInt32(parts[0], radix: 16),
@@ -77,8 +103,8 @@ private extension SymbolMapParser {
             }
 
             // parts[2] is vaddr (usually same as address), parts[3] is section index
-            let name = String(parts[4...].joined(separator: " "))
-            symbols.append(PPCSymbol(name: name, address: address, size: size, section: currentSection))
+            let name = String(parts[4])
+            symbols.append(PPCSymbol(name: name, address: address, size: size, section: currentSection, sourceFile: sourceFile))
         }
         return symbols
     }
