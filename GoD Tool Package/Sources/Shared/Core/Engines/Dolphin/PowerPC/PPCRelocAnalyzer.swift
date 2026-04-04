@@ -33,23 +33,7 @@ public struct PPCRelocAnalyzer {
         // Track pending lis instructions: register → (lis address, upper immediate value)
         var pendingLis = [UInt8: (address: UInt32, upperImm: Int32)]()
 
-        // Set of addresses that are branch targets (basic block boundaries)
-        var branchTargets = Set<UInt32>()
         for inst in instructions {
-            guard let decoded = inst.decoded else { continue }
-            for op in decoded.operands {
-                if case .branchTarget(let target) = op {
-                    branchTargets.insert(target)
-                }
-            }
-        }
-
-        for inst in instructions {
-            // Clear pending state at basic block boundaries
-            if branchTargets.contains(inst.address) {
-                pendingLis.removeAll()
-            }
-
             guard let decoded = inst.decoded else { continue }
 
             // Check if this is a lis instruction
@@ -93,8 +77,10 @@ public struct PPCRelocAnalyzer {
                 pendingLis.removeValue(forKey: writtenReg)
             }
 
-            // Branches clear all pending state (conservative — could be more precise with CFG)
-            if isBranch(decoded) {
+            // Clear pending state on function exits and indirect branches.
+            // Conditional branches and local unconditional branches preserve lis state
+            // since the register is still live on the fallthrough/target path.
+            if isReturnOrIndirectBranch(decoded) {
                 pendingLis.removeAll()
             }
         }
@@ -119,8 +105,9 @@ private extension PPCRelocAnalyzer {
         let mnemonic = decoded.mnemonic
         let ops = decoded.operands
 
-        // addi rD, rA, SIMM — rA is the lis register
-        if mnemonic == "addi", ops.count == 3,
+        // addi/addic/addic. rD, rA, SIMM — rA is the lis register
+        if (mnemonic == "addi" || mnemonic == "addic" || mnemonic == "addic."),
+           ops.count == 3,
            case .gpr(let ra) = ops[1],
            case .simm(let imm) = ops[2],
            pendingLis[ra] != nil {
@@ -185,8 +172,9 @@ private extension PPCRelocAnalyzer {
         return nil
     }
 
-    func isBranch(_ decoded: PPCInstruction.Decoded) -> Bool {
+    func isReturnOrIndirectBranch(_ decoded: PPCInstruction.Decoded) -> Bool {
         let m = decoded.mnemonic
-        return m.hasPrefix("b") && m != "boolUpdate" // b, bl, bc, beq, bne, blr, bctr, etc.
+        // Only clear on function exits and indirect branches
+        return m == "blr" || m == "bctr" || m == "bctrl" || m == "rfi"
     }
 }
