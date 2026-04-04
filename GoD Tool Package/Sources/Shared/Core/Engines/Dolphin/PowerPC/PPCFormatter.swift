@@ -6,9 +6,18 @@ public struct PPCFormatter {
     public init() {}
 
     /// Format a single instruction as a clean assembly line (no address/hex prefix)
-    public func format(_ instruction: PPCInstruction, labels: [UInt32: String] = [:]) -> String {
+    public func format(
+        _ instruction: PPCInstruction,
+        labels: [UInt32: String] = [:],
+        relocations: [UInt32: PPCRelocation] = [:]
+    ) -> String {
         guard let decoded = instruction.decoded else {
             return ".4byte 0x\(hex(instruction.raw))"
+        }
+
+        // Check for relocation annotation
+        if let reloc = relocations[instruction.address], let symbolName = reloc.symbolName {
+            return formatRelocated(decoded, reloc: reloc, symbolName: symbolName, labels: labels)
         }
 
         let operandStrings = decoded.operands.map { op -> String in
@@ -20,6 +29,53 @@ public struct PPCFormatter {
 
         if operandStrings.isEmpty {
             return decoded.mnemonic
+        }
+        return "\(decoded.mnemonic) \(operandStrings.joined(separator: ", "))"
+    }
+
+    // MARK: - Relocation formatting
+
+    private func formatRelocated(
+        _ decoded: PPCInstruction.Decoded,
+        reloc: PPCRelocation,
+        symbolName: String,
+        labels: [UInt32: String]
+    ) -> String {
+        let ops = decoded.operands
+
+        switch reloc.halfType {
+        case .ha:
+            // lis rD, symbol@ha
+            if ops.count == 2, case .gpr(let rd) = ops[0] {
+                return "\(decoded.mnemonic) r\(rd), \(symbolName)@ha"
+            }
+        case .lo:
+            // addi rD, rA, symbol@l
+            if decoded.mnemonic == "addi", ops.count == 3,
+               case .gpr(let rd) = ops[0], case .gpr(let ra) = ops[1] {
+                return "addi r\(rd), r\(ra), \(symbolName)@l"
+            }
+            // ori rA, rS, symbol@l
+            if decoded.mnemonic == "ori", ops.count == 3,
+               case .gpr(let ra) = ops[0], case .gpr(let rs) = ops[1] {
+                return "ori r\(ra), r\(rs), \(symbolName)@l"
+            }
+            // lwz rD, symbol@l(rA) (and other load/store with displacement)
+            if ops.count == 2, case .memory(_, let base) = ops[1] {
+                let regStr: String
+                if case .gpr(let rd) = ops[0] { regStr = "r\(rd)" }
+                else if case .fpr(let fd) = ops[0] { regStr = "f\(fd)" }
+                else { regStr = formatOperand(ops[0]) }
+                return "\(decoded.mnemonic) \(regStr), \(symbolName)@l(r\(base))"
+            }
+        }
+
+        // Fallback — shouldn't normally reach here
+        let operandStrings = decoded.operands.map { op -> String in
+            if case .branchTarget(let addr) = op, let label = labels[addr] {
+                return label
+            }
+            return formatOperand(op)
         }
         return "\(decoded.mnemonic) \(operandStrings.joined(separator: ", "))"
     }
@@ -47,6 +103,7 @@ public struct PPCFormatter {
     public func formatAssembly(
         _ instructions: [PPCInstruction],
         symbols: [UInt32: String] = [:],
+        relocations: [UInt32: PPCRelocation] = [:],
         sectionName: String
     ) -> String {
         // Build combined label map: symbols + auto-generated branch target labels
@@ -57,6 +114,13 @@ public struct PPCFormatter {
         for target in branchTargets {
             if labels[target] == nil, instructionAddresses.contains(target) {
                 labels[target] = "lbl_\(hex(target, width: 8))"
+            }
+        }
+
+        // Also add labels for relocation targets
+        for (_, reloc) in relocations {
+            if labels[reloc.targetAddress] == nil, let name = reloc.symbolName {
+                labels[reloc.targetAddress] = name
             }
         }
 
@@ -75,7 +139,7 @@ public struct PPCFormatter {
                 lines.append("\(label):")
             }
 
-            let asm = format(inst, labels: labels)
+            let asm = format(inst, labels: labels, relocations: relocations)
             lines.append("    \(asm)")
         }
         return lines.joined(separator: "\n")
@@ -88,6 +152,7 @@ public struct PPCFormatter {
     public func splitByFunction(
         _ instructions: [PPCInstruction],
         symbols: [PPCSymbol],
+        relocations: [UInt32: PPCRelocation] = [:],
         sectionName: String
     ) -> [(name: String, text: String)] {
         guard !symbols.isEmpty else { return [] }
@@ -96,13 +161,18 @@ public struct PPCFormatter {
         let sortedSymbols = symbols.sorted(by: { $0.address < $1.address })
         let symbolLookup = Dictionary(uniqueKeysWithValues: symbols.map { ($0.address, $0.name) })
 
-        // Build full label map (symbols + branch targets)
+        // Build full label map (symbols + branch targets + relocation targets)
         let branchTargets = collectBranchTargets(instructions)
         let instructionAddresses = Set(instructions.map(\.address))
         var labels = symbolLookup
         for target in branchTargets {
             if labels[target] == nil, instructionAddresses.contains(target) {
                 labels[target] = "lbl_\(hex(target, width: 8))"
+            }
+        }
+        for (_, reloc) in relocations {
+            if labels[reloc.targetAddress] == nil, let name = reloc.symbolName {
+                labels[reloc.targetAddress] = name
             }
         }
 
@@ -141,14 +211,13 @@ public struct PPCFormatter {
             lines.append("\(symbol.name):")
 
             for inst in funcInstructions {
-                // Insert local labels (but not the function's own label)
                 if inst.address != startAddr, let label = labels[inst.address] {
                     if symbolLookup[inst.address] != nil {
                         lines.append(".global \(label)")
                     }
                     lines.append("\(label):")
                 }
-                let asm = format(inst, labels: labels)
+                let asm = format(inst, labels: labels, relocations: relocations)
                 lines.append("    \(asm)")
             }
 

@@ -33,11 +33,24 @@ extension DolDisassembly {
         let hasSymbols = !allSymbols.isEmpty
         let outputFolder = Folder("/")
 
-        logger?.log(.info("Disassembling DOL (\(hasSymbols ? "with symbols" : "no symbols") mode)"))
+        // Build section address ranges for relocation analysis (including BSS)
+        var sectionRanges: [(start: UInt32, end: UInt32)] =
+            dol.textSections.filter { $0.assembly.length > 0 }.map {
+                (start: $0.RAMAddress, end: $0.RAMAddress + UInt32($0.assembly.length))
+            } +
+            dol.dataSections.filter { $0.data.length > 0 }.map {
+                (start: $0.RAMAddress, end: $0.RAMAddress + UInt32($0.data.length))
+            }
+        if dol.bssSize > 0 {
+            sectionRanges.append((start: dol.bssRAMAddress, end: dol.bssRAMAddress + dol.bssSize))
+        }
+
+        logger?.log(.info("Disassembling DOL (\(hasSymbols ? "shiftable" : "non-shiftable") mode)"))
         logger?.log(.taskStatus(taskName: "Disassemble DOL", status: .started))
 
         // Build everything in memory first
         let output = InMemoryFST()
+        let relocAnalyzer = PPCRelocAnalyzer()
 
         let textSections = dol.textSections.enumerated().filter { $0.element.assembly.length > 0 }
         let dataSections = dol.dataSections.enumerated().filter { $0.element.data.length > 0 }
@@ -56,10 +69,17 @@ extension DolDisassembly {
                     $0.address >= section.RAMAddress && $0.address < sectionEnd
                 }
 
+                // Run relocation analysis for shiftable output
+                let relocations = relocAnalyzer.analyze(
+                    instructions,
+                    symbols: symbolLookup,
+                    sectionRanges: sectionRanges
+                )
+
                 if !sectionSymbols.isEmpty {
                     // Split into per-function files organized by source object file
                     let sectionFolder = outputFolder.folder(sectionName)
-                    let functions = formatter.splitByFunction(instructions, symbols: sectionSymbols, sectionName: ".\(sectionName)")
+                    let functions = formatter.splitByFunction(instructions, symbols: sectionSymbols, relocations: relocations, sectionName: ".\(sectionName)")
 
                     let symbolFileMap = Dictionary(
                         sectionSymbols.compactMap { sym -> (String, String)? in
@@ -80,8 +100,8 @@ extension DolDisassembly {
                         output.writeFile(GoDData(string: function.text, format: .utf8), at: file, overwrite: true)
                     }
                 } else {
-                    // No symbols in this section — single file with auto-labels
-                    let text = formatter.formatAssembly(instructions, sectionName: ".\(sectionName)")
+                    // Symbols exist but none in this section — single file with relocations
+                    let text = formatter.formatAssembly(instructions, relocations: relocations, sectionName: ".\(sectionName)")
                     let file = outputFolder.file("\(sectionName).s")
                     output.writeFile(GoDData(string: text, format: .utf8), at: file, overwrite: true)
                 }
