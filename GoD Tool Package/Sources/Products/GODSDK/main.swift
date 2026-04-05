@@ -62,7 +62,7 @@ do {
                     case .coloXDDump(let dumpConfig):
                         try ColoXD.dump(config: dumpConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     case .coloXDBuild(let buildConfig):
-                        try ColoXD.build(config: buildConfig, settings: settings, fileSystem: fileSystem)
+                        try ColoXD.build(config: buildConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     case .pbrDump(let dumpConfig):
                         try PBROps.dump(config: dumpConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     case .dolDisassembly(let disasmConfig):

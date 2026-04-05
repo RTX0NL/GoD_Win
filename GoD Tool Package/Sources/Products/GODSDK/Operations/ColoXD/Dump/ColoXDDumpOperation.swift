@@ -47,6 +47,38 @@ extension ColoXD {
                 )
                 
                 fileSystem.importFST(output, from: "/", to: outputFolder, overwrite: overwrite)
+
+            case let .unpackFSYS(fsysFile, outputFolder, overwrite, gsEnginePath):
+                let gsEngine = try GeniusSonorityEngine(from: gsEnginePath, in: fileSystem)
+
+                guard let data = fileSystem.readFile(at: fsysFile) else {
+                    throw FSTErrors.fileNotFound(fsysFile, .init())
+                }
+
+                let archive = try FSYSArchive(data: data, engine: gsEngine)
+                let archiveName = fsysFile.fileName.withoutExtensions
+
+                logger?.log(.info("Unpacking FSYS archive: \(fsysFile.fileName) (\(archive.entries.count) entries)"))
+
+                // Build registry and extract files
+                var registryEntries = [FSYSRegistry.Entry]()
+                for entry in archive.entries {
+                    let targetFile = outputFolder.file(entry.filename)
+                    registryEntries.append(.init(metadata: entry.metadata, file: targetFile))
+                    if overwrite || fileSystem.inspectFile(at: targetFile) == nil {
+                        fileSystem.writeFile(entry.data, at: targetFile, overwrite: overwrite)
+                    }
+                }
+
+                let registry = FSYSRegistry(
+                    groupID: archive.groupID,
+                    metaData: archive.metaData,
+                    entries: registryEntries
+                )
+                let registryFile = outputFolder.file(archiveName + ".json")
+                try fileSystem.encodeJSON(registry, to: registryFile, overwrite: overwrite)
+
+                logger?.log(.info("Wrote registry: \(registryFile.fileName)"))
             }
         }
     }
@@ -104,7 +136,7 @@ extension ColoXD {
     ) throws -> FsysResult {
         let archive = try FSYSArchive(data: data, engine: gsEngine)
         let archiveName = fileName.withoutExtensions
-        let groupID = toc.fsysID(for: archiveName) ?? 0
+        let groupID = archive.groupID != 0 ? archive.groupID : (toc.fsysID(for: archiveName) ?? 0)
 
         var entries = [FSYSRegistry.Entry]()
         var extractedFiles = [(file: File, data: GoDData)]()

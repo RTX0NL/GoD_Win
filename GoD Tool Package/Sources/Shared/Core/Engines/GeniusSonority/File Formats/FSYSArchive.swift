@@ -50,10 +50,12 @@ public final class FSYSArchive: FileFormat {
         }
     }
     
+    public var groupID: Int
     public var metaData: MetaData
     public var entries: [Entry] = []
-    
-    public init(metadata: MetaData, entries: [Entry] = []) {
+
+    public init(groupID: Int = 0, metadata: MetaData, entries: [Entry] = []) {
+        self.groupID = groupID
         self.metaData = metadata
         self.entries = entries
     }
@@ -75,8 +77,9 @@ public final class FSYSArchive: FileFormat {
             unknown3: try fsysHeader.unknown3,
             unknown4: try fsysHeader.unknown4
         )
+        self.groupID = try fsysHeader.groupID
         self.metaData = metaData
-        
+
         let entryCount: Int = try fsysHeader.entryCount
         let filePointerListAddress: Int = try fsysHeader.fileMetadataList
         

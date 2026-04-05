@@ -17,7 +17,12 @@ extension ColoXD {
                 dolphinEngine: Folder,
                 geniusSonorityEngine: Folder
             )
-//            case decodeXD(fstFolder: Folder, outputFolder: Folder, projectFolder: Folder, overwrite: Bool)
+            case unpackFSYS(
+                fsysFile: File,
+                outputFolder: Folder,
+                overwrite: Bool,
+                geniusSonorityEngine: Folder
+            )
         }
         
         let operations: [OperationConfig<Operations>]
