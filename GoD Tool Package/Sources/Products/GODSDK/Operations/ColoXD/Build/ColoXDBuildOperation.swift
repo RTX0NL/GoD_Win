@@ -27,8 +27,7 @@ extension ColoXD {
                     guard let data = fileSystem.readFile(at: filePath) else {
                         throw FSTErrors.fileNotFound(filePath, .init())
                     }
-                    let filename = registryEntry.metadata.name
-                        + (registryEntry.metadata.fileType.isEmpty ? "" : ".\(registryEntry.metadata.fileType)")
+                    let filename = registryEntry.file.fileName
                     entries.append(FSYSArchive.Entry(
                         metadata: registryEntry.metadata,
                         filename: filename,

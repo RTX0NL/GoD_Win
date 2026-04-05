@@ -179,9 +179,9 @@ public final class FSYSArchive: FileFormat {
         let header = StructData(definition: headerStruct, byteOrder: .big)
         header.magicBytes = engine.data.fsys.magicBytes
         let unknownFlag1 = metaData.unknownFlag1 ? 0x80000000 : 0x0
-        let unknownFlag2 = metaData.unknownFlag2 ? 0x04000000 : 0x0
-        header.flags = unknownFlag1 | unknownFlag2
-        header.debugFlag = metaData.debugFlag ? 1 : 0
+        let unknownFlag2 = metaData.unknownFlag2 ? 0x40000000 : 0x0
+        let debugFlag = metaData.debugFlag ? 0x1 : 0x0
+        header.flags = unknownFlag1 | unknownFlag2 | debugFlag
         header.unknown1 = metaData.unknown1
         header.unknown2 = metaData.unknown2
         header.unknown3 = metaData.unknown3
