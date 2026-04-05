@@ -277,6 +277,18 @@ let package = Package(
             name: "PPCTests",
             dependencies: ["Dolphin", "GoDFoundation"],
             path: "Tests/Shared Tests/Engine Tests/PPC Tests"),
+        .testTarget(
+            name: "DolphinTests",
+            dependencies: ["Dolphin", "GoDFoundation", "Structs"],
+            path: "Tests/Shared Tests/Engine Tests/Dolphin Tests"),
+        .testTarget(
+            name: "WiiTests",
+            dependencies: ["Wii", "Dolphin", "GoDFoundation", "Structs"],
+            path: "Tests/Shared Tests/Engine Tests/Wii Tests"),
+        .testTarget(
+            name: "GameCubeTests",
+            dependencies: ["GameCube", "Dolphin", "GoDFoundation", "Structs"],
+            path: "Tests/Shared Tests/Engine Tests/GameCube Tests"),
     ]
 )
 
