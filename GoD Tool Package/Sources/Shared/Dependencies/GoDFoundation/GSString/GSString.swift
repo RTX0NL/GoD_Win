@@ -66,8 +66,8 @@ extension GSString: CustomStringConvertible, ExpressibleByStringLiteral {
 }
 
 extension GSString: DataConvertible {
-    public var rawData: GoDData {
-        return characterList.map { $0.rawData }.reduce(GoDData()) { partialResult, nextValue in
+    public func rawData(byteOrder: ByteOrder) -> GoDData {
+        return characterList.map { $0.rawData(byteOrder: byteOrder) }.reduce(GoDData(byteOrder: byteOrder)) { partialResult, nextValue in
             let nextPartialResult = partialResult
             nextPartialResult.append(nextValue)
             return nextPartialResult

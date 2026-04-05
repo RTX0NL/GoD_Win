@@ -21,7 +21,7 @@ public class StructData {
 
         if data.length < definition.length {
             let difference = Int(definition.length) - data.length
-            data.append(GoDData(length: difference))
+            data.append(GoDData(length: difference, byteOrder: data.byteOrder))
         }
     }
     
@@ -81,7 +81,7 @@ public class StructData {
             self.get(member)
         }
         set {
-            self.set(member, to: newValue?.rawData)
+            self.set(member, to: newValue?.rawData(byteOrder: self.byteOrder))
         }
     }
     
@@ -172,7 +172,7 @@ public class StructData {
                     return Int(data: data)
                 }
                 let isNegative = firstByte > 0x7F
-                let fillByte = GoDData(byteStream: [isNegative ? 0xFF : 0x00])
+                let fillByte = GoDData(byteStream: [isNegative ? 0xFF : 0x00], byteOrder: self.byteOrder)
                 data.insert(fillByte, atOffset: 0)
                 return data.readTypeAsInt(Int32.self, atAddress: 0)
             case .int32:
@@ -231,10 +231,7 @@ public class StructData {
     }
     
     public func set(_ keypath: String, to value: Int?) {
-        let data = (value ?? 0).rawData
-        if byteOrder != .unspecified, byteOrder != Environment.byteOrder {
-            data.switchByteOrder(boundary: Environment.wordSize)
-        }
+        let data = (value ?? 0).rawData(byteOrder: self.byteOrder)
         set(keypath, to: data)
     }
 
@@ -243,11 +240,8 @@ public class StructData {
               let length = definition.property(for: keypath)?.length else {
             return
         }
-        let newValue = value?.copy ?? GoDData(length: length)
-        
-        if !newValue.byteOrder.matches(self.byteOrder) {
-            newValue.switchByteOrder(boundary: wordSize)
-        }
+        let newValue = value?.copy ?? GoDData(length: length, byteOrder: self.byteOrder)
+
         if newValue.length > length {
             let extra = newValue.length - length
             let extraWords = extra / wordSize
@@ -262,13 +256,13 @@ public class StructData {
             }
         }
         if newValue.length < length {
-            newValue.prepend(GoDData(length: length - newValue.length))
+            newValue.prepend(GoDData(length: length - newValue.length, byteOrder: self.byteOrder))
         }
         data.write(newValue, atAddress: offset)
     }
 
     public func set<T: DataConvertible>(_ keypath: String, to value: T) {
-        set(keypath, to: value.rawData)
+        set(keypath, to: value.rawData(byteOrder: self.byteOrder))
     }
     
     public func set(_ keypath: String, to value: String, format: StringFormats) {

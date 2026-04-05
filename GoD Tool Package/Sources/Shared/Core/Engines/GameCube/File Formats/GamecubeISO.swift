@@ -230,7 +230,7 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
             bootStruct.fstSize = fstSize
             bootStruct.maxFstSize = fstSize
             
-            var junkData = GoDData(length: 0)
+            var junkData = GoDData(length: 0, byteOrder: .big)
             if dolphinEngine.data.systemFiles.preserveJunkData {
                 let junkFile = dolphinEngine.data.systemFiles.junkFile
                 if let preservedJunkData = readFile(at: junkFile) {

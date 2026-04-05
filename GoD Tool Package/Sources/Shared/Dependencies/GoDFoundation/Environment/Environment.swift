@@ -16,7 +16,7 @@ public struct Environment {
         switch CFByteOrderGetCurrent() {
         case CFByteOrderBigEndian.rawValue.asInt: return .big
         case CFByteOrderLittleEndian.rawValue.asInt: return .little
-        default: return .unspecified
+        default: fatalError("Unsupported architecture: unknown byte order")
         }
         #endif
     }()

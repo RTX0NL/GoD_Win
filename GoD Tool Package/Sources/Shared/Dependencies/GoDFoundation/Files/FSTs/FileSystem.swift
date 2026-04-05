@@ -40,7 +40,7 @@ public class FileSystem: FileSystemTree {
         guard let data = try? Data(contentsOf: filePath.url) else  {
             return nil
         }
-        return GoDData(data: data)
+        return GoDData(data: data, byteOrder: Environment.byteOrder)
     }
     
     @discardableResult
@@ -193,15 +193,15 @@ public class FileSystem: FileSystemTree {
     
     private func extendPath(_ file: File) -> File {
         if file.path.startsWith("./") || file.path.startsWith("../") {
-            return currentDirectory.file(file)
+            return currentDirectory.file(file.path)
         } else {
             return file
         }
     }
-    
+
     private func extendPath(_ folder: Folder) -> Folder {
         if folder.path.startsWith("./") || folder.path.startsWith("../") {
-            return currentDirectory.folder(folder)
+            return currentDirectory.folder(folder.path)
         } else {
             return folder
         }

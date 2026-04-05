@@ -358,7 +358,7 @@ enum Project {
                 let script =
                 """
                 #!/bin/zsh
-                \(executablePath.replacingOccurrences(of: " ", with: "\\ ")) \(Folder("..").file(config).path.replacingOccurrences(of: " ", with: "\\ "))
+                \(executablePath.replacingOccurrences(of: " ", with: "\\ ")) \(Folder("..").file(config.path).path.replacingOccurrences(of: " ", with: "\\ "))
                 """
                 let file = projectFolder.folder("Scripts").file(config.fileName.replacingOccurrences(of: "-Config.json", with: ".sh"))
                 fileSystem.writeFile(script.data(format: .utf8), at: file, overwrite: false)

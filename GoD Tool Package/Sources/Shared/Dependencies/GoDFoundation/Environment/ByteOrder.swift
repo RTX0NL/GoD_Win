@@ -8,7 +8,6 @@
 import Foundation
 
 public enum ByteOrder: String, Equatable, Codable {
-    case unspecified
     case big
     case little
 
@@ -16,18 +15,6 @@ public enum ByteOrder: String, Equatable, Codable {
         switch self {
         case .big: return .little
         case .little: return .big
-        case .unspecified: return .unspecified
-        }
-    }
-
-    public func matches(_ other: ByteOrder) -> Bool {
-        switch (self, other) {
-        case (.big, .big), (.big, .unspecified), (.unspecified, .big),
-             (.little, .little), (.little, .unspecified), (.unspecified, .little),
-            (.unspecified, .unspecified):
-            return true
-        default:
-            return false
         }
     }
 }

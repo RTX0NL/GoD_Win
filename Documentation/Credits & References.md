@@ -17,4 +17,13 @@ This document lists the reference implementations, specifications, and documenta
 
 ## PowerPC Disassembler/Assembler
 
-> TODO: Retroactively add credits for the PowerPC 750CL ISA implementation (disassembler, assembler, and instruction definitions).
+### Specifications
+- **IBM PowerPC 750CL User's Manual** — Instruction set architecture specification for the Gekko (GameCube) and Broadway (Wii) processors. Used as the authoritative reference for instruction encodings, field layouts, and simplified mnemonics.
+
+### Reference Implementations
+- **ppc750cl** by encounter ([encounter/ppc750cl](https://github.com/encounter/ppc750cl), MIT license) — ISA definition YAML used as reference for complete instruction set coverage. All 222 PPC750CL instructions verified against `ppc750cl_isa.yaml`.
+- **decomp-toolkit (dtk)** by encounter ([encounter/decomp-toolkit](https://github.com/encounter/decomp-toolkit)) — Symbol map format (`symbols.txt`) referenced for dtk symbol map parser support.
+- **Dolphin Emulator** ([dolphin-emu/dolphin](https://github.com/dolphin-emu/dolphin), GPLv2+) — Symbol map format (`.map`) referenced for Dolphin symbol map parser support.
+
+### Conventions
+- **GNU Binutils/GAS** — PowerPC assembly syntax conventions. Formatter outputs GNU assembler-compatible syntax.

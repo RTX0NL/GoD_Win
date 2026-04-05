@@ -11,25 +11,25 @@ import XCTest
 class GoDDataTests: XCTestCase {
     
     func testLength() {
-        let data = GoDData(byteStream: [0x50, 0x4F, 0x4B, 0x65, 0x4D, 0x4F, 0x4E, 0x20, 0x58, 0x44, 0x00, 0x00])
+        let data = GoDData(byteStream: [0x50, 0x4F, 0x4B, 0x65, 0x4D, 0x4F, 0x4E, 0x20, 0x58, 0x44, 0x00, 0x00], byteOrder: .big)
         XCTAssertEqual(data.length, 12)
-        let data2 = GoDData(length: 100)
+        let data2 = GoDData(length: 100, byteOrder: .big)
         XCTAssertEqual(data2.length, 100)
     }
-    
+
     func testEmptyLength() {
-        let data = GoDData(byteStream: [UInt8]())
+        let data = GoDData(byteStream: [UInt8](), byteOrder: .big)
         XCTAssertEqual(data.length, 0)
-        let data2 = GoDData(length: 0)
+        let data2 = GoDData(length: 0, byteOrder: .big)
         XCTAssertEqual(data2.length, 0)
-        let data3 = GoDData()
+        let data3 = GoDData(byteOrder: .big)
         XCTAssertEqual(data3.length, 0)
     }
-    
+
     func testString() {
-        let data = GoDData(byteStream: [0x50, 0x4F, 0x4B, 0x65, 0x4D, 0x4F, 0x4E, 0x20, 0x58, 0x44])
+        let data = GoDData(byteStream: [0x50, 0x4F, 0x4B, 0x65, 0x4D, 0x4F, 0x4E, 0x20, 0x58, 0x44], byteOrder: Environment.byteOrder)
         XCTAssertEqual(data.string(format: .utf8), "POKeMON XD")
-        let data2 = GoDData()
+        let data2 = GoDData(byteOrder: .little)
         XCTAssertEqual(data2.string(format: .unicode_little), "")
         let data3 = GoDData(string: "", format: .unicode_little)
         XCTAssertEqual(data3.string(format: .unicode_little), "")
@@ -37,18 +37,18 @@ class GoDDataTests: XCTestCase {
         XCTAssertEqual(data4.string(format: .unicode_little), "simple")
         let data5 = GoDData(string: "Ab1-+[{ ;\"`~!@", format: .unicode_little)
         XCTAssertEqual(data5.string(format: .unicode_little), "Ab1-+[{ ;\"`~!@")
-        let data6 = GoDData(byteStream: [0x00, 0x4E, 0x00, 0x49, 0x00, 0x44, 0x00, 0x4F, 0x00, 0x52, 0x00, 0x41, 0x00, 0x4E, 0x26, 0x40, 0x00, 0x00])
+        let data6 = GoDData(byteStream: [0x00, 0x4E, 0x00, 0x49, 0x00, 0x44, 0x00, 0x4F, 0x00, 0x52, 0x00, 0x41, 0x00, 0x4E, 0x26, 0x40, 0x00, 0x00], byteOrder: .big)
         XCTAssertEqual(data6.string(format: .gs), "NIDORAN♀")
     }
-    
+
     func testRawBytes() {
-        let data = GoDData(byteStream: [0x50, 0x4F, 0x4B, 0x65, 0x4D, 0x4F, 0x4E, 0x20, 0x58, 0x44, 0x00, 0x00])
+        let data = GoDData(byteStream: [0x50, 0x4F, 0x4B, 0x65, 0x4D, 0x4F, 0x4E, 0x20, 0x58, 0x44, 0x00, 0x00], byteOrder: .big)
         XCTAssertEqual(data.rawBytes, [0x50, 0x4F, 0x4B, 0x65, 0x4D, 0x4F, 0x4E, 0x20, 0x58, 0x44, 0x00, 0x00])
         XCTAssertEqual(data.byteStream, [0x50, 0x4F, 0x4B, 0x65, 0x4D, 0x4F, 0x4E, 0x20, 0x58, 0x44, 0x00, 0x00])
     }
-    
+
     func testStringLiteral() {
-        let data: GoDData = GoDData(byteStream: [0x00, 0x50, 0x00, 0x4F, 0x00, 0x4B, 0x00, 0x65, 0x00, 0x4D, 0x00, 0x4F, 0x00, 0x4E, 0x00, 0x20, 0x00, 0x58, 0x00, 0x44])
+        let data: GoDData = GoDData(byteStream: [0x00, 0x50, 0x00, 0x4F, 0x00, 0x4B, 0x00, 0x65, 0x00, 0x4D, 0x00, 0x4F, 0x00, 0x4E, 0x00, 0x20, 0x00, 0x58, 0x00, 0x44], byteOrder: .big)
         XCTAssertEqual(data.string(format: .gs), "POKeMON XD")
     }
     
@@ -59,20 +59,20 @@ class GoDDataTests: XCTestCase {
     }
     
     func testNull() {
-        let data = GoDData(byteStream: [0])
+        let data = GoDData(byteStream: [0], byteOrder: .big)
         XCTAssertTrue(data.isNull)
-        let data2 = GoDData(byteStream: [0,0])
+        let data2 = GoDData(byteStream: [0,0], byteOrder: .big)
         XCTAssertTrue(data2.isNull)
-        let data3 = GoDData(byteStream: [0,0,0,0,0,0])
+        let data3 = GoDData(byteStream: [0,0,0,0,0,0], byteOrder: .big)
         XCTAssertTrue(data3.isNull)
-        let data4 = GoDData()
+        let data4 = GoDData(byteOrder: .big)
         XCTAssertTrue(data4.isNull)
-        let data5 = GoDData(length: 100)
+        let data5 = GoDData(length: 100, byteOrder: .big)
         XCTAssertTrue(data5.isNull)
     }
     
     func testSubscript() {
-        let data = GoDData(byteStream: [0,1,2,3,4,5])
+        let data = GoDData(byteStream: [0,1,2,3,4,5], byteOrder: .big)
         XCTAssertEqual(data[1], 1)
         XCTAssertEqual(data[4], 4)
         XCTAssertEqual(data[safe: 5], 5)
@@ -113,13 +113,10 @@ class GoDDataTests: XCTestCase {
         dataB4.switchByteOrder(boundary: 2)
         XCTAssertEqual(dataB4.rawBytes, [2, 1, 4, 3, 6, 5, 8, 7])
 
-        let dataC = GoDData(byteStream: [1, 2, 3, 4], byteOrder: .unspecified)
-        dataC.switchByteOrder(boundary: 4)
-        XCTAssertEqual(dataC.rawBytes, [1, 2, 3, 4])
     }
     
     func testRead() {
-        let data = GoDData(byteStream: [0xAB, 0xCD, 0xEF, 0x12])
+        let data = GoDData(byteStream: [0xAB, 0xCD, 0xEF, 0x12], byteOrder: .big)
         let value1 = data.read(atAddress: 0, length: 4)
         let value2 = data.read(atAddress: 2, length: 2)
         let value3 = data.read(atAddress: 1, length: 2)
@@ -292,7 +289,7 @@ class GoDDataTests: XCTestCase {
     }
     
     func testReadInt8() {
-        let data = GoDData(byteStream: [0x01,0x02,0x03,0x04])
+        let data = GoDData(byteStream: [0x01,0x02,0x03,0x04], byteOrder: .big)
         let sut1: Int8? = data.readPrimtive(atAddress: 0)
         let sut2: Int8? = data.readPrimtive(atAddress: 0)
         let sut3: UInt8? = data.readPrimtive(atAddress: 0)
@@ -340,11 +337,11 @@ class GoDDataTests: XCTestCase {
     }
     
     func testAlignment() {
-        let data1 = GoDData(length: 0)
-        let data2 = GoDData(length: 1)
-        let data3 = GoDData(length: 9)
-        let data4 = GoDData(length: 16)
-        let data5 = GoDData(length: 20)
+        let data1 = GoDData(length: 0, byteOrder: .big)
+        let data2 = GoDData(length: 1, byteOrder: .big)
+        let data3 = GoDData(length: 9, byteOrder: .big)
+        let data4 = GoDData(length: 16, byteOrder: .big)
+        let data5 = GoDData(length: 20, byteOrder: .big)
         
         [data1, data2, data3, data4, data5].forEach {
             $0.align(to: 16)

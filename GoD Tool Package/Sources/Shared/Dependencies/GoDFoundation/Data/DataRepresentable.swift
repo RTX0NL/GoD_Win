@@ -1,6 +1,6 @@
 //
 //  DataRepresentable.swift
-//  
+//
 //
 //  Created by Stars Momodu on 28/05/2022.
 //
@@ -8,7 +8,7 @@
 import Foundation
 
 public protocol DataConvertible {
-    var rawData: GoDData { get }
+    func rawData(byteOrder: ByteOrder) -> GoDData
 }
 
 public protocol ExpressibleByData {
@@ -30,20 +30,24 @@ public typealias FixedLengthDataRepresentable = DataRepresentable & FixedByteLen
 public protocol PrimitiveDataType: FixedLengthDataRepresentable {}
 
 public extension PrimitiveDataType {
-    var rawData: GoDData {
+    func rawData(byteOrder: ByteOrder) -> GoDData {
         let bytesPointer = UnsafeMutableRawPointer.allocate(byteCount: Self.byteLength, alignment: Environment.wordSize)
         bytesPointer.storeBytes(of: self, as: Self.self)
         let data = Data(bytes: bytesPointer, count: Self.byteLength)
         bytesPointer.deallocate()
-        return GoDData(data: data, byteOrder: Environment.byteOrder)
+        let result = GoDData(data: data, byteOrder: Environment.byteOrder)
+        if byteOrder != Environment.byteOrder, Self.byteLength > 1 {
+            result.switchByteOrder(boundary: Self.byteLength)
+        }
+        return result
     }
 }
-   
+
 public extension PrimitiveDataType {
     init?(data: GoDData) {
         // Fast path: data is exactly the right size or larger, just needs optional byte-swap
         if data.length >= Self.byteLength {
-            if data.byteOrder.matches(Environment.byteOrder) || data.byteOrder == .unspecified {
+            if data.byteOrder == Environment.byteOrder {
                 self = data.data.withUnsafeBytes { buffer in
                     buffer.load(as: Self.self)
                 }
@@ -57,21 +61,21 @@ public extension PrimitiveDataType {
 
         // Slow path: data is smaller than expected, needs padding
         let copy = data.copy
-        if !copy.byteOrder.matches(Environment.byteOrder) {
+        if copy.byteOrder != Environment.byteOrder {
             copy.switchByteOrder(boundary: Environment.wordSize)
         }
         let extra = Self.byteLength - data.length
         let extraWords = extra / Environment.wordSize
         let extraBytes = extra % Environment.wordSize
 
-        let extraBytesData = GoDData(length: extraBytes)
+        let extraBytesData = GoDData(length: extraBytes, byteOrder: Environment.byteOrder)
         if Environment.byteOrder == .little {
             copy.append(extraBytesData)
         } else {
             copy.insert(extraBytesData, atOffset: 0)
         }
 
-        let extraWordsData = GoDData(length: extraWords * Environment.wordSize)
+        let extraWordsData = GoDData(length: extraWords * Environment.wordSize, byteOrder: Environment.byteOrder)
         copy.insert(extraWordsData, atOffset: 0)
 
         let bytesPointer = UnsafeMutableRawBufferPointer.allocate(byteCount: copy.length, alignment: Environment.wordSize)
@@ -91,11 +95,11 @@ public extension ExpressibleByData where Self: ValueDefaulting {
 extension Bool: PrimitiveDataType, ValueDefaulting {
     public static var byteLength: Int { 1 }
     public static var defaultValue: Bool { false }
-    
-    public var rawData: GoDData {
-        GoDData(byteStream: self ? [1] : [0])
+
+    public func rawData(byteOrder: ByteOrder) -> GoDData {
+        GoDData(byteStream: self ? [1] : [0], byteOrder: byteOrder)
     }
-    
+
     public init?(data: GoDData) {
         self = !data.isNull
     }
@@ -166,11 +170,10 @@ extension Array: ValueDefaulting {
 }
 
 extension Array: DataConvertible where Element: DataConvertible & FixedByteLength {
-    public var rawData: GoDData {
-        let order: ByteOrder = Element.byteLength < Environment.wordSize ? .unspecified : Environment.byteOrder
-        let data = GoDData(byteOrder: order)
+    public func rawData(byteOrder: ByteOrder) -> GoDData {
+        let data = GoDData(byteOrder: byteOrder)
         for value in self {
-            data.append(value)
+            data.append(value.rawData(byteOrder: byteOrder))
         }
         return data
     }
@@ -192,6 +195,6 @@ extension Array: ExpressibleByData where Element: ExpressibleByFixedLengthData {
 
 extension GoDData {
     public func search(for data: DataConvertible) -> [Int] {
-        search(for: data.rawData)
+        search(for: data.rawData(byteOrder: self.byteOrder))
     }
 }

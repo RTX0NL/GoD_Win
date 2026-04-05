@@ -39,7 +39,7 @@ extension Gamecube {
                 }
                 let remaining = size - iso.length
                 if remaining > 0 {
-                    iso.append(GoDData(length: remaining))
+                    iso.append(GoDData(length: remaining, byteOrder: .big))
                     FileSystem.shared.writeFile(iso, at: isoPath, overwrite: true)
                 }
                 

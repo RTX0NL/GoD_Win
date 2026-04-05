@@ -108,7 +108,7 @@ public final class FsysTOC: FileFormat {
         header.entryTableAddress = tocData.length
         tocData.write(struct: header, atAddress: 0)
         
-        entryTable.append(.init(length: entryStruct.length))
+        entryTable.append(.init(length: entryStruct.length, byteOrder: .big))
         entryTable.align(to: 0x20)
         tocData.append(entryTable)
         

@@ -15,13 +15,13 @@ public protocol GoDMutableData: GoDWritable {
 
 extension GoDMutableData {
     public func append(_ value: DataConvertible) {
-        append(value.rawData)
+        append(value.rawData(byteOrder: self.byteOrder))
     }
 
     public func appendString(_ string: String, format: StringFormats, includeTerminator: Bool = false) {
         self.append(string.data(format: format))
         if includeTerminator {
-            self.append(GoDData(length: 1))
+            self.append(GoDData(length: 1, byteOrder: self.byteOrder))
         }
     }
 
@@ -30,7 +30,7 @@ extension GoDMutableData {
     }
 
     public func prepend(_ value: DataConvertible) {
-        prepend(value.rawData)
+        prepend(value.rawData(byteOrder: self.byteOrder))
     }
 
     public func insert(_ data: GoDData, atOffset offset: Int) {
@@ -38,6 +38,6 @@ extension GoDMutableData {
     }
     
     public func insert(_ value: DataConvertible, atOffset offset: Int) {
-        insert(value.rawData, atOffset: offset)
+        insert(value.rawData(byteOrder: self.byteOrder), atOffset: offset)
     }
 }

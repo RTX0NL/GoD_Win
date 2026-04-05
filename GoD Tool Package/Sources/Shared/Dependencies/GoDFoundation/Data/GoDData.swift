@@ -20,7 +20,7 @@ public final class GoDData: ExpressibleByStringLiteral {
     
     public func string(format: StringFormats) -> String {
         let copy = self.copy
-        if !format.byteOrder.matches(.big) {
+        if format.byteOrder != .big {
             copy.switchByteOrder(boundary: format.characterLength)
         }
         var string = String(data: copy.data, encoding: format.encoding) ?? ""
@@ -42,7 +42,7 @@ public final class GoDData: ExpressibleByStringLiteral {
         data.count
     }
 
-    public init(data: Data = Data(), byteOrder: ByteOrder = .unspecified) {
+    public init(data: Data = Data(), byteOrder: ByteOrder) {
         self.byteOrder = byteOrder
         // Normalize slices so indices always start at 0
         if data.startIndex != 0 {
@@ -56,35 +56,35 @@ public final class GoDData: ExpressibleByStringLiteral {
         self.init(data: data.copy.data, byteOrder: data.byteOrder)
     }
     
-    public convenience init(byteStream: [UInt8], byteOrder: ByteOrder = .unspecified) {
+    public convenience init(byteStream: [UInt8], byteOrder: ByteOrder) {
         self.init(data: Data(byteStream), byteOrder: byteOrder)
     }
     
-    public convenience init(byteStream: [Int], byteOrder: ByteOrder = .unspecified) {
+    public convenience init(byteStream: [Int], byteOrder: ByteOrder) {
         self.init(byteStream: byteStream.map{ UInt8($0) }, byteOrder: byteOrder)
     }
 
-    public convenience init(length: Int, byteOrder: ByteOrder = .unspecified) {
+    public convenience init(length: Int, byteOrder: ByteOrder) {
         self.init(byteStream: [UInt8](repeating: 0, count: max(0, length)), byteOrder: byteOrder)
     }
     
     public convenience init(string: String, format: StringFormats) {
         if let data = string.data(using: format.encoding) {
             self.init(data: data, byteOrder: Environment.byteOrder)
-            if format.byteOrder != .unspecified, !Environment.byteOrder.matches(format.byteOrder) {
+            if format.byteOrder != Environment.byteOrder {
                 self.switchByteOrder(boundary: format.characterLength)
             } else {
                 self.byteOrder = format.byteOrder
             }
         } else {
-            self.init()
+            self.init(byteOrder: format.byteOrder)
         }
     }
 
     public convenience init(character: String, format: StringFormats) {
         if let data = character.data(using: format.encoding) {
             self.init(data: data, byteOrder: Environment.byteOrder)
-            if !Environment.byteOrder.matches(format.byteOrder) {
+            if Environment.byteOrder != format.byteOrder {
                 self.switchByteOrder(boundary: format.characterLength)
             }
             switch format {
@@ -105,17 +105,17 @@ public final class GoDData: ExpressibleByStringLiteral {
                 break
             }
         } else {
-            self.init()
+            self.init(byteOrder: format.byteOrder)
         }
     }
-    
+
     public typealias StringLiteralType = String
     public required convenience init(stringLiteral value: StringLiteralType) {
         self.init(string: value, format: .utf8)
     }
     
-    public convenience init<T: DataRepresentable>(_ value: T) {
-        self.init(data: value.rawData)
+    public convenience init<T: DataRepresentable>(_ value: T, byteOrder: ByteOrder) {
+        self.init(data: value.rawData(byteOrder: byteOrder))
     }
 
     @discardableResult
@@ -185,9 +185,6 @@ public final class GoDData: ExpressibleByStringLiteral {
     }
     
     public func switchByteOrder(boundary: Int) {
-        guard byteOrder != .unspecified else {
-            return
-        }
         byteOrder = byteOrder.swapped
         guard boundary > 1, length > 0 else { return }
         data.withUnsafeMutableBytes { buffer in
@@ -217,7 +214,7 @@ public final class GoDData: ExpressibleByStringLiteral {
     }
     
     public static var none: GoDData {
-        GoDData()
+        GoDData(byteOrder: Environment.byteOrder)
     }
 }
 
@@ -277,7 +274,7 @@ extension GoDData: Codable {
     public convenience init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let data = try container.decode(Data.self)
-        self.init(data: data)
+        self.init(data: data, byteOrder: Environment.byteOrder)
     }
 }
 
@@ -291,11 +288,11 @@ extension GoDData {
     public func align(to boundary: Int) {
         guard boundary > 0, self.length % boundary != 0 else { return }
         let remainder = boundary - (self.length % boundary)
-        return self.append(.init(length: remainder))
+        return self.append(.init(length: remainder, byteOrder: self.byteOrder))
     }
-    
+
     public func pad(by length: Int) {
-        self.append(.init(length: length))
+        self.append(.init(length: length, byteOrder: self.byteOrder))
     }
 }
 

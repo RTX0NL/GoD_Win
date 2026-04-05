@@ -159,7 +159,7 @@ extension ColoXD {
             _ = projectFileSystem.createFolder(at: folder, overwrite: true)
         }
 
-        let gsfsysFile = rootFolder.file(gsEngine.data.fsys.GSfsysFile)
+        let gsfsysFile = rootFolder.file(gsEngine.data.fsys.GSfsysFile.path)
         guard let gsfsysData = fileSystem.readFile(at: gsfsysFile) else {
             throw ColoXDDumpErrors.missingToC(file: gsfsysFile, .init())
         }

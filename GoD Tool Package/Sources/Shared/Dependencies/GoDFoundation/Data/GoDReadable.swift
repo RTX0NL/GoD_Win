@@ -63,7 +63,7 @@ public extension GoDReadable {
         guard let data = read(atAddress: address, length: T.byteLength) else {
             return nil
         }
-        if !data.byteOrder.matches(Environment.byteOrder) {
+        if data.byteOrder != Environment.byteOrder {
             data.switchByteOrder(boundary: T.byteLength)
         }
         return T(data: data)
@@ -73,7 +73,7 @@ public extension GoDReadable {
         guard let data = read(atAddress: address, length: T.byteLength * count) else {
             return nil
         }
-        if !data.byteOrder.matches(Environment.byteOrder) {
+        if data.byteOrder != Environment.byteOrder {
             data.switchByteOrder(boundary: T.byteLength)
         }
         return Array<T>(data: data)
@@ -171,7 +171,7 @@ public extension GoDReadable {
                 }
                 switch nextChar {
                 case .special:
-                    offset += nextChar?.rawData.length ?? 0
+                    offset += nextChar?.rawData(byteOrder: self.byteOrder).length ?? 0
                 case .raw:
                     offset += format.characterLength
                 case nil:
@@ -208,7 +208,7 @@ public extension GoDReadable {
                 if let nextChar = nextChar {
                     result.append(nextChar)
                 }
-                offset += nextChar?.rawData.length ?? 0
+                offset += nextChar?.rawData(byteOrder: self.byteOrder).length ?? 0
             }
         } while nextChar != nil
         guard result.count > 0 else { return nil }

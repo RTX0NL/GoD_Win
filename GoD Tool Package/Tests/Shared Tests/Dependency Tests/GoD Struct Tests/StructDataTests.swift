@@ -166,12 +166,12 @@ class StructDataTests: XCTestCase {
             data: GoDData(byteStream: rawBytes, byteOrder: .big)
         )
 
-        sut.set("test1", to: GoDData(length: 1))
-        sut.set("test2", to: GoDData(length: 4))
-        sut.set("test3", to: GoDData(length: 2))
-        sut.set("test4", to: GoDData(length: 1))
-        sut.set("test5", to: GoDData(length: 12))
-        sut.set("test6", to: GoDData(length: 1))
+        sut.set("test1", to: GoDData(length: 1, byteOrder: .big))
+        sut.set("test2", to: GoDData(length: 4, byteOrder: .big))
+        sut.set("test3", to: GoDData(length: 2, byteOrder: .big))
+        sut.set("test4", to: GoDData(length: 1, byteOrder: .big))
+        sut.set("test5", to: GoDData(length: 12, byteOrder: .big))
+        sut.set("test6", to: GoDData(length: 1, byteOrder: .big))
 
         func checkNull(_ key: String) -> Bool {
             let data: GoDData = sut.get(key)!
@@ -227,12 +227,12 @@ class StructDataTests: XCTestCase {
             data: GoDData(byteStream: rawBytes, byteOrder: .big)
         )
 
-        sut.test1 = GoDData(length: 1)
-        sut.test2 = GoDData(length: 4)
-        sut.test3 = GoDData(length: 2)
-        sut.test4 = GoDData(length: 1)
-        sut.test5 = GoDData(length: 12)
-        sut.test6 = GoDData(length: 1)
+        sut.test1 = GoDData(length: 1, byteOrder: .big)
+        sut.test2 = GoDData(length: 4, byteOrder: .big)
+        sut.test3 = GoDData(length: 2, byteOrder: .big)
+        sut.test4 = GoDData(length: 1, byteOrder: .big)
+        sut.test5 = GoDData(length: 12, byteOrder: .big)
+        sut.test6 = GoDData(length: 1, byteOrder: .big)
 
         func checkNull(_ key: String) -> Bool {
             let data: GoDData = sut.get(key)!
@@ -356,8 +356,8 @@ class StructDataTests: XCTestCase {
     
     func testEnums() {
         let data = GoDData(byteOrder: .big)
-        data.append(Array<UInt8>([0,10,6,0xFF]).rawData)
-        data.append(Array<Int8>([0,-1,-128,0x7F]).rawData)
+        data.append(Array<UInt8>([0,10,6,0xFF]).rawData(byteOrder: .big))
+        data.append(Array<Int8>([0,-1,-128,0x7F]).rawData(byteOrder: .big))
         
         let structData = StructData(
             definition: StructDefinition(

@@ -240,7 +240,7 @@ public class LZSSCompressor: Compressor {
         var mask: UInt8 = 1
 
         var length = min(F, inputBytes.count)
-        if length == 0 { return GoDData() }
+        if length == 0 { return GoDData(byteOrder: Environment.byteOrder) }
         
         var r = N - F
         var s = 0

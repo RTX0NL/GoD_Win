@@ -51,10 +51,10 @@ final class ProjectFST: FileSystemTree {
     }
     
     private func projectPath(_ subpath: File) -> File {
-        rootFolder.file(subpath)
+        rootFolder.file(subpath.path)
     }
-    
+
     private func projectPath(_ subpath: Folder) -> Folder {
-        rootFolder.folder(subpath)
+        rootFolder.folder(subpath.path)
     }
 }

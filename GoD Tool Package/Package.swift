@@ -37,7 +37,6 @@ let package = Package(
     ],
     dependencies: [
         // Dependencies declare other packages that this package depends on.
-        .package(url: "https://github.com/TokamakUI/Tokamak", from: "0.11.0"),
         .package(url: "https://github.com/kelvin13/swift-png", from: "4.0.2"),
     ],
     targets: [

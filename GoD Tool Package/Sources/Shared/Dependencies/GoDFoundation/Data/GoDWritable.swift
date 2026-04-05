@@ -29,17 +29,14 @@ extension GoDWritable {
 
     @discardableResult
     public func write(_ value: DataConvertible?, atAddress address: Int) -> Bool {
-        return write(value?.rawData, atAddress: address)
+        return write(value?.rawData(byteOrder: self.byteOrder), atAddress: address)
     }
-    
+
     @discardableResult
     public func write<T: DataConvertible & ExpressibleByInteger>(_ value: Int?, AsType: T.Type, atAddress address: Int) -> Bool {
         guard let value else { return true }
         let asInt = T(integer: value)
-        let data = asInt.rawData
-        if byteOrder != .unspecified, byteOrder != data.byteOrder {
-            data.switchByteOrder(boundary: Environment.wordSize)
-        }
+        let data = asInt.rawData(byteOrder: self.byteOrder)
         return write(data, atAddress: address)
     }
     
@@ -84,10 +81,10 @@ extension GoDWritable {
         case .gsPBR: terminator = [0xFF, 0xFF, 0xFF, 0xFF]
         default: terminator = [0x00, 0x00]
         }
-        return write(string.rawData.rawBytes + (includeNullTerminator ? terminator : []), atAddress: offset)
+        return write(string.rawData(byteOrder: self.byteOrder).rawBytes + (includeNullTerminator ? terminator : []), atAddress: offset)
     }
 
     public func null(start: Int, length: Int) {
-        write(GoDData(length: length), atAddress: start)
+        write(GoDData(length: length, byteOrder: self.byteOrder), atAddress: start)
     }
 }

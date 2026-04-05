@@ -136,7 +136,7 @@ public class DolphinFST: FileFormat {
         rootData.entryCount = tocDataEntryCount
         tocData.write(struct: rootData, atAddress: 0)
         
-        let stringTable = GoDData()
+        let stringTable = GoDData(byteOrder: .big)
         
         var currentIndex = 1
         let entryPaths = ["/"] + (files.keys.map(\.path) + folders.map(\.path)).sorted(by: {

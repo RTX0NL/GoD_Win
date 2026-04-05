@@ -67,19 +67,19 @@ final class DolTests: XCTestCase {
         let headerData = GoDData(length: dolStruct.length + 128 + 64, byteOrder: .big)
 
         // Text section 0: offset=0x100 (header length), RAM=0x80003100, size=128
-        headerData.write(UInt32(0x00000100).bigEndian, atAddress: 0)    // textOffsets[0]
-        headerData.write(UInt32(0x80003100).bigEndian, atAddress: 0x48) // textRAMAddresses[0]
-        headerData.write(UInt32(0x00000080).bigEndian, atAddress: 0x90) // textSizes[0]
+        headerData.write(UInt32(0x00000100), atAddress: 0)    // textOffsets[0]
+        headerData.write(UInt32(0x80003100), atAddress: 0x48) // textRAMAddresses[0]
+        headerData.write(UInt32(0x00000080), atAddress: 0x90) // textSizes[0]
 
         // Data section 0: offset=0x180 (after text), RAM=0x80400000, size=64
-        headerData.write(UInt32(0x00000180).bigEndian, atAddress: 0x1C) // dataOffsets[0]
-        headerData.write(UInt32(0x80400000).bigEndian, atAddress: 0x64) // dataRAMAddresses[0]
-        headerData.write(UInt32(0x00000040).bigEndian, atAddress: 0xAC) // dataSizes[0]
+        headerData.write(UInt32(0x00000180), atAddress: 0x1C) // dataOffsets[0]
+        headerData.write(UInt32(0x80400000), atAddress: 0x64) // dataRAMAddresses[0]
+        headerData.write(UInt32(0x00000040), atAddress: 0xAC) // dataSizes[0]
 
         // Entry point, BSS
-        headerData.write(UInt32(0x80003100).bigEndian, atAddress: 0xE0) // entryPoint
-        headerData.write(UInt32(0x80500000).bigEndian, atAddress: 0xD8) // bssRAMAddress
-        headerData.write(UInt32(0x00001000).bigEndian, atAddress: 0xDC) // bssSize
+        headerData.write(UInt32(0x80003100), atAddress: 0xE0) // entryPoint
+        headerData.write(UInt32(0x80500000), atAddress: 0xD8) // bssRAMAddress
+        headerData.write(UInt32(0x00001000), atAddress: 0xDC) // bssSize
 
         let dol = try Dol(data: headerData, dolphinEngine: engine)
 
@@ -92,9 +92,7 @@ final class DolTests: XCTestCase {
         XCTAssertEqual(dol.dataSections[0].data.length, 64)
     }
 
-    // NOTE: DOL double round-trip (parse → serialize → reparse) is broken for array fields
-    // due to a pre-existing byte order issue in Array<UInt32>.rawData which uses .unspecified
-    // byte order for elements smaller than the system word size, bypassing StructData's byte
-    // swap logic. Real ISOs work because data stays big-endian throughout. Fix requires
-    // changes to GoDFoundation's data layer byte order semantics.
+    // NOTE: DOL double round-trip (parse → serialize → reparse) was previously broken for
+    // array fields due to a byte order issue with Array<UInt32>.rawData using .unspecified
+    // byte order. This has been fixed: rawData now requires an explicit byteOrder parameter.
 }

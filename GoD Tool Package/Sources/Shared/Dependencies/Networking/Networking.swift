@@ -84,6 +84,6 @@ public final class NetworkingManager {
         request.timeoutInterval = timeout
         
         let (data, _) = try await URLSession.shared.data(for: request)
-        return GoDData(data: data)
+        return GoDData(data: data, byteOrder: Environment.byteOrder)
     }
 }

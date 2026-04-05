@@ -12,28 +12,40 @@ import XCTest
 class GoDFolderTests: XCTestCase {
     
     func testInit() {
-        let path = "initTest"
-        let folder = Folder(path)
-        XCTAssertEqual(folder.path, path)
-        
-        let path2 = "/initTest/test2"
-        let folder2 = Folder(path2)
-        XCTAssertEqual(folder2.path, path2)
-        
-        let path3 = "initTest/separator test/"
-        let folder3 = Folder(path3)
-        XCTAssertEqual(folder3.path, "initTest/separator test")
+        let folder = Folder("/initTest")
+        XCTAssertEqual(folder.path, "/initTest")
+
+        let folder2 = Folder("/initTest/test2")
+        XCTAssertEqual(folder2.path, "/initTest/test2")
+
+        // Trailing separator is stripped
+        let folder3 = Folder("/initTest/separator test/")
+        XCTAssertEqual(folder3.path, "/initTest/separator test")
+
+        // Relative paths are preserved
+        let folder4 = Folder("./relative")
+        XCTAssertEqual(folder4.path, "./relative")
+
+        let folder5 = Folder("../parent")
+        XCTAssertEqual(folder5.path, "../parent")
+
+        // Current directory
+        let folder6 = Folder(".")
+        XCTAssertEqual(folder6.path, ".")
+
+        let folder7 = Folder("..")
+        XCTAssertEqual(folder7.path, "..")
     }
-    
+
     func testInitLiteral() {
-        let folder: Folder = "literalTest"
-        XCTAssertEqual(folder.path, "literalTest")
-        
-        let folder2: Folder = "literalTest/test2"
-        XCTAssertEqual(folder2.path, "literalTest/test2")
-        
-        let folder3: Folder = "literalTest/separator test/"
-        XCTAssertEqual(folder3.path, "literalTest/separator test")
+        let folder: Folder = "/literalTest"
+        XCTAssertEqual(folder.path, "/literalTest")
+
+        let folder2: Folder = "/literalTest/test2"
+        XCTAssertEqual(folder2.path, "/literalTest/test2")
+
+        let folder3: Folder = "/literalTest/separator test/"
+        XCTAssertEqual(folder3.path, "/literalTest/separator test")
     }
     
     func testFolderName() {
@@ -52,7 +64,7 @@ class GoDFolderTests: XCTestCase {
         let sut2 = folder.file("directory/file name.ext")
         XCTAssertEqual(sut2.path, "/testFolderTemp/sub folder/directory/file name.ext")
         
-        let sut3 = folder.file(File("directory/file name.ext"))
+        let sut3 = folder.file("directory/file name.ext")
         XCTAssertEqual(sut3.path, "/testFolderTemp/sub folder/directory/file name.ext")
     }
     
@@ -64,7 +76,7 @@ class GoDFolderTests: XCTestCase {
         let sut2 = folder.folder("directory/folder name")
         XCTAssertEqual(sut2.path, "/testFolderTemp/sub folder/directory/folder name")
         
-        let sut3 = folder.folder(Folder("directory/folder name"))
+        let sut3 = folder.folder("directory/folder name")
         XCTAssertEqual(sut3.path, "/testFolderTemp/sub folder/directory/folder name")
     }
     

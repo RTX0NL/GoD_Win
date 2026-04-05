@@ -16,7 +16,7 @@ public extension JSONDecoder {
 public extension JSONEncoder {
     func encode<Value>(_ value: Value) throws -> GoDData where Value : Encodable {
         let data: Data = try encode(value)
-        return GoDData(data: data)
+        return GoDData(data: data, byteOrder: Environment.byteOrder)
     }
 }
 

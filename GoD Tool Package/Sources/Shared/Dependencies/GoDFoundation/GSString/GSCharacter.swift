@@ -13,10 +13,10 @@ enum GSCharacter {
 }
 
 extension GSCharacter: DataConvertible {
-    var rawData: GoDData {
+    func rawData(byteOrder: ByteOrder) -> GoDData {
         switch self {
         case .raw(let s): return GoDData(character: s, format: .gs)
-        case .special(let bytes): return GoDData(byteStream: [0xFF, 0xFF] + bytes)
+        case .special(let bytes): return GoDData(byteStream: [0xFF, 0xFF] + bytes, byteOrder: byteOrder)
         }
     }
 }
@@ -65,14 +65,14 @@ extension GSCharacter {
             let characterCount = kanaCount + kanjiCount
             if bytes.count == 4 + (characterCount * 2) {
                 let kanaBytes = Array(bytes[4 ..< 4 + (kanaCount * 2)])
-                let kanaData = GoDData(byteStream: kanaBytes)
+                let kanaData = GoDData(byteStream: kanaBytes, byteOrder: .big)
                 let kanjiBytes = Array(bytes[4 + (kanaCount * 2) ..< 4 + (kanaCount * 2) + (kanjiCount * 2)])
-                let kanjiData = GoDData(byteStream: kanjiBytes)
+                let kanjiData = GoDData(byteStream: kanjiBytes, byteOrder: .big)
                 return "{Furigana: \(kanaData.string(format: StringFormats.utf16_big)) \(kanjiData.string(format: StringFormats.utf16_big))}"
             }
         case (.gsPBR, .special(let bytes)) where bytes.count == 4 && bytes[0...1] == [0,2]:
             let durationBytes = Array(bytes[2 ..< 4])
-            let durationData = GoDData(byteStream: durationBytes)
+            let durationData = GoDData(byteStream: durationBytes, byteOrder: .big)
             return "{Pause: \(UInt16(data: durationData) ?? 0)}"
         case (.gsPBR, .special([0xFF, 0xFF])):
             return "{End}"
@@ -153,7 +153,7 @@ extension GSCharacter {
                 if parts.count == 2 {
                     let kanji = String(parts[0])
                     let kana = String(parts[1])
-                    let data = GoDData()
+                    let data = GoDData(byteOrder: .big)
                     data.append(UInt16(1))
                     data.append(UInt8(kanji.count & 0xFF))
                     data.append(UInt8(kana.count & 0xFF))
@@ -173,7 +173,7 @@ extension GSCharacter {
                 var substring = string.substring(from: "{Pause: ".count)
                 substring = substring.substring(from: 0, to: -1)
                 if let duration = substring.integerValue {
-                    let data = GoDData()
+                    let data = GoDData(byteOrder: .big)
                     data.append(UInt16(2))
                     data.append(UInt16(duration & 0xFFFF))
                     guard let bytes = [UInt8](data: data) else {

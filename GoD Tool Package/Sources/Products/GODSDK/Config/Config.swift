@@ -29,7 +29,7 @@ struct GoddessConfig: Codable {
     static func decodeFromFile(_ file: File, fileSystem: FileSystemTree) throws -> GoddessConfig {
         var config: GoddessConfig = try fileSystem.decodeJSON(from: file)
         if let parentFolder = file.parentFolder {
-            config.rootFolder = parentFolder.folder(config.rootFolder)
+            config.rootFolder = parentFolder.folder(config.rootFolder.path)
         }
         return config
     }

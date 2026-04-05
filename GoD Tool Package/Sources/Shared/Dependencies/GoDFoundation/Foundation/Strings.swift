@@ -93,7 +93,7 @@ public enum StringFormats: String, Equatable, Codable {
         case .utf16_little, .ascii_little, .unicode_little: return .little
         case .utf16_big, .ascii_big, .unicode_big: return .big
         case .gsColo, .gsXD, .gsPBR, .gs: return .big
-        case .utf8: return .unspecified
+        case .utf8: return Environment.byteOrder
         }
     }
 }
