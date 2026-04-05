@@ -188,9 +188,13 @@ public class DolphinFST: FileFormat {
     
     private func entryCount(for folder: Folder) -> Int {
         let searchPath = folder.path + (folder.path.last == "/" ? "" : "/")
-        return files.keys
+        let fileCount = files.keys
             .filter { $0.path.startsWith(searchPath) }
             .count
+        let folderCount = folders
+            .filter { $0.path.startsWith(searchPath) }
+            .count
+        return fileCount + folderCount
     }
     
     private var stringTableLength: Int {
