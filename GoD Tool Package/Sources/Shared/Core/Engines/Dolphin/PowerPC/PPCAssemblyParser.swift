@@ -117,9 +117,83 @@ public struct PPCAssemblyParser {
     }
 
     func parseOperands(_ text: String, mnemonic: String) -> [PPCParsedOperand] {
-        // Split on commas, but be careful with memory operands like "0x10(r3)"
         let tokens = splitOperands(text)
-        return tokens.compactMap { parseOperand(String($0).trimmingCharacters(in: .whitespaces), mnemonic: mnemonic) }
+        var result = [PPCParsedOperand]()
+        for (i, token) in tokens.enumerated() {
+            let s = String(token).trimmingCharacters(in: .whitespaces)
+            // Context-dependent: rotate/mask instructions have positional operands
+            if let contextOp = parseContextualOperand(s, mnemonic: mnemonic, index: i) {
+                result.append(contextOp)
+            } else if let op = parseOperand(s, mnemonic: mnemonic) {
+                result.append(op)
+            }
+        }
+        return result
+    }
+
+    /// Handle operands that depend on their position within specific instructions
+    func parseContextualOperand(_ text: String, mnemonic: String, index: Int) -> PPCParsedOperand? {
+        let base = mnemonic.hasSuffix(".") ? String(mnemonic.dropLast()) : mnemonic
+
+        // mfspr: rD, SPR  /  mtspr: SPR, rS — numeric SPR values
+        if (base == "mfspr" && index == 1) || (base == "mtspr" && index == 0) {
+            // First try known name
+            if let spr = parseSPR(text) { return .spr(spr) }
+            // Then try numeric
+            if let val = UInt32(text) { return .spr(val) }
+            if text.hasPrefix("0x"), let val = UInt32(text.dropFirst(2), radix: 16) { return .spr(val) }
+        }
+
+        // rlwinm/rlwimi: rA, rS, SH, MB, ME
+        // rlwnm: rA, rS, rB, MB, ME
+        if (base == "rlwinm" || base == "rlwimi") && index >= 2 {
+            if let val = parseUInt8(text) {
+                switch index {
+                case 2: return .shift(val)
+                case 3: return .maskBegin(val)
+                case 4: return .maskEnd(val)
+                default: break
+                }
+            }
+        }
+        if base == "rlwnm" && index >= 3 {
+            if let val = parseUInt8(text) {
+                switch index {
+                case 3: return .maskBegin(val)
+                case 4: return .maskEnd(val)
+                default: break
+                }
+            }
+        }
+
+        // slwi/srwi/clrlwi/srawi: rA, rS, SH
+        if (base == "slwi" || base == "srwi" || base == "clrlwi" || base == "srawi") && index == 2 {
+            if let val = parseUInt8(text) {
+                return .shift(val)
+            }
+        }
+
+        // lswi/stswi: rD, rA, NB (count)
+        if (base == "lswi" || base == "stswi") && index == 2 {
+            if let val = parseUInt8(text) {
+                return .count(val)
+            }
+        }
+
+        // psq_ instructions: ..., W, I (GQR)
+        if base.hasPrefix("psq_") {
+            if index == 2, let val = parseUInt8(text) { return .wBit(val) }
+            if index == 3, let val = parseUInt8(text) { return .gqr(val) }
+        }
+
+        return nil
+    }
+
+    func parseUInt8(_ text: String) -> UInt8? {
+        if text.hasPrefix("0x") || text.hasPrefix("0X") {
+            return UInt8(text.dropFirst(2), radix: 16)
+        }
+        return UInt8(text)
     }
 
     /// Split operand string on commas, respecting parentheses
@@ -281,35 +355,47 @@ public struct PPCAssemblyParser {
     }
 
     func parseSPR(_ s: String) -> UInt32? {
-        // Check against known SPR names
+        // Must match all SPR names from PPCInstruction.SPR enum
         let sprMap: [String: UInt32] = [
             "xer": 1, "lr": 8, "ctr": 9,
             "dsisr": 18, "dar": 19, "dec": 22,
             "sdr1": 25, "srr0": 26, "srr1": 27,
             "sprg0": 272, "sprg1": 273, "sprg2": 274, "sprg3": 275,
-            "ear": 282, "pvr": 287,
+            "ear": 282,
+            "tbLo": 268, "tbHi": 269,
+            "pvr": 287,
             "ibat0u": 528, "ibat0l": 529, "ibat1u": 530, "ibat1l": 531,
             "ibat2u": 532, "ibat2l": 533, "ibat3u": 534, "ibat3l": 535,
             "dbat0u": 536, "dbat0l": 537, "dbat1u": 538, "dbat1l": 539,
             "dbat2u": 540, "dbat2l": 541, "dbat3u": 542, "dbat3l": 543,
-            "hid0": 1008, "hid1": 1009, "hid2": 920,
+            "gqr0": 912, "gqr1": 913, "gqr2": 914, "gqr3": 915,
+            "gqr4": 916, "gqr5": 917, "gqr6": 918, "gqr7": 919,
+            "hid2": 920, "wpar": 921, "dmau": 922, "dmal": 923,
+            "ummcr0": 936, "upmc1": 937, "upmc2": 938, "usia": 939,
+            "ummcr1": 940, "upmc3": 941, "upmc4": 942, "usda": 943,
+            "mmcr0": 952, "pmc1": 953, "pmc2": 954, "sia": 955,
+            "mmcr1": 956, "pmc3": 957, "pmc4": 958, "sda": 959,
+            "hid0": 1008, "hid1": 1009,
             "iabr": 1010, "dabr": 1013,
             "l2cr": 1017, "ictc": 1019,
             "thrm1": 1020, "thrm2": 1021, "thrm3": 1022,
-            "wpar": 921, "dmau": 922, "dmal": 923,
         ]
         return sprMap[s]
     }
 
     /// Determine whether a hex immediate should be signed or unsigned based on mnemonic context
     func immediateFromContext(_ val: UInt32, mnemonic: String) -> PPCParsedOperand {
-        // Unsigned context: ori, oris, xori, xoris, andi., andis., cmplwi, mtcrf
-        let unsignedMnemonics = ["ori", "oris", "xori", "xoris", "andi.", "andis.", "cmplwi", "mtcrf", "mtfsf"]
+        // Unsigned context: ori, oris, xori, xoris, andi., andis., cmplwi, mtcrf, bc/bca/bcl/bcla (BO field), tw
+        let unsignedMnemonics = ["ori", "oris", "xori", "xoris", "andi.", "andis.", "cmplwi", "mtcrf", "mtfsf",
+                                  "bc", "bcl", "bca", "bcla", "bclr", "bclrl", "bcctr", "bcctrl", "tw",
+                                  "mtsr", "mfsr", "mtfsfi", "mtfsfi.", "mtfsb0", "mtfsb0.", "mtfsb1", "mtfsb1."]
         if unsignedMnemonics.contains(mnemonic) {
             return .uimm(val)
         }
-        // For branch-like contexts, treat as address
-        if mnemonic.hasPrefix("b") {
+        // For branch mnemonics, treat hex values as branch targets
+        let branchMnemonics = ["b", "bl", "ba", "bla", "beq", "bne", "blt", "bge", "bgt", "ble", "bso", "bns",
+                                "beql", "bnel", "bltl", "bgel", "bgtl", "blel", "bdnz", "bdnzl", "bdz", "bdzl"]
+        if branchMnemonics.contains(mnemonic) {
             return .label("0x\(String(val, radix: 16, uppercase: true))")
         }
         // Default: signed

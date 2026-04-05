@@ -21,6 +21,59 @@ enum DolAssembly {
         let layout = parseSectionsFile(sectionsData.string(format: .utf8))
 
         let assembler = PPCSectionAssembler()
+
+        // Pre-scan: collect all labels from all sections to build global symbol table
+        var globalSymbols = [String: UInt32]()
+
+        for section in layout.textSections {
+            let files = collectSectionFiles(section.name, codeFolder: config.codeFolder, fileSystem: fileSystem)
+            let labels = assembler.collectLabelsOnly(files: files, baseAddress: section.address)
+            globalSymbols.merge(labels) { existing, _ in existing }
+        }
+        for section in layout.dataSections {
+            let files = collectSectionFiles(section.name, codeFolder: config.codeFolder, fileSystem: fileSystem)
+            let labels = assembler.collectLabelsOnly(files: files, baseAddress: section.address)
+            globalSymbols.merge(labels) { existing, _ in existing }
+        }
+
+        // Also scan all files for lbl_XXXXXXXX references that point to BSS or
+        // other areas not covered by the section files (auto-generated relocation labels)
+        for section in layout.textSections {
+            let files = collectSectionFiles(section.name, codeFolder: config.codeFolder, fileSystem: fileSystem)
+            for (_, content) in files {
+                for line in content.split(separator: "\n") {
+                    let s = String(line)
+                    // Find lbl_XXXXXXXX patterns
+                    var searchStart = s.startIndex
+                    while let range = s.range(of: "lbl_", range: searchStart..<s.endIndex) {
+                        let hexStart = range.upperBound
+                        let hexEnd = s.index(hexStart, offsetBy: 8, limitedBy: s.endIndex) ?? s.endIndex
+                        if s.distance(from: hexStart, to: hexEnd) == 8 {
+                            let hexStr = String(s[hexStart..<hexEnd])
+                            let label = "lbl_" + hexStr
+                            if globalSymbols[label] == nil,
+                               let addr = UInt32(hexStr, radix: 16) {
+                                globalSymbols[label] = addr
+                            }
+                        }
+                        searchStart = range.upperBound
+                    }
+                }
+            }
+        }
+
+        // Load symbol map for external references (exception handlers, etc.)
+        if let symbolMapPath = config.symbolMapPath,
+           let mapData = fileSystem.readFile(at: symbolMapPath) {
+            let parser = SymbolMapParser()
+            let symbols = parser.parse(mapData.string(format: .utf8))
+            for sym in symbols where globalSymbols[sym.name] == nil {
+                globalSymbols[sym.name] = sym.address
+            }
+        }
+
+        logger?.log(.info("Collected \(globalSymbols.count) global symbols"))
+
         var textSections = [Dol.TextSection]()
         var dataSections = [Dol.DataSection]()
 
@@ -36,7 +89,7 @@ enum DolAssembly {
                 let files = collectAssemblyFiles(from: sectionFolder, fileSystem: fileSystem)
 
                 if !files.isEmpty {
-                    let assembled = try assembler.assemble(files: files, baseAddress: section.address)
+                    let assembled = try assembler.assemble(files: files, baseAddress: section.address, externalSymbols: globalSymbols)
                     textSections.append(.init(RAMAddress: section.address, assembly: assembled))
                 } else {
                     textSections.append(.init(RAMAddress: section.address, assembly: .none))
@@ -62,10 +115,9 @@ enum DolAssembly {
 
         // Assemble data sections
         for section in layout.dataSections {
-            let sectionFile = config.codeFolder.file("\(section.name).s")
-            if let fileData = fileSystem.readFile(at: sectionFile) {
-                let content = fileData.string(format: .utf8)
-                let assembled = try assembler.assemble(files: [(section.name + ".s", content)], baseAddress: section.address)
+            let files = collectSectionFiles(section.name, codeFolder: config.codeFolder, fileSystem: fileSystem)
+            if !files.isEmpty {
+                let assembled = try assembler.assemble(files: files, baseAddress: section.address, externalSymbols: globalSymbols)
                 dataSections.append(.init(RAMAddress: section.address, data: assembled))
             } else {
                 dataSections.append(.init(RAMAddress: section.address, data: .none))
@@ -93,6 +145,23 @@ enum DolAssembly {
 
         logger?.log(.taskStatus(taskName: "Assemble DOL", status: .completed(true)))
         logger?.log(.info("DOL written to \(config.outputDolPath.path) (\(dolData.length) bytes)"))
+    }
+
+    /// Collect .s files for a section — from folder or single file
+    private static func collectSectionFiles(
+        _ sectionName: String,
+        codeFolder: Folder,
+        fileSystem: FileSystemTree
+    ) -> [(name: String, content: String)] {
+        let sectionFolder = codeFolder.folder(sectionName)
+        if fileSystem.inspectFolder(at: sectionFolder) != nil {
+            return collectAssemblyFiles(from: sectionFolder, fileSystem: fileSystem)
+        }
+        let sectionFile = codeFolder.file("\(sectionName).s")
+        if let data = fileSystem.readFile(at: sectionFile) {
+            return [(sectionName + ".s", data.string(format: .utf8))]
+        }
+        return []
     }
 
     // MARK: - Collect .s files recursively

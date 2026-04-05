@@ -302,6 +302,22 @@ public struct PPCEncoder {
         case "isync": return xlForm(19, 0, 0, 0, 150, 0)
         case "rfi":   return xlForm(19, 0, 0, 0, 50, 0)
 
+        // Load/store string
+        case "lswi":
+            guard let rd = gpr(operands, 0), let ra = gpr(operands, 1) else { return nil }
+            let nb: UInt32 = operands.count > 2 ? (count(operands, 2).map { UInt32($0) } ?? 0) : 0
+            return xForm(31, rd, ra, nb, 533)
+        case "lswx":  return encodeXFormIdx(operands, xo: 597)
+        case "stswi":
+            guard let rd = gpr(operands, 0), let ra = gpr(operands, 1) else { return nil }
+            let nb: UInt32 = operands.count > 2 ? (count(operands, 2).map { UInt32($0) } ?? 0) : 0
+            return xForm(31, rd, ra, nb, 661)
+        case "stswx": return encodeXFormIdx(operands, xo: 725)
+
+        // External control
+        case "eciwx":  return encodeXFormIdx(operands, xo: 310)
+        case "ecowx":  return encodeXFormIdx(operands, xo: 438)
+
         // Misc opcode 31
         case "lwarx":   return encodeXFormIdx(operands, xo: 20)
         case "stwcx.":
@@ -374,6 +390,18 @@ public struct PPCEncoder {
         case "fctiwz":
             guard let fd = fpr(operands, 0), let fb = fpr(operands, 1) else { return nil }
             return xForm(63, fd, 0, fb, 15) | rc
+        case "mtfsb0":
+            guard let bt = crBit(operands, 0) else { return nil }
+            return xForm(63, UInt32(bt), 0, 0, 70) | rc
+        case "mtfsb1":
+            guard let bt = crBit(operands, 0) else { return nil }
+            return xForm(63, UInt32(bt), 0, 0, 38) | rc
+        case "mcrfs":
+            guard let crfD = crField(operands, 0), let crfS = crField(operands, 1) else { return nil }
+            return xForm(63, UInt32(crfD) << 2, UInt32(crfS) << 2, 0, 64)
+        case "mtfsfi":
+            guard let crf = crField(operands, 0), let imm = uimm(operands, 1) else { return nil }
+            return (63 << 26) | (UInt32(crf) << 23) | ((imm & 0xF) << 12) | (134 << 1) | rc
         case "mffs":
             guard let fd = fpr(operands, 0) else { return nil }
             return xForm(63, fd, 0, 0, 583) | rc
@@ -445,9 +473,27 @@ public struct PPCEncoder {
         case "psq_st": return encodePsq(60, operands)
         case "psq_stu": return encodePsq(61, operands)
 
+        // PS indexed load/store (opcode 4, X-form with W and I fields)
+        case "psq_lx", "psq_stx", "psq_lux", "psq_stux":
+            return encodePsqIndexed(baseMnemonic, operands)
+
         case "dcbz_l":
             guard let ra = gpr(operands, 0), let rb = gpr(operands, 1) else { return nil }
             return xForm(4, 0, ra, rb, 1014)
+
+        // Segment registers
+        case "mfsr":
+            guard let rd = gpr(operands, 0), let sr = uimm(operands, 1) else { return nil }
+            return xForm(31, rd, sr & 0xF, 0, 595)
+        case "mfsrin":
+            guard let rd = gpr(operands, 0), let rb = gpr(operands, 1) else { return nil }
+            return xForm(31, rd, 0, rb, 659)
+        case "mtsr":
+            guard let sr = uimm(operands, 0), let rs = gpr(operands, 1) else { return nil }
+            return xForm(31, rs, sr & 0xF, 0, 210)
+        case "mtsrin":
+            guard let rs = gpr(operands, 0), let rb = gpr(operands, 1) else { return nil }
+            return xForm(31, rs, 0, rb, 242)
 
         // TLB
         case "tlbie":
@@ -728,10 +774,15 @@ private extension PPCEncoder {
     }
 
     func encodeCondBranch(_ mnemonic: String, _ ops: [PPCInstruction.Operand], _ pc: UInt32) -> UInt32? {
-        let base = mnemonic.replacingOccurrences(of: "lr", with: "").replacingOccurrences(of: "l", with: "")
-        let isLink = mnemonic.contains("l") && !mnemonic.contains("lr") && !mnemonic.contains("le")
-            || (mnemonic.hasSuffix("l") && !mnemonic.hasSuffix("lr"))
-        let isLR = mnemonic.contains("lr")
+        // Parse mnemonic: b{cond}[lr][l]
+        // Must extract condition name, LR flag, and link flag carefully
+        var m = mnemonic
+        let isLR = m.hasSuffix("lr") || m.hasSuffix("lrl")
+        if m.hasSuffix("lrl") { m = String(m.dropLast(3)) }
+        else if m.hasSuffix("lr") { m = String(m.dropLast(2)) }
+        let isLink = m.hasSuffix("l") && m != "bl"
+        if isLink && m.count > 2 { m = String(m.dropLast()) }
+        let base = m
 
         let bo: UInt32
         let crBitOffset: UInt32
@@ -789,6 +840,28 @@ private extension PPCEncoder {
         }
         let bd = UInt32(bitPattern: offset >> 2) & 0x3FFF
         return (16 << 26) | (bo << 21) | (UInt32(bi) << 16) | (bd << 2) | (aa << 1) | lk
+    }
+
+    func count(_ ops: [PPCInstruction.Operand], _ idx: Int) -> UInt8? {
+        guard idx < ops.count, case .count(let v) = ops[idx] else { return nil }
+        return v
+    }
+
+    func encodePsqIndexed(_ mnemonic: String, _ ops: [PPCInstruction.Operand]) -> UInt32? {
+        guard let fd = fpr(ops, 0), let ra = gpr(ops, 1), let rb = gpr(ops, 2) else { return nil }
+        var w: UInt32 = 0
+        var i: UInt32 = 0
+        if ops.count > 3, case .wBit(let wVal) = ops[3] { w = UInt32(wVal) }
+        if ops.count > 4, case .gqr(let iVal) = ops[4] { i = UInt32(iVal) }
+        let xo: UInt32
+        switch mnemonic {
+        case "psq_lx":  xo = 6
+        case "psq_stx": xo = 7
+        case "psq_lux": xo = 38
+        case "psq_stux": xo = 39
+        default: return nil
+        }
+        return (4 << 26) | (fd << 21) | (ra << 16) | (rb << 11) | (w << 10) | (i << 7) | (xo << 1)
     }
 
     func encodePsq(_ opcode: UInt32, _ ops: [PPCInstruction.Operand]) -> UInt32? {

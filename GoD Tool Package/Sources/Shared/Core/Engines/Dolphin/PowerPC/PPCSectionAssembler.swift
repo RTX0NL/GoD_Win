@@ -32,16 +32,35 @@ public struct PPCSectionAssembler {
     /// - Parameters:
     ///   - files: Array of (filename, content) pairs
     ///   - baseAddress: The RAM address where this section starts
+    ///   - externalSymbols: Labels from other sections for cross-section references
     /// - Returns: The assembled binary bytes
-    public func assemble(files: [(name: String, content: String)], baseAddress: UInt32) throws -> GoDData {
+    public func assemble(
+        files: [(name: String, content: String)],
+        baseAddress: UInt32,
+        externalSymbols: [String: UInt32] = [:]
+    ) throws -> GoDData {
         // Parse all files
         let parsedFiles = files.map { (name: $0.name, lines: parser.parse($0.content)) }
 
         // Pass 1: Collect labels and compute addresses
-        let labels = try collectLabels(parsedFiles: parsedFiles, baseAddress: baseAddress)
+        var labels = try collectLabels(parsedFiles: parsedFiles, baseAddress: baseAddress)
+
+        // Merge external symbols (local labels take precedence)
+        for (name, addr) in externalSymbols where labels[name] == nil {
+            labels[name] = addr
+        }
 
         // Pass 2: Encode everything
         return try encode(parsedFiles: parsedFiles, baseAddress: baseAddress, labels: labels)
+    }
+
+    /// Collect labels from .s files without encoding — used to build global symbol table
+    public func collectLabelsOnly(
+        files: [(name: String, content: String)],
+        baseAddress: UInt32
+    ) -> [String: UInt32] {
+        let parsedFiles = files.map { (name: $0.name, lines: parser.parse($0.content)) }
+        return (try? collectLabels(parsedFiles: parsedFiles, baseAddress: baseAddress)) ?? [:]
     }
 
     // MARK: - Pass 1: Label collection
@@ -87,7 +106,7 @@ public struct PPCSectionAssembler {
             for line in file.lines {
                 switch line {
                 case .instruction(let mnemonic, let parsedOperands):
-                    let operands = try resolveOperands(parsedOperands, labels: labels, currentAddress: currentAddress, file: file.name)
+                    let operands = try resolveOperands(parsedOperands, labels: labels, currentAddress: currentAddress, file: file.name, mnemonic: mnemonic)
                     guard let encoded = encoder.encode(mnemonic: mnemonic, operands: operands, currentAddress: currentAddress) else {
                         throw AssemblyError.encodingFailed(mnemonic: mnemonic, address: currentAddress, file: file.name)
                     }
@@ -134,9 +153,11 @@ public struct PPCSectionAssembler {
         _ parsed: [PPCParsedOperand],
         labels: [String: UInt32],
         currentAddress: UInt32,
-        file: String
+        file: String,
+        mnemonic: String = ""
     ) throws -> [PPCInstruction.Operand] {
-        try parsed.map { op in
+        let unsignedLoMnemonics = ["ori", "oris", "xori", "xoris"]
+        return try parsed.map { op -> PPCInstruction.Operand in
             switch op {
             case .gpr(let r):    return .gpr(r)
             case .fpr(let r):    return .fpr(r)
@@ -156,35 +177,53 @@ public struct PPCSectionAssembler {
                 return .memory(offset: Int16(clamping: offset), base: base)
 
             case .label(let name):
-                guard let addr = labels[name] else {
-                    // Try parsing as hex address (e.g. "0x80003100")
-                    if name.hasPrefix("0x") || name.hasPrefix("0X"),
-                       let addr = UInt32(name.dropFirst(2), radix: 16) {
-                        return .branchTarget(addr)
-                    }
-                    throw AssemblyError.unresolvedLabel(name, file: file)
+                if let addr = labels[name] {
+                    return .branchTarget(addr)
                 }
-                return .branchTarget(addr)
+                // Try parsing as hex address (e.g. "0x80003100")
+                if name.hasPrefix("0x") || name.hasPrefix("0X"),
+                   let addr = UInt32(name.dropFirst(2), radix: 16) {
+                    return .branchTarget(addr)
+                }
+                // Try resolving lbl_XXXXXXXX from the hex address in the name
+                if name.hasPrefix("lbl_"), name.count == 12,
+                   let addr = UInt32(name.dropFirst(4), radix: 16) {
+                    return .branchTarget(addr)
+                }
+                throw AssemblyError.unresolvedLabel(name, file: file)
 
             case .haReloc(let symbol):
-                guard let addr = labels[symbol] else {
+                guard let addr = resolveSymbol(symbol, labels: labels) else {
                     throw AssemblyError.unresolvedLabel(symbol, file: file)
                 }
                 return .simm(computeHa(addr))
 
             case .loReloc(let symbol):
-                guard let addr = labels[symbol] else {
+                guard let addr = resolveSymbol(symbol, labels: labels) else {
                     throw AssemblyError.unresolvedLabel(symbol, file: file)
+                }
+                if unsignedLoMnemonics.contains(mnemonic) {
+                    return .uimm(UInt32(addr & 0xFFFF))
                 }
                 return .simm(computeLo(addr))
 
             case .loRelocMemory(let symbol, let base):
-                guard let addr = labels[symbol] else {
+                guard let addr = resolveSymbol(symbol, labels: labels) else {
                     throw AssemblyError.unresolvedLabel(symbol, file: file)
                 }
                 return .memory(offset: Int16(bitPattern: UInt16(addr & 0xFFFF)), base: base)
             }
         }
+    }
+
+    /// Resolve a symbol name to an address: check labels first, then try lbl_XXXXXXXX pattern
+    private func resolveSymbol(_ name: String, labels: [String: UInt32]) -> UInt32? {
+        if let addr = labels[name] { return addr }
+        if name.hasPrefix("lbl_"), name.count == 12,
+           let addr = UInt32(name.dropFirst(4), radix: 16) {
+            return addr
+        }
+        return nil
     }
 
     /// Compute @ha value: upper 16 bits adjusted for sign extension of lower half.
