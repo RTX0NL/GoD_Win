@@ -16,6 +16,7 @@ public struct PPCEncoder {
         // Strip trailing dot for Rc variants
         let hasDot = mnemonic.hasSuffix(".") && mnemonic != "addic."
             && mnemonic != "andi." && mnemonic != "andis."
+            && mnemonic != "stwcx."
         let baseMnemonic = hasDot ? String(mnemonic.dropLast()) : mnemonic
         let rc: UInt32 = hasDot ? 1 : 0
 

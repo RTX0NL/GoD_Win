@@ -109,7 +109,7 @@ private extension PPCDecoder {
 
         // Branch
         case 16: return decodeBc(raw, pc)
-        case 17: return raw.bits(20, 20) != 0 ? D(mnemonic: "sc", operands: []) : nil
+        case 17: return raw.bit(30) != 0 ? D(mnemonic: "sc", operands: []) : nil
         case 18: return decodeB(raw, pc)
 
         // Condition register / branch to LR/CTR
@@ -736,7 +736,7 @@ private extension PPCDecoder {
     func decodePsq(_ raw: UInt32, _ mnemonic: String) -> D {
         let fd = Self.rD(raw)
         let ra = Self.rA(raw)
-        let w = UInt8(raw.bit(15))
+        let w = UInt8(raw.bit(16))
         let i = UInt8(raw.bits(17, 19))
         let d = raw.bits(20, 31).signExtend(from: 12)
         return D(mnemonic: mnemonic, operands: [.fpr(fd), .memory(offset: Int16(d), base: ra), .wBit(w), .gqr(i)])
