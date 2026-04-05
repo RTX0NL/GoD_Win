@@ -126,7 +126,9 @@ private extension PPCDecoder {
         case 23: return decodeRlwnm(raw)
 
         // Logical immediate
-        case 24: return D(mnemonic: "ori", operands: [.gpr(Self.rA(raw)), .gpr(Self.rD(raw)), .uimm(Self.uimm(raw))])
+        case 24:
+            if raw == 0x60000000 { return D(mnemonic: "nop", operands: []) }
+            return D(mnemonic: "ori", operands: [.gpr(Self.rA(raw)), .gpr(Self.rD(raw)), .uimm(Self.uimm(raw))])
         case 25: return D(mnemonic: "oris", operands: [.gpr(Self.rA(raw)), .gpr(Self.rD(raw)), .uimm(Self.uimm(raw))])
         case 26: return D(mnemonic: "xori", operands: [.gpr(Self.rA(raw)), .gpr(Self.rD(raw)), .uimm(Self.uimm(raw))])
         case 27: return D(mnemonic: "xoris", operands: [.gpr(Self.rA(raw)), .gpr(Self.rD(raw)), .uimm(Self.uimm(raw))])
