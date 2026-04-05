@@ -20,6 +20,22 @@ public final class Dol: FileFormat {
     public var textSections: [TextSection]
     public var dataSections: [DataSection]
     
+    public init(
+        dolphinEngine: DolphinEngine,
+        textSections: [TextSection],
+        dataSections: [DataSection],
+        bssRAMAddress: UInt32,
+        bssSize: UInt32,
+        entryPoint: UInt32
+    ) {
+        self.dolphinEngine = dolphinEngine
+        self.textSections = textSections
+        self.dataSections = dataSections
+        self.bssRAMAddress = bssRAMAddress
+        self.bssSize = bssSize
+        self.entryPoint = entryPoint
+    }
+
     public init(data: GoDData, dolphinEngine: DolphinEngine) throws {
         self.dolphinEngine = dolphinEngine
 

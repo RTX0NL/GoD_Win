@@ -14,6 +14,7 @@ struct GoddessConfig: Codable {
         case coloXDDump(config: ColoXD.DumpConfig)
         case coloXDBuild(config: ColoXD.BuildConfig)
         case dolDisassembly(config: DolDisassembly.Config)
+        case dolAssembly(config: DolAssembly.Config)
     }
     
     let name: String

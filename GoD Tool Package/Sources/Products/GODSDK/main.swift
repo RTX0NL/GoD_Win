@@ -60,6 +60,8 @@ do {
                         try ColoXD.build(config: buildConfig, settings: settings, fileSystem: fileSystem)
                     case .dolDisassembly(let disasmConfig):
                         try DolDisassembly.disassemble(config: disasmConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .dolAssembly(let asmConfig):
+                        try DolAssembly.assemble(config: asmConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     }
                 }
         
