@@ -256,7 +256,11 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 - `guard let ... else { throw }` for error handling
 - `ErrorTrace` for call stack context on errors
 - Operations return `Void` and `throw` on failure
+- **Operations are thin wrappers**: GODSDK operation files map config values to engine function parameters and call engine functions. All domain logic (parsing, encryption, data transformation) lives in the appropriate engine module. Operations load engines from config paths, invoke engine functions, and write results via FileSystemTree.
 - **Cross-platform by default**: Avoid Apple-only frameworks (CryptoKit, CommonCrypto, etc.) in the CLI/SDK. Prefer pure Swift implementations for algorithms (AES, SHA-1, etc.) to maintain Linux/Windows portability.
+
+### Documentation
+- **Credits & references**: When referencing the work or documentation of others during implementation, update `Documentation/Credits & References.md` with proper attribution. TODO: retroactively add credits for the PowerPC disassembler/assembler implementation.
 
 ### Testing
 - Tests in `Tests/Shared Tests/Dependency Tests/`

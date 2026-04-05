@@ -36,7 +36,7 @@ public class DolphinFST: FileFormat {
         var currentFolder = dolphinEngine.data.userFiles.filesFolder
         var subfolderEndIndexes = [Int]()
         for index in 1 ..< entryCount {
-            if index == subfolderEndIndexes.last {
+            while let endIndex = subfolderEndIndexes.last, index >= endIndex {
                 subfolderEndIndexes.removeLast()
                 currentFolder = currentFolder.parentFolder ?? currentFolder
             }

@@ -9,6 +9,7 @@ import GoDFoundation
 import Structs
 import GameCube
 import Dolphin
+import Wii
 import GeniusSonority
 
 // For development, uncomment and set args:
@@ -54,10 +55,16 @@ do {
                         try Gamecube.dump(config: dumpConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     case .gamecubeBuild(let buildConfig):
                         try Gamecube.build(config: buildConfig, settings: settings, fileSystem: fileSystem)
+                    case .wiiDump(let dumpConfig):
+                        try WiiOps.dump(config: dumpConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .wiiBuild(let buildConfig):
+                        try WiiOps.build(config: buildConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     case .coloXDDump(let dumpConfig):
                         try ColoXD.dump(config: dumpConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     case .coloXDBuild(let buildConfig):
                         try ColoXD.build(config: buildConfig, settings: settings, fileSystem: fileSystem)
+                    case .pbrDump(let dumpConfig):
+                        try PBROps.dump(config: dumpConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     case .dolDisassembly(let disasmConfig):
                         try DolDisassembly.disassemble(config: disasmConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     case .dolAssembly(let asmConfig):

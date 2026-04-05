@@ -1,15 +1,19 @@
-//
-//  PBREngine.swift
-//  
-//
-//  Created by Stars Momodu on 01/06/2022.
-//
-
 import Foundation
 import Wii
 import Pokemon
 
+public struct PBREngine: PokemonEngine {
+    // Stub — will be expanded when PBR support is implemented
+}
 
-open class PBREngine: WiiEngine, PokemonEngine {
-    
+public enum PokemonBattleRevolution {
+    public static let gameIDUS = "RPBE"
+    public static let gameIDEU = "RPBP"
+    public static let gameIDJP = "RPBJ"
+
+    public static let gameIDs = [
+        gameIDUS,
+        gameIDEU,
+        gameIDJP
+    ]
 }

@@ -49,6 +49,8 @@ let package = Package(
                 "GoDEngine",
                 "GameCube",
                 "Dolphin",
+                "Wii",
+                "PBR",
                 "XD",
                 "Colosseum",
                 "GeniusSonority",
@@ -197,7 +199,10 @@ let package = Package(
         .target(
             name: "Wii",
             dependencies: [
-                "GoDFoundation"
+                "GoDEngine",
+                "Dolphin",
+                "GoDFoundation",
+                "Structs"
             ],
             path: "Sources/Shared/Core/Engines/Wii",
             resources: [.process("Resources")]

@@ -11,8 +11,11 @@ struct GoddessConfig: Codable {
     enum Operations: Codable {
         case gamecubeDump(config: Gamecube.DumpConfig)
         case gamecubeBuild(config: Gamecube.BuildConfig)
+        case wiiDump(config: WiiOps.DumpConfig)
+        case wiiBuild(config: WiiOps.BuildConfig)
         case coloXDDump(config: ColoXD.DumpConfig)
         case coloXDBuild(config: ColoXD.BuildConfig)
+        case pbrDump(config: PBROps.DumpConfig)
         case dolDisassembly(config: DolDisassembly.Config)
         case dolAssembly(config: DolAssembly.Config)
     }

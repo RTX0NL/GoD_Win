@@ -12,15 +12,30 @@ public struct FileMetaData {
     public let filetype: String?
     public let filesize: Int?
     public let notes: String?
+
+    public init(filename: String, filetype: String?, filesize: Int?, notes: String?) {
+        self.filename = filename
+        self.filetype = filetype
+        self.filesize = filesize
+        self.notes = notes
+    }
 }
 
 public struct FolderMetaData {
     public let name: String
     public let size: Int?
     public let notes: String?
-    
+
     public let files: [File]
     public let subFolders: [Folder]
+
+    public init(name: String, size: Int?, notes: String?, files: [File], subFolders: [Folder]) {
+        self.name = name
+        self.size = size
+        self.notes = notes
+        self.files = files
+        self.subFolders = subFolders
+    }
 }
 
 public protocol FileSystemTree {

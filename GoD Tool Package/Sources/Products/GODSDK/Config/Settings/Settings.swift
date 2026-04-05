@@ -9,7 +9,8 @@ import GoDFoundation
 
 struct GoddessSettings: Codable {
     var verbose = false
-    
+    var wiiCommonKeyFile: File? = nil
+
     static var `default`: GoddessSettings {
         GoddessSettings()
     }
