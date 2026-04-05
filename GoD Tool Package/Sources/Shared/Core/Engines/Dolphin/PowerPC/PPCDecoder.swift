@@ -93,6 +93,11 @@ private extension PPCDecoder {
         // Paired-singles (Gekko-specific)
         case 4:  return decodeOpcode4(raw, pc)
 
+        // Trap immediate
+        case 3:
+            let to = Self.rD(raw)
+            return D(mnemonic: "twi", operands: [.uimm(UInt32(to)), .gpr(Self.rA(raw)), .simm(Self.simm(raw))])
+
         // Integer arithmetic immediate
         case 7:  return D(mnemonic: "mulli", operands: [.gpr(Self.rD(raw)), .gpr(Self.rA(raw)), .simm(Self.simm(raw))])
         case 8:  return D(mnemonic: "subfic", operands: [.gpr(Self.rD(raw)), .gpr(Self.rA(raw)), .simm(Self.simm(raw))])
@@ -501,6 +506,14 @@ private extension PPCDecoder {
         // TLB
         case 306:  return D(mnemonic: "tlbie", operands: [.gpr(rb)])
         case 566:  return D(mnemonic: "tlbsync", operands: [])
+
+        // Move to CR from XER
+        case 512:  return D(mnemonic: "mcrxr", operands: [.crField(Self.crfD(raw))])
+
+        // Move from Time Base
+        case 371:
+            let tbr = Self.spr(raw)  // same encoding as SPR
+            return D(mnemonic: "mftb", operands: [.gpr(Self.rD(raw)), .spr(tbr)])
 
         // Sync/eieio
         case 598:  return D(mnemonic: "sync", operands: [])

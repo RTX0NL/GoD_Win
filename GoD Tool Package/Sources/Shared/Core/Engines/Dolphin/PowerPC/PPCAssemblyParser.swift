@@ -387,7 +387,7 @@ public struct PPCAssemblyParser {
     func immediateFromContext(_ val: UInt32, mnemonic: String) -> PPCParsedOperand {
         // Unsigned context: ori, oris, xori, xoris, andi., andis., cmplwi, mtcrf, bc/bca/bcl/bcla (BO field), tw
         let unsignedMnemonics = ["ori", "oris", "xori", "xoris", "andi.", "andis.", "cmplwi", "mtcrf", "mtfsf",
-                                  "bc", "bcl", "bca", "bcla", "bclr", "bclrl", "bcctr", "bcctrl", "tw",
+                                  "bc", "bcl", "bca", "bcla", "bclr", "bclrl", "bcctr", "bcctrl", "tw", "twi",
                                   "mtsr", "mfsr", "mtfsfi", "mtfsfi.", "mtfsb0", "mtfsb0.", "mtfsb1", "mtfsb1."]
         if unsignedMnemonics.contains(mnemonic) {
             return .uimm(val)

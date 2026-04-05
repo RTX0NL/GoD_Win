@@ -372,6 +372,9 @@ final class PPCEncoderTests: XCTestCase {
     // MARK: - Misc opcode 31
 
     func testTw()       { roundTrip(0x7C832008) } // tw 4, r3, r4
+    func testTwi()      { roundTrip(0x0C830001) } // twi 4, r3, 1
+    func testMcrxr()    { roundTrip(0x7C000400) } // mcrxr cr0
+    func testMftb()     { roundTrip(0x7C6C42E6) } // mftb r3, 268 (TBL)
     func testLwarx()    { roundTrip(0x7C602028) } // lwarx r3, r0, r4
     func testStwcxDot() { roundTrip(0x7C60212D) } // stwcx. r3, r0, r4
     func testEciwx()    { roundTrip(0x7C63226C) } // eciwx r3, r3, r4

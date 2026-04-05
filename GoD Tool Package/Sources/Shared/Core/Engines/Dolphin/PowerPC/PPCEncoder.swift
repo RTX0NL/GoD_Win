@@ -42,6 +42,11 @@ public struct PPCEncoder {
             // nop → ori 0, 0, 0
             return dFormU(24, 0, 0, 0)
 
+        // MARK: - Trap immediate
+        case "twi":
+            guard let to = uimm(operands, 0), let ra = gpr(operands, 1), let imm = simm(operands, 2) else { return nil }
+            return dForm(3, to, ra, imm)
+
         // MARK: - Simplified branch mnemonics
         case "blr":  return xlForm(19, 20, 0, 0, 16, 0)
         case "blrl": return xlForm(19, 20, 0, 0, 16, 1)
@@ -495,6 +500,18 @@ public struct PPCEncoder {
         case "mtsrin":
             guard let rs = gpr(operands, 0), let rb = gpr(operands, 1) else { return nil }
             return xForm(31, rs, 0, rb, 242)
+
+        // Move to CR from XER
+        case "mcrxr":
+            guard let crf = crField(operands, 0) else { return nil }
+            return xForm(31, UInt32(crf) << 2, 0, 0, 512)
+
+        // Move from Time Base (same encoding as mfspr but XO=371)
+        case "mftb":
+            guard let rd = gpr(operands, 0), let tbr = sprNum(operands, 1) else { return nil }
+            let tbrLo = tbr & 0x1F
+            let tbrHi = (tbr >> 5) & 0x1F
+            return (31 << 26) | (rd << 21) | (tbrLo << 16) | (tbrHi << 11) | (371 << 1)
 
         // TLB
         case "tlbie":
