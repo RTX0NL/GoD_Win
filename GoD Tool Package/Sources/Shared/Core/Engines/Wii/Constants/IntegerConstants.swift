@@ -1,23 +1,7 @@
 import Foundation
-import GoDEngine
 
+// TODO: EngineEntry type was removed/renamed. Restore when Wii engine is implemented.
 enum IntegerEntries {
-    static let entries: [EngineEntry<Int>] = [
-        fstIntegerEntry,
-        isoIntegerEntry
-    ]
+    static let fstOffsetMultiplier = 4
+    static let maxDiscCapacity = 0x118240000
 }
-
-let fstIntegerEntry = EngineEntry(
-    name: "FST Integer Constants",
-    values: [
-        "FST Offset Multiplier": 4
-    ]
-)
-
-let isoIntegerEntry = EngineEntry(
-    name: "Wii ISO Constants",
-    values: [
-        "max disc capacity": 0x118240000
-    ]
-)

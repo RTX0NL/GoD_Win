@@ -21,9 +21,8 @@ class EnginePickerViewModel {
 }
 
 extension EnginePickerViewModel {
-    private static var engines: [Engine] {
-        [
-            GameCube.engine
-        ]
+    private static var engines: [any Engine] {
+        // TODO: Populate with available engines
+        []
     }
 }

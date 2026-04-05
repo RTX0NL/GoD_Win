@@ -268,6 +268,10 @@ let package = Package(
             name: "GoDStructTests",
             dependencies: ["Structs"],
             path: "Tests/Shared Tests/Dependency Tests/GoD Struct Tests"),
+        .testTarget(
+            name: "PPCTests",
+            dependencies: ["Dolphin", "GoDFoundation"],
+            path: "Tests/Shared Tests/Engine Tests/PPC Tests"),
     ]
 )
 

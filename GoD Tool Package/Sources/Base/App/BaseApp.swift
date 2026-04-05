@@ -18,7 +18,7 @@ public class BaseApp: App {
     public var body: some Scene {
         WindowGroup {
             BaseNavigationStackView()
-                .environmentObject(themeManager)
+                .environmentObject(self.themeManager)
                 .frame(minWidth: 160, idealWidth: 960, maxWidth: 1440, minHeight: 120, idealHeight: 720, maxHeight: 1080)
         }
         .commandsRemoved()
