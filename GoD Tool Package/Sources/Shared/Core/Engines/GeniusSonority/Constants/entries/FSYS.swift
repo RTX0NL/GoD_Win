@@ -7,7 +7,8 @@ extension GeniusSonorityEngine.Data {
         public private(set) var fileExtensionSuffixes = [
             "pool",
             "proj",
-            "sdir"
+            "sdir",
+            "rel"
         ]
 
         public internal(set) var fileTypeReplacements = [String: String]() // replace the file extension for the final file name

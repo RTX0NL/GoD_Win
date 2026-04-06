@@ -18,6 +18,7 @@ struct GoddessConfig: Codable {
         case pbrDump(config: PBROps.DumpConfig)
         case dolDisassembly(config: DolDisassembly.Config)
         case dolAssembly(config: DolAssembly.Config)
+        case relDisassembly(config: RelDisassembly.Config)
     }
     
     let name: String

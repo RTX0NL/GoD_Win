@@ -72,7 +72,9 @@ extension StructMap: Decodable {
         
         let properties: [StructMap.Property] = try propertyList.map { text in
             func getType(_ token: String) throws -> StructField {
-                if let primitive = StructPrimitives.from(name: token) {
+                if token == "label" {
+                    return .label
+                } else if let primitive = StructPrimitives.from(name: token) {
                     return .primitive(primitive)
                 } else if token.startsWith("void["),
                        let count = token.substring(from: 5, to: -1).integerValue {
@@ -80,7 +82,7 @@ extension StructMap: Decodable {
                 } else if token.last == "]",
                       let lastOpenIndex = token.lastIndex(of: "["),
                       let lastCloseIndex = token.lastIndex(of: "]") {
-                    
+
                     let countString = token.substring(from: lastOpenIndex, to: lastCloseIndex).substring(from: 1)
                     if let count = countString.integerValue {
                         let prefix = String(token.prefix(upTo: lastOpenIndex))
@@ -194,6 +196,10 @@ public extension StructMap.Property {
         StructMap.Property(name: name, type: .enumeration(name: typeName), description: description)
     }
     
+    static func label(name: String, description: String? = nil) -> StructMap.Property {
+        StructMap.Property(name: name, type: .label, description: description)
+    }
+
     static func padding(length: Int) -> StructMap.Property {
         StructMap.Property(name: "padding", type: .array(.uint8, count: length))
     }

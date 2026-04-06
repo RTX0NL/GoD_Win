@@ -66,6 +66,7 @@ public indirect enum StructProperty: Equatable {
     case array(StructProperty, count: Int)
     case subStruct(StructDefinition)
     case enumeration(Enum)
+    case label
     case padding(length: Int)
 
     public static func string(format: StringFormats, length: Int) -> StructProperty {
@@ -82,6 +83,8 @@ public indirect enum StructProperty: Equatable {
             return definition.length
         case .enumeration(let definition):
             return definition.propertyType.length
+        case .label:
+            return 4
         case .padding(let length):
             return length
         }
@@ -99,6 +102,8 @@ public indirect enum StructProperty: Equatable {
             return definition.longestAlignment
         case .enumeration(let definition):
             return StructProperty.primitive(.integer(definition.propertyType)).alignment
+        case .label:
+            return 4
         case .padding:
             return 1
         }
@@ -120,6 +125,7 @@ public extension StructProperty {
     static var int64: StructProperty { .primitive(.integer(.int64))}
     static var float: StructProperty { .primitive(.float)}
     static var double: StructProperty { .primitive(.double)}
+    static var labelPointer: StructProperty { .label }
 }
 
 extension IntegerProperties: CustomStringConvertible {
@@ -213,6 +219,7 @@ extension StructProperty: CustomStringConvertible {
         case .array(let type, let count): return "\(type.description)[\(count)]"
         case .subStruct(let defintion): return "struct " + defintion.name
         case .enumeration(let definition): return "enum " + definition.name
+        case .label: return "label"
         case .padding(let length): return "void[\(length)]"
         }
     }

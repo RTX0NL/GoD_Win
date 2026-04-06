@@ -1,0 +1,9 @@
+{
+  "symbols": {
+    "0": "FirstCharacter",
+    "1": "NumberOfCharacters",
+    "6": "FirstWarpEntryLocation",
+    "7": "NumberOfWarpEntryLocations",
+    "9": "GroupData"
+  }
+}

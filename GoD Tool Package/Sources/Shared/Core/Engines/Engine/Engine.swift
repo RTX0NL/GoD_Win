@@ -64,6 +64,8 @@ public extension Engine {
                         throw EngineDecodingError.missingEnumProperty(structName: name, property: fieldName, enumName: enumName, .init())
                     }
                     return .enumeration(def)
+                case .label:
+                    return .label
                 case .padding(let length):
                     return .padding(length: length)
                 }

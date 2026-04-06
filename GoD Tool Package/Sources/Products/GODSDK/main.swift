@@ -69,6 +69,8 @@ do {
                         try DolDisassembly.disassemble(config: disasmConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     case .dolAssembly(let asmConfig):
                         try DolAssembly.assemble(config: asmConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .relDisassembly(let relConfig):
+                        try RelDisassembly.disassemble(config: relConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     }
                 }
         

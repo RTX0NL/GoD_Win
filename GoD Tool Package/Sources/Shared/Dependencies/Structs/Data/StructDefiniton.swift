@@ -69,11 +69,40 @@ public struct StructDefinition: Equatable, Nameable {
                 longest = max(longest, substruct.longestAlignment)
             case .enumeration(let definition):
                 longest = max(longest, StructProperty.primitive(.integer(definition.propertyType)).alignment)
+            case .label:
+                longest = max(longest, 4)
             case .padding:
                 longest = max(longest, 1)
             }
         }
         return longest
+    }
+
+    /// Returns a copy with all `.label` properties replaced by `.uint32`.
+    /// Used for reading/writing raw binary data where label fields occupy 4 bytes as pointer addresses.
+    public func uint32SubstitutedDefinition() -> StructDefinition {
+        func substituteProperty(_ type: StructProperty) -> StructProperty {
+            switch type {
+            case .label:
+                return .uint32
+            case .subStruct(let def):
+                return .subStruct(def.uint32SubstitutedDefinition())
+            case .array(let element, let count):
+                return .array(substituteProperty(element), count: count)
+            default:
+                return type
+            }
+        }
+
+        return StructDefinition(
+            name: name,
+            wordSize: wordSize,
+            alignmentStyle: alignmentStyle,
+            properties: properties.map { prop in
+                .init(name: prop.name, type: substituteProperty(prop.type), description: prop.description)
+            },
+            description: description
+        )
     }
 
     public init(
@@ -239,6 +268,10 @@ public extension StructDefinition.Property {
         StructDefinition.Property(name: name, type: .enumeration(enumeration), description: description)
     }
     
+    static func label(name: String, description: String? = nil) -> StructDefinition.Property {
+        StructDefinition.Property(name: name, type: .label, description: description)
+    }
+
     static func padding(length: Int) -> StructDefinition.Property {
         StructDefinition.Property(name: "padding", type: .array(.uint8, count: length))
     }

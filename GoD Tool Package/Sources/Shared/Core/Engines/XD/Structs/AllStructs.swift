@@ -17,6 +17,7 @@ public extension XDEngine {
 
         static public var allItems: [StructMap] {
             [
+                // DOL structs
                 XDStructDefaults.abilityStruct,
                 XDStructDefaults.statusEffectStruct,
                 XDStructDefaults.tmStruct,
@@ -28,6 +29,29 @@ public extension XDEngine {
                 XDStructDefaults.textureInfoStruct,
                 XDStructDefaults.textureStruct,
                 XDStructDefaults.characterModelStruct,
+                // common.rel structs
+                XDStructDefaults.moveStruct,
+                XDStructDefaults.itemStruct,
+                XDStructDefaults.natureStruct,
+                XDStructDefaults.typeStruct,
+                XDStructDefaults.trainerClassStruct,
+                XDStructDefaults.multiplierStruct,
+                XDStructDefaults.treasureStruct,
+                XDStructDefaults.doorStruct,
+                XDStructDefaults.interactionPointStruct,
+                XDStructDefaults.battleFieldStruct,
+                XDStructDefaults.battleLayoutStruct,
+                XDStructDefaults.pokefaceStruct,
+                XDStructDefaults.aiWeightEffectStruct,
+                XDStructDefaults.pokemonAIRoleStruct,
+                XDStructDefaults.tutorMoveStruct,
+                XDStructDefaults.validItemStruct,
+                XDStructDefaults.soundFileStruct,
+                XDStructDefaults.soundMetadataStruct,
+                XDStructDefaults.peopleIDStruct,
+                XDStructDefaults.battleTypeStruct,
+                XDStructDefaults.rgbaColourStruct,
+                XDStructDefaults.pokemonMenuAnimationStruct,
             ]
         }
     }

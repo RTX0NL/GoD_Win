@@ -1,0 +1,12 @@
+{
+  "symbols": {
+    "0": "CouponCounterDialog",
+    "1": "NumberOfCouponCounterDialog",
+    "2": "MartItems",
+    "3": "NumberOfMartItems",
+    "4": "MartStartIndexes",
+    "5": "NumberOfMarts",
+    "6": "MartGreetings",
+    "7": "NumberOfMartGreetingSections"
+  }
+}

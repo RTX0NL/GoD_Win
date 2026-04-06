@@ -104,6 +104,12 @@ enum Project {
             engine.write(to: projectFileSystem, in: enginesFolder, overwrite: false)
         }
 
+        // Write bundled symbol map for XD games
+        if isXD, let symbolMapData = PokemonXD.symbolMapData(for: gameID) {
+            let symbolMapFile = enginesFolder.folder(dolphinEngine.name).file(gameID + ".map")
+            projectFileSystem.writeFile(symbolMapData, at: symbolMapFile, overwrite: false)
+        }
+
         // Build config generation
         let buildConfig: GoddessConfig
         let dumpConfig: GoddessConfig

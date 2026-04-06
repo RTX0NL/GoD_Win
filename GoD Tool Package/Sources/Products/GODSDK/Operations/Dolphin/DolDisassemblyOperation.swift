@@ -381,7 +381,10 @@ extension DolDisassembly {
         output.writeFile(GoDData(string: summaryText, format: .utf8), at: outputFolder.file("sections.txt"), overwrite: true)
 
         // Write everything to disk at once
-        fileSystem.importFST(output, from: outputFolder, to: config.outputFolder, overwrite: true)
+        // Write into a subfolder named after the DOL file (e.g. "main" for "main.dol")
+        let dolName = config.dolPath.fileName.components(separatedBy: ".").first ?? config.dolPath.fileName
+        let targetFolder = config.outputFolder.folder(dolName)
+        fileSystem.importFST(output, from: outputFolder, to: targetFolder, overwrite: true)
 
         logger?.log(.taskStatus(taskName: "Disassemble DOL", status: .completed(true)))
     }
@@ -411,7 +414,7 @@ private func chunkAddress(_ chunk: TypeMap.Chunk, addressToLabel: [UInt32: Strin
     return resolveAutoLabel(label)
 }
 
-private func resolveStructTypes(
+func resolveStructTypes(
     from typeMap: TypeMap,
     fileSystem: FileSystemTree,
     logger: Logger?

@@ -12,6 +12,7 @@ public indirect enum StructField: Equatable {
     case array(StructField, count: Int)
     case subStruct(name: String)
     case enumeration(name: String)
+    case label
     case padding(length: Int)
 
     public static func string(format: StringFormats, length: Int) -> StructField {
@@ -34,6 +35,7 @@ public extension StructField {
     static var int64: StructField { .primitive(.integer(.int64))}
     static var float: StructField { .primitive(.float)}
     static var double: StructField { .primitive(.double)}
+    static var labelPointer: StructField { .label }
 }
 
 extension StructField: CustomStringConvertible {
@@ -48,6 +50,8 @@ extension StructField: CustomStringConvertible {
                 return "struct \(name)"
             case .enumeration(let name):
                 return "enum \(name)"
+            case .label:
+                return "label"
             case .padding(length: let length):
                 return "void[\(length)]"
             }

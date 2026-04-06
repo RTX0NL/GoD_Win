@@ -6,6 +6,11 @@ public class StructData {
     public let definition: StructDefinition
     public let data: GoDData
 
+    /// Maps label property names to their label name strings.
+    /// These are NOT stored in the raw binary data — they exist only in this side dictionary.
+    /// During assembly, label names are resolved to UInt32 addresses via the global symbol table.
+    public var labelValues: [String: String] = [:]
+
     public var name: String { definition.name }
     public var properties: [StructDefinition.Property] { definition.properties }
     public var byteOrder: ByteOrder { data.byteOrder }
@@ -24,7 +29,7 @@ public class StructData {
             data.append(GoDData(length: difference, byteOrder: data.byteOrder))
         }
     }
-    
+
     public convenience init(definition: StructDefinition, byteOrder: ByteOrder) {
         self.init(definition: definition, data: GoDData(length: definition.length, byteOrder: byteOrder))
     }
@@ -146,6 +151,24 @@ public class StructData {
         }
     }
 
+    // MARK: - Label accessors
+
+    /// Get the label name for a label property
+    public func getLabel(_ keypath: String) -> String? {
+        guard let property = definition.property(for: keypath),
+              case .label = property else { return nil }
+        return labelValues[keypath]
+    }
+
+    /// Set the label name for a label property
+    public func setLabel(_ keypath: String, to labelName: String?) {
+        guard let property = definition.property(for: keypath),
+              case .label = property else { return }
+        labelValues[keypath] = labelName
+    }
+
+    // MARK: - Data accessors
+
     public func get(_ keypath: String) -> GoDData? {
         guard let offset = definition.offset(for: keypath),
               let length = definition.property(for: keypath)?.length else {
@@ -187,7 +210,7 @@ public class StructData {
             return getInteger(type)
         case .enumeration(let definition):
             return getInteger(definition.propertyType)
-        case .primitive, .array, .subStruct, .padding:
+        case .primitive, .array, .subStruct, .label, .padding:
             return Int(data: data)
         }
     }
@@ -324,6 +347,9 @@ extension StructData: CustomStringConvertible {
                     result += "N/A"; continue
                 }
                 result += "\(name):\n" + data.description + "\n"
+            case .label:
+                let labelName = labelValues[name] ?? "N/A"
+                result += "\(name) = \(labelName) <label>\n"
             case .array(_, let count):
                 result += "\(name): \(count) items <\(typeName)>\n"
             case .padding:
@@ -365,10 +391,13 @@ extension StructData: Encodable {
             data: GoDData,
             type: StructProperty,
             count: Int,
+            labels: [String: String],
             container: inout UnkeyedEncodingContainer
         ) throws {
             switch type {
             case .padding:
+                return
+            case .label:
                 return
             case .primitive(let type):
                 switch type {
@@ -426,7 +455,7 @@ extension StructData: Encodable {
                 for _ in 0 ..< count {
                     if let data: GoDData = data.read(atAddress: offset, length: subProperty.length * subCount) {
                         var container = container.nestedUnkeyedContainer()
-                        try encode(data: data, type: subProperty, count: subCount, container: &container)
+                        try encode(data: data, type: subProperty, count: subCount, labels: labels, container: &container)
                     }
                     offset += subProperty.length * subCount
                 }
@@ -436,31 +465,51 @@ extension StructData: Encodable {
                     if let data: GoDData = data.read(atAddress: offset, length: definition.length) {
                         var container = container.nestedContainer(keyedBy: CustomCodingKeys.self)
                         let structData = StructData(definition: definition, data: data)
+                        structData.labelValues = labels
                         try definition.properties.forEach { property in
-                            if let data: GoDData = structData.get(property.name) {
-                                try encode(data: data, type: property.type, key: .init(property.name), container: &container)
-                            }
+                            try encodeProperty(property, of: structData, labels: structData.labelValues, container: &container)
                         }
                     }
                     offset += definition.length
                 }
                 var container = container.nestedContainer(keyedBy: CustomCodingKeys.self)
                 let structData = StructData(definition: definition, data: data)
+                structData.labelValues = labels
                 try definition.properties.forEach { property in
-                    guard let data: GoDData = structData.get(property.name) else { return }
-                    try encode(data: data, type: property.type, key: .init(property.name), container: &container)
+                    try encodeProperty(property, of: structData, labels: structData.labelValues, container: &container)
                 }
             }
         }
-        
+
+        func encodeProperty(
+            _ property: StructDefinition.Property,
+            of structData: StructData,
+            labels: [String: String],
+            container: inout KeyedEncodingContainer<CustomCodingKeys>
+        ) throws {
+            let key = CustomCodingKeys(property.name)
+            switch property.type {
+            case .label:
+                let labelName = structData.labelValues[property.name] ?? ""
+                try container.encode(labelName, forKey: key)
+            default:
+                if let data: GoDData = structData.get(property.name) {
+                    try encode(data: data, type: property.type, key: key, labels: labels, container: &container)
+                }
+            }
+        }
+
         func encode(
             data: GoDData,
             type: StructProperty,
             key: CustomCodingKeys,
+            labels: [String: String],
             container: inout KeyedEncodingContainer<CustomCodingKeys>
         ) throws {
             switch type {
             case .padding:
+                return
+            case .label:
                 return
             case .primitive(let type):
                 switch type {
@@ -487,20 +536,25 @@ extension StructData: Encodable {
                 try container.encode(value, forKey: key)
             case .array(let subProperty, let count):
                 var container = container.nestedUnkeyedContainer(forKey: key)
-                try encode(data: data, type: subProperty, count: count, container: &container)
+                try encode(data: data, type: subProperty, count: count, labels: labels, container: &container)
             case .subStruct(let definition):
                 var container = container.nestedContainer(keyedBy: CustomCodingKeys.self, forKey: key)
                 let structData = StructData(definition: definition, data: data)
+                structData.labelValues = labels
                 try definition.properties.forEach { property in
-                    guard let data: GoDData = structData.get(property.name) else { return }
-                    try encode(data: data, type: property.type, key: .init(property.name), container: &container)
+                    try encodeProperty(property, of: structData, labels: structData.labelValues, container: &container)
                 }
             }
         }
-        
+
         var container = encoder.container(keyedBy: CustomCodingKeys.self)
-        
+
         try container.encode(definition.name, forKey: "type")
-        try encode(data: self.data, type: .subStruct(self.definition), key: "data", container: &container)
+
+        // Encode struct properties using encodeProperty for label-aware encoding
+        var dataContainer = container.nestedContainer(keyedBy: CustomCodingKeys.self, forKey: "data")
+        for property in definition.properties {
+            try encodeProperty(property, of: self, labels: self.labelValues, container: &dataContainer)
+        }
     }
 }

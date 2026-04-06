@@ -1,5 +1,6 @@
 import GoDFoundation
 import Dolphin
+import Disassembler
 
 enum DolAssembly {
     static func assemble(
@@ -18,32 +19,46 @@ enum DolAssembly {
         guard let sectionsData = fileSystem.readFile(at: sectionsFile) else {
             throw DolAssemblyErrors.sectionsFileNotFound(file: sectionsFile, .init())
         }
-        let layout = parseSectionsFile(sectionsData.string(format: .utf8))
+        let layoutParser = SectionLayoutParser()
+        let layout = layoutParser.parse(sectionsData.string(format: .utf8))
 
         let assembler = PPCSectionAssembler()
+        let manifestReader = ManifestReader()
 
         // Pre-scan: collect all labels from all sections to build global symbol table
         var globalSymbols = [String: UInt32]()
 
         for section in layout.textSections {
-            let files = collectSectionFiles(section.name, codeFolder: config.codeFolder, fileSystem: fileSystem)
+            let files = manifestReader.loadTextSectionFiles(
+                sectionName: section.name,
+                codeFolder: config.codeFolder,
+                fileSystem: fileSystem
+            )
             let labels = assembler.collectLabelsOnly(files: files, baseAddress: section.address)
             globalSymbols.merge(labels) { existing, _ in existing }
         }
         for section in layout.dataSections {
-            let files = collectSectionFiles(section.name, codeFolder: config.codeFolder, fileSystem: fileSystem)
+            let files = collectDataSectionFiles(
+                section.name,
+                codeFolder: config.codeFolder,
+                fileSystem: fileSystem,
+                manifestReader: manifestReader
+            )
             let labels = assembler.collectLabelsOnly(files: files, baseAddress: section.address)
             globalSymbols.merge(labels) { existing, _ in existing }
         }
 
-        // Also scan all files for lbl_XXXXXXXX references that point to BSS or
+        // Scan all text section files for lbl_XXXXXXXX references that point to BSS or
         // other areas not covered by the section files (auto-generated relocation labels)
         for section in layout.textSections {
-            let files = collectSectionFiles(section.name, codeFolder: config.codeFolder, fileSystem: fileSystem)
+            let files = manifestReader.loadTextSectionFiles(
+                sectionName: section.name,
+                codeFolder: config.codeFolder,
+                fileSystem: fileSystem
+            )
             for (_, content) in files {
                 for line in content.split(separator: "\n") {
                     let s = String(line)
-                    // Find lbl_XXXXXXXX patterns
                     var searchStart = s.startIndex
                     while let range = s.range(of: "lbl_", range: searchStart..<s.endIndex) {
                         let hexStart = range.upperBound
@@ -72,6 +87,20 @@ enum DolAssembly {
             }
         }
 
+        // Load BSS entry list and assign addresses
+        if let bssPath = config.bssEntryListPath,
+           let bssData = fileSystem.readFile(at: bssPath) {
+            if let bssList = try? JSONDecoder().decode(BSSEntryList.self, from: bssData) {
+                let assigned = bssList.assignAddresses(baseAddress: layout.bssAddress)
+                for entry in assigned {
+                    if globalSymbols[entry.label] == nil {
+                        globalSymbols[entry.label] = entry.address
+                    }
+                }
+                logger?.log(.info("Loaded \(assigned.count) BSS entries"))
+            }
+        }
+
         logger?.log(.info("Collected \(globalSymbols.count) global symbols"))
 
         var textSections = [Dol.TextSection]()
@@ -82,28 +111,17 @@ enum DolAssembly {
 
         // Assemble text sections
         for section in layout.textSections {
-            let sectionFolder = config.codeFolder.folder(section.name)
+            let files = manifestReader.loadTextSectionFiles(
+                sectionName: section.name,
+                codeFolder: config.codeFolder,
+                fileSystem: fileSystem
+            )
 
-            if let folderContents = fileSystem.inspectFolder(at: sectionFolder) {
-                // Per-function files in subfolders — collect all .s files recursively
-                let files = collectAssemblyFiles(from: sectionFolder, fileSystem: fileSystem)
-
-                if !files.isEmpty {
-                    let assembled = try assembler.assemble(files: files, baseAddress: section.address, externalSymbols: globalSymbols)
-                    textSections.append(.init(RAMAddress: section.address, assembly: assembled))
-                } else {
-                    textSections.append(.init(RAMAddress: section.address, assembly: .none))
-                }
+            if !files.isEmpty {
+                let assembled = try assembler.assemble(files: files, baseAddress: section.address, externalSymbols: globalSymbols)
+                textSections.append(.init(RAMAddress: section.address, assembly: assembled))
             } else {
-                // No folder — check for a single section .s file
-                let sectionFile = config.codeFolder.file("\(section.name).s")
-                if let fileData = fileSystem.readFile(at: sectionFile) {
-                    let content = fileData.string(format: .utf8)
-                    let assembled = try assembler.assemble(files: [(section.name + ".s", content)], baseAddress: section.address)
-                    textSections.append(.init(RAMAddress: section.address, assembly: assembled))
-                } else {
-                    textSections.append(.init(RAMAddress: section.address, assembly: .none))
-                }
+                textSections.append(.init(RAMAddress: section.address, assembly: .none))
             }
 
             sectionsProcessed += 1
@@ -115,7 +133,12 @@ enum DolAssembly {
 
         // Assemble data sections
         for section in layout.dataSections {
-            let files = collectSectionFiles(section.name, codeFolder: config.codeFolder, fileSystem: fileSystem)
+            let files = collectDataSectionFiles(
+                section.name,
+                codeFolder: config.codeFolder,
+                fileSystem: fileSystem,
+                manifestReader: manifestReader
+            )
             if !files.isEmpty {
                 let assembled = try assembler.assemble(files: files, baseAddress: section.address, externalSymbols: globalSymbols)
                 dataSections.append(.init(RAMAddress: section.address, data: assembled))
@@ -127,6 +150,30 @@ enum DolAssembly {
             if logger != nil {
                 let pct = Percentage(Double(sectionsProcessed) / Double(totalSections) * 100)
                 logger?.log(.taskStatus(taskName: "Assemble DOL", status: .progress(pct)))
+            }
+        }
+
+        // Section overlap detection
+        var assembledRanges = [(name: String, start: UInt32, end: UInt32)]()
+        for (i, section) in textSections.enumerated() where section.assembly.length > 0 {
+            let name = layout.textSections[i].name
+            let start = layout.textSections[i].address
+            let end = start + UInt32(section.assembly.length)
+            assembledRanges.append((name: name, start: start, end: end))
+        }
+        for (i, section) in dataSections.enumerated() where section.data.length > 0 {
+            let name = layout.dataSections[i].name
+            let start = layout.dataSections[i].address
+            let end = start + UInt32(section.data.length)
+            assembledRanges.append((name: name, start: start, end: end))
+        }
+        for i in 0..<assembledRanges.count {
+            for j in (i+1)..<assembledRanges.count {
+                let a = assembledRanges[i]
+                let b = assembledRanges[j]
+                if a.start < b.end && b.start < a.end {
+                    logger?.log(.warning("Section overlap detected: \(a.name) (0x\(String(a.start, radix: 16))-0x\(String(a.end, radix: 16))) overlaps with \(b.name) (0x\(String(b.start, radix: 16))-0x\(String(b.end, radix: 16)))"))
+                }
             }
         }
 
@@ -147,16 +194,36 @@ enum DolAssembly {
         logger?.log(.info("DOL written to \(config.outputDolPath.path) (\(dolData.length) bytes)"))
     }
 
-    /// Collect .s files for a section — from folder or single file
-    private static func collectSectionFiles(
+    /// Collect assembly files for a data section.
+    /// Checks for manifest first, falls back to single file.
+    private static func collectDataSectionFiles(
         _ sectionName: String,
         codeFolder: Folder,
-        fileSystem: FileSystemTree
+        fileSystem: FileSystemTree,
+        manifestReader: ManifestReader
     ) -> [(name: String, content: String)] {
         let sectionFolder = codeFolder.folder(sectionName)
+
+        // Check for data section manifest
+        if let manifest = manifestReader.readDataManifest(from: sectionFolder, fileSystem: fileSystem) {
+            // For now, only collect .s assembly chunks from the manifest
+            // TODO: Handle struct/table/binary chunks via DataSectionImporter
+            var files = [(name: String, content: String)]()
+            for chunk in manifest.chunks where chunk.type == .assembly {
+                let file = sectionFolder.file(chunk.file)
+                if let data = fileSystem.readFile(at: file) {
+                    files.append((name: chunk.file, content: data.string(format: .utf8)))
+                }
+            }
+            return files
+        }
+
+        // Fall back to folder with .s files
         if fileSystem.inspectFolder(at: sectionFolder) != nil {
             return collectAssemblyFiles(from: sectionFolder, fileSystem: fileSystem)
         }
+
+        // Fall back to single file
         let sectionFile = codeFolder.file("\(sectionName).s")
         if let data = fileSystem.readFile(at: sectionFile) {
             return [(sectionName + ".s", data.string(format: .utf8))]
@@ -164,7 +231,7 @@ enum DolAssembly {
         return []
     }
 
-    // MARK: - Collect .s files recursively
+    // MARK: - Collect .s files recursively (backwards compat)
 
     private static func collectAssemblyFiles(
         from folder: Folder,
@@ -174,90 +241,17 @@ enum DolAssembly {
 
         var files = [(name: String, content: String)]()
 
-        // Collect .s files in this folder
         for file in contents.files where file.fileType == "s" {
             if let data = fileSystem.readFile(at: file) {
                 files.append((name: file.fileName, content: data.string(format: .utf8)))
             }
         }
 
-        // Recurse into subfolders
         for subFolder in contents.subFolders {
             files.append(contentsOf: collectAssemblyFiles(from: subFolder, fileSystem: fileSystem))
         }
 
         return files
-    }
-
-    // MARK: - sections.txt parser
-
-    struct SectionInfo {
-        let name: String
-        let address: UInt32
-    }
-
-    struct DolLayout {
-        var entryPoint: UInt32 = 0
-        var bssAddress: UInt32 = 0
-        var bssSize: UInt32 = 0
-        var textSections = [SectionInfo]()
-        var dataSections = [SectionInfo]()
-    }
-
-    private static func parseSectionsFile(_ text: String) -> DolLayout {
-        var layout = DolLayout()
-
-        for line in text.split(separator: "\n") {
-            let s = line.trimmingCharacters(in: .whitespaces)
-
-            // # Entry point: 0x80003154
-            if s.hasPrefix("# Entry point:") {
-                let hex = s.split(separator: ":").last?.trimmingCharacters(in: .whitespaces) ?? ""
-                if hex.hasPrefix("0x"), let val = UInt32(hex.dropFirst(2), radix: 16) {
-                    layout.entryPoint = val
-                }
-                continue
-            }
-
-            // # BSS: 0x804205C0 (849860 bytes)
-            if s.hasPrefix("# BSS:") {
-                let parts = s.dropFirst(6).trimmingCharacters(in: .whitespaces).split(separator: " ")
-                if let addrStr = parts.first, addrStr.hasPrefix("0x"),
-                   let addr = UInt32(addrStr.dropFirst(2), radix: 16) {
-                    layout.bssAddress = addr
-                }
-                if let sizeStr = parts.dropFirst().first?.replacingOccurrences(of: "(", with: ""),
-                   let size = UInt32(sizeStr) {
-                    layout.bssSize = size
-                }
-                continue
-            }
-
-            // text0: 0x80003100 (9472 bytes)
-            if s.hasPrefix("text") {
-                if let info = parseSectionLine(s) {
-                    layout.textSections.append(info)
-                }
-            }
-            if s.hasPrefix("data") {
-                if let info = parseSectionLine(s) {
-                    layout.dataSections.append(info)
-                }
-            }
-        }
-
-        return layout
-    }
-
-    private static func parseSectionLine(_ s: String) -> SectionInfo? {
-        // "text0: 0x80003100 (9472 bytes)"
-        let parts = s.split(separator: ":")
-        guard parts.count >= 2 else { return nil }
-        let name = String(parts[0]).trimmingCharacters(in: .whitespaces)
-        let rest = String(parts[1]).trimmingCharacters(in: .whitespaces)
-        let addrStr = rest.split(separator: " ").first ?? ""
-        guard addrStr.hasPrefix("0x"), let addr = UInt32(addrStr.dropFirst(2), radix: 16) else { return nil }
-        return SectionInfo(name: name, address: addr)
     }
 }
 
