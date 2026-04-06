@@ -66,7 +66,7 @@ extension RelDisassembly {
             typeMap = try? JSONDecoder().decode(TypeMap.self, from: typeMapData)
             if let tm = typeMap {
                 logger?.log(.info("Loaded type map with \(tm.chunks.count) chunks"))
-                resolvedStructs = resolveStructTypes(from: tm, fileSystem: fileSystem, logger: logger)
+                resolvedStructs = resolveStructTypes(from: tm, fileSystem: fileSystem, typeMapFolder: typeMapPath.parentFolder, logger: logger)
             }
         }
 
@@ -248,7 +248,44 @@ extension RelDisassembly {
                         .filter { $0.key >= labelOffset && $0.key < nextOffset }
                         .reduce(into: [Int: UInt32]()) { $0[$1.key - labelOffset] = $1.value }
 
-                    if !chunkPointers.isEmpty {
+                    // Check if this label has a typed table definition
+                    if case .table(let tableDef) = typeChunkBySymbol[labelName],
+                       let structDef = resolvedStructs[tableDef.entryType] {
+                        // Export as typed JSON table
+                        let entrySize = structDef.length
+                        let count = tableDef.count ?? (chunkSize / entrySize)
+                        let chunkData = GoDData(byteStream: chunkBytes, byteOrder: .big)
+
+                        var entries = [[String: Any]]()
+                        for i in 0..<count {
+                            let offset = i * entrySize
+                            guard offset + entrySize <= chunkData.length else { break }
+                            if let structData = chunkData.read(struct: structDef, atAddress: offset) {
+                                var entry = [String: Any]()
+                                for prop in structDef.properties where prop.name != "padding" {
+                                    if let value = readStructProperty(prop, from: structData) {
+                                        entry[prop.name] = value
+                                    }
+                                }
+                                entries.append(entry)
+                            }
+                        }
+
+                        let fileName = "\(labelName).json"
+                        let tableJSON: [String: Any] = [
+                            "type": tableDef.entryType,
+                            "count": count,
+                            "entrySize": entrySize,
+                            "entries": entries
+                        ]
+                        if let jsonData = try? JSONSerialization.data(withJSONObject: tableJSON, options: [.prettyPrinted, .sortedKeys]) {
+                            output.writeFile(GoDData(data: jsonData, byteOrder: .big), at: sectionFolder.file(fileName), overwrite: true)
+                        }
+                        // Also write raw binary as backup
+                        let binFileName = "\(labelName).bin"
+                        output.writeFile(GoDData(byteStream: chunkBytes, byteOrder: .big), at: sectionFolder.file(binFileName), overwrite: true)
+                        manifest.chunks.append(.init(label: labelName, type: .table, file: fileName, structType: tableDef.entryType, count: count, size: chunkSize))
+                    } else if !chunkPointers.isEmpty {
                         let fileName = "\(labelName).s"
                         let chunkLabels: [Int: String] = [0: labelName]
                         let text = assemblyExporter.format(
@@ -337,6 +374,67 @@ extension RelDisassembly {
         fileSystem.importFST(output, from: outputFolder, to: config.outputFolder, overwrite: true)
 
         logger?.log(.taskStatus(taskName: "Disassemble REL", status: .completed(true)))
+    }
+}
+
+/// Read a struct property value in a JSON-serializable format,
+/// handling each type correctly (floats as Float, arrays as [Any], etc.)
+private func readStructProperty(
+    _ prop: StructDefinition.Property,
+    from structData: StructData
+) -> Any? {
+    switch prop.type {
+    case .primitive(.float):
+        return (try? structData[dynamicMember: prop.name]) as Float?
+    case .primitive(.double):
+        return (try? structData[dynamicMember: prop.name]) as Double?
+    case .primitive(.boolean):
+        return (try? structData[dynamicMember: prop.name]) as Bool?
+    case .primitive(.character(let format)):
+        return (try? structData[dynamicMember: prop.name]) as String?
+    case .primitive(.integer), .primitive(.void):
+        return (try? structData[dynamicMember: prop.name]) as Int?
+    case .array(let elementType, let count):
+        // Read array elements individually from the raw data
+        guard let fieldOffset = structData.definition.offset(for: prop.name) else { return nil }
+        switch elementType {
+        case .primitive(.integer(let intType)):
+            var values = [Int]()
+            for i in 0..<count {
+                switch intType {
+                case .uint8, .int8:
+                    let addr = fieldOffset + i
+                    values.append(structData.data.readTypeAsInt(UInt8.self, atAddress: addr))
+                case .uint16, .int16:
+                    let addr = fieldOffset + i * 2
+                    if let val: UInt16 = structData.data.readValue(atAddress: addr) { values.append(Int(val)) }
+                case .uint32, .int32:
+                    let addr = fieldOffset + i * 4
+                    if let val: UInt32 = structData.data.readValue(atAddress: addr) { values.append(Int(val)) }
+                default:
+                    break
+                }
+            }
+            return values
+        case .primitive(.float):
+            var values = [Float]()
+            for i in 0..<count {
+                if let val: Float = structData.data.readValue(atAddress: fieldOffset + i * 4) {
+                    values.append(val)
+                }
+            }
+            return values
+        case .primitive(.character):
+            // String — read as string
+            return (try? structData[dynamicMember: prop.name]) as String?
+        default:
+            return nil
+        }
+    case .padding:
+        return nil
+    case .subStruct, .enumeration, .label:
+        // For enumerations, read as int
+        return (try? structData[dynamicMember: prop.name]) as Int?
     }
 }
 

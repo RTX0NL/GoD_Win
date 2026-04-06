@@ -3,6 +3,7 @@ import Dolphin
 import Disassembler
 import Structs
 import XD
+import Colosseum
 
 extension DolDisassembly {
     static func disassemble(
@@ -178,7 +179,7 @@ extension DolDisassembly {
                 logger?.log(.info("Loaded type map with \(tm.chunks.count) chunks"))
                 // Build a simple struct resolver from XD engine structs
                 // The type map references struct names which we look up
-                resolvedStructs = resolveStructTypes(from: tm, fileSystem: fileSystem, logger: logger)
+                resolvedStructs = resolveStructTypes(from: tm, fileSystem: fileSystem, typeMapFolder: typeMapPath.parentFolder, logger: logger)
             }
         }
 
@@ -417,6 +418,7 @@ private func chunkAddress(_ chunk: TypeMap.Chunk, addressToLabel: [UInt32: Strin
 func resolveStructTypes(
     from typeMap: TypeMap,
     fileSystem: FileSystemTree,
+    typeMapFolder: Folder? = nil,
     logger: Logger?
 ) -> [String: StructDefinition] {
     // Collect all type names referenced in the type map
@@ -429,16 +431,33 @@ func resolveStructTypes(
         }
     }
 
-    // Build struct definitions from XD engine defaults
-    let allStructs = XDEngine.Structs.allItems
+    // Collect struct definitions from engines referenced in the type map
+    var allStructs = [StructMap]()
+
+    if !typeMap.engines.isEmpty, let baseFolder = typeMapFolder {
+        for enginePath in typeMap.engines {
+            let engineFolder = baseFolder.folder(enginePath)
+            if let structs = loadEngineStructs(from: engineFolder, in: fileSystem) {
+                allStructs.append(contentsOf: structs)
+                logger?.log(.info("Loaded \(structs.count) structs from \(enginePath)"))
+            } else {
+                logger?.log(.warning("Could not load engine at \(enginePath)"))
+            }
+        }
+    }
+
+    // Fall back to XD defaults if no engines loaded from filesystem
+    if allStructs.isEmpty {
+        allStructs = XDEngine.Structs.allItems
+    }
+
     var resolved = [String: StructDefinition]()
 
     for typeName in typeNames {
         guard let structMap = allStructs.first(where: { $0.name == typeName }) else {
-            logger?.log(.warning("Struct type '\(typeName)' not found in XD engine"))
+            logger?.log(.warning("Struct type '\(typeName)' not found in engines"))
             continue
         }
-        // Resolve StructMap → StructDefinition (resolve sub-struct references)
         do {
             let definition = try resolveStructMap(structMap, allStructs: allStructs)
             resolved[typeName] = definition
@@ -448,6 +467,19 @@ func resolveStructTypes(
     }
 
     return resolved
+}
+
+private func loadEngineStructs(from folder: Folder, in fileSystem: FileSystemTree) -> [StructMap]? {
+    let structsFolder = folder.folder("Structs")
+    guard let contents = fileSystem.inspectFolder(at: structsFolder) else { return nil }
+    var structs = [StructMap]()
+    for file in contents.files where file.fileType == "json" {
+        guard let data = fileSystem.readFile(at: file) else { continue }
+        if let structMap = try? JSONDecoder().decode(StructMap.self, from: data) {
+            structs.append(structMap)
+        }
+    }
+    return structs.isEmpty ? nil : structs
 }
 
 private func resolveStructMap(_ map: StructMap, allStructs: [StructMap]) throws -> StructDefinition {
@@ -478,6 +510,7 @@ private func resolveStructMap(_ map: StructMap, allStructs: [StructMap]) throws 
         description: map.description
     )
 }
+
 
 /// Bulk table JSON format for encoding.
 /// Each entry is a flat object with an optional `_label` and the struct fields directly.

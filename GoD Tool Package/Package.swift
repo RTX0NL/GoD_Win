@@ -130,9 +130,12 @@ let package = Package(
         .target(
             name: "Colosseum",
             dependencies: [
+                "GoDEngine",
                 "GoDFoundation",
+                "Structs",
                 "GameCube",
-                "Pokemon"
+                "Pokemon",
+                "ScriptDecompiler"
             ],
             path: "Sources/Shared/Core/Engines/Colosseum",
             resources: [.process("Resources")]
@@ -263,6 +266,14 @@ let package = Package(
             path: "Sources/Shared/Dependencies/Disassembler",
             resources: []
         ),
+        .target(
+            name: "ScriptDecompiler",
+            dependencies: [
+                "GoDFoundation",
+            ],
+            path: "Sources/Shared/Dependencies/ScriptDecompiler",
+            resources: []
+        ),
         
         // MARK: - Third Party Dependency Library Targets
         .target(
@@ -300,6 +311,10 @@ let package = Package(
             name: "GameCubeTests",
             dependencies: ["GameCube", "Dolphin", "GoDFoundation", "Structs"],
             path: "Tests/Shared Tests/Engine Tests/GameCube Tests"),
+        .testTarget(
+            name: "ColosseumTests",
+            dependencies: ["Colosseum", "GoDFoundation", "ScriptDecompiler"],
+            path: "Tests/Shared Tests/Engine Tests/Colosseum Tests"),
     ]
 )
 

@@ -100,6 +100,13 @@ enum Project {
             }
         }
 
+        // Game-specific struct engine
+        if isXD {
+            engines.append(try XDEngine.defaults())
+        } else if isColosseum {
+            engines.append(try ColosseumEngine.defaults())
+        }
+
         engines.forEach { engine in
             engine.write(to: projectFileSystem, in: enginesFolder, overwrite: false)
         }
