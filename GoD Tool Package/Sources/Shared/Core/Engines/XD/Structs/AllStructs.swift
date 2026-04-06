@@ -1,30 +1,38 @@
-import Structs
 import GoDFoundation
+import GoDEngine
+import Structs
 
 /// Namespace for XD struct defaults
 public enum XDStructDefaults {}
 
-/// All struct definitions for the XD engine
-public struct XDStructs: EngineStructs {
-    public var entries: [StructMap]
+public extension XDEngine {
+    struct Structs: EngineStructs {
+        enum Defaults {}
 
-    public static var allItems: [StructMap] {
-        [
-            XDStructDefaults.abilityStruct,
-            XDStructDefaults.statusEffectStruct,
-            XDStructDefaults.tmStruct,
-            XDStructDefaults.menuDataStruct,
-            XDStructDefaults.pkxModelStruct,
-            XDStructDefaults.shinyPKXModelStruct,
-            XDStructDefaults.wzxAnimationStruct,
-            XDStructDefaults.wzxMoveAnimationStruct,
-            XDStructDefaults.textureInfoStruct,
-            XDStructDefaults.textureStruct,
-            XDStructDefaults.characterModelStruct,
-        ]
-    }
+        public private(set) var entries: [StructMap] = Structs.allItems
 
-    public init(unchecked items: [StructMap]) {
-        self.entries = items
+        public init(unchecked items: [StructMap]) {
+            self.entries = items
+        }
+
+        static public var allItems: [StructMap] {
+            [
+                XDStructDefaults.abilityStruct,
+                XDStructDefaults.statusEffectStruct,
+                XDStructDefaults.tmStruct,
+                XDStructDefaults.menuDataStruct,
+                XDStructDefaults.pkxModelStruct,
+                XDStructDefaults.shinyPKXModelStruct,
+                XDStructDefaults.wzxAnimationStruct,
+                XDStructDefaults.wzxMoveAnimationStruct,
+                XDStructDefaults.textureInfoStruct,
+                XDStructDefaults.textureStruct,
+                XDStructDefaults.characterModelStruct,
+            ]
+        }
     }
+}
+
+public extension XDEngine {
+    // struct definition accessors
 }

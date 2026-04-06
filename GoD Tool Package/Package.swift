@@ -53,7 +53,8 @@ let package = Package(
                 "XD",
                 "Colosseum",
                 "GeniusSonority",
-                "GoDFoundation"
+                "GoDFoundation",
+                "Disassembler"
             ],
             path: "Sources/Products/GODSDK"
         ),
@@ -209,12 +210,14 @@ let package = Package(
         .target(
             name: "XD",
             dependencies: [
+                "GoDEngine",
                 "GoDFoundation",
+                "Structs",
                 "GameCube",
                 "Pokemon"
             ],
             path: "Sources/Shared/Core/Engines/XD",
-            resources: [.process("Resources")]
+            resources: [.copy("Resources")]
         ),
         
         // MARK: - Feature Library Targets
@@ -249,6 +252,15 @@ let package = Package(
                 "GoDFoundation",
             ],
             path: "Sources/Shared/Dependencies/Structs",
+            resources: []
+        ),
+        .target(
+            name: "Disassembler",
+            dependencies: [
+                "GoDFoundation",
+                "Structs",
+            ],
+            path: "Sources/Shared/Dependencies/Disassembler",
             resources: []
         ),
         
