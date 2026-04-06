@@ -12,6 +12,13 @@ public extension ColosseumEngine {
 
         static public var allItems: [Enum] {
             [
+                ColoScriptEnumDefaults.battleResult,
+                ColoScriptEnumDefaults.transitionID,
+                ColoScriptEnumDefaults.buttonInput,
+                ColoScriptEnumDefaults.language,
+                ColoScriptEnumDefaults.yesNoIndex,
+                ColoScriptEnumDefaults.groupID,
+                ColoScriptEnumDefaults.characterRID,
             ]
         }
     }

@@ -1,5 +1,6 @@
 import GoDFoundation
 import ScriptDecompiler
+import Structs
 
 // MARK: - Colosseum Expression Type
 
@@ -410,11 +411,18 @@ public struct ColoExpressionCompound {
 
 public struct ColoExprFormatter {
 
-    public let builtInNames: [Int: String]
+    public let builtInFunctions: [Int: ScriptFunctionDef]
+    /// Engine enums keyed by name, used to resolve integer constants to enum case names
+    public let enums: [String: Enum]
     public let indent: String
 
-    public init(builtInNames: [Int: String] = [:], indent: String = "    ") {
-        self.builtInNames = builtInNames
+    public init(
+        builtInFunctions: [Int: ScriptFunctionDef] = [:],
+        enums: [String: Enum] = [:],
+        indent: String = "    "
+    ) {
+        self.builtInFunctions = builtInFunctions
+        self.enums = enums
         self.indent = indent
     }
 
@@ -440,8 +448,9 @@ public struct ColoExprFormatter {
                 let argStr = args.map { formatExpr($0) }.joined(separator: ", ")
                 lines.append("\(prefix)function_\(funcID)(\(argStr))")
             case .callBuiltIn(let funcID, let args):
-                let name = builtInNames[funcID] ?? "builtin_\(funcID)"
-                let argStr = args.map { formatExpr($0) }.joined(separator: ", ")
+                let funcDef = builtInFunctions[funcID]
+                let name = funcDef?.name ?? "builtin_\(funcID)"
+                let argStr = formatCallArgs(args, paramDefs: funcDef?.parameters ?? [])
                 lines.append("\(prefix)\(name)(\(argStr))")
             case .printf(let fmt, let args):
                 let argStr = args.map { formatExpr($0) }.joined(separator: ", ")
@@ -509,8 +518,9 @@ public struct ColoExprFormatter {
             let argStr = args.map { formatExpr($0) }.joined(separator: ", ")
             return "function_\(funcID)(\(argStr))"
         case .callBuiltIn(let funcID, let args):
-            let name = builtInNames[funcID] ?? "builtin_\(funcID)"
-            let argStr = args.map { formatExpr($0) }.joined(separator: ", ")
+            let funcDef = builtInFunctions[funcID]
+            let name = funcDef?.name ?? "builtin_\(funcID)"
+            let argStr = formatCallArgs(args, paramDefs: funcDef?.parameters ?? [])
             return "\(name)(\(argStr))"
         case .yield(let frames):
             return "yield(\(formatExpr(frames)))"
@@ -519,5 +529,44 @@ public struct ColoExprFormatter {
         default:
             return "<?>"
         }
+    }
+
+    /// Format function call arguments, applying macro resolution based on parameter type definitions
+    private func formatCallArgs(_ args: [ColoExpr], paramDefs: [ScriptFunctionDef.ParameterDef]) -> String {
+        args.enumerated().map { (i, arg) in
+            let paramType = i < paramDefs.count ? paramDefs[i].type : nil
+            return formatArgWithType(arg, type: paramType)
+        }.joined(separator: ", ")
+    }
+
+    /// Format a single argument, resolving to an enum case name if the parameter type is an enum ref
+    private func formatArgWithType(_ expr: ColoExpr, type: ScriptParamType?) -> String {
+        guard let type = type else { return formatExpr(expr) }
+
+        switch type {
+        case .bool:
+            // Resolve bools directly
+            if case .constant(.integer(let v)) = expr { return v != 0 ? "true" : "false" }
+            if case .variable(let vr, .constant(.integer(let v))) = expr, vr.isLiteral { return v != 0 ? "true" : "false" }
+        case .enumRef(let enumName):
+            // Look up the enum and find a DEFINED case matching the raw value
+            if let enumDef = enums[enumName] {
+                let rawValue: Int?
+                switch expr {
+                case .constant(.integer(let v)): rawValue = Int(v)
+                case .variable(let vr, .constant(.integer(let v))) where vr.isLiteral: rawValue = Int(v)
+                default: rawValue = nil
+                }
+                // Only use enum case if it's explicitly defined (not auto-generated)
+                if let raw = rawValue,
+                   let enumCase = enumDef.values.first(where: { $0.rawValue == raw }) {
+                    return "\(enumName).\(enumCase.name)"
+                }
+            }
+        default:
+            break
+        }
+
+        return formatExpr(expr)
     }
 }

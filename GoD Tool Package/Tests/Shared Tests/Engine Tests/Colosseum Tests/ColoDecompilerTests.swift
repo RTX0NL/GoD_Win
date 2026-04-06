@@ -99,7 +99,14 @@ final class ColoDecompilerTests: XCTestCase {
 
         let exprBuilder = ColoExpressionBuilder()
         let compound = ColoExpressionCompound()
-        let formatter = ColoExprFormatter()
+        let builtInFunctions = ColosseumEngine.Data.defaultBuiltInFunctions.reduce(into: [Int: ScriptFunctionDef]()) { result, pair in
+            if let id = Int(pair.key) { result[id] = pair.value }
+        }
+        let enums = Dictionary(
+            ColosseumEngine.Enums.allItems.map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let formatter = ColoExprFormatter(builtInFunctions: builtInFunctions, enums: enums)
 
         var output = ""
         var funcCount = 0
