@@ -152,6 +152,9 @@ public final class Rel: FileFormat {
         var parsedRelocations = [RelocationEntry]()
         var parsedSymbolPointers = [Int: UInt32]()
         var currentPointerIndex = 0
+        // Track known targets for deduplication — when multiple relocations
+        // target the same address (e.g. HA/LO pairs), they share one pointer index
+        var targetToPointerIndex = [UInt32: Int]()
 
         for imp in parsedImports {
             var offset = Int(imp.relocationsOffset)
@@ -173,14 +176,18 @@ public final class Rel: FileFormat {
                 )
                 parsedRelocations.append(entry)
 
-                // Build symbol pointer table from self-referencing relocations
-                // (module imports itself — these are the numbered symbol pointers)
-                if imp.moduleID == moduleID && command >= 1 && command <= 13 {
+                // Build symbol pointer table from all standard relocation commands.
+                // Deduplicate by target address — HA/LO pairs and repeated references
+                // to the same address share one pointer index.
+                if command >= 1 && command <= 13 {
                     let sectionIndex = Int(targetSection)
                     if let section = parsedSections.first(where: { $0.index == sectionIndex }) {
-                        let fileOff = section.fileOffset + addend
-                        parsedSymbolPointers[currentPointerIndex] = fileOff
-                        currentPointerIndex += 1
+                        let fileOff = UInt32(section.fileOffset) + addend
+                        if targetToPointerIndex[fileOff] == nil {
+                            targetToPointerIndex[fileOff] = currentPointerIndex
+                            parsedSymbolPointers[currentPointerIndex] = fileOff
+                            currentPointerIndex += 1
+                        }
                     }
                 }
 
