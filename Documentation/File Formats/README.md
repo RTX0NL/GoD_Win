@@ -16,8 +16,7 @@ These formats are used by both Colosseum and XD with the same or very similar st
 - [WZX - Move Animation](Shared/WZX%20-%20Move%20Animation.md) — Move effect archive with models and particles (type `0x20`)
 
 ### Textures & Graphics
-- [GTX - Texture Format](Shared/GTX%20-%20Texture%20Format.md) — GameCube texture with 11 pixel formats (type `0x12`)
-- [ATX - Animated Texture](Shared/ATX%20-%20Animated%20Texture.md) — Multi-frame animated texture (type `0x32`)
+- [GTX/ATX - Texture Formats](Shared/GTX%20ATX%20-%20Texture%20Formats.md) — GameCube textures: 11 pixel formats, palette encoding, block layout, animated frames (type `0x12`/`0x32`)
 - [GSW - Flash Menu Animation](Shared/GSW%20-%20Flash%20Menu%20Animation.md) — Proprietary Flash-like UI animation (type `0x30`)
 - [GPT - Particle Effects](Shared/GPT%20-%20Particle%20Effects.md) — Particle system data (type `0x14`/`0x22`)
 
