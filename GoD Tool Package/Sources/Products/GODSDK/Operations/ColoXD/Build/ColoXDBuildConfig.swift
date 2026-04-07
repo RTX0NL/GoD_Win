@@ -10,6 +10,12 @@ extension ColoXD {
                 overwrite: Bool,
                 geniusSonorityEngine: Folder
             )
+            case buildFont(
+                metadataFile: File,
+                atlasFile: File,
+                outputFile: File,
+                overwrite: Bool
+            )
         }
 
         let operations: [OperationConfig<Operations>]

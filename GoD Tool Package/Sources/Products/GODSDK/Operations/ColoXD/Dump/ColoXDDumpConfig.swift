@@ -23,6 +23,11 @@ extension ColoXD {
                 overwrite: Bool,
                 geniusSonorityEngine: Folder
             )
+            case dumpFonts(
+                fontsFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
         }
         
         let operations: [OperationConfig<Operations>]

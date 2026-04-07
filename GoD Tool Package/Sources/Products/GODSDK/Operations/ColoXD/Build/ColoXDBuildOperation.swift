@@ -42,6 +42,25 @@ extension ColoXD {
                     fileSystem.writeFile(archiveData, at: outputFile, overwrite: overwrite)
                     logger?.log(.info("Wrote \(outputFile.fileName) (\(archiveData.length) bytes)"))
                 }
+
+            case let .buildFont(metadataFile, atlasFile, outputFile, overwrite):
+                guard let metaData = fileSystem.readFile(at: metadataFile) else {
+                    throw FSTErrors.fileNotFound(metadataFile, .init())
+                }
+                guard let imageData = fileSystem.readFile(at: atlasFile) else {
+                    throw FSTErrors.fileNotFound(atlasFile, .init())
+                }
+
+                let metadata: GSFontAtlas.Metadata = try JSONDecoder().decode(
+                    GSFontAtlas.Metadata.self, from: metaData
+                )
+                let font = try GSFontAtlas.importAtlas(imageData: imageData, metadata: metadata)
+                let fontData = try font.data
+
+                if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
+                    fileSystem.writeFile(fontData, at: outputFile, overwrite: overwrite)
+                    logger?.log(.info("Built font \(outputFile.fileName) (\(font.visibleGlyphs.count) glyphs, \(fontData.length) bytes)"))
+                }
             }
         }
     }

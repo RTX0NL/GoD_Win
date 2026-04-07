@@ -79,6 +79,36 @@ extension ColoXD {
                 try fileSystem.encodeJSON(registry, to: registryFile, overwrite: overwrite)
 
                 logger?.log(.info("Wrote registry: \(registryFile.fileName)"))
+
+            case let .dumpFonts(fontsFolder, outputFolder, overwrite):
+                // Find all .fnt files in the fonts folder
+                guard let contents = fileSystem.inspectFolder(at: fontsFolder) else { break }
+                let fntFiles = contents.files.filter { $0.fileType == "fnt" }
+                logger?.log(.info("Found \(fntFiles.count) font files"))
+
+                for fntFile in fntFiles {
+                    guard let data = fileSystem.readFile(at: fntFile) else { continue }
+                    guard let font = try? GSFont(data: data) else {
+                        logger?.log(.warning("Failed to parse font: \(fntFile.fileName)"))
+                        continue
+                    }
+
+                    let fontName = fntFile.fileName.replacingOccurrences(of: ".fnt", with: "")
+                    let fontFolder = outputFolder.folder(fontName)
+                    fileSystem.createFolder(at: fontFolder, overwrite: overwrite)
+
+                    let (imageData, metadata) = GSFontAtlas.exportAtlas(font: font)
+
+                    let atlasFile = fontFolder.file("atlas.pgm")
+                    let metadataFile = fontFolder.file("metadata.json")
+
+                    if overwrite || fileSystem.inspectFile(at: atlasFile) == nil {
+                        fileSystem.writeFile(imageData, at: atlasFile, overwrite: overwrite)
+                    }
+                    try fileSystem.encodeJSON(metadata, to: metadataFile, overwrite: overwrite)
+
+                    logger?.log(.info("  \(fontName): \(font.visibleGlyphs.count) glyphs → \(fontFolder.path)"))
+                }
             }
         }
     }
