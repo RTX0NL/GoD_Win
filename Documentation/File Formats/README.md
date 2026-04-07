@@ -1,0 +1,68 @@
+# File Format Documentation
+
+Format specifications for file types used in Pokemon Colosseum and Pokemon XD: Gale of Darkness.
+
+## Shared Formats
+
+These formats are used by both Colosseum and XD with the same or very similar structure.
+
+### Archives & Compression
+- [FSYS - Archive Container](Shared/FSYS%20-%20Archive%20Container.md) — Main game archive with LZSS compression (type `0x90`)
+
+### 3D Models
+- [DAT - HAL Model Format](Shared/DAT%20-%20HAL%20Model%20Format.md) — Character/room 3D models, HSD format (type `0x04`/`0x02`)
+- [DATS - Multi-Model Archive](Shared/DATS%20-%20Multi-Model%20Archive.md) — Multiple DAT models bundled (type `0x10`)
+- [PKX - Battle Model](Shared/PKX%20-%20Battle%20Model.md) — DAT with battle metadata, animations, shiny filter (type `0x1E`)
+- [WZX - Move Animation](Shared/WZX%20-%20Move%20Animation.md) — Move effect archive with models and particles (type `0x20`)
+
+### Textures & Graphics
+- [GTX - Texture Format](Shared/GTX%20-%20Texture%20Format.md) — GameCube texture with 11 pixel formats (type `0x12`)
+- [ATX - Animated Texture](Shared/ATX%20-%20Animated%20Texture.md) — Multi-frame animated texture (type `0x32`)
+- [GSW - Flash Menu Animation](Shared/GSW%20-%20Flash%20Menu%20Animation.md) — Proprietary Flash-like UI animation (type `0x30`)
+- [GPT - Particle Effects](Shared/GPT%20-%20Particle%20Effects.md) — Particle system data (type `0x14`/`0x22`)
+
+### Audio & Video
+- [ISH/ISD - Streamed Audio](Shared/ISH%20ISD%20-%20Streamed%20Audio.md) — DSP ADPCM streamed music (type `0x2A`/`0x28`)
+- [SAMP - Sequenced Music](Shared/SAMP%20-%20Sequenced%20Music.md) — MusyX sequenced audio (type `0x08`)
+- [THP - Video Format](Shared/THP%20-%20Video%20Format.md) — Nintendo video, split THH+THD (type `0x2C`/`0x2E`)
+
+### Scripting & Text
+- [SCD - Script Bytecode](Shared/SCD%20-%20Script%20Bytecode.md) — Compiled script with 18 opcodes (type `0x0E`)
+- [MSG - Message String Table](Shared/MSG%20-%20Message%20String%20Table.md) — Game text and dialog strings (type `0x0A`)
+- [FNT - Font Data](Shared/FNT%20-%20Font%20Data.md) — Character glyph definitions (type `0x0C`)
+
+### World & Collision
+- [CCD - Collision Data](Shared/CCD%20-%20Collision%20Data.md) — 3D collision mesh with interaction regions (type `0x06`)
+- [CAM - Camera Data](Shared/CAM%20-%20Camera%20Data.md) — Camera animation sequences (type `0x18`)
+- [REL - Relocatable Module](Shared/REL%20-%20Relocatable%20Module.md) — Runtime-linked code and data tables (type `0x1C`)
+
+### Other
+- [BIN - Generic Binary Data](Shared/BIN%20-%20Generic%20Binary%20Data.md) — Context-dependent binary data (type `0x34`)
+
+## File Type ID Reference
+
+| ID | Extension | Format |
+|----|-----------|--------|
+| 0x02 | .rdat | Room model (DAT) |
+| 0x04 | .dat | Character model (DAT) |
+| 0x06 | .ccd | Collision data (CCD) |
+| 0x08 | .samp | Sequenced music (SAMP) |
+| 0x0A | .msg | Message strings (MSG) |
+| 0x0C | .fnt | Font data (FNT) |
+| 0x0E | .scd | Script bytecode (SCD) |
+| 0x10 | .dats | Multi-model (DATS) |
+| 0x12 | .gtx | Texture (GTX) |
+| 0x14 | .gpt1 | Particle effects (GPT1) |
+| 0x18 | .cam | Camera data (CAM) |
+| 0x1C | .rel | Relocatable module (REL) |
+| 0x1E | .pkx | Battle model (PKX) |
+| 0x20 | .wzx | Move animation (WZX) |
+| 0x22 | .gpt | Particle data (GPT) |
+| 0x26 | .drel | Debug REL |
+| 0x28 | .isd | Streamed audio data (ISD) |
+| 0x2A | .ish | Streamed audio header (ISH) |
+| 0x2C | .thh | Video header (THH) |
+| 0x2E | .thd | Video data (THD) |
+| 0x30 | .gsw | Flash menu animation (GSW) |
+| 0x32 | .atx | Animated texture (ATX) |
+| 0x34 | .bin | Generic binary (BIN) |
