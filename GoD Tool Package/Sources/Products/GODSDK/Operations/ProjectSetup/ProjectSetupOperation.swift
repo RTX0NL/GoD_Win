@@ -16,6 +16,7 @@ enum Project {
         let buildFolder = Folder("/Build")
         let isoFolder = buildFolder.folder("/ISO")
         let contentsFolder = buildFolder.folder("/Contents")
+        let unpackedFolder = buildFolder.folder("/Unpacked")
         let sourceFolder = Folder("/Source")
         let configFolder = Folder("/Config")
         let settingsFolder = Folder("/Settings")
@@ -39,11 +40,21 @@ enum Project {
         let isPBR = PokemonBattleRevolution.gameIDs.contains(gameID)
         let isGeniusSonority = isColosseum || isXD || isPBR
 
-        let projectFolders = [
+        var projectFolders = [
             buildFolder, isoFolder, contentsFolder,
             configFolder, settingsFolder, enginesFolder, scriptsFolder
         ]
-        .conditionalAppend(isColosseum || isXD || isPBR, contents: [sourceFolder])
+        if isGeniusSonority {
+            projectFolders += [
+                unpackedFolder,
+                sourceFolder,
+                sourceFolder.folder("Code"),
+                sourceFolder.folder("Menus"),
+                sourceFolder.folder("Scripts"),
+                sourceFolder.folder("Sequenced"),
+                sourceFolder.folder("Text"),
+            ]
+        }
 
         projectFolders.forEach { folder in
             projectFileSystem.createFolder(at: folder, overwrite: true)
@@ -191,7 +202,7 @@ enum Project {
                                     OperationConfig(
                                         operation: .dumpPBR(
                                             fstFolder: contentsFolder.prefixed("."),
-                                            outputFolder: sourceFolder.prefixed("."),
+                                            outputFolder: unpackedFolder.prefixed("."),
                                             overwrite: false,
                                             dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
                                             geniusSonorityEngine: enginesFolder.folder(gsEngine.name).prefixed(".")
@@ -233,39 +244,91 @@ enum Project {
             // GameCube disc — existing logic
             let gamecubeEngine = try GamecubeEngine.defaults()
 
+            var buildOperations: [OperationConfig<GoddessConfig.Operations>] = []
+
+            if isColosseum, let game = gsGame {
+                let gsEngine = GeniusSonorityEngine.defaultEngine(for: game)
+                buildOperations.append(
+                    OperationConfig(operation: .coloXDBuild(
+                        config: ColoXD.BuildConfig(
+                            operations: [
+                                OperationConfig(
+                                    operation: .buildColosseum(
+                                        fstRegistry: unpackedFolder.file("FST.json").prefixed("."),
+                                        outputFolder: contentsFolder.prefixed("."),
+                                        overwrite: true,
+                                        dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
+                                        geniusSonorityEngine: enginesFolder.folder(gsEngine.name).prefixed(".")
+                                    ),
+                                    enabled: .yes
+                                )
+                            ]
+                        )
+                    ),
+                    enabled: .yes
+                    )
+                )
+            }
+
+            if isXD, let game = gsGame {
+                let gsEngine = GeniusSonorityEngine.defaultEngine(for: game)
+                buildOperations.append(
+                    OperationConfig(operation: .coloXDBuild(
+                        config: ColoXD.BuildConfig(
+                            operations: [
+                                OperationConfig(
+                                    operation: .buildXD(
+                                        fstRegistry: unpackedFolder.file("FST.json").prefixed("."),
+                                        outputFolder: contentsFolder.prefixed("."),
+                                        overwrite: true,
+                                        dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
+                                        geniusSonorityEngine: enginesFolder.folder(gsEngine.name).prefixed(".")
+                                    ),
+                                    enabled: .yes
+                                )
+                            ]
+                        )
+                    ),
+                    enabled: .yes
+                    )
+                )
+            }
+
+            buildOperations.append(
+                OperationConfig(
+                    operation: .gamecubeBuild(
+                        config: Gamecube.BuildConfig(
+                            operations: [
+                                OperationConfig(
+                                    operation: .buildISO(
+                                        fstPath: contentsFolder.prefixed("."),
+                                        isoPath: isoOutputFile.prefixed("."),
+                                        overwrite: true,
+                                        dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
+                                        gamecubeEngine: enginesFolder.folder(gamecubeEngine.name).prefixed(".")
+                                    ),
+                                    enabled: .yes
+                                ),
+                                OperationConfig(
+                                    operation: .fillISO(
+                                        isoPath: isoOutputFile.prefixed("."),
+                                        size: gamecubeEngine.data.iso.maxDiscCapacity
+                                    ),
+                                    enabled: .yes
+                                )
+                            ]
+                        )
+                    ),
+                    enabled: .yes
+                )
+            )
+
             buildConfig = GoddessConfig(
                 name: "Build ISO",
                 description: "Config for building ISO from Contents folder",
                 settingsFile: settingsFile.prefixed("."),
                 rootFolder: "..",
-                operations: [
-                    OperationConfig(
-                        operation: .gamecubeBuild(
-                            config: Gamecube.BuildConfig(
-                                operations: [
-                                    OperationConfig(
-                                        operation: .buildISO(
-                                            fstPath: contentsFolder.prefixed("."),
-                                            isoPath: isoOutputFile.prefixed("."),
-                                            overwrite: true,
-                                            dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
-                                            gamecubeEngine: enginesFolder.folder(gamecubeEngine.name).prefixed(".")
-                                        ),
-                                        enabled: .yes
-                                    ),
-                                    OperationConfig(
-                                        operation: .fillISO(
-                                            isoPath: isoOutputFile.prefixed("."),
-                                            size: gamecubeEngine.data.iso.maxDiscCapacity
-                                        ),
-                                        enabled: .yes
-                                    )
-                                ]
-                            )
-                        ),
-                        enabled: .yes
-                    )
-                ]
+                operations: buildOperations
             )
 
             dumpConfig = GoddessConfig(
@@ -303,7 +366,7 @@ enum Project {
                                         OperationConfig(
                                             operation: .dumpColosseum(
                                                 fstFolder: contentsFolder.prefixed("."),
-                                                outputFolder: sourceFolder.prefixed("."),
+                                                outputFolder: unpackedFolder.prefixed("."),
                                                 overwrite: false,
                                                 dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
                                                 geniusSonorityEngine: enginesFolder.folder(GeniusSonorityEngine.defaultEngine(for: .colosseum).name).prefixed(".")
@@ -326,7 +389,7 @@ enum Project {
                                         OperationConfig(
                                             operation: .dumpXD(
                                                 fstFolder: contentsFolder.prefixed("."),
-                                                outputFolder: sourceFolder.prefixed("."),
+                                                outputFolder: unpackedFolder.prefixed("."),
                                                 overwrite: false,
                                                 dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
                                                 geniusSonorityEngine: enginesFolder.folder(GeniusSonorityEngine.defaultEngine(for: .galeOfDarkness).name).prefixed(".")
