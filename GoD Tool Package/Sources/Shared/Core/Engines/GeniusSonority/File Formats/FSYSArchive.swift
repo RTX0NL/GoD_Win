@@ -110,8 +110,20 @@ public final class FSYSArchive: FileFormat {
             let fileName: String
 
             if fullFilenameOffset != 0 {
-                guard let name = data.readString(atAddress: fullFilenameOffset, format: .utf8) else {
+                guard var name = data.readString(atAddress: fullFilenameOffset, format: .utf8) else {
                     throw Self.invalidFileError
+                }
+                // Strip configurable suffixes from the filename stem
+                // e.g. "B1_1_col.ccd" → "B1_1.ccd" when "_col" is in fileNameSuffixReplacements
+                let ext = File(name).fileType
+                if !ext.isEmpty {
+                    let stem = String(name.dropLast(ext.count + 1)) // drop ".ext"
+                    for suffix in engine.data.fsys.fileNameSuffixReplacements {
+                        if stem.hasSuffix(suffix) {
+                            name = String(stem.dropLast(suffix.count)) + "." + ext
+                            break
+                        }
+                    }
                 }
                 fileName = name
             } else {

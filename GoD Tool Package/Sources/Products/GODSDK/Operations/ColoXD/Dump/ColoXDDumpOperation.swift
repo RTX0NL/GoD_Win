@@ -8,6 +8,7 @@
 import GoDFoundation
 import Dolphin
 import GeniusSonority
+import GTX
 
 extension ColoXD {
     
@@ -31,12 +32,12 @@ extension ColoXD {
                     settings: settings,
                     logger: logger
                 )
-                
-                fileSystem.importFST(output, from: "/", to: outputFolder, overwrite: overwrite)
+
+                fileSystem.importFST(output, from: "/", to: outputFolder, overwrite: overwrite, logger: logger)
             case let .dumpXD(fstFolder, outputFolder, overwrite, dolphinPath, geniusPath):
                 let dolphinEngine = try DolphinEngine(from: dolphinPath, in: fileSystem)
                 let geniusEngine = try GeniusSonorityEngine(from: geniusPath, in: fileSystem)
-                
+
                 let output = try dumpXD(
                     fileSystem: fileSystem,
                     rootFolder: fstFolder,
@@ -45,8 +46,8 @@ extension ColoXD {
                     settings: settings,
                     logger: logger
                 )
-                
-                fileSystem.importFST(output, from: "/", to: outputFolder, overwrite: overwrite)
+
+                fileSystem.importFST(output, from: "/", to: outputFolder, overwrite: overwrite, logger: logger)
 
             case let .unpackFSYS(fsysFile, outputFolder, overwrite, gsEnginePath):
                 let gsEngine = try GeniusSonorityEngine(from: gsEnginePath, in: fileSystem)
@@ -63,7 +64,12 @@ extension ColoXD {
                 // Build registry and extract files
                 var registryEntries = [FSYSRegistry.Entry]()
                 for entry in archive.entries {
-                    let targetFile = outputFolder.file(entry.filename)
+                    let targetFolder = gsEngine.resolveFolder(
+                        forFileType: entry.metadata.fileType,
+                        entryFilename: entry.filename,
+                        archiveName: archiveName
+                    ).resolvedFolder
+                    let targetFile = targetFolder.file(entry.filename)
                     registryEntries.append(.init(metadata: entry.metadata, file: targetFile))
                     if overwrite || fileSystem.inspectFile(at: targetFile) == nil {
                         fileSystem.writeFile(entry.data, at: targetFile, overwrite: overwrite)
@@ -171,15 +177,37 @@ extension ColoXD {
         var entries = [FSYSRegistry.Entry]()
         var extractedFiles = [(file: File, data: GoDData)]()
 
+        let textureDecoder = GXTextureDecoder()
+
         for entry in archive.entries {
             let targetFolder = gsEngine.resolveFolder(
                 forFileType: entry.metadata.fileType,
                 entryFilename: entry.filename,
                 archiveName: archiveName
-            )
-            let targetFile = targetFolder.file(entry.filename)
-            entries.append(.init(metadata: entry.metadata, file: targetFile))
-            extractedFiles.append((file: targetFile, data: entry.data))
+            ).resolvedFolder
+
+            let fileType = entry.metadata.fileType
+            if fileType == "gtx" || fileType == "atx" {
+                // Store texture metadata in the registry for re-encoding on import
+                let texMeta = fileType == "atx"
+                    ? textureDecoder.parseATXHeader(data: entry.data)
+                    : textureDecoder.parseHeader(data: entry.data)
+
+                if let image = textureDecoder.decode(data: entry.data),
+                   let pngData = image.pngData() {
+                    let pngFile = targetFolder.file(entry.filename.withoutExtensions + ".png")
+                    entries.append(.init(metadata: entry.metadata, file: pngFile, textureMetadata: texMeta))
+                    extractedFiles.append((file: pngFile, data: pngData))
+                } else {
+                    let targetFile = targetFolder.file(entry.filename)
+                    entries.append(.init(metadata: entry.metadata, file: targetFile, textureMetadata: texMeta))
+                    extractedFiles.append((file: targetFile, data: entry.data))
+                }
+            } else {
+                let targetFile = targetFolder.file(entry.filename)
+                entries.append(.init(metadata: entry.metadata, file: targetFile))
+                extractedFiles.append((file: targetFile, data: entry.data))
+            }
         }
 
         let registry = FSYSRegistry(
@@ -207,19 +235,9 @@ extension ColoXD {
 
         let projectFileSystem = InMemoryFST()
 
-        // Derive the set of output folders from engine config
+        // Folders are created on-demand when files are written,
+        // avoiding empty directories for unused file types.
         let fsysConfig = gsEngine.data.fsys
-        var outputFolders = Set<Folder>()
-        outputFolders.insert(fsysConfig.defaultFolder)
-        outputFolders.formUnion(fsysConfig.fileTypeFolders.values)
-        for overrideMap in fsysConfig.archiveFileTypeFolders.values {
-            outputFolders.formUnion(overrideMap.values)
-        }
-        outputFolders.insert(fsysConfig.archivesFolder)
-
-        outputFolders.forEach { folder in
-            _ = projectFileSystem.createFolder(at: folder, overwrite: true)
-        }
 
         let gsfsysFile = rootFolder.file(gsEngine.data.fsys.GSfsysFile.path)
         guard let gsfsysData = fileSystem.readFile(at: gsfsysFile) else {
@@ -260,63 +278,107 @@ extension ColoXD {
         var fstEntries = [FSTRegistry.Entry]()
 
         // Phase 2: Write non-FSYS game files, routing by file type
+        let gsfsysFileName = gsEngine.data.fsys.GSfsysFile.fileName
         for other in otherPaths {
+            // Skip the FSYS table of contents — it's not needed in the unpacked output
+            if other.path.fileName == gsfsysFileName { continue }
+
             let targetFolder = gsEngine.resolveFolder(
                 forFileType: other.path.fileType,
                 entryFilename: other.path.fileName,
                 archiveName: ""
-            )
+            ).resolvedFolder
             let outputFile = targetFolder.file(other.path.fileName)
             _ = projectFileSystem.writeFile(other.data, at: outputFile, overwrite: true)
             fstEntries.append(.init(type: .binary, file: outputFile))
         }
 
-        // Phase 3: Process FSYS archives in parallel batches
-        // Batch to limit memory: process N archives at a time
-        let batchSize = max(1, ProcessInfo.processInfo.activeProcessorCount * 2)
-        var fsysIndex = 0
+        // Phase 3: Process all FSYS archives concurrently
+        var fsysResults = [Result<FsysResult, Error>?](repeating: nil, count: fsysPaths.count)
+        let progressLock = NSLock()
+        var fsysProcessed = 0
+        var lastReportedPercent = -1
 
-        while fsysIndex < fsysPaths.count {
-            let batchEnd = min(fsysIndex + batchSize, fsysPaths.count)
-            let batch = Array(fsysPaths[fsysIndex..<batchEnd])
-
-            var batchResults = [Result<FsysResult, Error>?](repeating: nil, count: batch.count)
-
-            DispatchQueue.concurrentPerform(iterations: batch.count) { i in
-                let source = batch[i]
-                do {
-                    batchResults[i] = .success(try processFsys(
-                        data: source.data,
-                        fileName: source.path.fileName,
-                        toc: toc,
-                        gsEngine: gsEngine
-                    ))
-                } catch {
-                    batchResults[i] = .failure(error)
-                }
+        DispatchQueue.concurrentPerform(iterations: fsysPaths.count) { i in
+            let source = fsysPaths[i]
+            do {
+                fsysResults[i] = .success(try processFsys(
+                    data: source.data,
+                    fileName: source.path.fileName,
+                    toc: toc,
+                    gsEngine: gsEngine
+                ))
+            } catch {
+                fsysResults[i] = .failure(error)
             }
 
-            // Merge batch results into the InMemoryFST
-            for result in batchResults {
-                guard let result else { continue }
-                switch result {
-                case .success(let fsysResult):
-                    for extracted in fsysResult.extractedFiles {
-                        _ = projectFileSystem.writeFile(extracted.data, at: extracted.file, overwrite: true)
+            if let logger {
+                progressLock.lock()
+                fsysProcessed += 1
+                let processed = otherPaths.count + fsysProcessed
+                let percent = Int(min(Double(processed) / Double(totalCount) * 100, 100))
+                if percent > lastReportedPercent {
+                    lastReportedPercent = percent
+                    logger.log(.taskStatus(taskName: "Decode Colosseum/XD File System", status: .progress(Percentage(Double(percent)))))
+                }
+                progressLock.unlock()
+            }
+        }
+
+        // Font deduplication: collect all .fnt files, deduplicate by content
+        var uniqueFonts = [(data: GoDData, file: File)]()
+        var fontFileMapping = [String: File]()
+        let fontsFolder: Folder = fsysConfig.fileTypeFolders["fnt"] ?? "/Assets/Text/Fonts"
+
+        for case .success(let r) in fsysResults.compactMap({ $0 }) {
+            for extracted in r.extractedFiles where extracted.file.fileType == "fnt" {
+                if let existing = uniqueFonts.first(where: { $0.data == extracted.data }) {
+                    fontFileMapping[extracted.file.path] = existing.file
+                } else {
+                    let canonical = fontsFolder.file("Font_Data_\(uniqueFonts.count + 1).fnt")
+                    uniqueFonts.append((data: extracted.data, file: canonical))
+                    fontFileMapping[extracted.file.path] = canonical
+                }
+            }
+        }
+
+        for font in uniqueFonts {
+            _ = projectFileSystem.writeFile(font.data, at: font.file, overwrite: true)
+        }
+
+        // Merge results into the InMemoryFST, remapping font paths
+        for result in fsysResults {
+            guard let result else { continue }
+            switch result {
+            case .success(let fsysResult):
+                for extracted in fsysResult.extractedFiles {
+                    // Skip .fnt files — they were written above as deduplicated
+                    if extracted.file.fileType == "fnt" { continue }
+                    _ = projectFileSystem.writeFile(extracted.data, at: extracted.file, overwrite: true)
+                }
+
+                // Remap font entries in registry to deduplicated paths
+                let remappedEntries = fsysResult.registry.entries.map { entry -> FSYSRegistry.Entry in
+                    if entry.file.fileType == "fnt",
+                       let mappedFile = fontFileMapping[entry.file.path] {
+                        return FSYSRegistry.Entry(
+                            metadata: entry.metadata,
+                            file: mappedFile,
+                            textureMetadata: entry.textureMetadata
+                        )
                     }
-                    _ = projectFileSystem.writeFile(fsysResult.registry, at: fsysResult.registryFile, overwrite: true)
-                    fstEntries.append(.init(type: .fsys, file: fsysResult.registryFile))
-                case .failure(let error):
-                    throw error
+                    return entry
                 }
-            }
+                let remappedRegistry = FSYSRegistry(
+                    groupID: fsysResult.registry.groupID,
+                    metaData: fsysResult.registry.metaData,
+                    entries: remappedEntries
+                )
 
-            fsysIndex = batchEnd
-
-            if logger != nil {
-                let processed = otherPaths.count + fsysIndex
-                let percentage = Percentage(min(Double(processed) / Double(totalCount) * 100, 100))
-                logger?.log(.taskStatus(taskName: "Decode Colosseum/XD File System", status: .progress(percentage)))
+                _ = projectFileSystem.writeFile(remappedRegistry, at: fsysResult.registryFile, overwrite: true)
+                fstEntries.append(.init(type: .fsys, file: fsysResult.registryFile))
+            case .failure(let error):
+                throw error
             }
         }
 
@@ -330,5 +392,4 @@ extension ColoXD {
 
         return projectFileSystem
     }
-    
 }

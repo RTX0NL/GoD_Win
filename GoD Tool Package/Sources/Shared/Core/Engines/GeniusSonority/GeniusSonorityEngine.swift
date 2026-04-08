@@ -10,13 +10,13 @@ public struct GeniusSonorityEngine: Engine {
     public typealias DataType = GeniusSonorityEngine.Data
     public typealias EnumsType = GeniusSonorityEngine.Enums
     public typealias StructsType = GeniusSonorityEngine.Structs
-    
+
     public let name = "GeniusSonority Engine"
     public private(set) var data = GeniusSonorityEngine.Data()
     public private(set) var enums = GeniusSonorityEngine.Enums()
     public private(set) var structs = GeniusSonorityEngine.Structs()
     private(set) var definitions: [StructDefinition]!
-    
+
     public init(data: Data, enums: Enums, structs: Structs) throws {
         self.data = data
         self.enums = enums
@@ -25,7 +25,7 @@ public struct GeniusSonorityEngine: Engine {
             try getStruct(structName)
         }
     }
-    
+
     public init(data: Data, enums: Enums, structs: Structs, toc: FsysTOC) throws {
         var enumList = enums.entries
         enumList.removeAll(where: {
@@ -39,23 +39,23 @@ public struct GeniusSonorityEngine: Engine {
         self.data.toc.junk2 = toc.junk2
         self.data.toc.junk3 = toc.junk3
     }
-    
+
     public static func defaultEngine(for game: GSGame) -> GeniusSonorityEngine {
         defaultEngine(for: game, fsysTOC: nil)
     }
-    
+
     public static func defaultEngine(for game: GSGame, fsysTOC: FsysTOC?) -> GeniusSonorityEngine {
         var data = GeniusSonorityEngine.Data()
         var structsList = GeniusSonorityEngine.Structs.allItems
         var enumList = GeniusSonorityEngine.Enums.allItems
-        
+
         enumList.removeAll(where: {
             ["FileTypes", "FsysGroupIDs"].contains($0.name)
         })
         structsList.removeAll(where: {
             ["FsysTOCEntry"].contains($0.name)
         })
-        
+
         switch game {
         case .colosseum:
             data.fsys.fileMetaDataPadding = 0x20
@@ -87,18 +87,41 @@ public struct GeniusSonorityEngine: Engine {
                 "dcka": "bin",
             ]
         }
-        
+
+        // Per-game FSYS category lists and archive overrides
         switch game {
         case .colosseum:
+            data.fsys.mapFsysNames = Data.FSYS.defaultColoMapFsysNames
+            data.fsys.menuFsysNames = Data.FSYS.defaultColoMenuFsysNames
+            data.fsys.battlefieldFsysNames = Data.FSYS.defaultColoBattlefieldFsysNames
+            data.fsys.commonFsysNames = Data.FSYS.defaultColoCommonFsysNames
+            data.fsys.characterImageFsysNames = ["chara_big", "chara_small"]
             data.fsys.archiveFileTypeFolders = [
-                "poke_face": ["gtx": "/Assets/Images/pokemon/faces"],
-                "poke_body": ["gtx": "/Assets/Images/pokemon/pc-box", "atx": "/Assets/Images/pokemon/pc-box"],
+                "poke_face": ["gtx": "/Assets/Images/Pokemon/Faces"],
+                "poke_body": ["gtx": "/Assets/Images/Pokemon/PC Box", "atx": "/Assets/Images/Pokemon/PC Box"],
+            ]
+            data.fsys.archiveFileOverrides = [
+                "common": [
+                    "DeckData_DarkPokemon": "/Data/Decks",
+                ],
             ]
         case .galeOfDarkness:
+            data.fsys.mapFsysNames = Data.FSYS.defaultXDMapFsysNames
+            data.fsys.menuFsysNames = Data.FSYS.defaultXDMenuFsysNames
+            data.fsys.battlefieldFsysNames = Data.FSYS.defaultXDBattlefieldFsysNames
+            data.fsys.commonFsysNames = Data.FSYS.defaultXDCommonFsysNames
+            data.fsys.characterImageFsysNames = ["chara_big", "chara_small"]
             data.fsys.archiveFileTypeFolders = [
-                "poke_face": ["gtx": "/Assets/Images/pokemon/faces"],
-                "poke_body": ["gtx": "/Assets/Images/pokemon/pc-box", "atx": "/Assets/Images/pokemon/pc-box"],
-                "poke_dance": ["gtx": "/Assets/Images/pokemon/purify-chamber", "atx": "/Assets/Images/pokemon/purify-chamber"],
+                "poke_face": ["gtx": "/Assets/Images/Pokemon/Faces"],
+                "poke_body": ["gtx": "/Assets/Images/Pokemon/PC Box", "atx": "/Assets/Images/Pokemon/PC Box"],
+                "poke_dance": ["gtx": "/Assets/Images/Pokemon/Purify Chamber", "atx": "/Assets/Images/Pokemon/Purify Chamber"],
+                "deck_archive": ["bin": "/Data/Decks"],
+            ]
+            data.fsys.archiveFileOverrides = [
+                "common": [
+                    "DeckData_DarkPokemon": "/Data/Decks",
+                    "DeckData_DarkPokemon_EU": "/Data/Decks",
+                ],
             ]
         case .battleRevolution:
             break
@@ -109,45 +132,123 @@ public struct GeniusSonorityEngine: Engine {
         return try! .init(data: data, enums: enums, structs: structs)
     }
 
+    // MARK: - Folder Resolution
+
+    /// Result of folder resolution, including optional language subfolder
+    public struct FolderResolution {
+        public let folder: Folder
+        public let languageSubfolder: String?
+
+        public var resolvedFolder: Folder {
+            guard let lang = languageSubfolder else { return folder }
+            return folder.folder(lang)
+        }
+    }
+
+    /// Strips a known language suffix from an FSYS archive name.
+    /// Returns (baseName, languageName?) e.g. ("pda_menu", "French") for "pda_menu_fr"
+    private func stripLanguageSuffix(from name: String) -> (baseName: String, language: String?) {
+        for (suffix, language) in data.fsys.languageSuffixes {
+            if name.hasSuffix(suffix) {
+                return (String(name.dropLast(suffix.count)), language)
+            }
+        }
+        return (name, nil)
+    }
+
     /// Resolves the destination folder for an extracted file based on its type,
     /// the entry filename, and the parent FSYS archive name.
     ///
     /// Resolution priority:
-    /// 1. Archive-specific override by file type
-    /// 2. Archive-specific override by entry file extension (handles pool/proj suffixes)
-    /// 3. Standard file type mapping (also checks entry file extension)
-    /// 4. Default folder
+    /// 1. Strip language suffix from archive name
+    /// 2. Per-file override (archiveFileOverrides)
+    /// 3. Character image FSYS override (gtx/atx only)
+    /// 4. Menu FSYS image override (gtx/atx only)
+    /// 5. Common FSYS image override (gtx/atx only)
+    /// 6. Battlefield FSYS override (models → Battlefields, scripts → Battlefields)
+    /// 7. MSG routing by FSYS category (map/menu/misc)
+    /// 8. Archive-specific override by file type
+    /// 9. Archive-specific override by entry file extension
+    /// 10. Standard file type mapping (also checks entry file extension)
+    /// 11. Default folder
     public func resolveFolder(
         forFileType fileType: String,
         entryFilename: String,
         archiveName: String
-    ) -> Folder {
+    ) -> FolderResolution {
         let entryExtension = File(entryFilename).fileType
+        let entryName = File(entryFilename).fileName.withoutExtensions
         let fsys = data.fsys
+        let (baseName, language) = stripLanguageSuffix(from: archiveName)
 
-        // 1. Archive-specific override matching file type
-        if let archiveOverrides = fsys.archiveFileTypeFolders[archiveName] {
-            if let folder = archiveOverrides[fileType] {
-                return folder
+        let isImage = fileType == "gtx" || fileType == "atx"
+        let isModel = fileType == "dat" || fileType == "col" || fileType == "mdat" || fileType == "dats"
+
+        // 1. Per-file override for specific entries in specific archives
+        if let archiveOverrides = fsys.archiveFileOverrides[baseName],
+           let folder = archiveOverrides[entryName] {
+            return FolderResolution(folder: folder, languageSubfolder: language)
+        }
+
+        // 2. Character image FSYS
+        if isImage && fsys.characterImageFsysNames.contains(baseName) {
+            return FolderResolution(folder: fsys.characterImagesFolder, languageSubfolder: language)
+        }
+
+        // 3. Menu FSYS images
+        if isImage && fsys.menuFsysNames.contains(baseName) {
+            return FolderResolution(folder: fsys.menuImagesBaseFolder.folder(baseName), languageSubfolder: language)
+        }
+
+        // 4. Common FSYS images
+        if isImage && fsys.commonFsysNames.contains(baseName) {
+            return FolderResolution(folder: fsys.commonImagesFolder, languageSubfolder: language)
+        }
+
+        // 5. Battlefield FSYS
+        if fsys.battlefieldFsysNames.contains(baseName) {
+            if isModel {
+                return FolderResolution(folder: fsys.battlefieldModelsFolder, languageSubfolder: language)
             }
-            // 2. Archive-specific override matching entry file extension
-            if entryExtension != fileType, let folder = archiveOverrides[entryExtension] {
-                return folder
+            if fileType == "scd" {
+                return FolderResolution(folder: fsys.battlefieldScriptsFolder, languageSubfolder: language)
+            }
+            // Other file types from battlefields fall through to standard routing
+        }
+
+        // 6. MSG routing by FSYS category
+        if fileType == "msg" {
+            if fsys.mapFsysNames.contains(baseName) || fsys.battlefieldFsysNames.contains(baseName) {
+                return FolderResolution(folder: fsys.msgMapFolder, languageSubfolder: language)
+            } else if fsys.menuFsysNames.contains(baseName) {
+                return FolderResolution(folder: fsys.msgMenuFolder, languageSubfolder: language)
+            } else {
+                return FolderResolution(folder: fsys.msgMiscFolder, languageSubfolder: language)
             }
         }
 
-        // 3. Standard file type mapping
+        // 5. Archive-specific override matching file type
+        if let archiveOverrides = fsys.archiveFileTypeFolders[baseName] {
+            if let folder = archiveOverrides[fileType] {
+                return FolderResolution(folder: folder, languageSubfolder: language)
+            }
+            // 6. Archive-specific override matching entry file extension
+            if entryExtension != fileType, let folder = archiveOverrides[entryExtension] {
+                return FolderResolution(folder: folder, languageSubfolder: language)
+            }
+        }
+
+        // 7. Standard file type mapping
         if let folder = fsys.fileTypeFolders[fileType] {
-            return folder
+            return FolderResolution(folder: folder, languageSubfolder: language)
         }
 
         // Check entry extension (handles pool/proj suffixed files)
         if entryExtension != fileType, let folder = fsys.fileTypeFolders[entryExtension] {
-            return folder
+            return FolderResolution(folder: folder, languageSubfolder: language)
         }
 
-        // 4. Default
-        return fsys.defaultFolder
+        // 8. Default
+        return FolderResolution(folder: fsys.defaultFolder, languageSubfolder: language)
     }
 }
-
