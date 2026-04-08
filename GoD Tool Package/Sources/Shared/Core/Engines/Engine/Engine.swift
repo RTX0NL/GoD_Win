@@ -55,7 +55,7 @@ public extension Engine {
                     guard !callerChain.contains(substructName) else {
                         throw EngineDecodingError.cyclicDependency(name, substructName, .init())
                     }
-                    guard let subDef: StructDefinition = try getStruct(fieldName, callerChain: callerChain + [name]) else {
+                    guard let subDef: StructDefinition = try getStruct(substructName, callerChain: callerChain + [name]) else {
                         throw EngineDecodingError.missingStructProperty(structName: name, property: fieldName, substructName: substructName, .init())
                     }
                     return .subStruct(subDef)
