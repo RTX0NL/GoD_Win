@@ -1,12 +1,21 @@
 {
   "pins" : [
     {
+      "identity" : "h",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/rarestype/h",
+      "state" : {
+        "revision" : "aa3626829160917d4378330617971977cbd78f5b",
+        "version" : "1.0.1"
+      }
+    },
+    {
       "identity" : "swift-png",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/kelvin13/swift-png",
+      "location" : "https://github.com/tayloraswift/swift-png",
       "state" : {
-        "revision" : "29ca80c64ccca61118c126de598fd84fa693b2a0",
-        "version" : "4.0.2"
+        "revision" : "8a0bcd4df5e4b307c804937776a56dd6ecdf6396",
+        "version" : "4.5.1"
       }
     }
   ],

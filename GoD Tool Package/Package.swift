@@ -37,7 +37,7 @@ let package = Package(
     ],
     dependencies: [
         // Dependencies declare other packages that this package depends on.
-        .package(url: "https://github.com/kelvin13/swift-png", from: "4.0.2"),
+        .package(url: "https://github.com/tayloraswift/swift-png", from: "4.0.2"),
     ],
     targets: [
         // MARK: - Executable Targets
@@ -176,7 +176,8 @@ let package = Package(
             dependencies: [
                 "GoDEngine",
                 "GoDFoundation",
-                "Structs"
+                "Structs",
+                "GTX"
             ],
             path: "Sources/Shared/Core/Engines/GeniusSonority",
             resources: [.process("Resources")]
@@ -217,7 +218,8 @@ let package = Package(
                 "GoDFoundation",
                 "Structs",
                 "GameCube",
-                "Pokemon"
+                "Pokemon",
+                "ScriptDecompiler"
             ],
             path: "Sources/Shared/Core/Engines/XD",
             resources: [.copy("Resources")]
@@ -237,6 +239,7 @@ let package = Package(
         .target(
             name: "GoDFoundation",
             dependencies: [
+                .product(name: "PNG", package: "swift-png"),
             ],
             path: "Sources/Shared/Dependencies/GoDFoundation",
             resources: []
@@ -264,6 +267,14 @@ let package = Package(
                 "Structs",
             ],
             path: "Sources/Shared/Dependencies/Disassembler",
+            resources: []
+        ),
+        .target(
+            name: "GTX",
+            dependencies: [
+                "GoDFoundation",
+            ],
+            path: "Sources/Shared/Dependencies/GTX",
             resources: []
         ),
         .target(
@@ -313,8 +324,12 @@ let package = Package(
             path: "Tests/Shared Tests/Engine Tests/GameCube Tests"),
         .testTarget(
             name: "ColosseumTests",
-            dependencies: ["Colosseum", "GoDFoundation", "ScriptDecompiler"],
+            dependencies: ["Colosseum", "GoDFoundation", "ScriptDecompiler", "GTX"],
             path: "Tests/Shared Tests/Engine Tests/Colosseum Tests"),
+        .testTarget(
+            name: "XDTests",
+            dependencies: ["XD", "GoDFoundation"],
+            path: "Tests/Shared Tests/Engine Tests/XD Tests"),
     ]
 )
 

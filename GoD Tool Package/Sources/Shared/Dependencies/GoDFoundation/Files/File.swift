@@ -61,3 +61,14 @@ extension [File] {
         return self.filter { $0.fileType == cleanExtension }
     }
 }
+
+/// A named blob of data, pairing a filename with its contents.
+public struct FileData {
+    public let fileName: String
+    public let data: GoDData
+
+    public init(fileName: String, data: GoDData) {
+        self.fileName = fileName
+        self.data = data
+    }
+}

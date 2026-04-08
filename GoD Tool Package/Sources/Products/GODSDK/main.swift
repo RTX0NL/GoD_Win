@@ -17,6 +17,8 @@ import GeniusSonority
 //    "/Users/stars/Documents/GoD Tool/XD.iso",
 //    "/Users/stars/Documents/GoD Tool/XD project/Config/Dump-Config.json",
 //    "/Users/stars/Documents/GoD Tool/XD project/Config/Build-Config.json",
+//    "/Users/stars/Documents/Projects/GoD-Tool/scripts/Colo US project/Config/Dump-Config.json",
+//    "/Users/stars/Documents/Projects/GoD-Tool/scripts/Colo US project/Config/ColoXD-Dump-Only.json",
 //])
 
 let mode = RunModes.commandLine
@@ -38,19 +40,18 @@ do {
             try Project.setup(iso: inputFile)
         case "json":
             let config = try GoddessConfig.decodeFromFile(inputFile, fileSystem: fileSystem)
-            
+
             fileSystem.changeDirectory(config.rootFolder)
-            let settings: GoddessSettings = try config.settingsFile.flatMap { file in
+            let settings: GoddessSettings = (try? config.settingsFile.flatMap { file in
                 return try fileSystem.decodeJSON(from: file)
-            } ?? GoddessSettings.default
-            
+            }) ?? GoddessSettings.default
+
             let logger = PrintLogger(verbose: settings.verbose)
-            
-            try config.operations
-                .enabledEntries
-                .forEach { operation in
-                    fileSystem.changeDirectory(config.rootFolder)
-                    switch operation {
+
+            let enabledOps = config.operations.enabledEntries
+            for (index, operation) in enabledOps.enumerated() {
+                fileSystem.changeDirectory(config.rootFolder)
+                switch operation {
                     case .gamecubeDump(let dumpConfig):
                         try Gamecube.dump(config: dumpConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     case .gamecubeBuild(let buildConfig):
@@ -72,6 +73,7 @@ do {
                     case .relDisassembly(let relConfig):
                         try RelDisassembly.disassemble(config: relConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     }
+                    logger.log(.info("Operation \(index + 1)/\(enabledOps.count) completed"))
                 }
         
         // Temporary
