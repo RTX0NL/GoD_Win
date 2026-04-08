@@ -52,29 +52,70 @@ public struct GSFont: FileFormat {
 
         let gw: UInt8 = data.readSafely(atAddress: 0x02)
         let gh: UInt8 = data.readSafely(atAddress: 0x03)
-        let entryCount: UInt16 = data.readSafely(atAddress: 0x08)
-        let bitmapOffset: UInt16 = data.readSafely(atAddress: 0x0E)
 
         self.glyphWidth = Int(gw)
         self.glyphHeight = Int(gh)
 
         let bpp = ((Int(gw) + 1) / 2) * Int(gh)
-        let count = Int(entryCount)
-        let bmpStart = Int(bitmapOffset)
 
+        // Scan entries from 0x10 until we hit non-entry data.
+        // Each valid entry has advance width == glyphWidth and height == glyphHeight,
+        // or is the null sentinel (all zeros).
         var parsedGlyphs = [Glyph]()
-        for i in 0..<count {
-            let entryOffset = 0x10 + i * 8
-            guard entryOffset + 8 <= data.length else { break }
-
+        var entryOffset = 0x10
+        while entryOffset + 8 <= data.length {
             let code: UInt16 = data.readSafely(atAddress: entryOffset)
             let advance: UInt8 = data.readSafely(atAddress: entryOffset + 2)
             let height: UInt8 = data.readSafely(atAddress: entryOffset + 3)
             let flags: UInt16 = data.readSafely(atAddress: entryOffset + 4)
             let bmpOff: UInt16 = data.readSafely(atAddress: entryOffset + 6)
 
+            let isNull = code == 0 && advance == 0 && height == 0 && flags == 0
+            let isGlyph = advance == gw && height == gh
+
+            guard isNull || isGlyph else { break }
+
+            parsedGlyphs.append(Glyph(
+                code: code,
+                advanceWidth: advance,
+                height: height,
+                flags: flags,
+                bitmap: []  // populated below
+            ))
+            entryOffset += 8
+        }
+
+        // Bitmap data starts immediately after the last entry
+        let bmpStart = entryOffset
+
+        // Re-read with bitmap data
+        var glyphsWithBitmaps = [Glyph]()
+        for glyph in parsedGlyphs {
             var bitmap = [UInt8]()
-            if code != 0 || advance != 0 || height != 0 {
+            if glyph.code != 0 || glyph.advanceWidth != 0 || glyph.height != 0 {
+                let bmpAddr = bmpStart + Int(glyph.bitmap.count)  // not used — use stored offset
+                // We need the original bmpOff from the entry
+            }
+            glyphsWithBitmaps.append(glyph)
+        }
+
+        // Actually, re-parse from scratch with the correct bitmap start
+        var finalGlyphs = [Glyph]()
+        entryOffset = 0x10
+        while entryOffset + 8 <= data.length {
+            let code: UInt16 = data.readSafely(atAddress: entryOffset)
+            let advance: UInt8 = data.readSafely(atAddress: entryOffset + 2)
+            let height: UInt8 = data.readSafely(atAddress: entryOffset + 3)
+            let flags: UInt16 = data.readSafely(atAddress: entryOffset + 4)
+            let bmpOff: UInt16 = data.readSafely(atAddress: entryOffset + 6)
+
+            let isNull = code == 0 && advance == 0 && height == 0 && flags == 0
+            let isGlyph = advance == gw && height == gh
+
+            guard isNull || isGlyph else { break }
+
+            var bitmap = [UInt8]()
+            if !isNull {
                 let bmpAddr = bmpStart + Int(bmpOff)
                 if bmpAddr + bpp <= data.length {
                     if let bmpData = data.read(atAddress: bmpAddr, length: bpp) {
@@ -83,16 +124,17 @@ public struct GSFont: FileFormat {
                 }
             }
 
-            parsedGlyphs.append(Glyph(
+            finalGlyphs.append(Glyph(
                 code: code,
                 advanceWidth: advance,
                 height: height,
                 flags: flags,
                 bitmap: bitmap
             ))
+            entryOffset += 8
         }
 
-        self.glyphs = parsedGlyphs
+        self.glyphs = finalGlyphs
     }
 
     // MARK: - Serialize to FNT binary
