@@ -6,15 +6,137 @@ public struct GXTextureMetadata: Codable, Equatable {
     public let height: Int
     public let format: GXTextureFormat
     public let paletteFormat: GXPaletteFormat?
-    public let frameCount: Int?
 
-    public init(width: Int, height: Int, format: GXTextureFormat, paletteFormat: GXPaletteFormat? = nil, frameCount: Int? = nil) {
+    public init(width: Int, height: Int, format: GXTextureFormat, paletteFormat: GXPaletteFormat? = nil) {
         self.width = width
         self.height = height
         self.format = format
         self.paletteFormat = paletteFormat
-        self.frameCount = frameCount
     }
+}
+
+/// One frame in an ATX animation's keyframe stream.
+///
+/// Each frame is a variable-length record: a flags byte followed by 0–4 optional fields.
+/// The presence of each optional field is signaled by a bit in the flags byte
+/// (see ATXMetadata documentation for the bit layout).
+public struct ATXFrame: Codable, Equatable {
+    /// bit 30 (0x02) — wait duration for this frame (engine scales by ~×0.45)
+    public var timing: UInt8?
+    /// bit 29 (0x04) — width index into the frameTable's sprite-rect records
+    public var rectWidth: UInt8?
+    /// bit 29 (0x04) — height index, paired with rectWidth
+    public var rectHeight: UInt8?
+    /// bit 31 (0x01) — increment added to the running sprite-frame counter
+    public var frameDelta: UInt8?
+    /// bit 28 (0x08) — when present, this frame ends the animation by looping
+    /// the cursor back to this byte position (relative to the animation's start
+    /// offset). Typically 0 to restart the stream from the beginning.
+    public var loopTarget: Int?
+
+    public init(
+        timing: UInt8? = nil,
+        rectWidth: UInt8? = nil,
+        rectHeight: UInt8? = nil,
+        frameDelta: UInt8? = nil,
+        loopTarget: Int? = nil
+    ) {
+        self.timing = timing
+        self.rectWidth = rectWidth
+        self.rectHeight = rectHeight
+        self.frameDelta = frameDelta
+        self.loopTarget = loopTarget
+    }
+
+    /// Bytes occupied by this frame in the keyframe stream.
+    public var byteLength: Int {
+        1                                  // flags
+            + (timing != nil ? 1 : 0)
+            + (rectWidth != nil ? 2 : 0)
+            + (frameDelta != nil ? 1 : 0)
+            + (loopTarget != nil ? 1 : 0)
+    }
+}
+
+/// One animation in an ATX file: an absolute file offset and a sequence of frames.
+public struct ATXAnimation: Codable, Equatable {
+    /// Absolute byte offset within the ATX file where this animation's keyframe
+    /// stream begins. Preserved exactly so non-contiguous animation layouts round-trip.
+    public var offset: Int
+    public var frames: [ATXFrame]
+
+    public init(offset: Int, frames: [ATXFrame]) {
+        self.offset = offset
+        self.frames = frames
+    }
+}
+
+/// Metadata for an ATX file (animated texture used by Pokemon XD's poke_dance).
+///
+/// File layout (reverse-engineered from `ant.o` — see CAnt::setAnimation,
+/// CAnt::drawAndUpdate, antGetGStexture):
+///
+///     [0x00..0x0F] 16-byte header (4 big-endian u32 fields below)
+///         0x00  animationCount     — number of animations in this file
+///         0x04  frameTableOffset   — absolute offset to the sprite-rect lookup table
+///         0x08  innerTextureSize   — total byte length of the inner texture (header + data + palette)
+///         0x0C  innerTextureOffset — absolute offset to the inner GTX-format texture header
+///     [0x10..]                       animationOffsets: u16[animationCount] big-endian
+///                                       Each value is the absolute byte offset where that
+///                                       animation's keyframe stream begins.
+///     [end of table .. frameTableOffset]
+///                                    Keyframe streams. Each frame is a variable-length record
+///                                    led by a flags byte; bits select which fields follow:
+///                                      bit 30 (0x02) → timing u8
+///                                      bit 29 (0x04) → rectWidth u8 + rectHeight u8
+///                                      bit 31 (0x01) → frameDelta u8
+///                                      bit 28 (0x08) → jump u8 (engine: cursor = cursor − jump,
+///                                                                loops the animation)
+///     [frameTableOffset .. innerTextureOffset]
+///                                    frameTable: pairs of (count u16, relativeOffset u16) followed
+///                                       by 28-byte sprite-rect records. Preserved verbatim — its
+///                                       structure isn't unpacked here.
+///     [innerTextureOffset .. +innerTextureSize]
+///                                    inner GTX texture (parsed via `texture`)
+///     [.. EOF]                       trailing bytes (typically empty for poke_dance ATX files)
+public struct ATXMetadata: Codable, Equatable {
+    /// Inner texture properties (dimensions, format, palette format)
+    public let texture: GXTextureMetadata
+    /// Header field 0x04 — absolute offset to the sprite-rect lookup table
+    public let frameTableOffset: Int
+    /// Header field 0x08 — total byte length of the inner texture (header + data + palette)
+    public let innerTextureSize: Int
+    /// Header field 0x0C — absolute offset to the inner GTX texture header
+    public let innerTextureOffset: Int
+    /// Animations in this file. Length equals the wrapper's animationCount field;
+    /// each animation carries its absolute offset and decoded frame records.
+    public let animations: [ATXAnimation]
+    /// Raw frame/sprite-rect lookup table bytes (between frameTableOffset and innerTextureOffset)
+    public let frameTable: Data
+    /// Raw bytes after the inner texture+palette (typically empty)
+    public let trailing: Data
+
+    public init(
+        texture: GXTextureMetadata,
+        frameTableOffset: Int,
+        innerTextureSize: Int,
+        innerTextureOffset: Int,
+        animations: [ATXAnimation],
+        frameTable: Data,
+        trailing: Data = Data()
+    ) {
+        self.texture = texture
+        self.frameTableOffset = frameTableOffset
+        self.innerTextureSize = innerTextureSize
+        self.innerTextureOffset = innerTextureOffset
+        self.animations = animations
+        self.frameTable = frameTable
+        self.trailing = trailing
+    }
+
+    /// Convenience accessor — animationCount is implicitly `animations.count` and
+    /// is what gets written to the header field 0x00 on encode.
+    public var animationCount: Int { animations.count }
 }
 
 /// GS palette format IDs
@@ -106,17 +228,220 @@ public struct GXTextureDecoder {
                                  paletteFormat: fmt.isIndexed ? GXPaletteFormat(rawValue: Int(palID)) : nil)
     }
 
-    public func parseATXHeader(data: GoDData) -> GXTextureMetadata? {
-        guard let first = parseHeader(data: data) else { return nil }
-        let fmt = first.format
-        let texSize = paddedSize(first.width, first.height, fmt) * fmt.bitsPerPixel / 8
-        let palSize = fmt.isIndexed ? fmt.paletteEntryCount * 2 : 0
-        let texOff: UInt32 = data.readSafely(atAddress: 0x28)
-        let palOff: UInt32 = data.readSafely(atAddress: 0x48)
-        let frameSize = palSize > 0 && palOff > 0 ? Int(palOff) + palSize : Int(texOff) + texSize
-        guard frameSize > 0 else { return nil }
-        return GXTextureMetadata(width: first.width, height: first.height, format: fmt,
-                                 paletteFormat: first.paletteFormat, frameCount: max(1, data.length / frameSize))
+    // MARK: - ATX support
+    //
+    // See ATXMetadata for the full file layout. The 16-byte header at offset 0
+    // gives us animationCount (0x00), frameTableOffset (0x04), innerTextureSize (0x08),
+    // and innerTextureOffset (0x0C). The animation offset table starts at 0x10 and
+    // contains animationCount big-endian u16 entries.
+
+    /// Keyframe stream flag bits (using PowerPC bit numbering: bit 31 = LSB)
+    private static let atxFlagFrameDelta: UInt8 = 0x01  // bit 31
+    private static let atxFlagTiming: UInt8     = 0x02  // bit 30
+    private static let atxFlagRect: UInt8       = 0x04  // bit 29
+    private static let atxFlagJump: UInt8       = 0x08  // bit 28
+
+    /// Parses one animation's keyframe stream starting at `streamOffset`.
+    /// Returns nil if the stream goes out of bounds before we hit a jump terminator.
+    private func parseAnimationFrames(
+        bytes: [UInt8],
+        streamOffset: Int,
+        bound: Int
+    ) -> [ATXFrame]? {
+        var frames = [ATXFrame]()
+        var cursor = 0
+        while streamOffset + cursor < bound {
+            let flags = bytes[streamOffset + cursor]
+            cursor += 1
+            var frame = ATXFrame()
+
+            if flags & Self.atxFlagTiming != 0 {
+                guard streamOffset + cursor < bound else { return nil }
+                frame.timing = bytes[streamOffset + cursor]; cursor += 1
+            }
+            if flags & Self.atxFlagRect != 0 {
+                guard streamOffset + cursor + 1 < bound else { return nil }
+                frame.rectWidth = bytes[streamOffset + cursor]; cursor += 1
+                frame.rectHeight = bytes[streamOffset + cursor]; cursor += 1
+            }
+            if flags & Self.atxFlagFrameDelta != 0 {
+                guard streamOffset + cursor < bound else { return nil }
+                frame.frameDelta = bytes[streamOffset + cursor]; cursor += 1
+            }
+            if flags & Self.atxFlagJump != 0 {
+                guard streamOffset + cursor < bound else { return nil }
+                let jumpByte = bytes[streamOffset + cursor]
+                // Engine: cursor = cursor − jumpByte (cursor at the jump byte's position).
+                // Loop target = jumpBytePos − jumpByte, where jumpBytePos == cursor.
+                frame.loopTarget = cursor - Int(jumpByte)
+                cursor += 1
+                frames.append(frame)
+                return frames
+            }
+            frames.append(frame)
+        }
+        // Reached bound without a jump terminator — that's unusual for real files but
+        // return what we have rather than failing outright.
+        return frames
+    }
+
+    /// Decodes an ATX file: parses the wrapper into structured fields, decodes the
+    /// inner texture to an image, and returns metadata sufficient for 1:1 rebuild.
+    public func decodeATX(data: GoDData) -> (image: GoDImage, metadata: ATXMetadata)? {
+        guard data.length >= 0x10 else { return nil }
+        data.setByteOrder(.big)
+
+        let animationCount: UInt32 = data.readSafely(atAddress: 0x00)
+        let frameTableOffset: UInt32 = data.readSafely(atAddress: 0x04)
+        let innerTextureSize: UInt32 = data.readSafely(atAddress: 0x08)
+        let innerTextureOffset: UInt32 = data.readSafely(atAddress: 0x0C)
+
+        let startOffset = Int(innerTextureOffset)
+        let animCount = Int(animationCount)
+        let frameTblOff = Int(frameTableOffset)
+        let innerSize = Int(innerTextureSize)
+
+        // Sanity checks — bail out if the header doesn't look like a wrapped ATX.
+        let offsetTableEnd = 0x10 + animCount * 2
+        guard startOffset > 0,
+              startOffset <= data.length,
+              frameTblOff >= offsetTableEnd,
+              frameTblOff <= startOffset,
+              animCount > 0,
+              animCount < 256
+        else { return nil }
+
+        guard let meta = parseHeader(data: data, headerOffset: startOffset) else { return nil }
+        guard let image = decode(data: data, headerOffset: startOffset) else { return nil }
+
+        // Read the animation offset table (animationCount big-endian u16s)
+        var offsets = [Int]()
+        offsets.reserveCapacity(animCount)
+        for i in 0..<animCount {
+            let v: UInt16 = data.readSafely(atAddress: 0x10 + i * 2)
+            offsets.append(Int(v))
+        }
+
+        let raw = data.rawBytes
+
+        // Parse each animation's keyframe stream. The bound for each stream is
+        // either the next animation's start (if any sit after it) or frameTableOffset.
+        var animations = [ATXAnimation]()
+        animations.reserveCapacity(animCount)
+        for (i, animOffset) in offsets.enumerated() {
+            // Conservative bound: stop at the lowest start-after-this-one across all
+            // animations, falling back to frameTableOffset if there is none.
+            let later = offsets.enumerated().compactMap { (j, o) -> Int? in
+                (j != i && o > animOffset) ? o : nil
+            }
+            let bound = min(later.min() ?? frameTblOff, frameTblOff)
+            guard let frames = parseAnimationFrames(bytes: raw, streamOffset: animOffset, bound: bound) else {
+                return nil
+            }
+            animations.append(ATXAnimation(offset: animOffset, frames: frames))
+        }
+
+        let frameTableBytes = frameTblOff < startOffset
+            ? Array(raw[frameTblOff..<startOffset])
+            : []
+
+        let textureEnd = startOffset + innerSize
+        let trailingBytes = textureEnd < raw.count
+            ? Array(raw[textureEnd..<raw.count])
+            : []
+
+        let metadata = ATXMetadata(
+            texture: meta,
+            frameTableOffset: frameTblOff,
+            innerTextureSize: innerSize,
+            innerTextureOffset: startOffset,
+            animations: animations,
+            frameTable: Data(frameTableBytes),
+            trailing: Data(trailingBytes)
+        )
+        return (image, metadata)
+    }
+
+    /// Serializes a single frame to bytes, computing the jump byte from loopTarget.
+    /// `streamCursor` is the position (relative to the animation's start) where this
+    /// frame's flags byte will be written — needed to derive the jump value.
+    private func encodeFrame(_ frame: ATXFrame, at streamCursor: Int) -> [UInt8] {
+        var flags: UInt8 = 0
+        if frame.timing != nil      { flags |= Self.atxFlagTiming }
+        if frame.rectWidth != nil   { flags |= Self.atxFlagRect }
+        if frame.frameDelta != nil  { flags |= Self.atxFlagFrameDelta }
+        if frame.loopTarget != nil  { flags |= Self.atxFlagJump }
+
+        var bytes: [UInt8] = [flags]
+        if let v = frame.timing      { bytes.append(v) }
+        if let w = frame.rectWidth   { bytes.append(w); bytes.append(frame.rectHeight ?? 0) }
+        if let v = frame.frameDelta  { bytes.append(v) }
+        if let target = frame.loopTarget {
+            // Jump byte sits at the last position in this record. Engine computes
+            // `cursor = cursor − jumpByte`, so jumpByte = jumpBytePos − target.
+            let jumpBytePos = streamCursor + bytes.count
+            bytes.append(UInt8(truncatingIfNeeded: jumpBytePos - target))
+        }
+        return bytes
+    }
+
+    /// Encodes an image back to ATX binary, reconstructing the wrapper from structured metadata.
+    public func encodeATX(image: GoDImage, metadata: ATXMetadata) -> GoDData? {
+        guard let inner = encode(image: image, metadata: metadata.texture) else { return nil }
+
+        let animCount = metadata.animations.count
+        let offsetTableEnd = 0x10 + animCount * 2
+        let keyframeSectionStart = offsetTableEnd
+        let keyframeSectionEnd = metadata.frameTableOffset
+        guard keyframeSectionEnd >= keyframeSectionStart else { return nil }
+        let keyframeSectionLength = keyframeSectionEnd - keyframeSectionStart
+
+        // Lay out the keyframe section by writing each animation's bytes at its
+        // offset. Gaps are zero-filled (matches all observed XD samples).
+        var keyframeSection = [UInt8](repeating: 0, count: keyframeSectionLength)
+        for animation in metadata.animations {
+            let writeStart = animation.offset - keyframeSectionStart
+            guard writeStart >= 0, writeStart <= keyframeSectionLength else { return nil }
+            var cursor = 0
+            for frame in animation.frames {
+                let frameBytes = encodeFrame(frame, at: cursor)
+                let dst = writeStart + cursor
+                guard dst + frameBytes.count <= keyframeSectionLength else { return nil }
+                for (i, b) in frameBytes.enumerated() {
+                    keyframeSection[dst + i] = b
+                }
+                cursor += frameBytes.count
+            }
+        }
+
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(metadata.innerTextureOffset + inner.rawBytes.count + metadata.trailing.count)
+
+        // Header: four big-endian u32 fields
+        func appendU32BE(_ v: UInt32) {
+            bytes.append(UInt8((v >> 24) & 0xFF))
+            bytes.append(UInt8((v >> 16) & 0xFF))
+            bytes.append(UInt8((v >>  8) & 0xFF))
+            bytes.append(UInt8(v & 0xFF))
+        }
+        appendU32BE(UInt32(animCount))
+        appendU32BE(UInt32(metadata.frameTableOffset))
+        appendU32BE(UInt32(metadata.innerTextureSize))
+        appendU32BE(UInt32(metadata.innerTextureOffset))
+
+        // Animation offset table: animationCount big-endian u16s
+        for animation in metadata.animations {
+            let off = UInt16(animation.offset)
+            bytes.append(UInt8((off >> 8) & 0xFF))
+            bytes.append(UInt8(off & 0xFF))
+        }
+
+        bytes.append(contentsOf: keyframeSection)
+        bytes.append(contentsOf: metadata.frameTable)
+        bytes.append(contentsOf: inner.rawBytes)
+        bytes.append(contentsOf: metadata.trailing)
+
+        return GoDData(byteStream: bytes, byteOrder: .big)
     }
 
     /// Decode a single GTX frame to a GoDImage
