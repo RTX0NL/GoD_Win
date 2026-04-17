@@ -241,4 +241,53 @@ final class PPCAssemblyRoundTripTests: XCTestCase {
 
         XCTAssertEqual(bytes.count, 20)
     }
+
+    /// Comments produced by `scripts/analysis/annotate_disasm.py` — `#` line
+    /// comments in both column 0 and indented form — must be ignored by the
+    /// assembler and not perturb the resulting machine code.
+    func testAnnotatedCommentsAssembleIdentically() throws {
+        let clean = """
+        .section .text0
+
+        .global funcA
+        funcA:
+            li r3, 0x1
+            bl funcB
+            blr
+        """
+
+        let annotated = """
+        .section .text0
+
+        .global funcA
+        # GENERATED: funcA() — demangled label comment
+        funcA:
+            li r3, 0x1
+            # GENERATED: funcB() — demangled branch comment (indented)
+            bl funcB
+            blr
+        """
+
+        let funcB = """
+        .section .text0
+
+        .global funcB
+        funcB:
+            li r3, 0x2
+            blr
+        """
+
+        let baseAddress: UInt32 = 0x80003100
+        let cleanBytes    = try assembler.assemble(
+            files: [("funcA.s", clean),     ("funcB.s", funcB)],
+            baseAddress: baseAddress
+        ).rawBytes
+        let annotatedBytes = try assembler.assemble(
+            files: [("funcA.s", annotated), ("funcB.s", funcB)],
+            baseAddress: baseAddress
+        ).rawBytes
+
+        XCTAssertEqual(cleanBytes, annotatedBytes,
+            "Comments must not alter the assembled output byte-for-byte")
+    }
 }

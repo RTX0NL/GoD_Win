@@ -261,6 +261,7 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 
 ### Documentation
 - **Credits & references**: When referencing the work or documentation of others during implementation, update `Documentation/Credits & References.md` with proper attribution. TODO: retroactively add credits for the PowerPC disassembler/assembler implementation.
+- **Assembly Analysis**: XD's PowerPC disassembly (in `scripts/Disassembly-XD/`) is progressively documented under `Documentation/Assembly Analysis/`. Layout: `Files/` per-source-file breakdowns, `Data Structures/`, `Globals/`, `Enums/`, `Lifecycle/`, `Overview/`. Machine-readable indexes live in `_index/`. Two helper scripts under `scripts/analysis/` back this up: `index_disasm.py` rebuilds the indexes, `xref.py` answers callers/callees/data-ref questions. When doing deep analysis on a new module, start by upgrading its auto-generated stub at `Files/<module>.md`.
 
 ### Testing
 - Tests in `Tests/Shared Tests/Dependency Tests/`
@@ -283,6 +284,14 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 ### In Progress
 - [ ] ColoXD FSYS dump (organizing extracted files by type into asset folders)
 - [ ] ColoXD FSYS rebuild (must achieve 1:1 match before proceeding)
+
+### TODO
+- [ ] ATX texture decoding and encoding
+- [ ] GTX texture decoding and encoding
+- [ ] GSW flash menu decoding and encoding
+- [ ] MSG message file decoding and encoding
+- [ ] REL disassembly and reassembly
+- [ ] Validate font dump and repack (1:1 accuracy)
 
 ### Planned (in order)
 - [ ] Game data table export (custom human-readable format for StructData)
