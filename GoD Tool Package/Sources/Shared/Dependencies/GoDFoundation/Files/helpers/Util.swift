@@ -17,12 +17,16 @@ extension String {
     }
     
     public var withoutExtensions: String {
-        let extensionIndex = firstIndex(of: ".") ?? endIndex
+        guard let extensionIndex = firstIndex(of: ".") else {
+            return self
+        }
         return substring(from: startIndex, to: extensionIndex)
     }
     
     public var withoutExtension: String {
-        let extensionIndex = lastIndex(of: ".") ?? endIndex
+        guard let extensionIndex = lastIndex(of: ".") else {
+            return self
+        }
         return substring(from: startIndex, to: extensionIndex)
     }
 }

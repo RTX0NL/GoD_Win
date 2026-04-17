@@ -41,6 +41,38 @@ extension ColoXD {
                     logger: logger
                 )
 
+            case let .buildGSfsysTOC(fstRegistryFile, outputFile, overwrite, gsEnginePath):
+                let gsEngine = try GeniusSonorityEngine(from: gsEnginePath, in: fileSystem)
+
+                guard let sourceFolder = fstRegistryFile.parentFolder else {
+                    throw FSTErrors.fileNotFound(fstRegistryFile, .init())
+                }
+
+                logger?.log(.info("Building GSfsys.toc from FSTRegistry"))
+                let tocData = try buildGSfsysTOC(
+                    fstRegistryFile: fstRegistryFile,
+                    sourceFolder: sourceFolder,
+                    gsEngine: gsEngine,
+                    fileSystem: fileSystem
+                )
+
+                if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
+                    fileSystem.writeFile(tocData, at: outputFile, overwrite: overwrite)
+                    logger?.log(.info("Wrote \(outputFile.fileName) (\(tocData.length) bytes)"))
+                }
+
+            case let .buildFST(contentsFolder, outputFile, overwrite, dolphinEnginePath):
+                let dolphinEngine = try DolphinEngine(from: dolphinEnginePath, in: fileSystem)
+
+                logger?.log(.info("Building fst.bin from \(contentsFolder.path)"))
+                let fst = DolphinFST(fileSystem: fileSystem, root: contentsFolder)
+                let fstData = try fst.tocData(userOffset: 0, dolphinEngine: dolphinEngine)
+
+                if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
+                    fileSystem.writeFile(fstData, at: outputFile, overwrite: overwrite)
+                    logger?.log(.info("Wrote \(outputFile.fileName) (\(fstData.length) bytes, \(fst.files.count) files)"))
+                }
+
             case let .packFSYS(registryFile, outputFile, sourceFolder, overwrite, gsEnginePath):
                 let gsEngine = try GeniusSonorityEngine(from: gsEnginePath, in: fileSystem)
 
@@ -58,25 +90,187 @@ extension ColoXD {
                     logger?.log(.info("Wrote \(outputFile.fileName) (\(archiveData.data.length) bytes)"))
                 }
 
-            case let .buildFont(metadataFile, atlasFile, outputFile, overwrite):
-                guard let metaData = fileSystem.readFile(at: metadataFile) else {
-                    throw FSTErrors.fileNotFound(metadataFile, .init())
-                }
-                guard let imageData = fileSystem.readFile(at: atlasFile) else {
-                    throw FSTErrors.fileNotFound(atlasFile, .init())
-                }
-
-                let metadata: GSFontAtlas.Metadata = try JSONDecoder().decode(
-                    GSFontAtlas.Metadata.self, from: metaData
+            case let .buildFont(metadataFile, outputFile, overwrite):
+                try buildFont(
+                    metadataFile: metadataFile,
+                    outputFile: outputFile,
+                    overwrite: overwrite,
+                    fileSystem: fileSystem,
+                    logger: logger
                 )
-                let font = try GSFontAtlas.importAtlas(imageData: imageData, metadata: metadata)
-                let fontData = try font.data
 
-                if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
-                    fileSystem.writeFile(fontData, at: outputFile, overwrite: overwrite)
-                    logger?.log(.info("Built font \(outputFile.fileName) (\(font.visibleGlyphs.count) glyphs, \(fontData.length) bytes)"))
+            case let .buildFonts(fontsFolder, outputFolder, overwrite):
+                guard let contents = fileSystem.inspectFolder(at: fontsFolder) else { break }
+                let metadataFiles = contents.files.filter { $0.fileType == "json" }
+                logger?.log(.info("Found \(metadataFiles.count) font metadata files"))
+                for metadataFile in metadataFiles {
+                    let fontName = metadataFile.fileName.replacingOccurrences(of: ".json", with: "")
+                    let outputFile = outputFolder.file("\(fontName).fnt")
+                    try buildFont(
+                        metadataFile: metadataFile,
+                        outputFile: outputFile,
+                        overwrite: overwrite,
+                        fileSystem: fileSystem,
+                        logger: logger
+                    )
                 }
+
+            case let .buildFlashMenus(projectsFolder, outputFolder, overwrite):
+                // Recurse so language subfolders (French/, German/, etc.) are
+                // preserved on output. A project is any folder containing a
+                // `<folderName>.json` metadata file; non-project folders
+                // (e.g. an enclosing `German/`) are descended into.
+                var projects = [(folder: Folder, relative: Folder)]()
+                func collect(_ folder: Folder, _ relative: Folder) {
+                    guard let contents = fileSystem.inspectFolder(at: folder) else { return }
+                    if fileSystem.inspectFile(at: folder.file(folder.folderName + ".json")) != nil {
+                        projects.append((folder, relative))
+                        return
+                    }
+                    for sub in contents.subFolders {
+                        collect(sub, relative.folder(sub.folderName))
+                    }
+                }
+                if let contents = fileSystem.inspectFolder(at: projectsFolder) {
+                    for sub in contents.subFolders {
+                        collect(sub, Folder(".").folder(sub.folderName))
+                    }
+                }
+
+                logger?.log(.info("Found \(projects.count) flash menu projects"))
+                for (project, relative) in projects {
+                    let metadataFile = project.file(project.folderName + ".json")
+                    // relative includes the project folder itself; strip it
+                    // so the output sits beside it (mirroring the input layout).
+                    let parentRelative = relative.folder("..")
+                    let outputFile = outputFolder.folder(parentRelative.path).file(project.folderName + ".gsw")
+                    try buildFlashMenu(
+                        metadataFile: metadataFile,
+                        outputFile: outputFile,
+                        overwrite: overwrite,
+                        fileSystem: fileSystem,
+                        logger: logger
+                    )
+                }
+
+            case let .buildFlashMenu(metadataFile, outputFile, overwrite):
+                try buildFlashMenu(
+                    metadataFile: metadataFile,
+                    outputFile: outputFile,
+                    overwrite: overwrite,
+                    fileSystem: fileSystem,
+                    logger: logger
+                )
             }
+        }
+    }
+
+    // MARK: - GSfsys.toc building
+
+    /// Builds GSfsys.toc from the FSYS entries in an FSTRegistry.
+    /// Reads each FSYSRegistry JSON to get the groupID, then serializes a FsysTOC.
+    private static func buildGSfsysTOC(
+        fstRegistryFile: File,
+        sourceFolder: Folder,
+        gsEngine: GeniusSonorityEngine,
+        fileSystem: FileSystemTree
+    ) throws -> GoDData {
+        let fstRegistry: FSTRegistry = try fileSystem.decodeJSON(from: fstRegistryFile)
+        var fsysIDsByFilename = [String: Int]()
+
+        for entry in fstRegistry.entries where entry.type == .fsys {
+            let registryPath = sourceFolder.file(entry.file.path)
+            let registry: FSYSRegistry = try fileSystem.decodeJSON(from: registryPath)
+            // Registry filename is e.g. "D1_out.fsys.json" → FSYS name is "D1_out"
+            // Only include archives with a valid groupID (non-zero) in the TOC
+            guard registry.groupID != 0 else { continue }
+            let fsysName = registryPath.fileName.withoutExtensions
+            fsysIDsByFilename[fsysName] = registry.groupID
+        }
+
+        let toc = FsysTOC(fsysIDsByFilename: fsysIDsByFilename, unknown: gsEngine.data.toc.unknown)
+        toc.padding = gsEngine.data.toc.padding
+        toc.junk1 = gsEngine.data.toc.junk1
+        toc.junk2 = gsEngine.data.toc.junk2
+        toc.junk3 = gsEngine.data.toc.junk3
+        return try toc.tocData(with: gsEngine)
+    }
+
+    // MARK: - Flash menu (GSW) building
+
+    /// Reads a structured flash-menu project folder (metadata.json + textures/)
+    /// and writes a rebuilt `.gsw` to `outputFile`. Shared between the batch
+    /// (`buildFlashMenus`) and individual (`buildFlashMenu`) ops.
+    private static func buildFlashMenu(
+        metadataFile: File,
+        outputFile: File,
+        overwrite: Bool,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws {
+        guard fileSystem.inspectFile(at: metadataFile) != nil else {
+            throw FSTErrors.fileNotFound(metadataFile, .init())
+        }
+        let file: GSWFile = try fileSystem.decodeJSON(from: metadataFile)
+
+        guard let baseFolder = metadataFile.parentFolder else {
+            throw FSTErrors.fileNotFound(metadataFile, .init())
+        }
+
+        let allRefs = file.allTextureRefs
+        var images = [GoDImage]()
+        images.reserveCapacity(allRefs.count)
+        for ref in allRefs {
+            let pngFile = ColoXD.resolveRelativeFile(ref.pngPath, in: baseFolder)
+            guard let pngData = fileSystem.readFile(at: pngFile) else {
+                throw FSTErrors.fileNotFound(pngFile, .init())
+            }
+            guard let image = GoDImage.fromPNG(pngData) else {
+                throw FSTErrors.fileNotFound(pngFile, .init())
+            }
+            images.append(image)
+        }
+
+        let gswData = try GSWParser.serialize(file: file, images: images)
+        if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
+            fileSystem.writeFile(gswData, at: outputFile, overwrite: overwrite)
+            logger?.log(.info("Built flash menu \(outputFile.fileName) (\(file.tags.count) tags, \(allRefs.count) textures, \(gswData.length) bytes)"))
+        }
+    }
+
+    // MARK: - Font (FNT) building
+
+    /// Reads a dumped font project (a `<name>.json` metadata file whose
+    /// `atlasPath` field points at the paired `.pgm` atlas in the same folder)
+    /// and writes a rebuilt `.fnt` to `outputFile`. The atlas location is
+    /// resolved from the metadata rather than a separate config field.
+    private static func buildFont(
+        metadataFile: File,
+        outputFile: File,
+        overwrite: Bool,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws {
+        guard fileSystem.inspectFile(at: metadataFile) != nil else {
+            throw FSTErrors.fileNotFound(metadataFile, .init())
+        }
+        let metadata: GSFontAtlas.Metadata = try fileSystem.decodeJSON(from: metadataFile)
+
+        // Resolve atlas path relative to the metadata file's directory.
+        guard let baseFolder = metadataFile.parentFolder else {
+            throw FSTErrors.fileNotFound(metadataFile, .init())
+        }
+        let atlasFile = baseFolder.file(metadata.atlasPath)
+        guard let imageData = fileSystem.readFile(at: atlasFile) else {
+            throw FSTErrors.fileNotFound(atlasFile, .init())
+        }
+
+        let font = try GSFontAtlas.importAtlas(imageData: imageData, metadata: metadata)
+        let fontData = try font.data
+
+        if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
+            fileSystem.writeFile(fontData, at: outputFile, overwrite: overwrite)
+            logger?.log(.info("Built font \(outputFile.fileName) (\(font.visibleGlyphs.count) glyphs, \(fontData.length) bytes)"))
         }
     }
 
@@ -115,12 +309,19 @@ extension ColoXD {
                 throw FSTErrors.fileNotFound(filePath, .init())
             }
             var entryData = data
-            // Re-encode PNG back to GTX if texture metadata is present
-            if filePath.fileType == "png", let texMeta = registryEntry.textureMetadata {
+            // Re-encode PNG back to GTX/ATX if texture metadata is present
+            if filePath.fileType == "png" {
                 let decoder = GXTextureDecoder()
-                if let image = GoDImage.fromPNG(data),
-                   let gtxData = decoder.encode(image: image, metadata: texMeta) {
-                    entryData = gtxData
+                if let atxMeta = registryEntry.atxMetadata {
+                    if let image = GoDImage.fromPNG(data),
+                       let atxData = decoder.encodeATX(image: image, metadata: atxMeta) {
+                        entryData = atxData
+                    }
+                } else if let texMeta = registryEntry.textureMetadata {
+                    if let image = GoDImage.fromPNG(data),
+                       let gtxData = decoder.encode(image: image, metadata: texMeta) {
+                        entryData = gtxData
+                    }
                 }
             }
             let filename = registryEntry.metadata.name + "." + registryEntry.metadata.fileType
@@ -219,6 +420,18 @@ extension ColoXD {
                 throw error
             }
         }
+
+        // Phase 3: Rebuild GSfsys.toc from FSYS registries
+        logger?.log(.info("Rebuilding GSfsys.toc"))
+        let tocData = try buildGSfsysTOC(
+            fstRegistryFile: fstRegistryFile,
+            sourceFolder: sourceFolder,
+            gsEngine: gsEngine,
+            fileSystem: fileSystem
+        )
+        let tocOutputFile = outputFolder.file("files/" + gsEngine.data.fsys.GSfsysFile.fileName)
+        fileSystem.writeFile(tocData, at: tocOutputFile, overwrite: true)
+        logger?.log(.info("Wrote \(tocOutputFile.fileName) (\(tocData.length) bytes)"))
 
         logger?.log(.taskStatus(taskName: "Build Colosseum/XD File System", status: .completed(true)))
     }

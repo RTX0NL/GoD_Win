@@ -115,8 +115,7 @@ public final class FSYSArchive: FileFormat {
                 }
                 // Strip configurable suffixes from the filename stem
                 // e.g. "B1_1_col.ccd" → "B1_1.ccd" when "_col" is in fileNameSuffixReplacements
-                let ext = File(name).fileType
-                if !ext.isEmpty {
+                if let ext = File(name).fileType {
                     let stem = String(name.dropLast(ext.count + 1)) // drop ".ext"
                     for suffix in engine.data.fsys.fileNameSuffixReplacements {
                         if stem.hasSuffix(suffix) {

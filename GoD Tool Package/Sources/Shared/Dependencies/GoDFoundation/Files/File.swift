@@ -14,8 +14,9 @@ public struct File: PathRepresentable, Hashable, Equatable {
         self.path = path
     }
     
-    public var fileType: String {
-        return path.fileExtension
+    public var fileType: String? {
+        let ext = path.fileExtension
+        return ext.isEmpty ? nil : ext
     }
     
     public var fileName: String {

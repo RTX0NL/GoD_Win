@@ -100,21 +100,62 @@ extension ColoXD {
                     }
 
                     let fontName = fntFile.fileName.replacingOccurrences(of: ".fnt", with: "")
-                    let fontFolder = outputFolder.folder(fontName)
-                    fileSystem.createFolder(at: fontFolder, overwrite: overwrite)
+                    let atlasFileName = "\(fontName)_atlas.pgm"
+                    let atlasFile = outputFolder.file(atlasFileName)
+                    let metadataFile = outputFolder.file("\(fontName).json")
 
-                    let (imageData, metadata) = GSFontAtlas.exportAtlas(font: font)
-
-                    let atlasFile = fontFolder.file("atlas.pgm")
-                    let metadataFile = fontFolder.file("metadata.json")
+                    let (imageData, metadata) = GSFontAtlas.exportAtlas(
+                        font: font,
+                        atlasPath: atlasFileName
+                    )
 
                     if overwrite || fileSystem.inspectFile(at: atlasFile) == nil {
                         fileSystem.writeFile(imageData, at: atlasFile, overwrite: overwrite)
                     }
                     try fileSystem.encodeJSON(metadata, to: metadataFile, overwrite: overwrite)
 
-                    logger?.log(.info("  \(fontName): \(font.visibleGlyphs.count) glyphs → \(fontFolder.path)"))
+                    logger?.log(.info("  \(fontName): \(font.visibleGlyphs.count) glyphs → \(metadataFile.fileName)"))
                 }
+
+            case let .dumpFlashMenus(flashMenusFolder, outputFolder, overwrite):
+                // Recurse so language subfolders (French/, German/, etc.) are
+                // preserved under the output, e.g.
+                //   Flash Menus/German/disk_vs_00.gsw
+                //   → Source/Menus/German/disk_vs_00/disk_vs_00.json
+                var gswFiles = [(file: File, relativeFolder: Folder)]()
+                func collect(_ folder: Folder, _ relative: Folder) {
+                    guard let contents = fileSystem.inspectFolder(at: folder) else { return }
+                    for file in contents.files where file.fileType == "gsw" {
+                        gswFiles.append((file, relative))
+                    }
+                    for sub in contents.subFolders {
+                        collect(sub, relative.folder(sub.folderName))
+                    }
+                }
+                collect(flashMenusFolder, Folder("."))
+
+                logger?.log(.info("Found \(gswFiles.count) flash menu files"))
+
+                for (gswFile, relative) in gswFiles {
+                    let name = gswFile.fileName.withoutExtensions
+                    let projectFolder = outputFolder.folder(relative.path).folder(name)
+                    try dumpFlashMenu(
+                        gswFile: gswFile,
+                        outputFolder: projectFolder,
+                        overwrite: overwrite,
+                        fileSystem: fileSystem,
+                        logger: logger
+                    )
+                }
+
+            case let .dumpFlashMenu(gswFile, outputFolder, overwrite):
+                try dumpFlashMenu(
+                    gswFile: gswFile,
+                    outputFolder: outputFolder,
+                    overwrite: overwrite,
+                    fileSystem: fileSystem,
+                    logger: logger
+                )
             }
         }
     }
@@ -137,6 +178,46 @@ extension ColoXD {
         )
     }
     
+    /// Parses a single `.gsw` file and writes a structured project folder
+    /// (metadata.json + per-texture PNGs) under `outputFolder`. Shared between
+    /// the batch (`dumpFlashMenus`) and individual (`dumpFlashMenu`) ops.
+    private static func dumpFlashMenu(
+        gswFile: File,
+        outputFolder: Folder,
+        overwrite: Bool,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws {
+        guard let data = fileSystem.readFile(at: gswFile) else {
+            throw FSTErrors.fileNotFound(gswFile, .init())
+        }
+        let name = gswFile.fileName.withoutExtensions
+        let parsed: (file: GSWFile, images: [GoDImage])
+        do {
+            parsed = try GSWParser.parse(data: data, name: name)
+        } catch {
+            logger?.log(.warning("Failed to parse flash menu: \(gswFile.fileName) — \(error)"))
+            return
+        }
+
+        fileSystem.createFolder(at: outputFolder, overwrite: overwrite)
+        let allRefs = parsed.file.allTextureRefs
+
+        let metadataFile = outputFolder.file("\(name).json")
+        try fileSystem.encodeJSON(parsed.file, to: metadataFile, overwrite: overwrite)
+
+        for (index, ref) in allRefs.enumerated() {
+            guard index < parsed.images.count,
+                  let png = parsed.images[index].pngData() else { continue }
+            let pngFile = resolveRelativeFile(ref.pngPath, in: outputFolder)
+            if overwrite || fileSystem.inspectFile(at: pngFile) == nil {
+                fileSystem.writeFile(png, at: pngFile, overwrite: overwrite)
+            }
+        }
+
+        logger?.log(.info("  \(name): \(parsed.file.tags.count) tags, \(allRefs.count) textures → \(outputFolder.path)"))
+    }
+
     private static func dumpXD(
         fileSystem: FileSystemTree,
         rootFolder: Folder,
@@ -187,12 +268,8 @@ extension ColoXD {
             ).resolvedFolder
 
             let fileType = entry.metadata.fileType
-            if fileType == "gtx" || fileType == "atx" {
-                // Store texture metadata in the registry for re-encoding on import
-                let texMeta = fileType == "atx"
-                    ? textureDecoder.parseATXHeader(data: entry.data)
-                    : textureDecoder.parseHeader(data: entry.data)
-
+            if fileType == "gtx" {
+                let texMeta = textureDecoder.parseHeader(data: entry.data)
                 if let image = textureDecoder.decode(data: entry.data),
                    let pngData = image.pngData() {
                     let pngFile = targetFolder.file(entry.filename.withoutExtensions + ".png")
@@ -201,6 +278,17 @@ extension ColoXD {
                 } else {
                     let targetFile = targetFolder.file(entry.filename)
                     entries.append(.init(metadata: entry.metadata, file: targetFile, textureMetadata: texMeta))
+                    extractedFiles.append((file: targetFile, data: entry.data))
+                }
+            } else if fileType == "atx" {
+                if let (image, atxMeta) = textureDecoder.decodeATX(data: entry.data),
+                   let pngData = image.pngData() {
+                    let pngFile = targetFolder.file(entry.filename.withoutExtensions + ".png")
+                    entries.append(.init(metadata: entry.metadata, file: pngFile, atxMetadata: atxMeta))
+                    extractedFiles.append((file: pngFile, data: pngData))
+                } else {
+                    let targetFile = targetFolder.file(entry.filename)
+                    entries.append(.init(metadata: entry.metadata, file: targetFile))
                     extractedFiles.append((file: targetFile, data: entry.data))
                 }
             } else {
@@ -284,7 +372,7 @@ extension ColoXD {
             if other.path.fileName == gsfsysFileName { continue }
 
             let targetFolder = gsEngine.resolveFolder(
-                forFileType: other.path.fileType,
+                forFileType: other.path.fileType ?? "",
                 entryFilename: other.path.fileName,
                 archiveName: ""
             ).resolvedFolder
@@ -328,7 +416,7 @@ extension ColoXD {
         // Font deduplication: collect all .fnt files, deduplicate by content
         var uniqueFonts = [(data: GoDData, file: File)]()
         var fontFileMapping = [String: File]()
-        let fontsFolder: Folder = fsysConfig.fileTypeFolders["fnt"] ?? "/Assets/Text/Fonts"
+        let fontsFolder: Folder = fsysConfig.fileTypeFolders["fnt"] ?? "/Data/Text/Fonts"
 
         for case .success(let r) in fsysResults.compactMap({ $0 }) {
             for extracted in r.extractedFiles where extracted.file.fileType == "fnt" {
@@ -364,7 +452,8 @@ extension ColoXD {
                         return FSYSRegistry.Entry(
                             metadata: entry.metadata,
                             file: mappedFile,
-                            textureMetadata: entry.textureMetadata
+                            textureMetadata: entry.textureMetadata,
+                            atxMetadata: entry.atxMetadata
                         )
                     }
                     return entry
@@ -391,5 +480,17 @@ extension ColoXD {
         )
 
         return projectFileSystem
+    }
+
+    /// Resolves a relative path string (e.g. `./textures/foo.png`) against
+    /// `base`, normalizing leading `.`/`..` components. Used for paths stored
+    /// inside metadata JSONs (GSW `pngPath`, font `atlasPath`, etc.).
+    static func resolveRelativeFile(_ relativePath: String, in base: Folder) -> File {
+        guard let lastSlash = relativePath.lastIndex(of: "/") else {
+            return base.file(relativePath)
+        }
+        let dir = String(relativePath[..<lastSlash])
+        let name = String(relativePath[relativePath.index(after: lastSlash)...])
+        return base.folder(dir).file(name)
     }
 }

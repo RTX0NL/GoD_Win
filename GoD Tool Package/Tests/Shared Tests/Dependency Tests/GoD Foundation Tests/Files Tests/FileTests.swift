@@ -52,7 +52,7 @@ class GoDFileTests: XCTestCase {
         let sut3 = File("/test/test file")
         XCTAssertEqual(sut.fileType, "ext")
         XCTAssertEqual(sut2.fileType, "bin")
-        XCTAssertEqual(sut3.fileType, "")
+        XCTAssertNil(sut3.fileType)
     }
     
     func testFileName() {

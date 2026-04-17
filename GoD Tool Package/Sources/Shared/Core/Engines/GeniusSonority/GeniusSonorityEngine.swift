@@ -233,7 +233,7 @@ public struct GeniusSonorityEngine: Engine {
                 return FolderResolution(folder: folder, languageSubfolder: language)
             }
             // 6. Archive-specific override matching entry file extension
-            if entryExtension != fileType, let folder = archiveOverrides[entryExtension] {
+            if let entryExtension, entryExtension != fileType, let folder = archiveOverrides[entryExtension] {
                 return FolderResolution(folder: folder, languageSubfolder: language)
             }
         }
@@ -244,7 +244,7 @@ public struct GeniusSonorityEngine: Engine {
         }
 
         // Check entry extension (handles pool/proj suffixed files)
-        if entryExtension != fileType, let folder = fsys.fileTypeFolders[entryExtension] {
+        if let entryExtension, entryExtension != fileType, let folder = fsys.fileTypeFolders[entryExtension] {
             return FolderResolution(folder: folder, languageSubfolder: language)
         }
 

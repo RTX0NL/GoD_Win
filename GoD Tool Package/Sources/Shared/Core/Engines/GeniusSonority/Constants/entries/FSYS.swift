@@ -4,6 +4,9 @@ extension GeniusSonorityEngine.Data {
     public struct FSYS: Codable {
         public private(set) var magicBytes = "FSYS"
         public internal(set) var fileMetaDataPadding = 0x40 // 0x20 in Colosseum but value is only aesthetic
+        
+        /// Suffixes to strip from extracted filenames and use as extension instead.
+        /// e.g. `["pool", "proj", "sdir", "rel"]` will rename `common_rel` → `common.rel`
         public private(set) var fileExtensionSuffixes = [
             "pool",
             "proj",
@@ -81,13 +84,13 @@ extension GeniusSonorityEngine.Data {
         public internal(set) var battlefieldScriptsFolder: Folder = "/Assets/Scripts/Battlefields"
 
         /// MSG files from map FSYS archives
-        public internal(set) var msgMapFolder: Folder = "/Assets/Text/Messages/Maps"
+        public internal(set) var msgMapFolder: Folder = "/Data/Text/Messages/Maps"
 
         /// MSG files from menu FSYS archives
-        public internal(set) var msgMenuFolder: Folder = "/Assets/Text/Messages/Menus"
+        public internal(set) var msgMenuFolder: Folder = "/Data/Text/Messages/Menus"
 
         /// MSG files from all other FSYS archives
-        public internal(set) var msgMiscFolder: Folder = "/Assets/Text/Messages/Misc"
+        public internal(set) var msgMiscFolder: Folder = "/Data/Text/Messages/Misc"
 
         /// Folder for images from common FSYS archives
         public internal(set) var commonImagesFolder: Folder = "/Assets/Images/Common"
@@ -104,8 +107,8 @@ extension GeniusSonorityEngine.Data {
             "dat":  "/Assets/Models/Characters And Objects",
             "col":  "/Assets/Models/Maps",
             "samp": "/Assets/Sounds/Sequenced",
-            "msg":  "/Assets/Text/Messages",
-            "fnt":  "/Assets/Text/Fonts",
+            "msg":  "/Data/Text/Messages",
+            "fnt":  "/Data/Text/Fonts",
             "scd":  "/Assets/Scripts",
             "dats": "/Assets/Models/Characters And Objects",
             "gtx":  "/Assets/Images/Misc",

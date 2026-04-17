@@ -17,6 +17,18 @@ extension ColoXD {
                 dolphinEngine: Folder,
                 geniusSonorityEngine: Folder
             )
+            case buildGSfsysTOC(
+                fstRegistry: File,
+                outputFile: File,
+                overwrite: Bool,
+                geniusSonorityEngine: Folder
+            )
+            case buildFST(
+                contentsFolder: Folder,
+                outputFile: File,
+                overwrite: Bool,
+                dolphinEngine: Folder
+            )
             case packFSYS(
                 registryFile: File,
                 outputFile: File,
@@ -26,7 +38,21 @@ extension ColoXD {
             )
             case buildFont(
                 metadataFile: File,
-                atlasFile: File,
+                outputFile: File,
+                overwrite: Bool
+            )
+            case buildFonts(
+                fontsFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
+            case buildFlashMenus(
+                projectsFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
+            case buildFlashMenu(
+                metadataFile: File,
                 outputFile: File,
                 overwrite: Bool
             )

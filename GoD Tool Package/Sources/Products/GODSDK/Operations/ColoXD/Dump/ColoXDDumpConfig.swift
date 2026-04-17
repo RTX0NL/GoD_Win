@@ -28,6 +28,16 @@ extension ColoXD {
                 outputFolder: Folder,
                 overwrite: Bool
             )
+            case dumpFlashMenus(
+                flashMenusFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
+            case dumpFlashMenu(
+                gswFile: File,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
         }
         
         let operations: [OperationConfig<Operations>]

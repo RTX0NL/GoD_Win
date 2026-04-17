@@ -21,7 +21,6 @@ enum Project {
         let configFolder = Folder("/Config")
         let settingsFolder = Folder("/Settings")
         let enginesFolder = Folder("/Engines")
-        let scriptsFolder = Folder("/Scripts")
 
         guard let isoData = fileSystem.readFile(at: isoInputFile) else {
             throw ProjectSetupErrors.isoNotFound(isoInputFile, .init())
@@ -40,25 +39,9 @@ enum Project {
         let isPBR = PokemonBattleRevolution.gameIDs.contains(gameID)
         let isGeniusSonority = isColosseum || isXD || isPBR
 
-        var projectFolders = [
-            buildFolder, isoFolder, contentsFolder,
-            configFolder, settingsFolder, enginesFolder, scriptsFolder
-        ]
-        if isGeniusSonority {
-            projectFolders += [
-                unpackedFolder,
-                sourceFolder,
-                sourceFolder.folder("Code"),
-                sourceFolder.folder("Menus"),
-                sourceFolder.folder("Scripts"),
-                sourceFolder.folder("Sequenced"),
-                sourceFolder.folder("Text"),
-            ]
-        }
-
-        projectFolders.forEach { folder in
-            projectFileSystem.createFolder(at: folder, overwrite: true)
-        }
+        // Folders are created on-demand when files are written into them,
+        // so we don't precreate empty directories here. Operations and
+        // writeFile calls will create whatever they need.
 
         let isoOutputFile = isoFolder.file(isoInputFile.fileName)
         projectFileSystem.writeFile(isoData, at: isoOutputFile, overwrite: false)
@@ -246,12 +229,40 @@ enum Project {
 
             var buildOperations: [OperationConfig<GoddessConfig.Operations>] = []
 
+            // FSYS unpack puts raw .gsw files here (per
+            // GeniusSonority/Constants/entries/FSYS.swift gsw routing).
+            let flashMenusFolder = unpackedFolder.folder("Assets").folder("Flash Menus")
+            // Structured per-GSW project folders (metadata.json + textures/) live
+            // under /Source so they're treated as editable source assets,
+            // separate from the unpacked binary view of the FSYS contents.
+            let flashMenusSourceFolder = sourceFolder.folder("Menus")
+            // FSYS unpack puts raw .fnt files here.
+            let fontsFolder = unpackedFolder.folder("Data").folder("Text").folder("Fonts")
+            // Structured per-font project folders (atlas.pgm + metadata.json).
+            let fontsSourceFolder = sourceFolder.folder("Text").folder("Fonts")
+
             if isColosseum, let game = gsGame {
                 let gsEngine = GeniusSonorityEngine.defaultEngine(for: game)
                 buildOperations.append(
                     OperationConfig(operation: .coloXDBuild(
                         config: ColoXD.BuildConfig(
                             operations: [
+                                OperationConfig(
+                                    operation: .buildFlashMenus(
+                                        projectsFolder: flashMenusSourceFolder.prefixed("."),
+                                        outputFolder: flashMenusFolder.prefixed("."),
+                                        overwrite: true
+                                    ),
+                                    enabled: .no
+                                ),
+                                OperationConfig(
+                                    operation: .buildFonts(
+                                        fontsFolder: fontsSourceFolder.prefixed("."),
+                                        outputFolder: fontsFolder.prefixed("."),
+                                        overwrite: true
+                                    ),
+                                    enabled: .no
+                                ),
                                 OperationConfig(
                                     operation: .buildColosseum(
                                         fstRegistry: unpackedFolder.file("FST.json").prefixed("."),
@@ -276,6 +287,22 @@ enum Project {
                     OperationConfig(operation: .coloXDBuild(
                         config: ColoXD.BuildConfig(
                             operations: [
+                                OperationConfig(
+                                    operation: .buildFlashMenus(
+                                        projectsFolder: flashMenusSourceFolder.prefixed("."),
+                                        outputFolder: flashMenusFolder.prefixed("."),
+                                        overwrite: true
+                                    ),
+                                    enabled: .no
+                                ),
+                                OperationConfig(
+                                    operation: .buildFonts(
+                                        fontsFolder: fontsSourceFolder.prefixed("."),
+                                        outputFolder: fontsFolder.prefixed("."),
+                                        overwrite: true
+                                    ),
+                                    enabled: .no
+                                ),
                                 OperationConfig(
                                     operation: .buildXD(
                                         fstRegistry: unpackedFolder.file("FST.json").prefixed("."),
@@ -372,6 +399,22 @@ enum Project {
                                                 geniusSonorityEngine: enginesFolder.folder(GeniusSonorityEngine.defaultEngine(for: .colosseum).name).prefixed(".")
                                             ),
                                             enabled: .yes
+                                        ),
+                                        OperationConfig(
+                                            operation: .dumpFlashMenus(
+                                                flashMenusFolder: flashMenusFolder.prefixed("."),
+                                                outputFolder: flashMenusSourceFolder.prefixed("."),
+                                                overwrite: false
+                                            ),
+                                            enabled: .no
+                                        ),
+                                        OperationConfig(
+                                            operation: .dumpFonts(
+                                                fontsFolder: fontsFolder.prefixed("."),
+                                                outputFolder: fontsSourceFolder.prefixed("."),
+                                                overwrite: false
+                                            ),
+                                            enabled: .no
                                         )
                                     ]
                                 )
@@ -395,6 +438,22 @@ enum Project {
                                                 geniusSonorityEngine: enginesFolder.folder(GeniusSonorityEngine.defaultEngine(for: .galeOfDarkness).name).prefixed(".")
                                             ),
                                             enabled: .yes
+                                        ),
+                                        OperationConfig(
+                                            operation: .dumpFlashMenus(
+                                                flashMenusFolder: flashMenusFolder.prefixed("."),
+                                                outputFolder: flashMenusSourceFolder.prefixed("."),
+                                                overwrite: false
+                                            ),
+                                            enabled: .no
+                                        ),
+                                        OperationConfig(
+                                            operation: .dumpFonts(
+                                                fontsFolder: fontsFolder.prefixed("."),
+                                                outputFolder: fontsSourceFolder.prefixed("."),
+                                                overwrite: false
+                                            ),
+                                            enabled: .no
                                         )
                                     ]
                                 )
