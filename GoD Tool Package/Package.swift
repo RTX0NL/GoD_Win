@@ -324,7 +324,7 @@ let package = Package(
             path: "Tests/Shared Tests/Engine Tests/GameCube Tests"),
         .testTarget(
             name: "ColosseumTests",
-            dependencies: ["Colosseum", "GoDFoundation", "ScriptDecompiler", "GTX"],
+            dependencies: ["Colosseum", "GeniusSonority", "GoDFoundation", "ScriptDecompiler", "GTX"],
             path: "Tests/Shared Tests/Engine Tests/Colosseum Tests"),
         .testTarget(
             name: "XDTests",

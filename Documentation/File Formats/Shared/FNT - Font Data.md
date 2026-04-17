@@ -2,142 +2,79 @@
 
 ## Overview
 
-FNT files contain bitmap font data for text rendering in Pokemon Colosseum and XD. Each file defines a set of character glyphs as 4-bit-per-pixel bitmaps (16 shades of intensity), indexed by Unicode code point. Font files range from minimal single-table files (336 bytes, ~40 characters) to comprehensive Japanese character sets (730 KB, ~2900 kanji).
+Genius Sonority bitmap font format used in Pokemon Colosseum and XD. Each `.fnt` file contains a **linked list of font blocks** (typically a 22×22 primary, an 18×18 secondary, and sometimes 13×13 or further-nested variants). Glyphs are stored as 4-bit-per-pixel intensity bitmaps and indexed by character code for binary-search lookup at runtime.
 
 **File type ID:** `0x0C`
 **Extension:** `.fnt`
 **Byte order:** Big-endian
+**Runtime entry point:** `GSmsgFontOpen` (at `text1/GSmsg/`) walks the linked list; `_msgGetCodeInfo` binary-searches each block's char table.
 
-## File Structure
+## Block layout
 
-```
-┌──────────────────┐ 0x00
-│  Header (16 B)   │
-├──────────────────┤ 0x10
-│  Character Table  │ entry_count × 8 bytes
-│  (sorted by code) │
-├──────────────────┤ bitmap_offset (= 0x10 + entry_count × 8)
-│  Glyph Bitmaps   │ ~242 bytes per glyph
-│                   │
-└──────────────────┘
-```
-
-## Header (0x10 bytes)
+Every block in the chain has the same structure:
 
 | Offset | Size | Type | Field | Notes |
 |--------|------|------|-------|-------|
-| 0x00 | 2 | u16 | Reserved | Always `0x0000` |
-| 0x02 | 1 | u8 | Glyph width | Max glyph width in pixels (typically 22) |
-| 0x03 | 1 | u8 | Glyph height | Max glyph height in pixels (typically 22) |
-| 0x04 | 2 | u16 | Reserved | Always `0x0000` |
-| 0x06 | 2 | u16 | Data size | Size of glyph bitmap data section, or 0 for large files |
-| 0x08 | 2 | u16 | Entry count | Number of entries in the character table (includes null entry 0) |
-| 0x0A | 2 | u16 | Reserved | Always `0x0000` |
-| 0x0C | 2 | u16 | Reserved | Always `0x0000` |
-| 0x0E | 2 | u16 | Bitmap offset | Offset to glyph bitmap data = `0x10 + entry_count × 8` |
+| 0x00 | 2 | u16 | `fontId` | Sequential ID (0, 1, 2…). `0xFFFF` terminates the list; checked at the top of `GSmsgFontOpen`'s loop. |
+| 0x02 | 1 | u8 | `glyphWidth` | Font-wide max glyph width (22, 18, or 13 observed). |
+| 0x03 | 1 | u8 | `glyphHeight` | Font-wide max glyph height. |
+| 0x04 | 4 | u32 | `nextBlockOffset` | **Relative** to this block's start (matches the asm `r31 += r0`). `0` = last block in the file. |
+| 0x08 | 2 | u16 | `count` | Number of searchable char-table entries. |
+| 0x0A | 2 | u16 | reserved | Always 0. |
+| 0x0C | 2 | u16 | reserved | Always 0. |
+| 0x0E | 2 | u16 | `lastEntryOffset` | Offset (from block start) of the final char-table entry. Equals `0x18 + (count - 1) × 8`. |
+| 0x10 | 8 | — | chain-ptr slot | Reserved for runtime next/prev linked-list pointers. `GSmsgFontOpen` writes to offsets 0x18 and 0x1C of this region at load time. Always zero on disk. |
+| 0x18 | `count × 8` | — | char table | Sorted-by-code entries, binary-searched by `_msgGetCodeInfo`. |
+| `lastEntryOffset + 8` | — | — | bitmap data | 4bpp scanline data; each glyph's `bmpOff` is relative to this base. |
 
-## Character Table
-
-Immediately follows the header at offset 0x10. Each entry is **8 bytes**, sorted by character code for binary search lookup.
+### Char-table entry (8 bytes)
 
 | Offset | Size | Type | Field | Notes |
 |--------|------|------|-------|-------|
-| 0x00 | 2 | u16 | Character code | Unicode code point (0x0020 = space, 0x4E00+ = CJK, etc.) |
-| 0x02 | 1 | u8 | Advance width | Horizontal advance in pixels (how far to move after this glyph) |
-| 0x03 | 1 | u8 | Glyph height | Height of this specific glyph |
-| 0x04 | 2 | u16 | Flags | Rendering flags (varies per character) |
-| 0x06 | 2 | u16 | Bitmap offset | Offset within the bitmap data section to this glyph's pixels |
+| 0x00 | 2 | u16 | `code` | Character code (ASCII / Shift-JIS mapped to Unicode). Table is sorted by this. |
+| 0x02 | 1 | u8 | `advance` | Horizontal advance (cursor step after drawing). |
+| 0x03 | 1 | u8 | `height` | Per-glyph height. |
+| 0x04 | 2 | u16 | `flags` | High byte varies per glyph; runtime usage not yet identified (not a row-rotation despite earlier guesses). |
+| 0x06 | 2 | u16 | `bmpOff` | Offset into the bitmap region. For fonts with > 64 KB of glyph data, this UInt16 wraps every `0x10000` bytes — iterate entries in order and track a bank counter. |
 
-Entry 0 is always null (all zeros) — a sentinel for lookup failures.
-
-### Character Code Encoding
-
-The runtime supports multiple character encoding schemes via `GetFontCode`:
-
-| Encoding | Range | Mapping |
-|----------|-------|---------|
-| ASCII | 0x0020–0x00FF | Direct Unicode code points |
-| Zenkaku (full-width Japanese) | 0x8140–0x879E, 0x8840–0x9872 | Shift-JIS to Unicode via lookup table |
-| Hankaku (half-width katakana) | 0x0020–0x00DF | Via `HankakuToCode` lookup table |
-
-## Glyph Bitmap Data
-
-Glyph bitmaps are stored as **4-bit-per-pixel intensity data** (16 shades from transparent to fully opaque). Each glyph for a 22×22 font uses **242 bytes** (22 × 22 / 2).
+### Glyph bitmap
 
 ```
-Bytes per glyph = ceil(glyph_width / 2) × glyph_height
+bytes_per_glyph = ⌈advance / 2⌉ × height
 ```
 
-For the standard 22×22 glyph: `11 × 22 = 242 bytes`
+4bpp scanline layout, **upper nibble = left pixel**, lower nibble = right pixel. `_msgMakeTexture` (`text1/GSmsg/_msgMakeTexture__FP13MSG_TASK_WORKPUcsss.s`) writes bytes to the render texture in natural order — no rotation, mirror, or row transform.
 
-Each byte contains two horizontally adjacent pixels:
-- **Upper nibble (bits 7-4):** Left pixel intensity (0x0 = transparent, 0xF = opaque)
-- **Lower nibble (bits 3-0):** Right pixel intensity
-
-The bitmap data section starts at the offset specified in the header (0x0E) and contains glyphs packed sequentially. Each character table entry's bitmap offset field points to the start of its glyph within this section.
-
-## File Size Calculation
+## Example: Font_Data_14
 
 ```
-file_size = 0x10 + (entry_count × 8) + (num_glyphs × bytes_per_glyph)
+0x0000  primary block (fontId=0, 22×22, 6 entries)
+0x0600  secondary block (fontId=1, 18×18, 6 entries; nextOffset=0 = end)
 ```
 
-### Observed File Sizes
+Same character codes appear in both blocks, with smaller glyph bitmaps in the 18×18 variant.
 
-| File | Entries | Glyphs | Size |
-|------|---------|--------|------|
-| Map room fonts (D1_*, M1_*, etc.) | 1 | ~40 chars | 336 B |
-| system_tool.fnt | 2 | ~148 chars | 1,200 B |
-| D2_rest_2.fnt | 3 | ~163 chars | 1,328 B |
-| jis_1.fnt | 2,919 | ~2,918 kanji | 729,776 B |
+## Observed block topologies across the 26 XD fonts
 
-## Runtime System
+- **1 block** — Font_Data_24 (jis_1, comprehensive 2919-glyph CJK set).
+- **2 blocks** (22×22 + 18×18) — most fonts (19 of 26).
+- **3 blocks** — Font_Data_1, 5, 13, 21 (add a second 18×18).
+- **5 blocks** — Font_Data_8 (22×22 + 18×18 + 18×18 + 13×13 + 13×13).
 
-### Font Manager
+The 13×13 variant exists but is rare. Callers select which block to render from via the font ID; the selection logic lives outside the format itself.
 
-The global font manager (at TOC offset `r13 - 0x7AD8`) maintains:
+## Runtime data flow
 
-| Offset | Size | Field |
-|--------|------|-------|
-| 0x02 | 2 | Number of open fonts |
-| 0x10 | 4 | Render texture pointer |
-| 0x14 | 2 | Current render X position |
-| 0x16 | 2 | Current render Y position |
-| 0x18 | 1 | Current glyph height |
-| 0x20 | 4 | Font entry array pointer |
-| 0x24 | 4 | Character encode function pointer |
-
-### API Functions
-
-| Function | Module | Purpose |
-|----------|--------|---------|
-| `GSmsgFontOpen` | GSmsg | Load font into manager, register character table |
-| `GSmsgFontClose` | GSmsg | Unload font, free slot |
-| `_msgGetCodeInfo` | GSmsg | Look up character code → glyph info (binary search) |
-| `_msgSetChar` | GSmsg | Set current glyph for rendering |
-| `_msgMakeTexture` | GSmsg | Render glyph to runtime texture |
-| `_msgGetSize` | GSmsg | Calculate rendered string size |
-| `_msgGetLength` | GSmsg | Calculate string length in characters |
-| `GetFontCode` | OSFont | Convert input encoding to Unicode |
-| `ReadFont` | OSFont | Read font file from disc/card |
-| `OSLoadFont` | OSFont | Load font into memory |
-| `OSGetFontTexel` | OSFont | Read individual glyph pixel |
-
-### Character Lookup Flow
-
-1. `GetFontCode` converts input encoding (ASCII/Shift-JIS) to Unicode code point
-2. `_msgGetCodeInfo` binary-searches the character table by code point
-3. Returns glyph metrics (advance width, height) and bitmap offset
-4. `_msgMakeTexture` copies the 4bpp glyph bitmap to the render texture
-
-## Game-Specific Notes
-
-- Both Colosseum and XD use the same FNT format
-- Per-room FNT files contain only the characters needed for that room's text
-- `jis_1.fnt` provides the comprehensive Japanese character set
-- Font rendering supports control sequences for bold, superscript, and color changes (handled by the message system, not the font format)
+1. **Load** — `floorReadFontPostFunc` (`text1/floorRead/`) pulls a `.fnt` buffer from FSYS and calls `GSmsgFontOpen(bufferPtr)`.
+2. **Register** — `GSmsgFontOpen` walks the block list, registering each in the font manager at `*(-0x7ad8(r13)) + 0x20` and writing next/prev chain pointers into the 8-byte reserved slot at block+0x10.
+3. **Lookup** — `_msgGetCodeInfo(task, charCode, out)`:
+   - `r6 = fontInfo.charTablePtr` (= block start + 0x08)
+   - `r9 = *(u16 at r6+0)` = `count`
+   - `r7 = r6 + 0x10` = char-table base (which is block+0x18, past the chain-ptr slot)
+   - Binary-search `count` entries at `r7`, comparing `u16 code`.
+4. **Render** — `_msgSetChar` feeds the found entry's `bmpOff`-derived bitmap pointer into `_msgMakeTexture`, which stbx-copies bytes into the render texture.
 
 ## References
 
-- **Disassembled code:** `text1/GSmsg/` (font open/close, text rendering), `text1/OSFont/` (font loading, encoding)
-- **Old GoD tool:** `enums/XGFontColours.swift` (font color definitions)
+- Disassembly: `scripts/Disassembly-XD/text1/GSmsg/GSmsgFontOpen.s`, `_msgGetCodeInfo__*.s`, `_msgMakeTexture__*.s`, `_msgSetChar__*.s`, `floorRead/floorReadFontPostFunc.s`.
+- In-memory `tagFONT_INFO` layout: inferred from `GSmsgFontOpen` writes — `{ u16 code, u8 adv, u8 h, u32 charTablePtr, u32 next, u32 prev }`.

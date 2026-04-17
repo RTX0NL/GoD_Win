@@ -2,23 +2,54 @@ import GoDFoundation
 import GoDEngine
 import Structs
 
-/// Parser and serializer for the GS .fnt font format.
+/// Parser and serializer for the GS `.fnt` font format.
 ///
-/// File layout:
-/// - 0x10 byte header (glyph dimensions, entry count, bitmap offset)
-/// - Character table: entry_count × 8 bytes, sorted by character code
-/// - Glyph bitmaps: 4bpp intensity data, ~242 bytes per 22×22 glyph
+/// A `.fnt` file is a linked list of **font blocks** (each a different glyph
+/// size, e.g. 22×22 primary + 18×18 secondary). The runtime walks the list via
+/// `GSmsgFontOpen` (see `scripts/Disassembly-XD/text1/GSmsg/GSmsgFontOpen.s`).
+///
+/// Per-block layout:
+///
+/// ```
+/// +0x00  u16  fontId              (0, 1, 2…; 0xFFFF terminates list)
+/// +0x02  u8   glyphWidth
+/// +0x03  u8   glyphHeight
+/// +0x04  u32  nextBlockOffset     (relative to THIS block's start;
+///                                  0 = last block. Matches the asm:
+///                                  `r31 += r0` in GSmsgFontOpen)
+/// +0x08  u16  count               (searchable char-table entries)
+/// +0x0A  u16  reserved (0)
+/// +0x0C  u16  reserved (0)
+/// +0x0E  u16  lastEntryOffset     (offset of the FINAL char-table entry,
+///                                  = bmpStart in our earlier parlance)
+/// +0x10  8 B  chain-ptr slot      (runtime writes next/prev links here at
+///                                  load time via `stw r0, 0x8(r4)` in
+///                                  GSmsgFontOpen; all-zero on disk)
+/// +0x18  count × 8  char table    (code u16, adv u8, h u8, flags u16, bmpOff u16;
+///                                  sorted by code for binary search)
+/// +lastEntryOffset+8   bitmap data (per-entry `bmpOff` relative to here;
+///                                  each glyph uses ⌈adv/2⌉ × h bytes, 4bpp)
+/// ```
+///
+/// `_msgGetCodeInfo` binary-searches `count` entries starting at `r6+0x10`
+/// (where `r6 = file+0x08`), i.e. from `file+0x18`. The "null entry" at
+/// `file+0x10` is **not** part of the table — it's the 8 bytes the runtime
+/// writes `next`/`prev` linked-list pointers into. On disk those 8 bytes are
+/// always zero.
+///
+/// Bitmaps are read as 4bpp scanline data with upper nibble = left pixel. No
+/// rotation, mirror, or row transform — verified against `_msgMakeTexture`.
 public struct GSFont: FileFormat {
     public static let formatName = "fnt"
 
     public struct Glyph {
-        /// Unicode code point
+        /// Character code (Unicode / Shift-JIS depending on font)
         public let code: UInt16
         /// Horizontal advance in pixels
         public let advanceWidth: UInt8
         /// Height of this glyph in pixels
         public let height: UInt8
-        /// Rendering flags
+        /// Rendering flags (high byte varies; runtime usage unidentified)
         public let flags: UInt16
         /// 4bpp intensity bitmap data (each byte = 2 pixels, upper nibble = left)
         public let bitmap: [UInt8]
@@ -32,171 +63,232 @@ public struct GSFont: FileFormat {
         }
     }
 
-    /// Maximum glyph width in pixels (from header)
+    /// Sequential block ID in the file-level font chain (0 for the first
+    /// block, 1 for the second, etc.). Written to the runtime font manager
+    /// so callers can select a specific size.
+    public let fontId: UInt16
+    /// Font-wide glyph width (max), in pixels.
     public let glyphWidth: Int
-    /// Maximum glyph height in pixels (from header)
+    /// Font-wide glyph height (max), in pixels.
     public let glyphHeight: Int
-    /// Sorted array of glyphs (entry 0 is the null sentinel)
+    /// Glyphs in the char table, sorted by `code`. Each is independently
+    /// searchable via binary search at runtime.
     public let glyphs: [Glyph]
+    /// Next font block in the chain (smaller-size variant, usually 18×18 when
+    /// this block is 22×22). `nil` means this is the last block. Boxed in a
+    /// class to break infinite-size recursion of the struct.
+    internal let nextFontBox: NextFontBox?
+    public var nextFont: GSFont? { nextFontBox?.font }
 
-    /// Bytes per glyph bitmap: ceil(glyphWidth / 2) × glyphHeight
+    public final class NextFontBox {
+        public let font: GSFont
+        public init(_ font: GSFont) { self.font = font }
+    }
+    /// Byte padding between this block's last glyph bitmap and the start of
+    /// the next block (or end of file). Typically a handful of zero bytes for
+    /// alignment; preserved verbatim for byte-identical round-trip.
+    public let blockPadding: [UInt8]
+
+    /// Bytes per glyph bitmap for the font's max dimensions.
     public var bytesPerGlyph: Int {
         ((glyphWidth + 1) / 2) * glyphHeight
     }
 
-    // MARK: - Parse from FNT binary
+    /// Visible glyphs — alias for `glyphs` (there is no null sentinel; every
+    /// entry in the table is a real glyph).
+    public var visibleGlyphs: [Glyph] { glyphs }
+
+    // MARK: - Parse
 
     public init(data: GoDData) throws {
+        try self.init(data: data, blockOffset: 0)
+    }
+
+    private init(data: GoDData, blockOffset: Int) throws {
         data.setByteOrder(.big)
-        guard data.length >= 0x10 else { throw Self.invalidFileError }
+        guard blockOffset + 0x18 <= data.length else { throw Self.invalidFileError }
 
-        let gw: UInt8 = data.readSafely(atAddress: 0x02)
-        let gh: UInt8 = data.readSafely(atAddress: 0x03)
+        // Block header
+        let fontId: UInt16 = data.readSafely(atAddress: blockOffset + 0x00)
+        let gw: UInt8 = data.readSafely(atAddress: blockOffset + 0x02)
+        let gh: UInt8 = data.readSafely(atAddress: blockOffset + 0x03)
+        let nextOffset: UInt32 = data.readSafely(atAddress: blockOffset + 0x04)
+        let count: UInt16 = data.readSafely(atAddress: blockOffset + 0x08)
+        let lastEntryOff: UInt16 = data.readSafely(atAddress: blockOffset + 0x0E)
 
+        self.fontId = fontId
         self.glyphWidth = Int(gw)
         self.glyphHeight = Int(gh)
 
-        let bpp = ((Int(gw) + 1) / 2) * Int(gh)
+        let entryCount = Int(count)
+        let lastEntryOffset = Int(lastEntryOff)
 
-        // Scan entries from 0x10 until we hit non-entry data.
-        // Each valid entry has advance width == glyphWidth and height == glyphHeight,
-        // or is the null sentinel (all zeros).
-        var parsedGlyphs = [Glyph]()
-        var entryOffset = 0x10
-        while entryOffset + 8 <= data.length {
-            let code: UInt16 = data.readSafely(atAddress: entryOffset)
-            let advance: UInt8 = data.readSafely(atAddress: entryOffset + 2)
-            let height: UInt8 = data.readSafely(atAddress: entryOffset + 3)
-            let flags: UInt16 = data.readSafely(atAddress: entryOffset + 4)
-            let bmpOff: UInt16 = data.readSafely(atAddress: entryOffset + 6)
-
-            let isNull = code == 0 && advance == 0 && height == 0 && flags == 0
-            let isGlyph = advance == gw && height == gh
-
-            guard isNull || isGlyph else { break }
-
-            parsedGlyphs.append(Glyph(
-                code: code,
-                advanceWidth: advance,
-                height: height,
-                flags: flags,
-                bitmap: []  // populated below
-            ))
-            entryOffset += 8
+        // Sanity: `lastEntryOffset` must equal the offset of the final char-
+        // table entry, i.e. `0x18 + (count-1)*8` relative to block start.
+        // Verified against all 26 XD font samples.
+        let expectedLastEntry = 0x18 + (entryCount - 1) * 8
+        guard entryCount == 0 || lastEntryOffset == expectedLastEntry else {
+            throw Self.invalidFileError
         }
 
-        // Bitmap data starts immediately after the last entry
-        let bmpStart = entryOffset
+        // The 8 bytes at blockOffset+0x10 are chain-ptr storage; always zero
+        // on disk. Not read as a char-table entry. Real entries start at +0x18.
+        let charTableBase = blockOffset + 0x18
+        let bitmapBase = blockOffset + lastEntryOffset + 8  // = charTableBase + count*8
 
-        // Re-read with bitmap data
-        var glyphsWithBitmaps = [Glyph]()
-        for glyph in parsedGlyphs {
-            var bitmap = [UInt8]()
-            if glyph.code != 0 || glyph.advanceWidth != 0 || glyph.height != 0 {
-                let bmpAddr = bmpStart + Int(glyph.bitmap.count)  // not used — use stored offset
-                // We need the original bmpOff from the entry
+        // Walk char-table entries. `bmpOff` is a UInt16 that wraps every
+        // 0x10000 bytes for large fonts (e.g. Font_Data_24 at ~706 KB of
+        // bitmap data). Entries are code-sorted but bitmap data is laid out
+        // in the same order as entries, so bmpOff is monotonic except on wrap.
+        var parsed = [Glyph]()
+        parsed.reserveCapacity(entryCount)
+        var bank = 0
+        var prevBmpOff: UInt16 = 0
+        var firstSeen = false
+        var maxBitmapEnd = 0
+
+        for i in 0..<entryCount {
+            let entryAddr = charTableBase + i * 8
+            let code: UInt16 = data.readSafely(atAddress: entryAddr + 0)
+            let advance: UInt8 = data.readSafely(atAddress: entryAddr + 2)
+            let height: UInt8 = data.readSafely(atAddress: entryAddr + 3)
+            let flags: UInt16 = data.readSafely(atAddress: entryAddr + 4)
+            let bmpOff: UInt16 = data.readSafely(atAddress: entryAddr + 6)
+
+            if firstSeen && bmpOff < prevBmpOff {
+                bank += 1
             }
-            glyphsWithBitmaps.append(glyph)
-        }
-
-        // Actually, re-parse from scratch with the correct bitmap start
-        var finalGlyphs = [Glyph]()
-        entryOffset = 0x10
-        while entryOffset + 8 <= data.length {
-            let code: UInt16 = data.readSafely(atAddress: entryOffset)
-            let advance: UInt8 = data.readSafely(atAddress: entryOffset + 2)
-            let height: UInt8 = data.readSafely(atAddress: entryOffset + 3)
-            let flags: UInt16 = data.readSafely(atAddress: entryOffset + 4)
-            let bmpOff: UInt16 = data.readSafely(atAddress: entryOffset + 6)
-
-            let isNull = code == 0 && advance == 0 && height == 0 && flags == 0
-            let isGlyph = advance == gw && height == gh
-
-            guard isNull || isGlyph else { break }
+            let absOff = Int(bmpOff) + bank * 0x10000
+            let bpr = (Int(advance) + 1) / 2
+            let glyphBytes = bpr * Int(height)
+            let bmpAddr = bitmapBase + absOff
 
             var bitmap = [UInt8]()
-            if !isNull {
-                let bmpAddr = bmpStart + Int(bmpOff)
-                if bmpAddr + bpp <= data.length {
-                    if let bmpData = data.read(atAddress: bmpAddr, length: bpp) {
-                        bitmap = bmpData.rawBytes
-                    }
-                }
+            if glyphBytes > 0, bmpAddr + glyphBytes <= data.length,
+               let b = data.read(atAddress: bmpAddr, length: glyphBytes) {
+                bitmap = b.rawBytes
             }
+            maxBitmapEnd = max(maxBitmapEnd, absOff + glyphBytes)
+            prevBmpOff = bmpOff
+            firstSeen = true
 
-            finalGlyphs.append(Glyph(
+            parsed.append(Glyph(
                 code: code,
                 advanceWidth: advance,
                 height: height,
                 flags: flags,
                 bitmap: bitmap
             ))
-            entryOffset += 8
+        }
+        self.glyphs = parsed
+
+        // `nextOffset` is relative to this block's start (matches the asm:
+        // `r31 += r0` in GSmsgFontOpen). For the primary block at file+0,
+        // relative == absolute, but nested blocks need base-offset.
+        let nextBlockAbsolute = nextOffset == 0 ? 0 : blockOffset + Int(nextOffset)
+
+        // This block ends at the next block's start (or end-of-file for the
+        // last block). Preserve any alignment padding between its last glyph
+        // and that boundary for byte-identical round-trip.
+        let blockEnd = (nextOffset == 0) ? data.length : nextBlockAbsolute
+        let paddingStart = bitmapBase + maxBitmapEnd
+        if paddingStart < blockEnd, paddingStart < data.length,
+           let pad = data.read(atAddress: paddingStart, length: min(blockEnd, data.length) - paddingStart) {
+            self.blockPadding = pad.rawBytes
+        } else {
+            self.blockPadding = []
         }
 
-        self.glyphs = finalGlyphs
+        // Recursively parse the next block, if any.
+        if nextOffset != 0, nextBlockAbsolute < data.length {
+            let next = try GSFont(data: data, blockOffset: nextBlockAbsolute)
+            self.nextFontBox = NextFontBox(next)
+        } else {
+            self.nextFontBox = nil
+        }
     }
 
-    // MARK: - Serialize to FNT binary
+    // MARK: - Serialize
 
     public var data: GoDData {
         get throws {
-            let count = glyphs.count
-            let bmpOffset = 0x10 + count * 8
-            let bpp = bytesPerGlyph
-
-            // Build bitmap data and track offsets
-            var bitmapData = GoDData(byteOrder: .big)
-            var bitmapOffsets = [UInt16]()
-
-            for glyph in glyphs {
-                if glyph.code == 0 && glyph.advanceWidth == 0 && glyph.height == 0 {
-                    bitmapOffsets.append(0)
-                } else {
-                    bitmapOffsets.append(UInt16(bitmapData.length))
-                    let glyphData: [UInt8]
-                    if glyph.bitmap.count >= bpp {
-                        glyphData = Array(glyph.bitmap.prefix(bpp))
-                    } else {
-                        glyphData = glyph.bitmap + [UInt8](repeating: 0, count: bpp - glyph.bitmap.count)
-                    }
-                    bitmapData.append(GoDData(byteStream: glyphData, byteOrder: .big))
-                }
-            }
-
-            let dataSize = bitmapData.length < 0x10000 ? bitmapData.length : 0
-            let result = GoDData(length: bmpOffset + bitmapData.length, byteOrder: .big)
-
-            // Header
-            result.write(UInt16(0), atAddress: 0x00)
-            result.write(UInt8(glyphWidth), atAddress: 0x02)
-            result.write(UInt8(glyphHeight), atAddress: 0x03)
-            result.write(UInt16(0), atAddress: 0x04)
-            result.write(UInt16(dataSize), atAddress: 0x06)
-            result.write(UInt16(count), atAddress: 0x08)
-            result.write(UInt16(0), atAddress: 0x0A)
-            result.write(UInt16(0), atAddress: 0x0C)
-            result.write(UInt16(bmpOffset), atAddress: 0x0E)
-
-            // Character table
-            for (i, glyph) in glyphs.enumerated() {
-                let off = 0x10 + i * 8
-                result.write(glyph.code, atAddress: off)
-                result.write(glyph.advanceWidth, atAddress: off + 2)
-                result.write(glyph.height, atAddress: off + 3)
-                result.write(glyph.flags, atAddress: off + 4)
-                result.write(bitmapOffsets[i], atAddress: off + 6)
-            }
-
-            // Bitmap data
-            result.write(bitmapData, atAddress: bmpOffset)
-
+            let result = GoDData(byteOrder: .big)
+            try appendBlock(to: result, parentBlockStart: nil)
             return result
         }
     }
 
-    /// Get only the non-null glyphs (skip entry 0)
-    public var visibleGlyphs: [Glyph] {
-        glyphs.filter { $0.code != 0 || $0.advanceWidth != 0 || $0.height != 0 }
+    /// Append this block's bytes to `out`. If `parent` is given, patches the
+    /// parent block's `nextBlockOffset` (at parentBlockStart+0x04) to
+    /// `blockStart - parentBlockStart` (relative offset, as the runtime
+    /// expects for `r31 += r0`).
+    private func appendBlock(to out: GoDData, parentBlockStart: Int?) throws {
+        let blockStart = out.length
+        if let parentStart = parentBlockStart {
+            let relative = UInt32(blockStart - parentStart)
+            out.write(relative, atAddress: parentStart + 0x04)
+        }
+
+        let count = glyphs.count
+        let lastEntryOffset = 0x18 + (count - 1) * 8  // = offset of final entry
+        let bitmapBaseOffset = lastEntryOffset + 8    // = 0x18 + count*8
+
+        // Block header + reserved + chain-ptr slot = 0x18 bytes
+        let headerAndChainSlot = GoDData(length: 0x18, byteOrder: .big)
+        headerAndChainSlot.write(fontId, atAddress: 0x00)
+        headerAndChainSlot.write(UInt8(glyphWidth), atAddress: 0x02)
+        headerAndChainSlot.write(UInt8(glyphHeight), atAddress: 0x03)
+        headerAndChainSlot.write(UInt32(0), atAddress: 0x04) // nextOffset — patched later if needed
+        headerAndChainSlot.write(UInt16(count), atAddress: 0x08)
+        headerAndChainSlot.write(UInt16(0), atAddress: 0x0A)
+        headerAndChainSlot.write(UInt16(0), atAddress: 0x0C)
+        headerAndChainSlot.write(UInt16(count == 0 ? 0 : lastEntryOffset), atAddress: 0x0E)
+        // 0x10..0x17: chain-ptr slot, remains zero
+        out.append(headerAndChainSlot)
+
+        // Char table + bitmap data (both built together so `bmpOff` values are
+        // known as we emit entries).
+        let bitmapData = GoDData(byteOrder: .big)
+        var entryRecords = [(UInt16, UInt8, UInt8, UInt16, UInt16)]()  // code,adv,h,flags,bmpOff
+
+        for glyph in glyphs {
+            let absOff = bitmapData.length
+            let bmpOff = UInt16(truncatingIfNeeded: absOff)
+            let glyphBpp = ((Int(glyph.advanceWidth) + 1) / 2) * Int(glyph.height)
+            let glyphData: [UInt8]
+            if glyph.bitmap.count >= glyphBpp {
+                glyphData = Array(glyph.bitmap.prefix(glyphBpp))
+            } else {
+                glyphData = glyph.bitmap + [UInt8](repeating: 0, count: glyphBpp - glyph.bitmap.count)
+            }
+            bitmapData.append(GoDData(byteStream: glyphData, byteOrder: .big))
+            entryRecords.append((glyph.code, glyph.advanceWidth, glyph.height, glyph.flags, bmpOff))
+        }
+
+        // Emit char table after the chain-ptr slot
+        let charTable = GoDData(length: count * 8, byteOrder: .big)
+        for (i, rec) in entryRecords.enumerated() {
+            let off = i * 8
+            charTable.write(rec.0, atAddress: off + 0)
+            charTable.write(rec.1, atAddress: off + 2)
+            charTable.write(rec.2, atAddress: off + 3)
+            charTable.write(rec.3, atAddress: off + 4)
+            charTable.write(rec.4, atAddress: off + 6)
+        }
+        out.append(charTable)
+
+        // Bitmap data
+        _ = bitmapBaseOffset  // for symmetry; bitmap base addr in out is blockStart + 0x18 + count*8
+        out.append(bitmapData)
+
+        // Block padding
+        if !blockPadding.isEmpty {
+            out.append(GoDData(byteStream: blockPadding, byteOrder: .big))
+        }
+
+        // Recurse into next block
+        if let next = nextFont {
+            try next.appendBlock(to: out, parentBlockStart: blockStart)
+        }
     }
 }
