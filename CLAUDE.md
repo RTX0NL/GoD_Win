@@ -292,7 +292,6 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 - [ ] ColoXD FSYS rebuild (must achieve 1:1 match before proceeding)
 - [ ] Validate font dump + rebuild end-to-end on full ROM (unit tests pass; need project-level validation)
 - [ ] Validate GSW rebuild end-to-end on full ROM (unit tests pass; need project-level validation)
-- [ ] GTX pure-texture roundtrip test (only ATX wrapper roundtrip is currently tested)
 
 ### TODO
 - [ ] MSG message file decoding and encoding

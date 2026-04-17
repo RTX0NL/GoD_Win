@@ -194,4 +194,92 @@ final class GXTextureTests: XCTestCase {
         XCTAssertNil(decoder.decodeATX(data: data),
                      "Plain GTX-shaped data should fail ATX header sanity checks")
     }
+
+    // MARK: - Pure GTX decode → encode → decode roundtrip
+
+    /// One representative real-sample path per pixel format. The test skips any
+    /// format whose sample isn't available on this machine.
+    private static let roundTripSamples: [(format: GXTextureFormat, path: String)] = [
+        (.c4,     "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/field_common/uv_str_root_csr.gtx"),
+        (.c8,     "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/battle_disk_doc_fr/uv_str_disk_01.gtx"),
+        (.i4,     "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/fight_common/uv_btl_panel_hyper_00.gtx"),
+        (.i8,     "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/M1_water_colo_field/tv_crew_0000_0.dat.gtx"),
+        (.rgb565, "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/pkx_patcheel/face.gtx"),
+        (.rgba32, "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/world_map/menu_038.gtx"),
+        (.rgb5a3, "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/title/menu_018.gtx"),
+        (.cmpr,   "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/world_map/mapsnap007.gtx"),
+    ]
+
+    /// Load a sample file, decode it, and return the decoded image plus metadata.
+    private func loadAndDecode(_ path: String, expect format: GXTextureFormat) throws -> (GoDImage, GXTextureMetadata) {
+        guard FileManager.default.fileExists(atPath: path),
+              let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+            throw XCTSkip("sample for format \(format) not available: \(path)")
+        }
+        let data = GoDData(byteStream: [UInt8](raw), byteOrder: .big)
+        let decoder = GXTextureDecoder()
+        guard let meta = decoder.parseHeader(data: data) else {
+            XCTFail("parseHeader failed for \(path)"); throw XCTSkip("header parse failed")
+        }
+        XCTAssertEqual(meta.format, format, "sample at \(path) has unexpected format")
+        guard let image = decoder.decode(data: data) else {
+            XCTFail("decode failed for \(path)"); throw XCTSkip("decode failed")
+        }
+        XCTAssertEqual(image.width, meta.width)
+        XCTAssertEqual(image.height, meta.height)
+        XCTAssertEqual(image.pixels.rawBytes.count, meta.width * meta.height * 4)
+        return (image, meta)
+    }
+
+    /// decode → encode → decode should produce pixel-identical output for every
+    /// non-lossy format. CMPR is DXT1-style and is only validated structurally.
+    private func assertPixelStableRoundTrip(_ format: GXTextureFormat) throws {
+        guard let sample = Self.roundTripSamples.first(where: { $0.format == format }) else {
+            throw XCTSkip("no sample registered for \(format)")
+        }
+        let (image, meta) = try loadAndDecode(sample.path, expect: format)
+
+        let decoder = GXTextureDecoder()
+        guard let reEncoded = decoder.encode(image: image, metadata: meta) else {
+            XCTFail("encode returned nil for \(format)"); return
+        }
+        guard let reDecoded = decoder.decode(data: reEncoded) else {
+            XCTFail("re-decode returned nil for \(format)"); return
+        }
+
+        XCTAssertEqual(reDecoded.width, image.width)
+        XCTAssertEqual(reDecoded.height, image.height)
+        XCTAssertEqual(
+            reDecoded.pixels.rawBytes, image.pixels.rawBytes,
+            "\(format) should decode → encode → decode to pixel-identical output"
+        )
+    }
+
+    func testRoundTripC4()     throws { try assertPixelStableRoundTrip(.c4) }
+    func testRoundTripC8()     throws { try assertPixelStableRoundTrip(.c8) }
+    func testRoundTripI4()     throws { try assertPixelStableRoundTrip(.i4) }
+    func testRoundTripI8()     throws { try assertPixelStableRoundTrip(.i8) }
+    func testRoundTripRGB565() throws { try assertPixelStableRoundTrip(.rgb565) }
+    func testRoundTripRGBA32() throws { try assertPixelStableRoundTrip(.rgba32) }
+    func testRoundTripRGB5A3() throws { try assertPixelStableRoundTrip(.rgb5a3) }
+
+    /// CMPR is lossy (DXT1-style quantization). Verify the encoder produces a
+    /// well-formed GTX that still re-decodes to the same dimensions — pixel
+    /// equality is not asserted since block colour endpoints get re-quantized.
+    func testRoundTripCMPRStructural() throws {
+        guard let sample = Self.roundTripSamples.first(where: { $0.format == .cmpr }) else {
+            throw XCTSkip("no CMPR sample registered")
+        }
+        let (image, meta) = try loadAndDecode(sample.path, expect: .cmpr)
+        let decoder = GXTextureDecoder()
+        guard let reEncoded = decoder.encode(image: image, metadata: meta) else {
+            XCTFail("CMPR encode returned nil"); return
+        }
+        guard let reDecoded = decoder.decode(data: reEncoded) else {
+            XCTFail("CMPR re-decode returned nil"); return
+        }
+        XCTAssertEqual(reDecoded.width, image.width)
+        XCTAssertEqual(reDecoded.height, image.height)
+        XCTAssertEqual(reDecoded.pixels.rawBytes.count, image.pixels.rawBytes.count)
+    }
 }
