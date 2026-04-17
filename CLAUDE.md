@@ -280,18 +280,23 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 - [x] Project setup from ISO (auto-detect game, create folder structure, generate configs)
 - [x] Configuration system (JSON configs, operation chains, toggle enable/disable)
 - [x] Logging framework
+- [x] GTX texture decode + encode (all pixel formats, palette rebuild)
+- [x] ATX wrapper decode + encode (1:1 roundtrip on wrapper; texture body reuses GTX)
+- [x] GSFont parse + rebuild (byte-identical) and atlas export/import
+- [x] GSW flash menu parse + serialize (byte-identical non-texture bytes)
+- [x] ColoXD build ops: font, flash menu, FST, GSfsys TOC
+- [x] ColoXD dump ops: flash menu (GSW → PNG + metadata)
 
 ### In Progress
 - [ ] ColoXD FSYS dump (organizing extracted files by type into asset folders)
 - [ ] ColoXD FSYS rebuild (must achieve 1:1 match before proceeding)
+- [ ] Validate font dump + rebuild end-to-end on full ROM (unit tests pass; need project-level validation)
+- [ ] Validate GSW rebuild end-to-end on full ROM (unit tests pass; need project-level validation)
+- [ ] GTX pure-texture roundtrip test (only ATX wrapper roundtrip is currently tested)
 
 ### TODO
-- [ ] ATX texture decoding and encoding
-- [ ] GTX texture decoding and encoding
-- [ ] GSW flash menu decoding and encoding
 - [ ] MSG message file decoding and encoding
 - [ ] REL disassembly and reassembly
-- [ ] Validate font dump and repack (1:1 accuracy)
 
 ### Planned (in order)
 - [ ] Game data table export (custom human-readable format for StructData)
