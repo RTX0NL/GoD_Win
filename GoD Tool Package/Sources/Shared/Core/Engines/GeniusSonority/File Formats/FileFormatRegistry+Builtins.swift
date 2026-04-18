@@ -1,0 +1,18 @@
+//
+//  FileFormatRegistry+Builtins.swift
+//
+//  Pre-populated registry bundling all Genius Sonority file formats we
+//  currently know how to dump and rebuild from artifacts.
+//
+
+import GoDFoundation
+
+public extension FileFormatRegistry {
+    /// Returns a registry containing every DumpableFileFormat implemented in
+    /// the GeniusSonority engine module.
+    static func builtins() -> FileFormatRegistry {
+        var r = FileFormatRegistry()
+        r.register("msg", MSGFile.self)
+        return r
+    }
+}

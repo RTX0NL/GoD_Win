@@ -4,13 +4,15 @@ import Disassembler
 import Structs
 import XD
 import Colosseum
+import GeniusSonority
 
 extension DolDisassembly {
     static func disassemble(
         config: Config,
         settings: GoddessSettings,
         fileSystem: FileSystemTree,
-        logger: Logger? = nil
+        logger: Logger? = nil,
+        registry: FileFormatRegistry = .builtins()
     ) throws {
         let dolphinEngine = try DolphinEngine(from: config.dolphinEngine, in: fileSystem)
 
@@ -306,12 +308,44 @@ extension DolDisassembly {
                     case .file(let embeddedFile):
                         let fileSize = min(embeddedFile.size, bytes.count - labelOffset)
                         let fileBytes = Array(bytes[labelOffset..<(labelOffset + fileSize)])
-                        let fileName = "\(embeddedFile.label).\(embeddedFile.extension)"
-                        output.writeFile(GoDData(byteStream: fileBytes, byteOrder: .big), at: sectionFolder.file(fileName), overwrite: true)
-                        manifest.chunks.append(.init(
-                            label: embeddedFile.label, type: .file, file: fileName,
-                            size: embeddedFile.size, fileExtension: embeddedFile.extension
-                        ))
+                        let fileData = GoDData(byteStream: fileBytes, byteOrder: .big)
+                        let ext = embeddedFile.extension
+
+                        if registry.isRegistered(ext) {
+                            // Route through the file-format registry: dumps structured
+                            // artifacts (JSON / PNG / atlas / etc.) instead of raw bytes.
+                            do {
+                                let written = try registry.dump(
+                                    bytes: fileData,
+                                    extension: ext,
+                                    baseName: embeddedFile.label,
+                                    into: sectionFolder,
+                                    fileSystem: output,
+                                    overwrite: true
+                                )
+                                let primary = written.first?.fileName
+                                    ?? "\(embeddedFile.label).\(ext)"
+                                manifest.chunks.append(.init(
+                                    label: embeddedFile.label, type: .file, file: primary,
+                                    size: embeddedFile.size, fileExtension: ext
+                                ))
+                            } catch {
+                                logger?.log(.warning("Registry dump failed for '\(embeddedFile.label)' (.\(ext)): \(error). Falling back to raw bytes."))
+                                let fileName = "\(embeddedFile.label).\(ext)"
+                                output.writeFile(fileData, at: sectionFolder.file(fileName), overwrite: true)
+                                manifest.chunks.append(.init(
+                                    label: embeddedFile.label, type: .file, file: fileName,
+                                    size: embeddedFile.size, fileExtension: ext
+                                ))
+                            }
+                        } else {
+                            let fileName = "\(embeddedFile.label).\(ext)"
+                            output.writeFile(fileData, at: sectionFolder.file(fileName), overwrite: true)
+                            manifest.chunks.append(.init(
+                                label: embeddedFile.label, type: .file, file: fileName,
+                                size: embeddedFile.size, fileExtension: ext
+                            ))
+                        }
                         consumedUpTo = labelOffset + fileSize
                     }
                 } else {

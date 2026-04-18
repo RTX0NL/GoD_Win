@@ -3,13 +3,15 @@ import Dolphin
 import Disassembler
 import Structs
 import XD
+import GeniusSonority
 
 extension RelDisassembly {
     static func disassemble(
         config: Config,
         settings: GoddessSettings,
         fileSystem: FileSystemTree,
-        logger: Logger? = nil
+        logger: Logger? = nil,
+        registry: FileFormatRegistry = .builtins()
     ) throws {
         let dolphinEngine = try DolphinEngine(from: config.dolphinEngine, in: fileSystem)
 
@@ -248,8 +250,48 @@ extension RelDisassembly {
                         .filter { $0.key >= labelOffset && $0.key < nextOffset }
                         .reduce(into: [Int: UInt32]()) { $0[$1.key - labelOffset] = $1.value }
 
+                    // Embedded file chunk — route through the file-format
+                    // registry if registered, otherwise raw bytes with the
+                    // declared extension.
+                    if case .file(let embeddedFile) = typeChunkBySymbol[labelName] {
+                        let fileSize = min(embeddedFile.size, chunkBytes.count)
+                        let fileData = GoDData(byteStream: Array(chunkBytes.prefix(fileSize)), byteOrder: .big)
+                        let ext = embeddedFile.extension
+                        if registry.isRegistered(ext) {
+                            do {
+                                let written = try registry.dump(
+                                    bytes: fileData,
+                                    extension: ext,
+                                    baseName: embeddedFile.label,
+                                    into: sectionFolder,
+                                    fileSystem: output,
+                                    overwrite: true
+                                )
+                                let primary = written.first?.fileName ?? "\(embeddedFile.label).\(ext)"
+                                manifest.chunks.append(.init(
+                                    label: embeddedFile.label, type: .file, file: primary,
+                                    size: embeddedFile.size, fileExtension: ext
+                                ))
+                            } catch {
+                                logger?.log(.warning("Registry dump failed for '\(embeddedFile.label)' (.\(ext)): \(error). Falling back to raw bytes."))
+                                let fileName = "\(embeddedFile.label).\(ext)"
+                                output.writeFile(fileData, at: sectionFolder.file(fileName), overwrite: true)
+                                manifest.chunks.append(.init(
+                                    label: embeddedFile.label, type: .file, file: fileName,
+                                    size: embeddedFile.size, fileExtension: ext
+                                ))
+                            }
+                        } else {
+                            let fileName = "\(embeddedFile.label).\(ext)"
+                            output.writeFile(fileData, at: sectionFolder.file(fileName), overwrite: true)
+                            manifest.chunks.append(.init(
+                                label: embeddedFile.label, type: .file, file: fileName,
+                                size: embeddedFile.size, fileExtension: ext
+                            ))
+                        }
+                    }
                     // Check if this label has a typed table definition
-                    if case .table(let tableDef) = typeChunkBySymbol[labelName],
+                    else if case .table(let tableDef) = typeChunkBySymbol[labelName],
                        let structDef = resolvedStructs[tableDef.entryType] {
                         // Export as typed JSON table
                         let entrySize = structDef.length
