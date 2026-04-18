@@ -56,6 +56,16 @@ extension ColoXD {
                 outputFile: File,
                 overwrite: Bool
             )
+            case buildMessages(
+                jsonFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
+            case buildMessage(
+                jsonFile: File,
+                outputFile: File,
+                overwrite: Bool
+            )
         }
 
         let operations: [OperationConfig<Operations>]

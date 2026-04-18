@@ -38,6 +38,18 @@ extension ColoXD {
                 outputFolder: Folder,
                 overwrite: Bool
             )
+            case dumpMessages(
+                messagesFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool,
+                variant: String        // "xd" or "colo"
+            )
+            case dumpMessage(
+                msgFile: File,
+                outputFolder: Folder,
+                overwrite: Bool,
+                variant: String        // "xd" or "colo"
+            )
         }
         
         let operations: [OperationConfig<Operations>]

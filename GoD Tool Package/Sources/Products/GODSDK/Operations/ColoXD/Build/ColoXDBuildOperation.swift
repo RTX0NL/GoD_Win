@@ -161,8 +161,59 @@ extension ColoXD {
                     fileSystem: fileSystem,
                     logger: logger
                 )
+
+            case let .buildMessages(jsonFolder, outputFolder, overwrite):
+                var jsonFiles = [(file: File, relativeFolder: Folder)]()
+                func collect(_ folder: Folder, _ relative: Folder) {
+                    guard let contents = fileSystem.inspectFolder(at: folder) else { return }
+                    for file in contents.files where file.fileType == "json" {
+                        jsonFiles.append((file, relative))
+                    }
+                    for sub in contents.subFolders {
+                        collect(sub, relative.folder(sub.folderName))
+                    }
+                }
+                collect(jsonFolder, Folder("."))
+                logger?.log(.info("Found \(jsonFiles.count) message JSON files"))
+
+                for (jsonFile, relative) in jsonFiles {
+                    let name = jsonFile.fileName.withoutExtensions
+                    let outputFile = outputFolder.folder(relative.path).file("\(name).msg")
+                    try buildMessage(
+                        jsonFile: jsonFile,
+                        outputFile: outputFile,
+                        overwrite: overwrite,
+                        fileSystem: fileSystem,
+                        logger: logger
+                    )
+                }
+
+            case let .buildMessage(jsonFile, outputFile, overwrite):
+                try buildMessage(
+                    jsonFile: jsonFile,
+                    outputFile: outputFile,
+                    overwrite: overwrite,
+                    fileSystem: fileSystem,
+                    logger: logger
+                )
             }
         }
+    }
+
+    private static func buildMessage(
+        jsonFile: File,
+        outputFile: File,
+        overwrite: Bool,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws {
+        guard let json = fileSystem.readFile(at: jsonFile) else {
+            throw FSTErrors.fileNotFound(jsonFile, .init())
+        }
+        let file = try MSGFile(outputs: ["json": json])
+        let binary = try file.binaryData
+        fileSystem.writeFile(binary, at: outputFile, overwrite: overwrite)
+        logger?.log(.info("  \(jsonFile.fileName): \(file.entries.count) entries → \(outputFile.fileName)"))
     }
 
     // MARK: - GSfsys.toc building

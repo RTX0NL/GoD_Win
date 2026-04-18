@@ -156,8 +156,84 @@ extension ColoXD {
                     fileSystem: fileSystem,
                     logger: logger
                 )
+
+            case let .dumpMessages(messagesFolder, outputFolder, overwrite, variant):
+                var msgFiles = [(file: File, relativeFolder: Folder)]()
+                func collect(_ folder: Folder, _ relative: Folder) {
+                    guard let contents = fileSystem.inspectFolder(at: folder) else { return }
+                    for file in contents.files where file.fileType == "msg" {
+                        msgFiles.append((file, relative))
+                    }
+                    for sub in contents.subFolders {
+                        collect(sub, relative.folder(sub.folderName))
+                    }
+                }
+                collect(messagesFolder, Folder("."))
+                logger?.log(.info("Found \(msgFiles.count) message files"))
+
+                let msgVariant = parseMSGVariant(variant)
+                for (msgFile, relative) in msgFiles {
+                    let targetFolder = outputFolder.folder(relative.path)
+                    try dumpMessage(
+                        msgFile: msgFile,
+                        outputFolder: targetFolder,
+                        overwrite: overwrite,
+                        variant: msgVariant,
+                        fileSystem: fileSystem,
+                        logger: logger
+                    )
+                }
+
+            case let .dumpMessage(msgFile, outputFolder, overwrite, variant):
+                try dumpMessage(
+                    msgFile: msgFile,
+                    outputFolder: outputFolder,
+                    overwrite: overwrite,
+                    variant: parseMSGVariant(variant),
+                    fileSystem: fileSystem,
+                    logger: logger
+                )
             }
         }
+    }
+
+    private static func parseMSGVariant(_ value: String) -> MSGFile.Variant {
+        switch value.lowercased() {
+        case "colo", "colosseum": return .colo
+        default: return .xd
+        }
+    }
+
+    /// Parses a single `.msg` file and writes a `<name>.json` artifact into
+    /// `outputFolder`. Shared between batch (`dumpMessages`) and individual
+    /// (`dumpMessage`) ops.
+    private static func dumpMessage(
+        msgFile: File,
+        outputFolder: Folder,
+        overwrite: Bool,
+        variant: MSGFile.Variant,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws {
+        guard let data = fileSystem.readFile(at: msgFile) else {
+            throw FSTErrors.fileNotFound(msgFile, .init())
+        }
+        let name = msgFile.fileName.withoutExtensions
+        let parsed: MSGFile
+        do {
+            parsed = try MSGFile(binary: data, variant: variant)
+        } catch {
+            logger?.log(.warning("Failed to parse message file: \(msgFile.fileName) — \(error)"))
+            return
+        }
+        fileSystem.createFolder(at: outputFolder, overwrite: overwrite)
+        let artifacts = try parsed.outputs
+        guard let json = artifacts["json"] else {
+            throw MSGFile.missingOutputError(key: "json")
+        }
+        let outputFile = outputFolder.file("\(name).json")
+        fileSystem.writeFile(json, at: outputFile, overwrite: overwrite)
+        logger?.log(.info("  \(name): \(parsed.entries.count) entries → \(outputFile.fileName)"))
     }
     
     private static func dumpColosseum(

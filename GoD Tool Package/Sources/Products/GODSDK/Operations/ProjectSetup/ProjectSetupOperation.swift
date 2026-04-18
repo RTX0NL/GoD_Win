@@ -240,6 +240,10 @@ enum Project {
             let fontsFolder = unpackedFolder.folder("Data").folder("Text").folder("Fonts")
             // Structured per-font project folders (atlas.pgm + metadata.json).
             let fontsSourceFolder = sourceFolder.folder("Text").folder("Fonts")
+            // FSYS unpack puts raw .msg files under /Unpacked/Data/Text/Messages.
+            let messagesFolder = unpackedFolder.folder("Data").folder("Text").folder("Messages")
+            // Editable per-MSG JSON files.
+            let messagesSourceFolder = sourceFolder.folder("Text").folder("Messages")
 
             if isColosseum, let game = gsGame {
                 let gsEngine = GeniusSonorityEngine.defaultEngine(for: game)
@@ -259,6 +263,14 @@ enum Project {
                                     operation: .buildFonts(
                                         fontsFolder: fontsSourceFolder.prefixed("."),
                                         outputFolder: fontsFolder.prefixed("."),
+                                        overwrite: true
+                                    ),
+                                    enabled: .no
+                                ),
+                                OperationConfig(
+                                    operation: .buildMessages(
+                                        jsonFolder: messagesSourceFolder.prefixed("."),
+                                        outputFolder: messagesFolder.prefixed("."),
                                         overwrite: true
                                     ),
                                     enabled: .no
@@ -299,6 +311,14 @@ enum Project {
                                     operation: .buildFonts(
                                         fontsFolder: fontsSourceFolder.prefixed("."),
                                         outputFolder: fontsFolder.prefixed("."),
+                                        overwrite: true
+                                    ),
+                                    enabled: .no
+                                ),
+                                OperationConfig(
+                                    operation: .buildMessages(
+                                        jsonFolder: messagesSourceFolder.prefixed("."),
+                                        outputFolder: messagesFolder.prefixed("."),
                                         overwrite: true
                                     ),
                                     enabled: .no
@@ -415,6 +435,15 @@ enum Project {
                                                 overwrite: false
                                             ),
                                             enabled: .no
+                                        ),
+                                        OperationConfig(
+                                            operation: .dumpMessages(
+                                                messagesFolder: messagesFolder.prefixed("."),
+                                                outputFolder: messagesSourceFolder.prefixed("."),
+                                                overwrite: false,
+                                                variant: "colo"
+                                            ),
+                                            enabled: .no
                                         )
                                     ]
                                 )
@@ -452,6 +481,15 @@ enum Project {
                                                 fontsFolder: fontsFolder.prefixed("."),
                                                 outputFolder: fontsSourceFolder.prefixed("."),
                                                 overwrite: false
+                                            ),
+                                            enabled: .no
+                                        ),
+                                        OperationConfig(
+                                            operation: .dumpMessages(
+                                                messagesFolder: messagesFolder.prefixed("."),
+                                                outputFolder: messagesSourceFolder.prefixed("."),
+                                                overwrite: false,
+                                                variant: "xd"
                                             ),
                                             enabled: .no
                                         )
