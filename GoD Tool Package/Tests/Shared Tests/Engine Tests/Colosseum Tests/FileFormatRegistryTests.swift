@@ -5,12 +5,60 @@ import GeniusSonority
 
 final class FileFormatRegistryTests: XCTestCase {
 
-    func testBuiltinsRegistersMSG() {
+    func testBuiltinsRegistersKnownFormats() {
         let registry = FileFormatRegistry.builtins()
         XCTAssertTrue(registry.isRegistered("msg"))
         XCTAssertTrue(registry.isRegistered("MSG"))   // case-insensitive
+        XCTAssertTrue(registry.isRegistered("fnt"))
+        XCTAssertTrue(registry.isRegistered("gtx"))
         XCTAssertFalse(registry.isRegistered("unknown"))
         XCTAssertNotNil(registry.handler(for: "msg"))
+    }
+
+    /// Real XD .fnt sample roundtrips through the registry. The decoded
+    /// atlas+metadata rebuilds to byte-identical binary (the same guarantee
+    /// GSFontTests already asserts — this test just exercises the registry
+    /// path end-to-end so a regression in the generic dispatch is caught).
+    func testRegistryGSFontDumpAndBuildRoundTrip() throws {
+        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/pda_menu/pda_menu.fnt"
+        guard FileManager.default.fileExists(atPath: path),
+              let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+            throw XCTSkip("pda_menu.fnt not available")
+        }
+
+        let registry = FileFormatRegistry.builtins()
+        let handler = try XCTUnwrap(registry.handler(for: "fnt"))
+
+        let input = GoDData(byteStream: [UInt8](raw), byteOrder: .big)
+        let artifacts = try handler.dump(input)
+        XCTAssertEqual(Set(artifacts.keys), ["pgm", "json"])
+
+        let rebuilt = try handler.build(artifacts)
+        XCTAssertEqual(rebuilt.rawBytes, [UInt8](raw))
+    }
+
+    /// Real XD .gtx sample roundtrips via the registry. Pixel equality on
+    /// decode-re-decode is asserted in GXTextureTests for every format; here
+    /// we just verify the registry wires decode→encode correctly and emits
+    /// both the "png" and "json" keys.
+    func testRegistryGTXArtifactsAndRebuilds() throws {
+        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/world_map/menu_038.gtx"
+        guard FileManager.default.fileExists(atPath: path),
+              let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+            throw XCTSkip("menu_038.gtx not available")
+        }
+
+        let registry = FileFormatRegistry.builtins()
+        let handler = try XCTUnwrap(registry.handler(for: "gtx"))
+
+        let input = GoDData(byteStream: [UInt8](raw), byteOrder: .big)
+        let artifacts = try handler.dump(input)
+        XCTAssertEqual(Set(artifacts.keys), ["png", "json"])
+        XCTAssertGreaterThan(artifacts["png"]!.length, 0)
+        XCTAssertGreaterThan(artifacts["json"]!.length, 0)
+
+        let rebuilt = try handler.build(artifacts)
+        XCTAssertGreaterThan(rebuilt.length, 0)
     }
 
     /// A binary MSG routed through the registry should dump to a JSON

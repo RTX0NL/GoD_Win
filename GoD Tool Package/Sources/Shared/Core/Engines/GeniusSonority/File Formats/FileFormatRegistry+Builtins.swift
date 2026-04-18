@@ -13,6 +13,8 @@ public extension FileFormatRegistry {
     static func builtins() -> FileFormatRegistry {
         var r = FileFormatRegistry()
         r.register("msg", MSGFile.self)
+        r.register("fnt", GSFont.self)
+        r.register("gtx", GTXFile.self)
         return r
     }
 }
