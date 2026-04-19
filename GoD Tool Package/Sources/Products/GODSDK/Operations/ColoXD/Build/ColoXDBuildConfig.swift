@@ -66,6 +66,16 @@ extension ColoXD {
                 outputFile: File,
                 overwrite: Bool
             )
+            case buildATXs(
+                projectsFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
+            case buildATX(
+                projectFolder: Folder,
+                outputFile: File,
+                overwrite: Bool
+            )
         }
 
         let operations: [OperationConfig<Operations>]

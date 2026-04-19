@@ -50,6 +50,16 @@ extension ColoXD {
                 overwrite: Bool,
                 variant: String        // "xd" or "colo"
             )
+            case dumpATXs(
+                atxFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
+            case dumpATX(
+                atxFile: File,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
         }
         
         let operations: [OperationConfig<Operations>]

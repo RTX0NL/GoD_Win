@@ -164,24 +164,20 @@ final class FileFormatRegistryTests: XCTestCase {
         let handler = try XCTUnwrap(registry.handler(for: "atx"))
 
         let input = GoDData(byteStream: [UInt8](raw), byteOrder: .big)
+        // Registry dumps use the default name "atx"; the JSON key ends in
+        // ".atx.json" so we can find it even without knowing the prefix.
         let artifacts = try handler.dump(input)
+        let jsonKey = artifacts.keys.first { $0.path.hasSuffix(".atx.json") }
+        XCTAssertNotNil(jsonKey, "expected <name>.atx.json key")
 
-        // Must always include the metadata JSON.
-        XCTAssertNotNil(artifacts[ATXFile.animationJSON])
-
-        // Every non-JSON artifact is a frame PNG. airmd.atx has 3 frames.
-        let pngKeys = artifacts.keys.filter { $0 != ATXFile.animationJSON }
+        let pngKeys = artifacts.keys.filter { $0.path.hasSuffix(".png") }
         XCTAssertEqual(pngKeys.count, 3, "airmd.atx has 3 sprite frames")
-        for key in pngKeys {
-            XCTAssertTrue(key.path.hasSuffix(".png"),
-                          "frame artifact '\(key.path)' should be a PNG")
-        }
 
-        // Build roundtrip: artifacts → binary should re-parse cleanly.
+        // Build roundtrip: artifacts → binary → re-parse cleanly.
         let rebuilt = try handler.build(artifacts)
         XCTAssertGreaterThan(rebuilt.length, 0)
         let reparsed = try ATXFile(binary: rebuilt)
-        XCTAssertEqual(reparsed.frames.count, 3)
+        XCTAssertEqual(reparsed.framePixels.count, 3)
         XCTAssertEqual(reparsed.animations.count, 2)
     }
 

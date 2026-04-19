@@ -7,11 +7,24 @@
 //  replace their pixels, and the rebuild will pack everything into a new
 //  sheet and emit a fresh binary.
 //
-//  File survey (836 XD poke_dance ATX files): every frame is a single
+//  Filenames incorporate a user-visible base name (e.g. "absol") so when
+//  many ATX files share an output folder, their artifacts don't collide.
+//  The default name is "atx"; set `name` before reading `outputs` or
+//  construct via the convenience init(binary:name:) to choose a stem.
+//
+//  Output layout (all in one folder, no nesting):
+//
+//      <name>.atx.json
+//      <name>_frame_000.png
+//      <name>_frame_001.png
+//      ...
+//
+//  File survey of 836 XD poke_dance ATX files: every frame is a single
 //  sprite rect (count=1), the 16 trailing bytes of each 28-byte record
-//  are always zero, and the trailing section after the inner texture is
-//  always empty. Those facts let us drop a lot of declarative metadata
-//  and compute it on rebuild.
+//  are always zero, the trailing section after the inner texture is
+//  always empty, and 92% of files use the same (xOffset, yOffset) on
+//  every frame. The JSON stores offsets at the top level with
+//  per-frame overrides for the 8% that differ.
 //
 
 import Foundation
@@ -20,43 +33,72 @@ import GTX
 
 public struct ATXFile: FileFormat {
     public static let formatName = "atx"
-    public static let animationJSON = File("animation.json")
 
-    /// One sprite frame in the ATX's frame table. Rebuild packs these into
-    /// a fresh inner texture sheet (vertical strip) so the on-disc
-    /// dimensions are whatever the frames dictate.
-    public struct Frame {
-        /// PNG filename (relative to the JSON file). Kept as `File` so the
-        /// on-disc outputs dict key and the JSON reference agree.
-        public var image: File
-        public var xOffset: Int16
-        public var yOffset: Int16
-        /// Decoded pixels. Not persisted in JSON; reconstructed from the
-        /// matching PNG artifact on init(outputs:).
-        public var pixels: GoDImage
+    /// Base name for the emitted artifacts. Set this before reading
+    /// `outputs` if you want the filenames to reflect the source file's
+    /// name (e.g. "absol" → "absol.atx.json", "absol_frame_000.png").
+    /// init(outputs:) recovers it from the JSON key.
+    public var name: String = "atx"
 
-        public init(image: File, xOffset: Int16, yOffset: Int16, pixels: GoDImage) {
-            self.image = image
+    /// Screen-space anchor shared by every frame (Genius-Sonority-specific:
+    /// typically something like (-32, -64) to center a 64×64 sprite on the
+    /// bottom-middle of the character's position). Individual frames may
+    /// override via `frameOverrides`.
+    public var xOffset: Int16
+    public var yOffset: Int16
+
+    /// Per-frame offset overrides, indexed by frame filename. Empty for
+    /// the 92% of files where every frame shares the same anchor.
+    public var frameOverrides: [File: FrameOverride]
+
+    /// Decoded sprite frames, in order. The PNG sidecar for each lives at
+    /// `<name>_frame_NNN.png`.
+    public var framePixels: [GoDImage]
+
+    public var textureFormat: GXTextureFormat
+    public var paletteFormat: GXPaletteFormat?
+    public var animations: [Animation]
+
+    public init(
+        name: String = "atx",
+        textureFormat: GXTextureFormat,
+        paletteFormat: GXPaletteFormat?,
+        xOffset: Int16,
+        yOffset: Int16,
+        frameOverrides: [File: FrameOverride] = [:],
+        framePixels: [GoDImage],
+        animations: [Animation]
+    ) {
+        self.name = name
+        self.textureFormat = textureFormat
+        self.paletteFormat = paletteFormat
+        self.xOffset = xOffset
+        self.yOffset = yOffset
+        self.frameOverrides = frameOverrides
+        self.framePixels = framePixels
+        self.animations = animations
+    }
+
+    public struct FrameOverride: Codable, Equatable {
+        public var xOffset: Int16?
+        public var yOffset: Int16?
+        public init(xOffset: Int16? = nil, yOffset: Int16? = nil) {
             self.xOffset = xOffset
             self.yOffset = yOffset
-            self.pixels = pixels
         }
     }
 
-    /// One step in an animation's keyframe stream.
     public struct AnimationStep: Codable, Equatable {
         /// When set, wait this many ticks before advancing (bit 30).
         public var timing: UInt8?
-        /// When set, switch to this frame file (bit 31). Indexes into the
-        /// `frames` array at resolve time.
+        /// When set, switch to this frame file (bit 31).
         public var frame: File?
         /// When set, overrides the displayed sprite's width (bit 29).
         public var rectWidth: UInt8?
         /// When set, overrides the displayed sprite's height (bit 29).
         public var rectHeight: UInt8?
         /// When set, this step ends the animation by looping back to the
-        /// byte position in the stream identified by `loopTarget`
-        /// (bit 28). Zero restarts the stream from the beginning.
+        /// byte position in the stream identified by `loopTarget` (bit 28).
         public var loopTarget: Int?
 
         public init(
@@ -79,26 +121,30 @@ public struct ATXFile: FileFormat {
         public init(steps: [AnimationStep]) { self.steps = steps }
     }
 
-    public var textureFormat: GXTextureFormat
-    public var paletteFormat: GXPaletteFormat?
-    public var frames: [Frame]
-    public var animations: [Animation]
+    // MARK: - Derived artifact filenames
 
-    public init(
-        textureFormat: GXTextureFormat,
-        paletteFormat: GXPaletteFormat?,
-        frames: [Frame],
-        animations: [Animation]
-    ) {
-        self.textureFormat = textureFormat
-        self.paletteFormat = paletteFormat
-        self.frames = frames
-        self.animations = animations
+    /// Primary JSON artifact filename, e.g. `absol.atx.json`.
+    public var jsonFilename: File { File("\(name).atx.json") }
+
+    /// Name of the PNG for the given frame index, e.g. `absol_frame_002.png`.
+    public func framePNGName(index: Int) -> File {
+        File("\(name)_frame_\(String(format: "%03d", index)).png")
+    }
+
+    /// Regex-light matcher for frame PNG filenames belonging to this file.
+    private static func parseFrameIndex(_ path: String, prefix: String) -> Int? {
+        guard path.hasPrefix(prefix), path.hasSuffix(".png") else { return nil }
+        let middle = path.dropFirst(prefix.count).dropLast(".png".count)
+        return Int(middle)
     }
 
     // MARK: - Binary
 
     public init(binary: GoDData) throws {
+        try self.init(binary: binary, name: "atx")
+    }
+
+    public init(binary: GoDData, name: String) throws {
         let decoder = GXTextureDecoder()
         guard let decoded = decoder.decodeATX(data: binary) else {
             throw ATXFile.invalidFileError
@@ -106,83 +152,97 @@ public struct ATXFile: FileFormat {
         let meta = decoded.metadata
         let sheet = decoded.image
 
-        // Parse the frame table into sprite rect records. We treat count=1
-        // as the contract — the asm supports count>1 compositing but no
-        // observed XD file uses it, and splitting multi-sprite frames into
-        // separate PNGs would lose the composition.
-        //
-        // The frame-table header is followed by zero-padded slack, and that
-        // slack sometimes happens to look like valid (count=1) entries.
-        // Cap the parse at the highest frame index any animation references.
+        // Parsing of the frame table is bounded by the max frameDelta
+        // referenced in animations — the frame-table footer is zero-padded
+        // slack that sometimes looks like valid header entries.
         let maxReferencedIndex = meta.animations
             .flatMap { $0.frames.compactMap { $0.frameDelta } }
             .map { Int($0) }
             .max() ?? -1
         let frameCount = maxReferencedIndex + 1
+
         let spriteRects = try ATXFile.parseFrameTable(meta.frameTable, expectedCount: frameCount)
 
-        // Crop each sprite rect out of the sheet into its own GoDImage.
-        var frames: [Frame] = []
-        frames.reserveCapacity(spriteRects.count)
-        for (i, rect) in spriteRects.enumerated() {
-            let pixels = ATXFile.crop(sheet, rect: rect)
-            let fileName = "frame_\(String(format: "%03d", i)).png"
-            frames.append(Frame(
-                image: File(fileName),
-                xOffset: rect.xOffset,
-                yOffset: rect.yOffset,
-                pixels: pixels
-            ))
+        // Default offset: the mode across all frames. Most files have the
+        // same value for every frame; record per-frame overrides for the
+        // ones that don't match the default.
+        let (defaultXY, overrides) = ATXFile.pickDefaultOffsets(
+            spriteRects: spriteRects,
+            name: name
+        )
+
+        var pixels = [GoDImage]()
+        pixels.reserveCapacity(spriteRects.count)
+        for rect in spriteRects {
+            pixels.append(ATXFile.crop(sheet, rect: rect))
         }
 
-        // Convert animations: replace `frameDelta` (index) with a filename.
-        // The engine reads frameDelta as the absolute frame index (not an
-        // increment) — verified in drawAndUpdate.s where it's stored
-        // directly to CAnt+0x28 and used as `frameTable[frameDelta*4]`.
-        let animations = meta.animations.map { animation -> Animation in
-            Animation(steps: animation.frames.map { frame -> AnimationStep in
-                let filename = frame.frameDelta.flatMap { idx -> File? in
-                    let i = Int(idx)
-                    guard i >= 0, i < frames.count else { return nil }
-                    return frames[i].image
+        // Rewrite animation frameDelta → frame filename reference.
+        let animations: [Animation] = meta.animations.map { wireAnim in
+            Animation(steps: wireAnim.frames.map { wf -> AnimationStep in
+                var frameFile: File? = nil
+                if let idx = wf.frameDelta.map({ Int($0) }), idx >= 0, idx < frameCount {
+                    let prefix = "\(name)_frame_"
+                    frameFile = File("\(prefix)\(String(format: "%03d", idx)).png")
                 }
                 return AnimationStep(
-                    timing: frame.timing,
-                    frame: filename,
-                    rectWidth: frame.rectWidth,
-                    rectHeight: frame.rectHeight,
-                    loopTarget: frame.loopTarget
+                    timing: wf.timing,
+                    frame: frameFile,
+                    rectWidth: wf.rectWidth,
+                    rectHeight: wf.rectHeight,
+                    loopTarget: wf.loopTarget
                 )
             })
         }
 
         self.init(
+            name: name,
             textureFormat: meta.texture.format,
             paletteFormat: meta.texture.paletteFormat,
-            frames: frames,
+            xOffset: defaultXY.x,
+            yOffset: defaultXY.y,
+            frameOverrides: overrides,
+            framePixels: pixels,
             animations: animations
         )
     }
 
     public var binaryData: GoDData {
         get throws {
-            // 1. Pack all frame sprites into a fresh sheet image (vertical
-            //    strip layout — matches the observed 64×(N*64) pattern for
-            //    poke_dance files).
-            let packed = try ATXFile.packFrames(frames)
+            guard !framePixels.isEmpty else {
+                throw FileFormatErrors.failedToEncode(
+                    format: ATXFile.formatName,
+                    target: "at least one frame is required"
+                )
+            }
 
-            // 2. Build the frame table bytes: N header entries (count=1,
-            //    relativeOffset), then N 28-byte records (s,t,w,h,xoff,yoff,
-            //    + 16 zero bytes).
+            // 1. Pack frame pixels into a fresh sheet.
+            let packed = try ATXFile.packFrames(framePixels)
+
+            // 2. Compute per-frame (xOffset, yOffset) using defaults + overrides.
+            var xyOffsets: [(Int16, Int16)] = []
+            xyOffsets.reserveCapacity(framePixels.count)
+            for i in 0..<framePixels.count {
+                let key = framePNGName(index: i)
+                if let ov = frameOverrides[key] {
+                    xyOffsets.append((ov.xOffset ?? xOffset, ov.yOffset ?? yOffset))
+                } else {
+                    xyOffsets.append((xOffset, yOffset))
+                }
+            }
+
+            // 3. Build the frame-table bytes.
             let frameTableBytes = ATXFile.buildFrameTable(
                 rects: packed.rects,
-                xyOffsets: frames.map { ($0.xOffset, $0.yOffset) }
+                xyOffsets: xyOffsets
             )
 
-            // 3. Translate animations back into the low-level ATXAnimation
-            //    stream. AnimationStep.frame (filename) → frameDelta index.
+            // 4. Translate animations → ATXAnimation wire form. Resolve
+            //    each step's `frame` filename back to the frame index.
             let filenameToIndex: [File: Int] = Dictionary(
-                uniqueKeysWithValues: frames.enumerated().map { ($1.image, $0) }
+                uniqueKeysWithValues: (0..<framePixels.count).map {
+                    (framePNGName(index: $0), $0)
+                }
             )
             var wireAnimations = [ATXAnimation]()
             var cursor = 0x10 + animations.count * 2
@@ -191,11 +251,11 @@ public struct ATXFile: FileFormat {
                 wireFrames.reserveCapacity(animation.steps.count)
                 for step in animation.steps {
                     var frameDelta: UInt8? = nil
-                    if let filename = step.frame {
-                        guard let idx = filenameToIndex[filename] else {
+                    if let f = step.frame {
+                        guard let idx = filenameToIndex[f] else {
                             throw FileFormatErrors.failedToEncode(
                                 format: ATXFile.formatName,
-                                target: "unknown frame reference '\(filename.path)'"
+                                target: "unknown frame reference '\(f.path)'"
                             )
                         }
                         frameDelta = UInt8(clamping: idx)
@@ -218,7 +278,7 @@ public struct ATXFile: FileFormat {
             let frameTableOffset = cursor
             let innerTextureOffset = frameTableOffset + frameTableBytes.count
 
-            // 4. Build the inner GTX texture from the packed sheet.
+            // 5. Build the inner GTX texture from the packed sheet.
             let gxMetadata = GXTextureMetadata(
                 width: packed.image.width,
                 height: packed.image.height,
@@ -240,11 +300,6 @@ public struct ATXFile: FileFormat {
                 trailing: Data()
             )
 
-            // Pre-pack the ATXMetadata.frameTable already contains the final
-            // bytes, so encodeATX just concatenates. The inner sheet goes
-            // through `encode` again inside encodeATX — pass a placeholder
-            // image that decodes from `packed.image` losslessly by using the
-            // same encode path.
             guard let out = decoder.encodeATX(image: packed.image, metadata: metadata) else {
                 throw ATXFile.failedToEncodeError(target: "atx")
             }
@@ -255,9 +310,17 @@ public struct ATXFile: FileFormat {
     // MARK: - Outputs / JSON
 
     public init(outputs: [File: GoDData]) throws {
-        guard let jsonData = outputs[ATXFile.animationJSON] else {
-            throw ATXFile.missingOutputError(key: ATXFile.animationJSON.path)
+        // Recover the name stem from whichever *.atx.json key is present.
+        let suffix = ".atx.json"
+        guard let jsonKey = outputs.keys.first(where: { $0.path.hasSuffix(suffix) }) else {
+            throw ATXFile.missingOutputError(key: "*.atx.json")
         }
+        let stem = String(jsonKey.path.dropLast(suffix.count))
+        guard !stem.isEmpty else {
+            throw ATXFile.invalidFileError
+        }
+
+        let jsonData = outputs[jsonKey]!
         let dto: DTO
         do {
             dto = try JSONDecoder().decode(DTO.self, from: jsonData.data)
@@ -265,43 +328,68 @@ public struct ATXFile: FileFormat {
             throw ATXFile.invalidFileError
         }
 
-        // Resolve each frame definition to (PNG bytes → GoDImage).
-        var frames: [Frame] = []
-        frames.reserveCapacity(dto.frames.count)
-        for frameDTO in dto.frames {
-            let imageKey = File(frameDTO.image)
-            guard let pngData = outputs[imageKey] else {
-                throw ATXFile.missingOutputError(key: frameDTO.image)
-            }
-            guard let image = GoDImage.fromPNG(pngData) else {
-                throw ATXFile.invalidFileError
-            }
-            frames.append(Frame(
-                image: imageKey,
-                xOffset: frameDTO.xOffset,
-                yOffset: frameDTO.yOffset,
-                pixels: image
-            ))
+        // Gather frame PNGs for this stem. Sorted alphabetically — zero-
+        // padded indices guarantee sort order = frame order.
+        let framePrefix = "\(stem)_frame_"
+        let frameKeys: [(index: Int, key: File)] = outputs.keys.compactMap { k in
+            guard let idx = ATXFile.parseFrameIndex(k.path, prefix: framePrefix) else { return nil }
+            return (idx, k)
+        }.sorted { $0.index < $1.index }
+
+        guard !frameKeys.isEmpty else {
+            throw ATXFile.missingOutputError(key: "\(framePrefix)NNN.png")
         }
 
-        let animations = dto.animations.map { Animation(steps: $0.steps) }
+        var framePixels = [GoDImage]()
+        framePixels.reserveCapacity(frameKeys.count)
+        for (_, key) in frameKeys {
+            guard let png = outputs[key] else {
+                throw ATXFile.missingOutputError(key: key.path)
+            }
+            guard let image = GoDImage.fromPNG(png) else {
+                throw ATXFile.invalidFileError
+            }
+            framePixels.append(image)
+        }
+
+        let overrides: [File: FrameOverride] = Dictionary(
+            uniqueKeysWithValues: dto.frameOverrides.map { override in
+                (File(override.frame), FrameOverride(
+                    xOffset: override.xOffset,
+                    yOffset: override.yOffset
+                ))
+            }
+        )
 
         self.init(
+            name: stem,
             textureFormat: dto.textureFormat,
             paletteFormat: dto.paletteFormat,
-            frames: frames,
-            animations: animations
+            xOffset: dto.xOffset,
+            yOffset: dto.yOffset,
+            frameOverrides: overrides,
+            framePixels: framePixels,
+            animations: dto.animations.map { Animation(steps: $0.steps) }
         )
     }
 
     public var outputs: [File: GoDData] {
         get throws {
+            var overridesDTO = [FrameOverrideDTO]()
+            for (file, ov) in frameOverrides.sorted(by: { $0.key.path < $1.key.path }) {
+                overridesDTO.append(FrameOverrideDTO(
+                    frame: file.path,
+                    xOffset: ov.xOffset,
+                    yOffset: ov.yOffset
+                ))
+            }
+
             let dto = DTO(
                 textureFormat: textureFormat,
                 paletteFormat: paletteFormat,
-                frames: frames.map {
-                    FrameDTO(image: $0.image.path, xOffset: $0.xOffset, yOffset: $0.yOffset)
-                },
+                xOffset: xOffset,
+                yOffset: yOffset,
+                frameOverrides: overridesDTO,
                 animations: animations.map { AnimationDTO(steps: $0.steps) }
             )
             let encoder = JSONEncoder()
@@ -309,13 +397,13 @@ public struct ATXFile: FileFormat {
             let jsonData: Data = try encoder.encode(dto)
 
             var artifacts: [File: GoDData] = [
-                ATXFile.animationJSON: GoDData(data: jsonData, byteOrder: .big)
+                jsonFilename: GoDData(data: jsonData, byteOrder: .big)
             ]
-            for frame in frames {
-                guard let png = frame.pixels.pngData() else {
-                    throw ATXFile.failedToEncodeError(target: "PNG for \(frame.image.path)")
+            for (i, image) in framePixels.enumerated() {
+                guard let png = image.pngData() else {
+                    throw ATXFile.failedToEncodeError(target: "PNG for frame \(i)")
                 }
-                artifacts[frame.image] = png
+                artifacts[framePNGName(index: i)] = png
             }
             return artifacts
         }
@@ -326,14 +414,16 @@ public struct ATXFile: FileFormat {
     private struct DTO: Codable {
         let textureFormat: GXTextureFormat
         let paletteFormat: GXPaletteFormat?
-        let frames: [FrameDTO]
+        let xOffset: Int16
+        let yOffset: Int16
+        let frameOverrides: [FrameOverrideDTO]
         let animations: [AnimationDTO]
     }
 
-    private struct FrameDTO: Codable {
-        let image: String
-        let xOffset: Int16
-        let yOffset: Int16
+    private struct FrameOverrideDTO: Codable {
+        let frame: String
+        let xOffset: Int16?
+        let yOffset: Int16?
     }
 
     private struct AnimationDTO: Codable {
@@ -342,8 +432,6 @@ public struct ATXFile: FileFormat {
 
     // MARK: - Frame-table parsing
 
-    /// One decoded sprite-rect record. We assume `count == 1` per the file
-    /// survey; multi-sprite frames would need composite handling.
     struct SpriteRect {
         let s: UInt16
         let t: UInt16
@@ -353,11 +441,6 @@ public struct ATXFile: FileFormat {
         let yOffset: Int16
     }
 
-    /// Parses the first `expectedCount` header entries from `raw` and returns
-    /// the sprite rects they reference. The bound is provided externally
-    /// (derived from animation references) because the frame-table footer is
-    /// zero-padded slack that occasionally happens to look like a valid
-    /// header entry.
     private static func parseFrameTable(_ raw: Data, expectedCount: Int) throws -> [SpriteRect] {
         let bytes = [UInt8](raw)
         var rects: [SpriteRect] = []
@@ -400,7 +483,42 @@ public struct ATXFile: FileFormat {
         return rects
     }
 
-    /// Crops a sprite rect out of the sheet image. Assumes RGBA8888 pixels.
+    /// Picks the most common (xOffset, yOffset) across the sprite rects as
+    /// the default, and records per-frame overrides for anything that
+    /// differs.
+    private static func pickDefaultOffsets(
+        spriteRects: [SpriteRect],
+        name: String
+    ) -> (default: (x: Int16, y: Int16), overrides: [File: FrameOverride]) {
+        if spriteRects.isEmpty { return ((0, 0), [:]) }
+        // Encode (x, y) as Int32 for hashability.
+        var histogram: [Int32: Int] = [:]
+        func encode(_ x: Int16, _ y: Int16) -> Int32 {
+            Int32(UInt16(bitPattern: x)) << 16 | Int32(UInt16(bitPattern: y))
+        }
+        func decode(_ v: Int32) -> (Int16, Int16) {
+            (Int16(bitPattern: UInt16(truncatingIfNeeded: v >> 16)),
+             Int16(bitPattern: UInt16(truncatingIfNeeded: v & 0xFFFF)))
+        }
+        for rect in spriteRects {
+            histogram[encode(rect.xOffset, rect.yOffset), default: 0] += 1
+        }
+        let modeEncoded = histogram.max(by: { $0.value < $1.value })?.key ?? 0
+        let (modeX, modeY) = decode(modeEncoded)
+
+        var overrides: [File: FrameOverride] = [:]
+        let prefix = "\(name)_frame_"
+        for (i, rect) in spriteRects.enumerated() {
+            if rect.xOffset == modeX && rect.yOffset == modeY { continue }
+            let key = File("\(prefix)\(String(format: "%03d", i)).png")
+            overrides[key] = FrameOverride(
+                xOffset: rect.xOffset != modeX ? rect.xOffset : nil,
+                yOffset: rect.yOffset != modeY ? rect.yOffset : nil
+            )
+        }
+        return ((modeX, modeY), overrides)
+    }
+
     private static func crop(_ sheet: GoDImage, rect: SpriteRect) -> GoDImage {
         let srcW = sheet.width
         let srcBytes = sheet.pixels.rawBytes
@@ -431,14 +549,12 @@ public struct ATXFile: FileFormat {
 
     // MARK: - Rebuild
 
-    /// Simple vertical-strip packer. Matches the observed layout for every
-    /// poke_dance ATX (64×192 sheet = three 64×64 sprites stacked).
-    private static func packFrames(_ frames: [Frame]) throws -> (image: GoDImage, rects: [SpriteRect]) {
+    private static func packFrames(_ frames: [GoDImage]) throws -> (image: GoDImage, rects: [SpriteRect]) {
         guard !frames.isEmpty else {
             throw FileFormatErrors.failedToEncode(format: formatName, target: "no frames to pack")
         }
-        let sheetW = frames.map { $0.pixels.width }.max() ?? 0
-        let sheetH = frames.map { $0.pixels.height }.reduce(0, +)
+        let sheetW = frames.map { $0.width }.max() ?? 0
+        let sheetH = frames.map { $0.height }.reduce(0, +)
         guard sheetW > 0 && sheetH > 0 else {
             throw FileFormatErrors.failedToEncode(format: formatName, target: "zero-size sheet")
         }
@@ -448,9 +564,9 @@ public struct ATXFile: FileFormat {
         rects.reserveCapacity(frames.count)
         var yCursor = 0
         for frame in frames {
-            let w = frame.pixels.width
-            let h = frame.pixels.height
-            let src = frame.pixels.pixels.rawBytes
+            let w = frame.width
+            let h = frame.height
+            let src = frame.pixels.rawBytes
             for y in 0..<h {
                 let dstRow = (yCursor + y) * sheetW * 4
                 let srcRow = y * w * 4
@@ -466,8 +582,8 @@ public struct ATXFile: FileFormat {
                 t: UInt16(yCursor),
                 width: UInt16(w),
                 height: UInt16(h),
-                xOffset: frame.xOffset,
-                yOffset: frame.yOffset
+                xOffset: 0,  // filled in by caller
+                yOffset: 0
             ))
             yCursor += h
         }
@@ -480,8 +596,7 @@ public struct ATXFile: FileFormat {
         return (sheet, rects)
     }
 
-    /// Lays out header entries (count=1 each, sequential relOffs) + 28-byte
-    /// records in one contiguous blob.
+    /// Lays out N header entries (count=1 each) followed by N 28-byte records.
     private static func buildFrameTable(rects: [SpriteRect], xyOffsets: [(Int16, Int16)]) -> [UInt8] {
         let n = rects.count
         let headerSize = n * 4
@@ -489,22 +604,20 @@ public struct ATXFile: FileFormat {
         var out = [UInt8](repeating: 0, count: headerSize + n * 28)
         for (i, rect) in rects.enumerated() {
             let relOff = recordsStart + i * 28
-            // Header entry
-            out[i*4 + 0] = 0x00                         // count hi
-            out[i*4 + 1] = 0x01                         // count lo = 1
+            out[i*4 + 0] = 0x00
+            out[i*4 + 1] = 0x01
             out[i*4 + 2] = UInt8((relOff >> 8) & 0xFF)
             out[i*4 + 3] = UInt8(relOff & 0xFF)
-            // Record body (first 12 bytes; remaining 16 already zero)
             let r = relOff
             let (xOff, yOff) = xyOffsets[i]
             let xOffU = UInt16(bitPattern: xOff)
             let yOffU = UInt16(bitPattern: yOff)
-            out[r +  0] = UInt8((rect.s       >> 8) & 0xFF); out[r +  1] = UInt8(rect.s & 0xFF)
-            out[r +  2] = UInt8((rect.t       >> 8) & 0xFF); out[r +  3] = UInt8(rect.t & 0xFF)
-            out[r +  4] = UInt8((rect.width   >> 8) & 0xFF); out[r +  5] = UInt8(rect.width & 0xFF)
-            out[r +  6] = UInt8((rect.height  >> 8) & 0xFF); out[r +  7] = UInt8(rect.height & 0xFF)
-            out[r +  8] = UInt8((xOffU        >> 8) & 0xFF); out[r +  9] = UInt8(xOffU & 0xFF)
-            out[r + 10] = UInt8((yOffU        >> 8) & 0xFF); out[r + 11] = UInt8(yOffU & 0xFF)
+            out[r +  0] = UInt8((rect.s      >> 8) & 0xFF); out[r +  1] = UInt8(rect.s & 0xFF)
+            out[r +  2] = UInt8((rect.t      >> 8) & 0xFF); out[r +  3] = UInt8(rect.t & 0xFF)
+            out[r +  4] = UInt8((rect.width  >> 8) & 0xFF); out[r +  5] = UInt8(rect.width & 0xFF)
+            out[r +  6] = UInt8((rect.height >> 8) & 0xFF); out[r +  7] = UInt8(rect.height & 0xFF)
+            out[r +  8] = UInt8((xOffU       >> 8) & 0xFF); out[r +  9] = UInt8(xOffU & 0xFF)
+            out[r + 10] = UInt8((yOffU       >> 8) & 0xFF); out[r + 11] = UInt8(yOffU & 0xFF)
         }
         return out
     }

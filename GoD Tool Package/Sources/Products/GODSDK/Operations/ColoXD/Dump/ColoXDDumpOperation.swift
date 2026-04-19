@@ -193,8 +193,77 @@ extension ColoXD {
                     fileSystem: fileSystem,
                     logger: logger
                 )
+
+            case let .dumpATXs(atxFolder, outputFolder, overwrite):
+                var atxFiles = [(file: File, relativeFolder: Folder)]()
+                func collect(_ folder: Folder, _ relative: Folder) {
+                    guard let contents = fileSystem.inspectFolder(at: folder) else { return }
+                    for file in contents.files where file.fileType == "atx" {
+                        atxFiles.append((file, relative))
+                    }
+                    for sub in contents.subFolders {
+                        collect(sub, relative.folder(sub.folderName))
+                    }
+                }
+                collect(atxFolder, Folder("."))
+                logger?.log(.info("Found \(atxFiles.count) ATX files"))
+
+                for (atxFile, relative) in atxFiles {
+                    let name = atxFile.fileName.withoutExtensions
+                    let projectFolder = outputFolder.folder(relative.path).folder(name)
+                    try dumpATX(
+                        atxFile: atxFile,
+                        outputFolder: projectFolder,
+                        overwrite: overwrite,
+                        fileSystem: fileSystem,
+                        logger: logger
+                    )
+                }
+
+            case let .dumpATX(atxFile, outputFolder, overwrite):
+                // Single-file variant also creates a per-ATX subfolder under
+                // `outputFolder` to keep the layout consistent with the batch
+                // op and avoid collisions when the same output folder is
+                // reused across files.
+                let name = atxFile.fileName.withoutExtensions
+                let projectFolder = outputFolder.folder(name)
+                try dumpATX(
+                    atxFile: atxFile,
+                    outputFolder: projectFolder,
+                    overwrite: overwrite,
+                    fileSystem: fileSystem,
+                    logger: logger
+                )
             }
         }
+    }
+
+    /// Parses a single `.atx` file and writes its `<name>.atx.json` +
+    /// frame PNGs into `outputFolder`. Shared between batch (`dumpATXs`)
+    /// and single-file (`dumpATX`) ops.
+    private static func dumpATX(
+        atxFile: File,
+        outputFolder: Folder,
+        overwrite: Bool,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws {
+        guard let data = fileSystem.readFile(at: atxFile) else {
+            throw FSTErrors.fileNotFound(atxFile, .init())
+        }
+        let name = atxFile.fileName.withoutExtensions
+        let parsed: ATXFile
+        do {
+            parsed = try ATXFile(binary: data, name: name)
+        } catch {
+            logger?.log(.warning("Failed to parse ATX file: \(atxFile.fileName) — \(error)"))
+            return
+        }
+        fileSystem.createFolder(at: outputFolder, overwrite: overwrite)
+        for (relative, bytes) in try parsed.outputs {
+            fileSystem.writeFile(bytes, at: outputFolder.file(relative.path), overwrite: overwrite)
+        }
+        logger?.log(.info("  \(name): \(parsed.framePixels.count) frames, \(parsed.animations.count) animations → \(outputFolder.path)"))
     }
 
     private static func parseMSGVariant(_ value: String) -> MSGFile.Variant {
@@ -228,8 +297,8 @@ extension ColoXD {
         }
         fileSystem.createFolder(at: outputFolder, overwrite: overwrite)
         let artifacts = try parsed.outputs
-        guard let json = artifacts["json"] else {
-            throw MSGFile.missingOutputError(key: "json")
+        guard let json = artifacts[MSGFile.messagesJSON] else {
+            throw MSGFile.missingOutputError(key: MSGFile.messagesJSON.path)
         }
         let outputFile = outputFolder.file("\(name).json")
         fileSystem.writeFile(json, at: outputFile, overwrite: overwrite)

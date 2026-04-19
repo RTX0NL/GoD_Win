@@ -196,6 +196,35 @@ extension ColoXD {
                     fileSystem: fileSystem,
                     logger: logger
                 )
+
+            case let .buildATXs(projectsFolder, outputFolder, overwrite):
+                // Each ATX lives in its own subfolder (<name>/) containing
+                // <name>.atx.json plus its frame PNGs.
+                guard let meta = fileSystem.inspectFolder(at: projectsFolder) else {
+                    logger?.log(.warning("ATX projects folder not found: \(projectsFolder.path)"))
+                    break
+                }
+                logger?.log(.info("Building \(meta.subFolders.count) ATX projects"))
+                for project in meta.subFolders {
+                    let name = project.folderName
+                    let outputFile = outputFolder.file("\(name).atx")
+                    try buildATX(
+                        projectFolder: project,
+                        outputFile: outputFile,
+                        overwrite: overwrite,
+                        fileSystem: fileSystem,
+                        logger: logger
+                    )
+                }
+
+            case let .buildATX(projectFolder, outputFile, overwrite):
+                try buildATX(
+                    projectFolder: projectFolder,
+                    outputFile: outputFile,
+                    overwrite: overwrite,
+                    fileSystem: fileSystem,
+                    logger: logger
+                )
             }
         }
     }
@@ -210,10 +239,33 @@ extension ColoXD {
         guard let json = fileSystem.readFile(at: jsonFile) else {
             throw FSTErrors.fileNotFound(jsonFile, .init())
         }
-        let file = try MSGFile(outputs: ["json": json])
+        let file = try MSGFile(outputs: [MSGFile.messagesJSON: json])
         let binary = try file.binaryData
         fileSystem.writeFile(binary, at: outputFile, overwrite: overwrite)
         logger?.log(.info("  \(jsonFile.fileName): \(file.entries.count) entries → \(outputFile.fileName)"))
+    }
+
+    /// Reads every file in `projectFolder` into an outputs dict and feeds it
+    /// through `ATXFile.init(outputs:).binaryData`.
+    private static func buildATX(
+        projectFolder: Folder,
+        outputFile: File,
+        overwrite: Bool,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws {
+        guard let meta = fileSystem.inspectFolder(at: projectFolder) else {
+            throw FSTErrors.fileNotFound(projectFolder.file("."), .init())
+        }
+        var outputs: [File: GoDData] = [:]
+        for file in meta.files {
+            guard let data = fileSystem.readFile(at: file) else { continue }
+            outputs[File(file.fileName)] = data
+        }
+        let atx = try ATXFile(outputs: outputs)
+        let binary = try atx.binaryData
+        fileSystem.writeFile(binary, at: outputFile, overwrite: overwrite)
+        logger?.log(.info("  \(atx.name): \(atx.framePixels.count) frames → \(outputFile.fileName)"))
     }
 
     // MARK: - GSfsys.toc building
