@@ -29,22 +29,51 @@ import GTX
 /// each texture is extracted as a PNG and a `GSWTextureRef` records its
 /// position within its containing tag's payload so the build path can splice
 /// the re-encoded bytes back at the same offset.
-public struct GSWFile: Codable, Equatable {
+public struct GSWFile: FileFormat {
     public static let formatName = "gsw"
 
     public var header: GSWHeader
     public var tags: [GSWTag]
+    /// Decoded textures, parallel to `allTextureRefs`. Carried alongside the
+    /// metadata so the FileFormat outputs/binaryData round-trip stays
+    /// self-contained. Excluded from Codable + Equatable.
+    public var images: [GoDImage]
 
-    public init(header: GSWHeader, tags: [GSWTag]) {
+    public init(header: GSWHeader, tags: [GSWTag], images: [GoDImage] = []) {
         self.header = header
         self.tags = tags
+        self.images = images
     }
 
     /// Convenience: every embedded texture across every tag, in iteration order.
     public var allTextureRefs: [GSWTextureRef] {
         tags.flatMap(\.textures)
     }
+
+    // MARK: - Codable / Equatable (images excluded)
+
+    private enum CodingKeys: String, CodingKey { case header, tags }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let header = try container.decode(GSWHeader.self, forKey: .header)
+        let tags = try container.decode([GSWTag].self, forKey: .tags)
+        self.init(header: header, tags: tags, images: [])
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(header, forKey: .header)
+        try container.encode(tags, forKey: .tags)
+    }
+
+    public static func == (lhs: GSWFile, rhs: GSWFile) -> Bool {
+        lhs.header == rhs.header && lhs.tags == rhs.tags
+    }
 }
+
+extension GSWFile: Codable {}
+extension GSWFile: Equatable {}
 
 /// 48-byte (0x30) header. Field positions asm-confirmed by the read-position
 /// initialization in `Init__9FlashMenuFPvUl.s` (`li r0, 0x30; stw r0, 0x0(r31)`).

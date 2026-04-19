@@ -11,8 +11,33 @@ final class FileFormatRegistryTests: XCTestCase {
         XCTAssertTrue(registry.isRegistered("MSG"))   // case-insensitive
         XCTAssertTrue(registry.isRegistered("fnt"))
         XCTAssertTrue(registry.isRegistered("gtx"))
+        XCTAssertTrue(registry.isRegistered("gsw"))
         XCTAssertFalse(registry.isRegistered("unknown"))
         XCTAssertNotNil(registry.handler(for: "msg"))
+    }
+
+    /// Real .gsw sample roundtrips via the registry. Wrapper + non-texture
+    /// bytes already roundtrip byte-identically through GSWParser; here we
+    /// just verify the registry path emits the expected artifact set
+    /// (json + textures/*.png) and that build → bytes succeeds.
+    func testRegistryGSWArtifactsAndRebuilds() throws {
+        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/battle_disk_ge/battle_disk_ge 0012.gsw"
+        guard FileManager.default.fileExists(atPath: path),
+              let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+            throw XCTSkip("battle_disk_ge 0012.gsw not available")
+        }
+
+        let registry = FileFormatRegistry.builtins()
+        let handler = try XCTUnwrap(registry.handler(for: "gsw"))
+
+        let input = GoDData(byteStream: [UInt8](raw), byteOrder: .big)
+        let artifacts = try handler.dump(input)
+        XCTAssertNotNil(artifacts["json"])
+        let textureKeys = artifacts.keys.filter { $0.hasPrefix("textures/") }
+        XCTAssertEqual(textureKeys.count, 1, "small sample has 1 embedded texture")
+
+        let rebuilt = try handler.build(artifacts)
+        XCTAssertGreaterThan(rebuilt.length, 0)
     }
 
     /// Real XD .fnt sample roundtrips through the registry. The decoded
