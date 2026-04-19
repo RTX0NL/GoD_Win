@@ -15,6 +15,7 @@ public extension FileFormatRegistry {
         r.register("msg", MSGFile.self)
         r.register("fnt", GSFont.self)
         r.register("gtx", GTXFile.self)
+        r.register("atx", ATXFile.self)
         r.register("gsw", GSWFile.self)
         return r
     }

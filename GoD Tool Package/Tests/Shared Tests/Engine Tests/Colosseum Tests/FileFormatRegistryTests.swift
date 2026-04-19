@@ -12,6 +12,7 @@ final class FileFormatRegistryTests: XCTestCase {
         XCTAssertTrue(registry.isRegistered("fnt"))
         XCTAssertTrue(registry.isRegistered("gtx"))
         XCTAssertTrue(registry.isRegistered("gsw"))
+        XCTAssertTrue(registry.isRegistered("atx"))
         XCTAssertFalse(registry.isRegistered("unknown"))
         XCTAssertNotNil(registry.handler(for: "msg"))
     }
@@ -148,6 +149,29 @@ final class FileFormatRegistryTests: XCTestCase {
             fileSystem: fs
         )
         XCTAssertEqual(rebuilt.rawBytes, raw)
+    }
+
+    /// Real .atx sample roundtrips via the registry. The wrapper + inner
+    /// header are byte-identical; only the texture body re-quantizes (the
+    /// same guarantee GXTextureTests already asserts at the decoder level).
+    func testRegistryATXArtifactsAndRebuilds() throws {
+        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/poke_dance/airmd.atx"
+        guard FileManager.default.fileExists(atPath: path),
+              let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+            throw XCTSkip("airmd.atx not available")
+        }
+
+        let registry = FileFormatRegistry.builtins()
+        let handler = try XCTUnwrap(registry.handler(for: "atx"))
+
+        let input = GoDData(byteStream: [UInt8](raw), byteOrder: .big)
+        let artifacts = try handler.dump(input)
+        XCTAssertEqual(Set(artifacts.keys), ["png", "json"])
+        XCTAssertGreaterThan(artifacts["png"]!.length, 0)
+
+        let rebuilt = try handler.build(artifacts)
+        XCTAssertEqual(rebuilt.length, [UInt8](raw).count,
+                       "ATX rebuild preserves total file size")
     }
 
     func testUnregisteredExtensionThrows() {

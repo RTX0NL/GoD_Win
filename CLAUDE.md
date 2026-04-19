@@ -287,7 +287,7 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 - [x] ColoXD build ops: font, flash menu, FST, GSfsys TOC, message
 - [x] ColoXD dump ops: flash menu (GSW → PNG + metadata), message (MSG → JSON)
 - [x] MSG (Colo/XD) parse + rebuild (byte-identical) and JSON roundtrip via GSString pretty tokens
-- [x] DumpableFileFormat protocol + FileFormatRegistry — inject-at-use-site; builtins registers MSG, FNT, GTX; DOL/REL disassembly `.file` chunks route through it
+- [x] FileFormat protocol + FileFormatRegistry — inject-at-use-site; builtins registers MSG, FNT, GTX, ATX, GSW; DOL/REL disassembly `.file` chunks route through it
 
 ### In Progress
 - [ ] ColoXD FSYS dump (organizing extracted files by type into asset folders)
@@ -295,7 +295,6 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 - [ ] Validate font dump + rebuild end-to-end on full ROM (unit tests pass; need project-level validation)
 - [ ] Validate GSW rebuild end-to-end on full ROM (unit tests pass; need project-level validation)
 - [ ] MSG — PBR variant (Colo/XD done)
-- [ ] Adapt GSW and ATX to DumpableFileFormat (currently only MSG/FNT/GTX are registered)
 
 ### TODO
 - [ ] REL disassembly and reassembly
