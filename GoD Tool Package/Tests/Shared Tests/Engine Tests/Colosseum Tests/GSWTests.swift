@@ -18,8 +18,8 @@ final class GSWTests: XCTestCase {
         inner[0x03] = UInt8(texH)
         inner[0x04] = 8                     // BPP
         inner[0x05] = 1                     // indexed flag — (BPP, indexed) = 0x0801
-        inner[0x0B] = UInt8(GXTextureFormat.c8.rawValue)
-        inner[0x0F] = UInt8(GXPaletteFormat.rgb5a3_standalone.rawValue)
+        inner[0x0B] = UInt8(GXTextureFormat.C8.rawValue)
+        inner[0x0F] = UInt8(GXPaletteFormat.RGB5A3_3.rawValue)
         inner[0x2B] = 0x80                  // texture pointer
         let palOff: UInt32 = UInt32(0x80 + texBodySize)
         inner[0x48] = UInt8((palOff >> 24) & 0xFF)
@@ -106,7 +106,7 @@ final class GSWTests: XCTestCase {
 
         let ref = file.tags[1].textures[0]
         XCTAssertEqual(ref.id, 1)
-        XCTAssertEqual(ref.format, .c8)
+        XCTAssertEqual(ref.format, .C8)
         XCTAssertEqual(ref.width, 4)
         XCTAssertEqual(ref.height, 4)
         XCTAssertEqual(ref.pngPath, "./textures/texture_001.png")

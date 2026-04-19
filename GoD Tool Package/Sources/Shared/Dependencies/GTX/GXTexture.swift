@@ -139,9 +139,12 @@ public struct ATXMetadata: Codable, Equatable {
     public var animationCount: Int { animations.count }
 }
 
-/// GS palette format IDs
+/// GS palette format IDs. Case names map 1:1 to the byte at GTX header
+/// offset 0x0F. `RGB5A3_3` is an undocumented Genius Sonority variant that
+/// decodes as ordinary RGB5A3 — only the raw header byte differs (3 vs 2),
+/// preserved here for byte-identical roundtrip.
 public enum GXPaletteFormat: Int, Codable, CaseIterable {
-    case ia8 = 0, rgb565 = 1, rgb5a3 = 2, rgb5a3_standalone = 3
+    case IA8 = 0, RGB565 = 1, RGB5A3 = 2, RGB5A3_3 = 3
 
     public init(from decoder: Decoder) throws {
         let name = try decoder.singleValueContainer().decode(String.self)
@@ -157,11 +160,12 @@ public enum GXPaletteFormat: Int, Codable, CaseIterable {
     }
 }
 
-/// GS texture format IDs
+/// GS texture format IDs. Case names map 1:1 to the byte at GTX header
+/// offset 0x0B.
 public enum GXTextureFormat: Int, CaseIterable, Codable, Equatable {
-    case c4 = 0x00, c8 = 0x01, c14x2 = 0x30
-    case i4 = 0x40, ia4 = 0x41, i8 = 0x42, ia8 = 0x43
-    case rgb565 = 0x44, rgba32 = 0x45, rgb5a3 = 0x90, cmpr = 0xB0
+    case C4 = 0x00, C8 = 0x01, C14X2 = 0x30
+    case I4 = 0x40, IA4 = 0x41, I8 = 0x42, IA8 = 0x43
+    case RGB565 = 0x44, RGBA32 = 0x45, RGB5A3 = 0x90, CMPR = 0xB0
 
     public init(from decoder: Decoder) throws {
         let name = try decoder.singleValueContainer().decode(String.self)
@@ -178,35 +182,35 @@ public enum GXTextureFormat: Int, CaseIterable, Codable, Equatable {
 
     public var blockWidth: Int {
         switch self {
-        case .i4, .c4, .cmpr: return 8
-        case .ia4, .i8, .c8: return 8
-        case .ia8, .rgb565, .rgb5a3, .rgba32, .c14x2: return 4
+        case .I4, .C4, .CMPR: return 8
+        case .IA4, .I8, .C8: return 8
+        case .IA8, .RGB565, .RGB5A3, .RGBA32, .C14X2: return 4
         }
     }
 
     public var blockHeight: Int {
         switch self {
-        case .i4, .c4, .cmpr: return 8
-        case .ia4, .i8, .c8: return 4
-        case .ia8, .rgb565, .rgb5a3, .rgba32, .c14x2: return 4
+        case .I4, .C4, .CMPR: return 8
+        case .IA4, .I8, .C8: return 4
+        case .IA8, .RGB565, .RGB5A3, .RGBA32, .C14X2: return 4
         }
     }
 
     public var bitsPerPixel: Int {
         switch self {
-        case .i4, .c4, .cmpr: return 4
-        case .ia4, .i8, .c8: return 8
-        case .ia8, .rgb565, .rgb5a3, .c14x2: return 16
-        case .rgba32: return 32
+        case .I4, .C4, .CMPR: return 4
+        case .IA4, .I8, .C8: return 8
+        case .IA8, .RGB565, .RGB5A3, .C14X2: return 16
+        case .RGBA32: return 32
         }
     }
 
     public var isIndexed: Bool {
-        switch self { case .c4, .c8, .c14x2: return true; default: return false }
+        switch self { case .C4, .C8, .C14X2: return true; default: return false }
     }
 
     public var paletteEntryCount: Int {
-        switch self { case .c4: return 16; case .c8: return 256; case .c14x2: return 16384; default: return 0 }
+        switch self { case .C4: return 16; case .C8: return 256; case .C14X2: return 16384; default: return 0 }
     }
 }
 
@@ -481,8 +485,8 @@ public struct GXTextureDecoder {
         // Decode pixels in block order
         let blockPixels: [(UInt8, UInt8, UInt8, UInt8)]
         switch fmt {
-        case .rgba32: blockPixels = decodeRGBA32(data, texStart, texLen)
-        case .cmpr:   blockPixels = decodeCMPR(data, texStart, texLen)
+        case .RGBA32: blockPixels = decodeRGBA32(data, texStart, texLen)
+        case .CMPR:   blockPixels = decodeCMPR(data, texStart, texLen)
         default:      blockPixels = decodeFlat(data, texStart, texLen, fmt, palette)
         }
 
@@ -528,7 +532,7 @@ public struct GXTextureDecoder {
             for i in 0..<(len/2) {
                 let v: UInt16 = data.readSafely(atAddress: start + i*2)
                 if fmt.isIndexed {
-                    let idx = fmt == .c14x2 ? Int(v >> 2) : Int(v)
+                    let idx = fmt == .C14X2 ? Int(v >> 2) : Int(v)
                     px.append(idx < palette.count ? palette[idx] : (0,0,0,0))
                 } else { px.append(colour16(Int(v), fmt.rawValue)) }
             }
@@ -599,10 +603,10 @@ public struct GXTextureDecoder {
 
     private func colourVal(_ raw: Int, _ fmt: GXTextureFormat) -> (UInt8, UInt8, UInt8, UInt8) {
         switch fmt {
-        case .i4:  let v = UInt8(raw * 0x11); return (v, v, v, 255)
-        case .i8:  let v = UInt8(raw); return (v, v, v, 255)
-        case .ia4: let i = UInt8((raw & 0xF) * 0x11), a = UInt8((raw >> 4) * 0x11); return (i, i, i, a)
-        case .ia8: let i = UInt8(raw & 0xFF), a = UInt8(raw >> 8); return (i, i, i, a)
+        case .I4:  let v = UInt8(raw * 0x11); return (v, v, v, 255)
+        case .I8:  let v = UInt8(raw); return (v, v, v, 255)
+        case .IA4: let i = UInt8((raw & 0xF) * 0x11), a = UInt8((raw >> 4) * 0x11); return (i, i, i, a)
+        case .IA8: let i = UInt8(raw & 0xFF), a = UInt8(raw >> 8); return (i, i, i, a)
         default:   return (0, 0, 0, 255)
         }
     }
@@ -651,15 +655,15 @@ public struct GXTextureDecoder {
         // Encode pixels to bytes
         var texBytes: [UInt8]
         switch fmt {
-        case .rgba32: texBytes = encodeRGBA32(blockPixels, ppb: ppb)
-        case .cmpr:   texBytes = encodeCMPR(blockPixels, ppb: ppb)
+        case .RGBA32: texBytes = encodeRGBA32(blockPixels, ppb: ppb)
+        case .CMPR:   texBytes = encodeCMPR(blockPixels, ppb: ppb)
         default:      texBytes = encodeFlat(blockPixels, fmt)
         }
 
         // Build palette for indexed formats
         var palBytes = [UInt8]()
         if fmt.isIndexed {
-            let palFmt = metadata.paletteFormat ?? .rgb5a3
+            let palFmt = metadata.paletteFormat ?? .RGB5A3
             var palette = [(UInt8, UInt8, UInt8, UInt8)]()
             var indexMap = [UInt32: Int]()
 
@@ -751,15 +755,15 @@ public struct GXTextureDecoder {
 
     private func encodePixel4(_ p: (r: UInt8, g: UInt8, b: UInt8, a: UInt8), _ fmt: GXTextureFormat) -> Int {
         switch fmt {
-        case .i4: return (Int(p.r) + Int(p.g) + Int(p.b)) / (3 * 0x11)
+        case .I4: return (Int(p.r) + Int(p.g) + Int(p.b)) / (3 * 0x11)
         default: return 0
         }
     }
 
     private func encodePixel8(_ p: (r: UInt8, g: UInt8, b: UInt8, a: UInt8), _ fmt: GXTextureFormat) -> UInt8 {
         switch fmt {
-        case .i8: return UInt8((Int(p.r) + Int(p.g) + Int(p.b)) / 3)
-        case .ia4:
+        case .I8: return UInt8((Int(p.r) + Int(p.g) + Int(p.b)) / 3)
+        case .IA4:
             let i = (Int(p.r) + Int(p.g) + Int(p.b)) / (3 * 0x11)
             let a = Int(p.a) / 0x11
             return UInt8((a << 4) | i)
@@ -769,12 +773,12 @@ public struct GXTextureDecoder {
 
     private func encodePixel16(_ p: (r: UInt8, g: UInt8, b: UInt8, a: UInt8), _ fmt: GXTextureFormat) -> Int {
         switch fmt {
-        case .ia8:
+        case .IA8:
             let i = (Int(p.r) + Int(p.g) + Int(p.b)) / 3
             return (Int(p.a) << 8) | i
-        case .rgb565:
+        case .RGB565:
             return (Int(p.r) / 8) << 11 | (Int(p.g) / 4) << 5 | (Int(p.b) / 8)
-        case .rgb5a3:
+        case .RGB5A3:
             if p.a == 255 {
                 return 0x8000 | (Int(p.r) / 8) << 10 | (Int(p.g) / 8) << 5 | (Int(p.b) / 8)
             } else {
@@ -786,12 +790,12 @@ public struct GXTextureDecoder {
 
     private func encodeColour16(_ p: (UInt8, UInt8, UInt8, UInt8), _ fmt: GXPaletteFormat) -> Int {
         switch fmt {
-        case .ia8:
+        case .IA8:
             let i = (Int(p.0) + Int(p.1) + Int(p.2)) / 3
             return (Int(p.3) << 8) | i
-        case .rgb565:
+        case .RGB565:
             return (Int(p.0) / 8) << 11 | (Int(p.1) / 4) << 5 | (Int(p.2) / 8)
-        case .rgb5a3, .rgb5a3_standalone:
+        case .RGB5A3, .RGB5A3_3:
             if p.3 == 255 {
                 return 0x8000 | (Int(p.0) / 8) << 10 | (Int(p.1) / 8) << 5 | (Int(p.2) / 8)
             } else {
@@ -817,7 +821,7 @@ public struct GXTextureDecoder {
         case 16:
             var bytes = [UInt8]()
             for idx in indices {
-                let v = fmt == .c14x2 ? idx << 2 : idx
+                let v = fmt == .C14X2 ? idx << 2 : idx
                 bytes.append(UInt8(v >> 8))
                 bytes.append(UInt8(v & 0xFF))
             }
@@ -887,7 +891,7 @@ public struct GXTextureDecoder {
             if p.a < 0x80 {
                 hasTransparency = true
             } else {
-                let rgb = encodePixel16(p, .rgb565)
+                let rgb = encodePixel16(p, .RGB565)
                 if !uniqueColours.contains(rgb) { uniqueColours.append(rgb) }
             }
         }
