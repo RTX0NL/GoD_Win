@@ -19,7 +19,7 @@
 import Foundation
 import GoDFoundation
 
-public struct MSGFile: DumpableFileFormat, Equatable {
+public struct MSGFile: FileFormat, Equatable {
     public static let formatName = "msg"
 
     /// Colo and XD share the binary layout. The variant only affects how
@@ -70,7 +70,7 @@ public struct MSGFile: DumpableFileFormat, Equatable {
         self.entries = entries
     }
 
-    // MARK: - DumpableFileFormat (binary)
+    // MARK: - FileFormat (binary)
 
     /// Convenience init: parses with XD control-code semantics. Use
     /// `init(binary:variant:)` to parse with Colo semantics.
@@ -174,7 +174,7 @@ public struct MSGFile: DumpableFileFormat, Equatable {
         }
     }
 
-    // MARK: - DumpableFileFormat (outputs / JSON)
+    // MARK: - FileFormat (outputs / JSON)
 
     public init(outputs: [String: GoDData]) throws {
         guard let jsonData = outputs["json"] else {

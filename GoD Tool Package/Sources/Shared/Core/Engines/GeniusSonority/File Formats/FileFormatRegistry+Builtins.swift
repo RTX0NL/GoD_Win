@@ -8,7 +8,7 @@
 import GoDFoundation
 
 public extension FileFormatRegistry {
-    /// Returns a registry containing every DumpableFileFormat implemented in
+    /// Returns a registry containing every FileFormat implemented in
     /// the GeniusSonority engine module.
     static func builtins() -> FileFormatRegistry {
         var r = FileFormatRegistry()

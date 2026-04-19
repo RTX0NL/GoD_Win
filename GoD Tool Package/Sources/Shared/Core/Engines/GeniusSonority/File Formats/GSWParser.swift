@@ -38,7 +38,7 @@ public enum GSWParser {
     /// `./textures/` relative to the metadata file's parent folder.
     public static func parse(data: GoDData, name: String = "") throws -> (file: GSWFile, images: [GoDImage]) {
         data.setByteOrder(.big)
-        guard data.length >= headerSize else { throw GSWFile.invalidFileError }
+        guard data.length >= headerSize else { throw FileFormatErrors.invalid(format: GSWFile.formatName) }
 
         let header = parseHeader(data: data)
         let raw = data.rawBytes
@@ -49,18 +49,18 @@ public enum GSWParser {
         var tags = [GSWTag]()
         var pos = headerSize
         while pos < raw.count {
-            guard pos + 8 <= raw.count else { throw GSWFile.invalidFileError }
+            guard pos + 8 <= raw.count else { throw FileFormatErrors.invalid(format: GSWFile.formatName) }
             let code = readU32BE(raw, at: pos)
             let size = readU32BE(raw, at: pos + 4)
-            guard code <= maxTagCode else { throw GSWFile.invalidFileError }
+            guard code <= maxTagCode else { throw FileFormatErrors.invalid(format: GSWFile.formatName) }
             let payloadStart = pos + 8
             let payloadEnd = payloadStart + Int(size)
-            guard payloadEnd <= raw.count else { throw GSWFile.invalidFileError }
+            guard payloadEnd <= raw.count else { throw FileFormatErrors.invalid(format: GSWFile.formatName) }
             let payload = Array(raw[payloadStart..<payloadEnd])
             tags.append(GSWTag(code: code, payload: Data(payload)))
             pos = payloadEnd
         }
-        guard pos == raw.count else { throw GSWFile.invalidFileError }
+        guard pos == raw.count else { throw FileFormatErrors.invalid(format: GSWFile.formatName) }
 
         // Scan each tag's payload for embedded textures. Iterate ids
         // 1..spriteDepthCount and skip ids that don't match (real samples have
@@ -103,7 +103,7 @@ public enum GSWParser {
     public static func serialize(file: GSWFile, images: [GoDImage]) throws -> GoDData {
         let allRefs = file.allTextureRefs
         guard images.count == allRefs.count else {
-            throw GSWFile.failedToEncodeError(target: "image count mismatch (got \(images.count), expected \(allRefs.count))")
+            throw FileFormatErrors.failedToEncode(format: GSWFile.formatName, target: "image count mismatch (got \(images.count), expected \(allRefs.count))")
         }
 
         let decoder = GXTextureDecoder()
@@ -122,17 +122,18 @@ public enum GSWParser {
                 )
                 guard imageCursor < images.count,
                       let encoded = decoder.encode(image: images[imageCursor], metadata: texMeta) else {
-                    throw GSWFile.failedToEncodeError(target: "texture \(ref.id)")
+                    throw FileFormatErrors.failedToEncode(format: GSWFile.formatName, target: "texture \(ref.id)")
                 }
                 let encodedBytes = encoded.rawBytes
                 guard encodedBytes.count == ref.blockSize else {
-                    throw GSWFile.failedToEncodeError(
+                    throw FileFormatErrors.failedToEncode(
+                        format: GSWFile.formatName,
                         target: "texture \(ref.id) size \(encodedBytes.count) != original \(ref.blockSize)"
                     )
                 }
                 let textureStart = ref.payloadOffset + 0x20
                 guard textureStart + ref.blockSize <= payload.count else {
-                    throw GSWFile.failedToEncodeError(target: "texture \(ref.id) splice out of bounds")
+                    throw FileFormatErrors.failedToEncode(format: GSWFile.formatName, target: "texture \(ref.id) splice out of bounds")
                 }
                 for i in 0..<encodedBytes.count {
                     payload[textureStart + i] = encodedBytes[i]

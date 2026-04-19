@@ -3,7 +3,7 @@ import GoDEngine
 import Structs
 
 /// GameCube/Wii Relocatable Module (.rel) file format parser
-public final class Rel: FileFormat {
+public final class Rel {
     public static let formatName = ".rel"
 
     public let moduleID: UInt32
@@ -89,7 +89,7 @@ public final class Rel: FileFormat {
         data.setByteOrder(.big)
 
         guard data.length >= 0x40 else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
 
         moduleID = data.readSafely(atAddress: 0x00)

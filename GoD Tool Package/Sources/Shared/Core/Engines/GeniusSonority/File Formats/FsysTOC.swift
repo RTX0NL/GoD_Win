@@ -2,7 +2,7 @@ import GoDFoundation
 import GoDEngine
 import Structs
 
-public final class FsysTOC: FileFormat {
+public final class FsysTOC {
     public static var formatName = "FsysTOC"
     
     public var unknown: Int
@@ -33,7 +33,7 @@ public final class FsysTOC: FileFormat {
         guard let header = tocData.read(struct: headerStruct, atAddress: 0),
               let entryCount: Int = header.entryCount,
               let entryTableAddress: Int = header.entryTableAddress else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
         
         self.unknown = try header.unknown
@@ -43,14 +43,14 @@ public final class FsysTOC: FileFormat {
         
         let entryStruct = engine.fsysTOCEntryStruct
         guard let entries = tocData.read(structs: entryStruct, atAddress: entryTableAddress, count: entryCount) else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
         
         try entries.forEach { entry in
             guard let groupID: Int = entry.groupID,
                   let filenameAddress: Int = entry.filenameAddress,
                   let filename = tocData.readString(atAddress: filenameAddress, format: .utf8) else {
-                throw Self.invalidFileError
+                throw FileFormatErrors.invalid(format: Self.formatName)
             }
             fsysIDsByFilename[filename] = groupID
         }

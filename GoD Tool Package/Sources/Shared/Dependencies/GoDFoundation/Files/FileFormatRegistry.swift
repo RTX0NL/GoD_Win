@@ -7,9 +7,9 @@
 
 import Foundation
 
-/// Dispatches bytes/artifacts to the right `DumpableFileFormat` based on a
-/// file extension. Not a singleton — construct one and inject it where dump
-/// or build routing is needed (disassembly operations, ColoXD ops, tests).
+/// Dispatches bytes/artifacts to the right `FileFormat` based on a file
+/// extension. Not a singleton — construct one and inject it where dump or
+/// build routing is needed (disassembly operations, ColoXD ops, tests).
 public struct FileFormatRegistry {
 
     public struct Handler {
@@ -26,7 +26,7 @@ public struct FileFormatRegistry {
     public init() {}
 
     /// Register a format under a file extension (lowercased, no leading dot).
-    public mutating func register<F: DumpableFileFormat>(_ ext: String, _ type: F.Type) {
+    public mutating func register<F: FileFormat>(_ ext: String, _ type: F.Type) {
         let key = ext.lowercased()
         handlers[key] = Handler(
             dump: { bytes in try F(binary: bytes).outputs },

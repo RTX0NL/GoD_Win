@@ -1,7 +1,7 @@
 //
 //  GTXFile.swift
 //
-//  DumpableFileFormat wrapper over GXTextureDecoder. The decoder itself is
+//  FileFormat wrapper over GXTextureDecoder. The decoder itself is
 //  stateless; this wrapper owns the decoded image + header metadata so the
 //  registry can move GTX chunks uniformly (png + json artifacts).
 //
@@ -10,7 +10,7 @@ import Foundation
 import GoDFoundation
 import GTX
 
-public struct GTXFile: DumpableFileFormat {
+public struct GTXFile: FileFormat {
     public static let formatName = "gtx"
 
     public var image: GoDImage

@@ -1,15 +1,15 @@
 //
-//  GSFont+DumpableFileFormat.swift
+//  GSFont+FileFormat.swift
 //
 //  Bridges GSFont's existing binary init / atlas export+import onto the
-//  DumpableFileFormat contract so the registry can route `.fnt` chunks
+//  FileFormat contract so the registry can route `.fnt` chunks
 //  automatically.
 //
 
 import Foundation
 import GoDFoundation
 
-extension GSFont: DumpableFileFormat {
+extension GSFont: FileFormat {
     public init(binary: GoDData) throws {
         try self.init(data: binary)
     }

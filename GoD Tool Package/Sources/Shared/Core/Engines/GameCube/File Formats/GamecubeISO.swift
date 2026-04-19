@@ -10,7 +10,7 @@ import GoDEngine
 import Dolphin
 import Structs
 
-public final class GamecubeISO: FileSystemTree, FileFormat {
+public final class GamecubeISO: FileSystemTree {
     public static let formatName = "Gamecube.iso"
     
     private let dolphinEngine: DolphinEngine
@@ -76,7 +76,7 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
         let bootDataOffset = dolphinEngine.data.systemFiles.bootDataOffset
         let bootFile = dolphinEngine.data.systemFiles.bootFile
         guard let bootData = data.read(struct: bootDataStruct, atAddress: bootDataOffset) else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
         
         fst.writeFile(bootData.data, at: bootFile, overwrite: true)
@@ -86,7 +86,7 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
         let fstSize: Int = try bootData.fstSize
         let fstFile = dolphinEngine.data.systemFiles.fstFile
         guard let fstData = data.read(atAddress: fstOffset, length: fstSize) else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
         
         fst.writeFile(fstData, at: fstFile, overwrite: true)
@@ -95,7 +95,7 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
         let dolOffset: Int = try bootData.mainExecutableOffset
         let dolHeaderStruct = dolphinEngine.dolHeaderStruct
         guard let dolHeader = data.read(struct: dolHeaderStruct, atAddress: dolOffset) else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
         let textSectionsSizes: [UInt32] = try dolHeader.textSectionsSizes
         let dataSectionsSizes: [UInt32] = try dolHeader.dataSectionsSizes
@@ -105,7 +105,7 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
         let dolSize = dolHeader.length + textSizes.reduce(0, +) + dataSizes.reduce(0, +)
         
         guard let dolData = data.read(atAddress: dolOffset, length: dolSize) else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
         let dolFile = dolphinEngine.data.systemFiles.executableFile
         
@@ -116,7 +116,7 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
         let bi2DataOffset = dolphinEngine.data.systemFiles.bi2DataOffset
         let bi2File = dolphinEngine.data.systemFiles.bi2File
         guard let bi2Data = data.read(struct: bi2DataStruct, atAddress: bi2DataOffset) else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
         
         fst.writeFile(bi2Data.data, at: bi2File, overwrite: true)
@@ -125,7 +125,7 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
         let apploaderHeaderStruct = dolphinEngine.apploaderHeaderStruct
         let apploaderOffset = dolphinEngine.data.systemFiles.apploaderOffset
         guard let apploaderHeader = data.read(struct: apploaderHeaderStruct, atAddress: apploaderOffset) else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
         let appSize: Int = try apploaderHeader.size
         let trailerSize: Int = try apploaderHeader.trailerSize
@@ -133,7 +133,7 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
         
         let apploaderSize = apploaderHeader.length + appSize + trailerSize
         guard let apploader = data.read(atAddress: apploaderOffset, length: apploaderSize) else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
         
         fst.writeFile(apploader, at: apploaderFile, overwrite: true)
@@ -146,7 +146,7 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
             let junkLength = userSectionOffset - fstEnd
             if junkLength > 0 {
                 guard let junkData = data.read(atAddress: fstEnd, length: junkLength) else {
-                    throw Self.invalidFileError
+                    throw FileFormatErrors.invalid(format: Self.formatName)
                 }
                 if !junkData.isNull {
                     let junkFile = dolphinEngine.data.systemFiles.junkFile
@@ -187,7 +187,7 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
             let bootDataStruct = dolphinEngine.bootDataStruct
             guard let bootData = readFile(at: bootFile),
                   let bootStruct = bootData.read(struct: bootDataStruct, atAddress: 0) else {
-                throw Self.failedToEncodeError(target: ".iso")
+                throw FileFormatErrors.failedToEncode(format: Self.formatName, target: ".iso")
             }
             
             // Set bi2.bin
@@ -195,7 +195,7 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
             let bi2File = dolphinEngine.data.systemFiles.bi2File
             guard let bi2Data = readFile(at: bi2File),
                   let bi2Struct = bi2Data.read(struct: bi2DataStruct, atAddress: 0) else {
-                throw Self.failedToEncodeError(target: ".iso")
+                throw FileFormatErrors.failedToEncode(format: Self.formatName, target: ".iso")
             }
             
             let bi2DataOffset = dolphinEngine.data.systemFiles.bi2DataOffset
@@ -204,7 +204,7 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
             // Set apploader.img
             let apploaderFile = dolphinEngine.data.systemFiles.apploaderFile
             guard let apploaderData = readFile(at: apploaderFile) else {
-                throw Self.failedToEncodeError(target: ".iso")
+                throw FileFormatErrors.failedToEncode(format: Self.formatName, target: ".iso")
             }
             
             let apploaderOffset = dolphinEngine.data.systemFiles.apploaderOffset
@@ -217,7 +217,7 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
             
             let dolFile = dolphinEngine.data.systemFiles.executableFile
             guard let dolData = readFile(at: dolFile) else {
-                throw Self.failedToEncodeError(target: ".iso")
+                throw FileFormatErrors.failedToEncode(format: Self.formatName, target: ".iso")
             }
             isoData.write(dolData, atAddress: dolOffset)
             
@@ -256,7 +256,7 @@ public final class GamecubeISO: FileSystemTree, FileFormat {
                 .forEach { (file, value) in
                     let offset = value.offsetInUserSection
                     guard let fileData = fst.readFile(at: file) else {
-                        throw Self.failedToEncodeError(target: ".iso")
+                        throw FileFormatErrors.failedToEncode(format: Self.formatName, target: ".iso")
                     }
                     userData.write(fileData, atAddress: offset)
                 }

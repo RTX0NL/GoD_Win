@@ -7,20 +7,17 @@
 
 import Foundation
 
-public protocol FileFormat {
-    static var formatName: String { get }
-}
-
-/// Refinement for file formats that can be dumped to a set of artifacts and
-/// rebuilt back to binary without any external engine/context. These are the
-/// formats eligible for `FileFormatRegistry`.
+/// A file format that can be parsed from binary and serialized to a set of
+/// editable artifacts (and back) without any external engine/context. These
+/// are the formats eligible for `FileFormatRegistry` routing.
 ///
 /// The `outputs` dictionary is keyed by the relative path (under a caller-
-/// chosen base name) of each artifact, including any extension. A format with
-/// a single JSON dump uses `["json": …]`; a texture format uses
+/// chosen base name) of each artifact, including any extension. A format
+/// with a single JSON dump uses `["json": …]`; a texture format uses
 /// `["png": …, "json": …]`; a multi-asset format can nest paths like
 /// `"textures/tex_03.png"`.
-public protocol DumpableFileFormat: FileFormat {
+public protocol FileFormat {
+    static var formatName: String { get }
     init(binary: GoDData) throws
     init(outputs: [String: GoDData]) throws
     var binaryData: GoDData { get throws }
@@ -28,35 +25,52 @@ public protocol DumpableFileFormat: FileFormat {
 }
 
 public enum FileFormatErrors: Error, CustomStringConvertible {
-    case invalidFileData(format: FileFormat.Type, ErrorTrace)
-    case failedToEncode(format: FileFormat.Type, target: String, ErrorTrace)
-    case missingOutput(format: FileFormat.Type, key: String, ErrorTrace)
-    case unsupportedOperation(format: FileFormat.Type, operation: String, ErrorTrace)
+    case invalidFileData(formatName: String, ErrorTrace)
+    case failedToEncode(formatName: String, target: String, ErrorTrace)
+    case missingOutput(formatName: String, key: String, ErrorTrace)
+    case unsupportedOperation(formatName: String, operation: String, ErrorTrace)
 
     public var description: String {
         switch self {
-        case let .invalidFileData(format, errorTrace):
-            return "Error: Invalid data for file format '\(format.formatName)'\n\(errorTrace)"
-        case let .failedToEncode(format, target, errorTrace):
-            return "Error: Failed to encode file format '\(format.formatName)' to '\(target)'\n\(errorTrace)"
-        case let .missingOutput(format, key, errorTrace):
-            return "Error: Missing output artifact '\(key)' for file format '\(format.formatName)'\n\(errorTrace)"
-        case let .unsupportedOperation(format, operation, errorTrace):
-            return "Error: Operation '\(operation)' is not supported by file format '\(format.formatName)'\n\(errorTrace)"
+        case let .invalidFileData(name, errorTrace):
+            return "Error: Invalid data for file format '\(name)'\n\(errorTrace)"
+        case let .failedToEncode(name, target, errorTrace):
+            return "Error: Failed to encode file format '\(name)' to '\(target)'\n\(errorTrace)"
+        case let .missingOutput(name, key, errorTrace):
+            return "Error: Missing output artifact '\(key)' for file format '\(name)'\n\(errorTrace)"
+        case let .unsupportedOperation(name, operation, errorTrace):
+            return "Error: Operation '\(operation)' is not supported by file format '\(name)'\n\(errorTrace)"
         }
+    }
+}
+
+public extension FileFormatErrors {
+    /// Factories keyed by a raw format name, so types that hold a
+    /// `static let formatName` but don't conform to `FileFormat` can still
+    /// throw consistent errors.
+    static func invalid(format name: String) -> Error {
+        FileFormatErrors.invalidFileData(formatName: name, .init())
+    }
+
+    static func failedToEncode(format name: String, target: String) -> Error {
+        FileFormatErrors.failedToEncode(formatName: name, target: target, .init())
+    }
+
+    static func missingOutput(format name: String, key: String) -> Error {
+        FileFormatErrors.missingOutput(formatName: name, key: key, .init())
     }
 }
 
 public extension FileFormat {
     static var invalidFileError: Error {
-        FileFormatErrors.invalidFileData(format: Self.self, .init())
+        FileFormatErrors.invalid(format: Self.formatName)
     }
 
     static func failedToEncodeError(target: String) -> Error {
-        FileFormatErrors.failedToEncode(format: Self.self, target: target, .init())
+        FileFormatErrors.failedToEncode(format: Self.formatName, target: target)
     }
 
     static func missingOutputError(key: String) -> Error {
-        FileFormatErrors.missingOutput(format: Self.self, key: key, .init())
+        FileFormatErrors.missingOutput(format: Self.formatName, key: key)
     }
 }

@@ -9,7 +9,7 @@ import GoDFoundation
 import GoDEngine
 import Structs
 
-public final class Apploader: FileFormat {
+public final class Apploader {
     public static let formatName = "Apploader.img"
     
     private let dolphinEngine: DolphinEngine
@@ -23,7 +23,7 @@ public final class Apploader: FileFormat {
         self.dolphinEngine = engine
         let apploaderHeaderStruct = dolphinEngine.apploaderHeaderStruct
         guard let apploaderHeader = data.read(struct: apploaderHeaderStruct, atAddress: 0) else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
         let date: GoDData = try apploaderHeader.date
         let entryPoint: UInt32 = try apploaderHeader.entryPoint

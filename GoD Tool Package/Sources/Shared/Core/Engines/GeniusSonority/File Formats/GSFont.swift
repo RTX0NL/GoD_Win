@@ -39,7 +39,7 @@ import Structs
 ///
 /// Bitmaps are read as 4bpp scanline data with upper nibble = left pixel. No
 /// rotation, mirror, or row transform — verified against `_msgMakeTexture`.
-public struct GSFont: FileFormat {
+public struct GSFont {
     public static let formatName = "fnt"
 
     public struct Glyph {
@@ -106,7 +106,7 @@ public struct GSFont: FileFormat {
 
     private init(data: GoDData, blockOffset: Int) throws {
         data.setByteOrder(.big)
-        guard blockOffset + 0x18 <= data.length else { throw Self.invalidFileError }
+        guard blockOffset + 0x18 <= data.length else { throw FileFormatErrors.invalid(format: Self.formatName) }
 
         // Block header
         let fontId: UInt16 = data.readSafely(atAddress: blockOffset + 0x00)
@@ -128,7 +128,7 @@ public struct GSFont: FileFormat {
         // Verified against all 26 XD font samples.
         let expectedLastEntry = 0x18 + (entryCount - 1) * 8
         guard entryCount == 0 || lastEntryOffset == expectedLastEntry else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
 
         // The 8 bytes at blockOffset+0x10 are chain-ptr storage; always zero

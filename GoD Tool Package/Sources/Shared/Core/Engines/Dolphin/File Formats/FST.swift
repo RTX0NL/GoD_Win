@@ -9,7 +9,7 @@ import GoDFoundation
 import GoDEngine
 import Structs
 
-public class DolphinFST: FileFormat {
+public class DolphinFST {
     public static let formatName = ".toc"
     
     public var files = [File: (offsetInUserSection: Int, size: Int)]()
@@ -22,7 +22,7 @@ public class DolphinFST: FileFormat {
         let fileStruct: StructDefinition = dolphinEngine.fstFileEntryStruct
         let folderStruct: StructDefinition = dolphinEngine.fstDirectoryEntryStruct
         guard let root = tocData.read(struct: rootStruct, atAddress: 0) else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
         let entryCount: Int = try root.entryCount
         
@@ -44,12 +44,12 @@ public class DolphinFST: FileFormat {
             let isDirectory: Bool = tocData.readSafely(atAddress: entryOffset)
             if isDirectory {
                 guard let entry = tocData.read(struct: folderStruct, atAddress: entryOffset) else {
-                    throw Self.invalidFileError
+                    throw FileFormatErrors.invalid(format: Self.formatName)
                 }
                 let nameOffset: Int = try entry.nameOffset
                 let endIndex: Int = try entry.nextEntry
                 guard let folderName = getString(nameOffset) else {
-                    throw Self.invalidFileError
+                    throw FileFormatErrors.invalid(format: Self.formatName)
                 }
                 currentFolder = currentFolder.folder(folderName)
                 folders.append(currentFolder)
@@ -57,13 +57,13 @@ public class DolphinFST: FileFormat {
                 
             } else {
                 guard let entry = tocData.read(struct: fileStruct, atAddress: entryOffset) else {
-                    throw Self.invalidFileError
+                    throw FileFormatErrors.invalid(format: Self.formatName)
                 }
                 let nameOffset: Int = try entry.nameOffset
                 let fileOffset: Int = (try entry.fileOffset) * offsetMultiplier
                 let fileSize: Int = (try entry.fileSize) * offsetMultiplier
                 guard let filename = getString(nameOffset) else {
-                    throw Self.invalidFileError
+                    throw FileFormatErrors.invalid(format: Self.formatName)
                 }
                 let file = currentFolder.file(filename)
                 files[file] = (fileOffset - userSectionOffset, fileSize)
@@ -152,7 +152,7 @@ public class DolphinFST: FileFormat {
                 let nameOffset = stringTable.length
                 stringTable.appendString(file.fileName, format: .utf8, includeTerminator: true)
                 guard let (offset, size) = files[file] else {
-                    throw Self.failedToEncodeError(target: ".iso")
+                    throw FileFormatErrors.failedToEncode(format: Self.formatName, target: ".iso")
                 }
                 let fullOffset = offset + userOffset
                 

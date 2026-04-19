@@ -2,7 +2,7 @@ import GoDFoundation
 import GoDEngine
 import Structs
 
-public final class FSYSArchive: FileFormat {
+public final class FSYSArchive {
     public static let formatName = "fsys"
     
     public struct MetaData: Codable {
@@ -64,7 +64,7 @@ public final class FSYSArchive: FileFormat {
         data.setByteOrder(.big)
         let headerStruct = engine.fsysHeaderStruct
         guard let fsysHeader = data.read(struct: headerStruct, atAddress: 0) else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
 
         let flags: Int = try fsysHeader.flags
@@ -84,7 +84,7 @@ public final class FSYSArchive: FileFormat {
         let filePointerListAddress: Int = try fsysHeader.fileMetadataList
         
         guard let fileEntryAddresses: [Int32] = data.readValues(atAddress: filePointerListAddress, count: entryCount) else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
         
         let fileMetaDataStruct = engine.fsysFileMetaDataStruct
@@ -96,14 +96,14 @@ public final class FSYSArchive: FileFormat {
         let lzssHeaderStruct = engine.lzssHeaderStruct
         
         self.entries = try fileMetaDataList.map { metaData in
-            guard let metaData else { throw Self.invalidFileError }
+            guard let metaData else { throw FileFormatErrors.invalid(format: Self.formatName) }
             
             let fileType: Enum.Case? = metaData.fileType
             let identifier: Int = try metaData.identifier
             
             let fileNameOffset: Int = try metaData.filenamePointer
             guard let entryName = data.readString(atAddress: fileNameOffset, format: .utf8) else {
-                throw Self.invalidFileError
+                throw FileFormatErrors.invalid(format: Self.formatName)
             }
             
             let fullFilenameOffset: Int = try metaData.fullFilenamePointer
@@ -111,7 +111,7 @@ public final class FSYSArchive: FileFormat {
 
             if fullFilenameOffset != 0 {
                 guard var name = data.readString(atAddress: fullFilenameOffset, format: .utf8) else {
-                    throw Self.invalidFileError
+                    throw FileFormatErrors.invalid(format: Self.formatName)
                 }
                 // Strip configurable suffixes from the filename stem
                 // e.g. "B1_1_col.ccd" → "B1_1.ccd" when "_col" is in fileNameSuffixReplacements
@@ -151,14 +151,14 @@ public final class FSYSArchive: FileFormat {
             let fileSize: Int = try metaData.fileSize
             
             guard let rawEntryData = data.read(atAddress: fileAddress, length: fileSize) else {
-                throw Self.invalidFileError
+                throw FileFormatErrors.invalid(format: Self.formatName)
             }
             var entryData = rawEntryData
             if isCompressed {
                 guard let lzssHeader = entryData.read(struct: lzssHeaderStruct, atAddress: 0),
                       let compressedSize: Int = lzssHeader.compressedSize,
                       let compressedData = entryData.read(atAddress: lzssHeader.length, length: compressedSize - lzssHeader.length) else {
-                    throw Self.invalidFileError
+                    throw FileFormatErrors.invalid(format: Self.formatName)
                 }
                 let uncompressedSize: Int? = lzssHeader.uncompressedSize
                 entryData = compressor.decompress(compressedData, expectedSize: uncompressedSize)

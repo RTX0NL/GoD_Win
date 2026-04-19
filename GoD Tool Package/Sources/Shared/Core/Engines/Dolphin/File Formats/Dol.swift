@@ -9,7 +9,7 @@ import GoDFoundation
 import GoDEngine
 import Structs
 
-public final class Dol: FileFormat {
+public final class Dol {
     public static let formatName = ".dol"
     
     private let dolphinEngine: DolphinEngine
@@ -42,7 +42,7 @@ public final class Dol: FileFormat {
         data.setByteOrder(.big)
         let dolHeaderStruct = dolphinEngine.dolHeaderStruct
         guard let dolHeader = data.read(struct: dolHeaderStruct, atAddress: 0) else {
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
         let entryPoint: UInt32 = try dolHeader.entryPoint
         let bssSize: UInt32 = try dolHeader.bssSize

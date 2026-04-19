@@ -6,7 +6,7 @@ import Structs
 /// Represents a complete Wii disc image with multiple encrypted partitions.
 /// The FileSystemTree presents partitions as top-level folders (DATA, UPDATE, CHANNEL)
 /// with the disc header as a top-level file.
-public final class WiiISO: FileSystemTree, FileFormat {
+public final class WiiISO: FileSystemTree {
     public static let formatName = "Wii.iso"
 
     private let wiiEngine: WiiEngine
@@ -155,7 +155,7 @@ public final class WiiISO: FileSystemTree, FileFormat {
         guard let headerData = data.read(atAddress: 0, length: 0x440) else {
             logger?.log(.error("Failed to read Wii disc header"))
             logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
         self.discHeader = headerData
 
@@ -166,7 +166,7 @@ public final class WiiISO: FileSystemTree, FileFormat {
         guard let regionData = data.read(atAddress: 0x4E000, length: 0x20) else {
             logger?.log(.error("Failed to read region settings"))
             logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
         self.regionSettings = regionData
 
@@ -176,7 +176,7 @@ public final class WiiISO: FileSystemTree, FileFormat {
         guard wiiMagic == wiiEngine.data.disc.wiiMagicWord else {
             logger?.log(.error("Invalid Wii magic word: 0x\(String(wiiMagic, radix: 16)) (expected 0x\(String(wiiEngine.data.disc.wiiMagicWord, radix: 16)))"))
             logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
-            throw Self.invalidFileError
+            throw FileFormatErrors.invalid(format: Self.formatName)
         }
 
         // Parse partition table at 0x40000

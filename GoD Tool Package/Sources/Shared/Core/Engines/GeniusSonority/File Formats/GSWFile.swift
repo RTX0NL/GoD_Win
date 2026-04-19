@@ -29,7 +29,7 @@ import GTX
 /// each texture is extracted as a PNG and a `GSWTextureRef` records its
 /// position within its containing tag's payload so the build path can splice
 /// the re-encoded bytes back at the same offset.
-public struct GSWFile: FileFormat, Codable, Equatable {
+public struct GSWFile: Codable, Equatable {
     public static let formatName = "gsw"
 
     public var header: GSWHeader
