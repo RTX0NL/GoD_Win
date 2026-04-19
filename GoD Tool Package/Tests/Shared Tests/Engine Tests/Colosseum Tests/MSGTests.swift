@@ -120,7 +120,7 @@ final class MSGTests: XCTestCase {
             ]
         )
         let outputs = try original.outputs
-        XCTAssertNotNil(outputs["json"])
+        XCTAssertNotNil(outputs[MSGFile.messagesJSON])
 
         let roundTripped = try MSGFile(outputs: outputs)
         XCTAssertEqual(roundTripped.variant, original.variant)

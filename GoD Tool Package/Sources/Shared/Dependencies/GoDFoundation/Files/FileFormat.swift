@@ -11,17 +11,19 @@ import Foundation
 /// editable artifacts (and back) without any external engine/context. These
 /// are the formats eligible for `FileFormatRegistry` routing.
 ///
-/// The `outputs` dictionary is keyed by the relative path (under a caller-
-/// chosen base name) of each artifact, including any extension. A format
-/// with a single JSON dump uses `["json": …]`; a texture format uses
-/// `["png": …, "json": …]`; a multi-asset format can nest paths like
-/// `"textures/tex_03.png"`.
+/// `outputs` is keyed by the relative `File` each artifact should be written
+/// at (under a caller-chosen folder). Each format picks its own filenames;
+/// callers providing a shared folder are expected to namespace via
+/// subfolders to avoid collisions. A single-JSON format returns one entry
+/// like `[File("metadata.json"): …]`; a texture format returns two like
+/// `[File("metadata.json"): …, File("texture.png"): …]`; multi-asset
+/// formats can nest paths like `File("textures/tex_03.png")`.
 public protocol FileFormat {
     static var formatName: String { get }
     init(binary: GoDData) throws
-    init(outputs: [String: GoDData]) throws
+    init(outputs: [File: GoDData]) throws
     var binaryData: GoDData { get throws }
-    var outputs: [String: GoDData] { get throws }
+    var outputs: [File: GoDData] { get throws }
 }
 
 public enum FileFormatErrors: Error, CustomStringConvertible {

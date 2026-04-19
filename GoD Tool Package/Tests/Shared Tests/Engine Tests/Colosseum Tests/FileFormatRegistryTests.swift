@@ -20,7 +20,7 @@ final class FileFormatRegistryTests: XCTestCase {
     /// Real .gsw sample roundtrips via the registry. Wrapper + non-texture
     /// bytes already roundtrip byte-identically through GSWParser; here we
     /// just verify the registry path emits the expected artifact set
-    /// (json + textures/*.png) and that build → bytes succeeds.
+    /// (flashmenu.json + textures/*.png) and that build → bytes succeeds.
     func testRegistryGSWArtifactsAndRebuilds() throws {
         let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/battle_disk_ge/battle_disk_ge 0012.gsw"
         guard FileManager.default.fileExists(atPath: path),
@@ -33,8 +33,8 @@ final class FileFormatRegistryTests: XCTestCase {
 
         let input = GoDData(byteStream: [UInt8](raw), byteOrder: .big)
         let artifacts = try handler.dump(input)
-        XCTAssertNotNil(artifacts["json"])
-        let textureKeys = artifacts.keys.filter { $0.hasPrefix("textures/") }
+        XCTAssertNotNil(artifacts[GSWFile.flashMenuJSON])
+        let textureKeys = artifacts.keys.filter { $0.path.hasPrefix("textures/") }
         XCTAssertEqual(textureKeys.count, 1, "small sample has 1 embedded texture")
 
         let rebuilt = try handler.build(artifacts)
@@ -42,9 +42,7 @@ final class FileFormatRegistryTests: XCTestCase {
     }
 
     /// Real XD .fnt sample roundtrips through the registry. The decoded
-    /// atlas+metadata rebuilds to byte-identical binary (the same guarantee
-    /// GSFontTests already asserts — this test just exercises the registry
-    /// path end-to-end so a regression in the generic dispatch is caught).
+    /// atlas+metadata rebuilds to byte-identical binary.
     func testRegistryGSFontDumpAndBuildRoundTrip() throws {
         let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/pda_menu/pda_menu.fnt"
         guard FileManager.default.fileExists(atPath: path),
@@ -57,7 +55,7 @@ final class FileFormatRegistryTests: XCTestCase {
 
         let input = GoDData(byteStream: [UInt8](raw), byteOrder: .big)
         let artifacts = try handler.dump(input)
-        XCTAssertEqual(Set(artifacts.keys), ["pgm", "json"])
+        XCTAssertEqual(Set(artifacts.keys), [GSFont.fontJSON, GSFont.atlasPGM])
 
         let rebuilt = try handler.build(artifacts)
         XCTAssertEqual(rebuilt.rawBytes, [UInt8](raw))
@@ -66,7 +64,8 @@ final class FileFormatRegistryTests: XCTestCase {
     /// Real XD .gtx sample roundtrips via the registry. Pixel equality on
     /// decode-re-decode is asserted in GXTextureTests for every format; here
     /// we just verify the registry wires decode→encode correctly and emits
-    /// both the "png" and "json" keys.
+    /// both the texture.png and texture.json keys, and that the JSON
+    /// self-references its PNG via `pngPath`.
     func testRegistryGTXArtifactsAndRebuilds() throws {
         let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/world_map/menu_038.gtx"
         guard FileManager.default.fileExists(atPath: path),
@@ -79,16 +78,19 @@ final class FileFormatRegistryTests: XCTestCase {
 
         let input = GoDData(byteStream: [UInt8](raw), byteOrder: .big)
         let artifacts = try handler.dump(input)
-        XCTAssertEqual(Set(artifacts.keys), ["png", "json"])
-        XCTAssertGreaterThan(artifacts["png"]!.length, 0)
-        XCTAssertGreaterThan(artifacts["json"]!.length, 0)
+        XCTAssertEqual(Set(artifacts.keys), [GTXFile.texturePNG, GTXFile.textureJSON])
+
+        let json = try XCTUnwrap(artifacts[GTXFile.textureJSON])
+        let dto = try JSONDecoder().decode(GTXFile.DTO.self, from: json.data)
+        XCTAssertEqual(dto.pngPath, GTXFile.texturePNG.path,
+                       "JSON must self-reference its PNG sidecar")
 
         let rebuilt = try handler.build(artifacts)
         XCTAssertGreaterThan(rebuilt.length, 0)
     }
 
-    /// A binary MSG routed through the registry should dump to a JSON
-    /// artifact keyed "json" and rebuild byte-identical.
+    /// A binary MSG routed through the registry dumps to messages.json and
+    /// rebuilds byte-identical.
     func testRegistryMSGDumpAndBuildRoundTrip() throws {
         var raw: [UInt8] = []
         raw += [0x00, 0x00, 0x00, 0x00]
@@ -96,15 +98,14 @@ final class FileFormatRegistryTests: XCTestCase {
         raw += [0x55, 0x53]
         raw += [UInt8](repeating: 0, count: 8)
         raw += [0x00, 0x00, 0x00, 0x05] + [0x00, 0x00, 0x00, 0x18]
-        raw += [0x00, 0x48, 0x00, 0x69, 0x00, 0x00]  // "Hi\0"
+        raw += [0x00, 0x48, 0x00, 0x69, 0x00, 0x00]
 
         let registry = FileFormatRegistry.builtins()
         let handler = try XCTUnwrap(registry.handler(for: "msg"))
 
         let input = GoDData(byteStream: raw, byteOrder: .big)
         let artifacts = try handler.dump(input)
-        XCTAssertEqual(Set(artifacts.keys), ["json"])
-        XCTAssertGreaterThan(artifacts["json"]!.length, 0)
+        XCTAssertEqual(Set(artifacts.keys), [MSGFile.messagesJSON])
 
         let rebuilt = try handler.build(artifacts)
         XCTAssertEqual(rebuilt.rawBytes, raw)
@@ -133,18 +134,16 @@ final class FileFormatRegistryTests: XCTestCase {
         let written = try registry.dump(
             bytes: input,
             extension: "msg",
-            baseName: "test",
             into: folder,
             fileSystem: fs,
             overwrite: true
         )
         XCTAssertEqual(written.count, 1)
-        XCTAssertEqual(written.first?.fileName, "test.json")
-        XCTAssertNotNil(fs.readFile(at: folder.file("test.json")))
+        XCTAssertEqual(written.first?.fileName, MSGFile.messagesJSON.path)
+        XCTAssertNotNil(fs.readFile(at: folder.file(MSGFile.messagesJSON.path)))
 
         let rebuilt = try registry.build(
             extension: "msg",
-            baseName: "test",
             from: folder,
             fileSystem: fs
         )
@@ -166,8 +165,12 @@ final class FileFormatRegistryTests: XCTestCase {
 
         let input = GoDData(byteStream: [UInt8](raw), byteOrder: .big)
         let artifacts = try handler.dump(input)
-        XCTAssertEqual(Set(artifacts.keys), ["png", "json"])
-        XCTAssertGreaterThan(artifacts["png"]!.length, 0)
+        XCTAssertEqual(Set(artifacts.keys), [ATXFile.animationPNG, ATXFile.animationJSON])
+
+        let json = try XCTUnwrap(artifacts[ATXFile.animationJSON])
+        let dto = try JSONDecoder().decode(ATXFile.DTO.self, from: json.data)
+        XCTAssertEqual(dto.pngPath, ATXFile.animationPNG.path,
+                       "JSON must self-reference its PNG sidecar")
 
         let rebuilt = try handler.build(artifacts)
         XCTAssertEqual(rebuilt.length, [UInt8](raw).count,
@@ -183,7 +186,6 @@ final class FileFormatRegistryTests: XCTestCase {
             try registry.dump(
                 bytes: GoDData(byteStream: [0, 1, 2, 3], byteOrder: .big),
                 extension: "bogus",
-                baseName: "foo",
                 into: Folder("/x"),
                 fileSystem: fs
             )

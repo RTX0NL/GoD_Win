@@ -176,9 +176,12 @@ public struct MSGFile: FileFormat, Equatable {
 
     // MARK: - FileFormat (outputs / JSON)
 
-    public init(outputs: [String: GoDData]) throws {
-        guard let jsonData = outputs["json"] else {
-            throw MSGFile.missingOutputError(key: "json")
+    /// The single artifact this format emits.
+    public static let messagesJSON = File("messages.json")
+
+    public init(outputs: [File: GoDData]) throws {
+        guard let jsonData = outputs[MSGFile.messagesJSON] else {
+            throw MSGFile.missingOutputError(key: MSGFile.messagesJSON.path)
         }
         let decoder = JSONDecoder()
         let dto = try decoder.decode(DTO.self, from: jsonData.data)
@@ -197,7 +200,7 @@ public struct MSGFile: FileFormat, Equatable {
         )
     }
 
-    public var outputs: [String: GoDData] {
+    public var outputs: [File: GoDData] {
         get throws {
             let dto = DTO(
                 variant: variant,
@@ -211,7 +214,7 @@ public struct MSGFile: FileFormat, Equatable {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data: Data = try encoder.encode(dto)
-            return ["json": GoDData(data: data, byteOrder: .big)]
+            return [MSGFile.messagesJSON: GoDData(data: data, byteOrder: .big)]
         }
     }
 

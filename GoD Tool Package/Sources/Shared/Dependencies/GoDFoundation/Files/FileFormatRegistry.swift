@@ -13,10 +13,11 @@ import Foundation
 public struct FileFormatRegistry {
 
     public struct Handler {
-        /// Parse `bytes` as this format and return its output artifacts.
-        public let dump: (GoDData) throws -> [String: GoDData]
+        /// Parse `bytes` as this format and return its output artifacts,
+        /// keyed by the relative `File` each artifact should be written at.
+        public let dump: (GoDData) throws -> [File: GoDData]
         /// Reconstruct the binary from a set of output artifacts.
-        public let build: ([String: GoDData]) throws -> GoDData
+        public let build: ([File: GoDData]) throws -> GoDData
         /// The format type, for diagnostics.
         public let formatType: FileFormat.Type
     }
@@ -46,14 +47,14 @@ public struct FileFormatRegistry {
 
     // MARK: - Filesystem convenience
 
-    /// Dump `bytes` as `ext` into `folder`, writing each output artifact under
-    /// `<baseName>.<key>` when `key` has no slash, or `<baseName>/<key>`
-    /// otherwise. Returns the list of written files.
+    /// Dump `bytes` as `ext` into `folder`, writing each output artifact at
+    /// `<folder>/<key.path>`. Each format picks its own filenames — callers
+    /// providing a shared folder should namespace by passing a per-source
+    /// subfolder. Returns the list of written files.
     @discardableResult
     public func dump(
         bytes: GoDData,
         extension ext: String,
-        baseName: String,
         into folder: Folder,
         fileSystem: FileSystemTree,
         overwrite: Bool = true
@@ -63,8 +64,8 @@ public struct FileFormatRegistry {
         }
         let artifacts = try handler.dump(bytes)
         var written: [File] = []
-        for (key, data) in artifacts {
-            let outFile = file(for: baseName, key: key, in: folder)
+        for (relativeFile, data) in artifacts {
+            let outFile = resolve(relativeFile, in: folder)
             if !fileSystem.writeFile(data, at: outFile, overwrite: overwrite) {
                 throw RegistryError.writeFailed(file: outFile)
             }
@@ -73,64 +74,42 @@ public struct FileFormatRegistry {
         return written
     }
 
-    /// Read every artifact belonging to `baseName` under `folder` and rebuild
-    /// the binary via the handler registered for `ext`. Artifacts are keyed
-    /// by the same suffix pattern `dump` uses.
+    /// Read every file under `folder` and rebuild the binary via the handler
+    /// registered for `ext`. Every regular file beneath `folder` becomes an
+    /// entry in the outputs dict keyed by its path relative to `folder`.
     public func build(
         extension ext: String,
-        baseName: String,
         from folder: Folder,
         fileSystem: FileSystemTree
     ) throws -> GoDData {
         guard let handler = handler(for: ext) else {
             throw RegistryError.unregistered(ext: ext)
         }
-        let outputs = try readArtifacts(baseName: baseName, in: folder, fileSystem: fileSystem)
+        let outputs = try readArtifacts(in: folder, fileSystem: fileSystem)
         return try handler.build(outputs)
     }
 
     // MARK: - Internals
 
-    /// Resolves the on-disc path for a single artifact.
-    /// - `key = "json"` → `<folder>/<baseName>.json`
-    /// - `key = "textures/tex_03.png"` → `<folder>/<baseName>/textures/tex_03.png`
-    private func file(for baseName: String, key: String, in folder: Folder) -> File {
-        if key.contains("/") {
-            let parts = key.split(separator: "/").map(String.init)
-            var f = folder.folder(baseName)
-            for part in parts.dropLast() { f = f.folder(part) }
-            return f.file(parts.last!)
-        } else {
-            return folder.file("\(baseName).\(key)")
-        }
+    /// Resolves an artifact's relative path against a target folder.
+    private func resolve(_ relative: File, in folder: Folder) -> File {
+        var path = relative.path
+        if path.hasPrefix("/") { path.removeFirst() }
+        let parts = path.split(separator: "/").map(String.init)
+        guard !parts.isEmpty else { return folder.file(path) }
+        var current = folder
+        for part in parts.dropLast() { current = current.folder(part) }
+        return current.file(parts.last!)
     }
 
-    /// Walks `folder` and collects every artifact that belongs to `baseName`,
-    /// returning them keyed by the suffix shape `dump` writes with.
     private func readArtifacts(
-        baseName: String,
         in folder: Folder,
         fileSystem: FileSystemTree
-    ) throws -> [String: GoDData] {
-        var outputs: [String: GoDData] = [:]
-
-        // Flat files: <baseName>.<key>
-        if let folderMeta = fileSystem.inspectFolder(at: folder) {
-            for file in folderMeta.files where file.fileName.hasPrefix("\(baseName).") {
-                guard let data = fileSystem.readFile(at: file) else { continue }
-                let key = String(file.fileName.dropFirst(baseName.count + 1))
-                outputs[key] = data
-            }
-        }
-
-        // Nested artifacts under <folder>/<baseName>/...
-        let nested = folder.folder(baseName)
-        if fileSystem.inspectFolder(at: nested) != nil {
-            collectNested(prefix: "", in: nested, fileSystem: fileSystem, into: &outputs)
-        }
-
+    ) throws -> [File: GoDData] {
+        var outputs: [File: GoDData] = [:]
+        collectNested(prefix: "", in: folder, fileSystem: fileSystem, into: &outputs)
         if outputs.isEmpty {
-            throw RegistryError.noArtifactsFound(baseName: baseName, folder: folder.path)
+            throw RegistryError.noArtifactsFound(folder: folder.path)
         }
         return outputs
     }
@@ -139,13 +118,13 @@ public struct FileFormatRegistry {
         prefix: String,
         in folder: Folder,
         fileSystem: FileSystemTree,
-        into outputs: inout [String: GoDData]
+        into outputs: inout [File: GoDData]
     ) {
         guard let meta = fileSystem.inspectFolder(at: folder) else { return }
         for file in meta.files {
             let key = prefix.isEmpty ? file.fileName : "\(prefix)/\(file.fileName)"
             if let data = fileSystem.readFile(at: file) {
-                outputs[key] = data
+                outputs[File(key)] = data
             }
         }
         for sub in meta.subFolders {
@@ -159,7 +138,7 @@ public struct FileFormatRegistry {
     public enum RegistryError: Error, CustomStringConvertible {
         case unregistered(ext: String)
         case writeFailed(file: File)
-        case noArtifactsFound(baseName: String, folder: String)
+        case noArtifactsFound(folder: String)
 
         public var description: String {
             switch self {
@@ -167,8 +146,8 @@ public struct FileFormatRegistry {
                 return "FileFormatRegistry: no handler registered for extension '\(ext)'"
             case .writeFailed(let file):
                 return "FileFormatRegistry: failed to write artifact at \(file.path)"
-            case .noArtifactsFound(let baseName, let folder):
-                return "FileFormatRegistry: no artifacts found for '\(baseName)' under '\(folder)'"
+            case .noArtifactsFound(let folder):
+                return "FileFormatRegistry: no artifacts found under '\(folder)'"
             }
         }
     }

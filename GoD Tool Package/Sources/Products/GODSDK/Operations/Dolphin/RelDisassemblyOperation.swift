@@ -258,12 +258,12 @@ extension RelDisassembly {
                         let fileData = GoDData(byteStream: Array(chunkBytes.prefix(fileSize)), byteOrder: .big)
                         let ext = embeddedFile.extension
                         if registry.isRegistered(ext) {
+                            let chunkFolder = sectionFolder.folder(embeddedFile.label)
                             do {
                                 let written = try registry.dump(
                                     bytes: fileData,
                                     extension: ext,
-                                    baseName: embeddedFile.label,
-                                    into: sectionFolder,
+                                    into: chunkFolder,
                                     fileSystem: output,
                                     overwrite: true
                                 )

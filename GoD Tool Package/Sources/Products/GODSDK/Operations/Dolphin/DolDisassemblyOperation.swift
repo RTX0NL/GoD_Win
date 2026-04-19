@@ -314,12 +314,14 @@ extension DolDisassembly {
                         if registry.isRegistered(ext) {
                             // Route through the file-format registry: dumps structured
                             // artifacts (JSON / PNG / atlas / etc.) instead of raw bytes.
+                            // Each chunk gets its own subfolder so sibling chunks
+                            // using the same format don't collide on filenames.
+                            let chunkFolder = sectionFolder.folder(embeddedFile.label)
                             do {
                                 let written = try registry.dump(
                                     bytes: fileData,
                                     extension: ext,
-                                    baseName: embeddedFile.label,
-                                    into: sectionFolder,
+                                    into: chunkFolder,
                                     fileSystem: output,
                                     overwrite: true
                                 )

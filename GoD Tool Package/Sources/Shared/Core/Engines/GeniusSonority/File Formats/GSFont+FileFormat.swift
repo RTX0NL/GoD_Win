@@ -10,6 +10,12 @@ import Foundation
 import GoDFoundation
 
 extension GSFont: FileFormat {
+    /// Filenames under which this format emits its artifacts. The JSON's
+    /// internal `atlasPath` references `atlasPGM.fileName` so the pair is
+    /// self-describing.
+    public static let fontJSON = File("font.json")
+    public static let atlasPGM = File("atlas.pgm")
+
     public init(binary: GoDData) throws {
         try self.init(data: binary)
     }
@@ -18,12 +24,12 @@ extension GSFont: FileFormat {
         get throws { try data }
     }
 
-    public init(outputs: [String: GoDData]) throws {
-        guard let pgm = outputs["pgm"] else {
-            throw GSFont.missingOutputError(key: "pgm")
+    public init(outputs: [File: GoDData]) throws {
+        guard let pgm = outputs[GSFont.atlasPGM] else {
+            throw GSFont.missingOutputError(key: GSFont.atlasPGM.path)
         }
-        guard let metaData = outputs["json"] else {
-            throw GSFont.missingOutputError(key: "json")
+        guard let metaData = outputs[GSFont.fontJSON] else {
+            throw GSFont.missingOutputError(key: GSFont.fontJSON.path)
         }
         let metadata: GSFontAtlas.Metadata
         do {
@@ -34,19 +40,18 @@ extension GSFont: FileFormat {
         self = try GSFontAtlas.importAtlas(imageData: pgm, metadata: metadata)
     }
 
-    public var outputs: [String: GoDData] {
+    public var outputs: [File: GoDData] {
         get throws {
-            // The `atlasPath` metadata field is used by the ColoXD file-based
-            // build op to locate the PGM on disc. When routing via the
-            // registry, artifacts travel in-memory keyed by "pgm" and "json"
-            // — the stored path is informational.
-            let result = GSFontAtlas.exportAtlas(font: self, atlasPath: "atlas.pgm")
+            let result = GSFontAtlas.exportAtlas(
+                font: self,
+                atlasPath: GSFont.atlasPGM.path
+            )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let jsonData: Data = try encoder.encode(result.metadata)
             return [
-                "pgm": result.imageData,
-                "json": GoDData(data: jsonData, byteOrder: .big)
+                GSFont.atlasPGM: result.imageData,
+                GSFont.fontJSON: GoDData(data: jsonData, byteOrder: .big)
             ]
         }
     }
