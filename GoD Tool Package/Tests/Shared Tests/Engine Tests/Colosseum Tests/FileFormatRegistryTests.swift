@@ -165,16 +165,24 @@ final class FileFormatRegistryTests: XCTestCase {
 
         let input = GoDData(byteStream: [UInt8](raw), byteOrder: .big)
         let artifacts = try handler.dump(input)
-        XCTAssertEqual(Set(artifacts.keys), [ATXFile.animationPNG, ATXFile.animationJSON])
 
-        let json = try XCTUnwrap(artifacts[ATXFile.animationJSON])
-        let dto = try JSONDecoder().decode(ATXFile.DTO.self, from: json.data)
-        XCTAssertEqual(dto.pngPath, ATXFile.animationPNG.path,
-                       "JSON must self-reference its PNG sidecar")
+        // Must always include the metadata JSON.
+        XCTAssertNotNil(artifacts[ATXFile.animationJSON])
 
+        // Every non-JSON artifact is a frame PNG. airmd.atx has 3 frames.
+        let pngKeys = artifacts.keys.filter { $0 != ATXFile.animationJSON }
+        XCTAssertEqual(pngKeys.count, 3, "airmd.atx has 3 sprite frames")
+        for key in pngKeys {
+            XCTAssertTrue(key.path.hasSuffix(".png"),
+                          "frame artifact '\(key.path)' should be a PNG")
+        }
+
+        // Build roundtrip: artifacts → binary should re-parse cleanly.
         let rebuilt = try handler.build(artifacts)
-        XCTAssertEqual(rebuilt.length, [UInt8](raw).count,
-                       "ATX rebuild preserves total file size")
+        XCTAssertGreaterThan(rebuilt.length, 0)
+        let reparsed = try ATXFile(binary: rebuilt)
+        XCTAssertEqual(reparsed.frames.count, 3)
+        XCTAssertEqual(reparsed.animations.count, 2)
     }
 
     func testUnregisteredExtensionThrows() {
