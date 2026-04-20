@@ -239,7 +239,11 @@ extension ColoXD {
         guard let json = fileSystem.readFile(at: jsonFile) else {
             throw FSTErrors.fileNotFound(jsonFile, .init())
         }
-        let file = try MSGFile(outputs: [MSGFile.messagesJSON: json])
+        // The MSG init(outputs:) needs a key matching `*.msg.json`. We don't
+        // know the source filename here, so use a generic key — the format
+        // recovers any stem (or empty) from the suffix match.
+        let stem = jsonFile.fileName.withoutExtensions
+        let file = try MSGFile(outputs: [File("\(stem).msg.json"): json])
         let binary = try file.binaryData
         fileSystem.writeFile(binary, at: outputFile, overwrite: overwrite)
         logger?.log(.info("  \(jsonFile.fileName): \(file.entries.count) entries → \(outputFile.fileName)"))

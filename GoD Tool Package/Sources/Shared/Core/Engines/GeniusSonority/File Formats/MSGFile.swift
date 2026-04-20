@@ -22,6 +22,8 @@ import GoDFoundation
 public struct MSGFile: FileFormat, Equatable {
     public static let formatName = "msg"
 
+    public var name: String = "msg"
+
     /// Colo and XD share the binary layout. The variant only affects how
     /// control codes are rendered to / parsed from the pretty JSON form.
     public enum Variant: String, Codable {
@@ -75,10 +77,10 @@ public struct MSGFile: FileFormat, Equatable {
     /// Convenience init: parses with XD control-code semantics. Use
     /// `init(binary:variant:)` to parse with Colo semantics.
     public init(binary: GoDData) throws {
-        try self.init(binary: binary, variant: .xd)
+        try self.init(binary: binary, variant: .xd, name: "msg")
     }
 
-    public init(binary: GoDData, variant: Variant) throws {
+    public init(binary: GoDData, variant: Variant, name: String = "msg") throws {
         let data = binary.copy
         data.setByteOrder(.big)
         guard data.length >= 0x10 else { throw MSGFile.invalidFileError }
@@ -117,6 +119,7 @@ public struct MSGFile: FileFormat, Equatable {
             reservedSuffix: suffixBytes,
             entries: entries
         )
+        self.name = name
     }
 
     public var binaryData: GoDData {
@@ -176,12 +179,14 @@ public struct MSGFile: FileFormat, Equatable {
 
     // MARK: - FileFormat (outputs / JSON)
 
-    /// The single artifact this format emits.
-    public static let messagesJSON = File("messages.json")
-
     public init(outputs: [File: GoDData]) throws {
-        guard let jsonData = outputs[MSGFile.messagesJSON] else {
-            throw MSGFile.missingOutputError(key: MSGFile.messagesJSON.path)
+        let suffix = ".\(MSGFile.formatName).json"
+        guard let jsonKey = outputs.keys.first(where: { $0.path.hasSuffix(suffix) }) else {
+            throw MSGFile.missingOutputError(key: "*\(suffix)")
+        }
+        let stem = String(jsonKey.path.dropLast(suffix.count))
+        guard let jsonData = outputs[jsonKey] else {
+            throw MSGFile.missingOutputError(key: jsonKey.path)
         }
         let decoder = JSONDecoder()
         let dto = try decoder.decode(DTO.self, from: jsonData.data)
@@ -198,6 +203,7 @@ public struct MSGFile: FileFormat, Equatable {
                 )
             }
         )
+        self.name = stem.isEmpty ? "msg" : stem
     }
 
     public var outputs: [File: GoDData] {
@@ -214,7 +220,7 @@ public struct MSGFile: FileFormat, Equatable {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data: Data = try encoder.encode(dto)
-            return [MSGFile.messagesJSON: GoDData(data: data, byteOrder: .big)]
+            return [jsonFilename: GoDData(data: data, byteOrder: .big)]
         }
     }
 

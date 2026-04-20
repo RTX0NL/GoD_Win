@@ -32,10 +32,9 @@ public enum GSWParser {
     /// Returns the structured `GSWFile` plus a parallel array of `GoDImage`s,
     /// one per `file.allTextureRefs` entry (in iteration order across tags).
     ///
-    /// `name` is used to build each texture's `pngPath`. When non-empty,
-    /// textures are named `<name>_texture_<id>.png`; otherwise the bare
-    /// `texture_<id>.png` form is used. The path always sits under
-    /// `./textures/` relative to the metadata file's parent folder.
+    /// `name` is used to build each texture's `pngPath`. Textures are named
+    /// `<name>_texture_<id>.png` (flat — same folder as the JSON metadata)
+    /// when `name` is non-empty; otherwise the bare `texture_<id>.png` form.
     public static func parse(data: GoDData, name: String = "") throws -> (file: GSWFile, images: [GoDImage]) {
         data.setByteOrder(.big)
         guard data.length >= headerSize else { throw FileFormatErrors.invalid(format: GSWFile.formatName) }
@@ -78,7 +77,7 @@ public enum GSWParser {
                     decoder: decoder
                 ) else { continue }
                 let prefix = name.isEmpty ? "" : "\(name)_"
-                let pngPath = "./textures/\(prefix)texture_\(String(format: "%03d", id)).png"
+                let pngPath = "\(prefix)texture_\(String(format: "%03d", id)).png"
                 tags[tagIndex].textures.append(GSWTextureRef(
                     id: id,
                     payloadOffset: extracted.markerOffset,

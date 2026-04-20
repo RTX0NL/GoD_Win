@@ -32,6 +32,11 @@ import GTX
 public struct GSWFile: FileFormat {
     public static let formatName = "gsw"
 
+    /// Base filename used by FileFormat outputs/init(outputs:). Default
+    /// `gsw`; set to e.g. "pda_add_func" so artifacts dump as
+    /// `pda_add_func.gsw.json` + `pda_add_func_texture_001.png`.
+    public var name: String = "gsw"
+
     public var header: GSWHeader
     public var tags: [GSWTag]
     /// Decoded textures, parallel to `allTextureRefs`. Carried alongside the

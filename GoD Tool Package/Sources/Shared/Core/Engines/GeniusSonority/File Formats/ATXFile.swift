@@ -123,9 +123,6 @@ public struct ATXFile: FileFormat {
 
     // MARK: - Derived artifact filenames
 
-    /// Primary JSON artifact filename, e.g. `absol.atx.json`.
-    public var jsonFilename: File { File("\(name).atx.json") }
-
     /// Name of the PNG for the given frame index, e.g. `absol_frame_002.png`.
     public func framePNGName(index: Int) -> File {
         File("\(name)_frame_\(String(format: "%03d", index)).png")
@@ -311,9 +308,9 @@ public struct ATXFile: FileFormat {
 
     public init(outputs: [File: GoDData]) throws {
         // Recover the name stem from whichever *.atx.json key is present.
-        let suffix = ".atx.json"
+        let suffix = ".\(ATXFile.formatName).json"
         guard let jsonKey = outputs.keys.first(where: { $0.path.hasSuffix(suffix) }) else {
-            throw ATXFile.missingOutputError(key: "*.atx.json")
+            throw ATXFile.missingOutputError(key: "*\(suffix)")
         }
         let stem = String(jsonKey.path.dropLast(suffix.count))
         guard !stem.isEmpty else {

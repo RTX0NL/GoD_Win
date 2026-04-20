@@ -2,19 +2,15 @@
 //  GSFont+FileFormat.swift
 //
 //  Bridges GSFont's existing binary init / atlas export+import onto the
-//  FileFormat contract so the registry can route `.fnt` chunks
-//  automatically.
+//  FileFormat contract. Artifact filenames follow the project-wide
+//  pattern: `<name>.fnt.json` + `<name>.fnt.pgm` (default `name = "fnt"`).
 //
 
 import Foundation
 import GoDFoundation
 
 extension GSFont: FileFormat {
-    /// Filenames under which this format emits its artifacts. The JSON's
-    /// internal `atlasPath` references `atlasPGM.fileName` so the pair is
-    /// self-describing.
-    public static let fontJSON = File("font.json")
-    public static let atlasPGM = File("atlas.pgm")
+    public func atlasPGMFilename() -> File { File("\(name).\(GSFont.formatName).pgm") }
 
     public init(binary: GoDData) throws {
         try self.init(data: binary)
@@ -25,11 +21,18 @@ extension GSFont: FileFormat {
     }
 
     public init(outputs: [File: GoDData]) throws {
-        guard let pgm = outputs[GSFont.atlasPGM] else {
-            throw GSFont.missingOutputError(key: GSFont.atlasPGM.path)
+        let jsonSuffix = ".\(GSFont.formatName).json"
+        let pgmSuffix = ".\(GSFont.formatName).pgm"
+        guard let jsonKey = outputs.keys.first(where: { $0.path.hasSuffix(jsonSuffix) }) else {
+            throw GSFont.missingOutputError(key: "*\(jsonSuffix)")
         }
-        guard let metaData = outputs[GSFont.fontJSON] else {
-            throw GSFont.missingOutputError(key: GSFont.fontJSON.path)
+        let stem = String(jsonKey.path.dropLast(jsonSuffix.count))
+        let pgmKey = File("\(stem)\(pgmSuffix)")
+        guard let metaData = outputs[jsonKey] else {
+            throw GSFont.missingOutputError(key: jsonKey.path)
+        }
+        guard let pgm = outputs[pgmKey] else {
+            throw GSFont.missingOutputError(key: pgmKey.path)
         }
         let metadata: GSFontAtlas.Metadata
         do {
@@ -38,20 +41,19 @@ extension GSFont: FileFormat {
             throw GSFont.invalidFileError
         }
         self = try GSFontAtlas.importAtlas(imageData: pgm, metadata: metadata)
+        self.name = stem.isEmpty ? "fnt" : stem
     }
 
     public var outputs: [File: GoDData] {
         get throws {
-            let result = GSFontAtlas.exportAtlas(
-                font: self,
-                atlasPath: GSFont.atlasPGM.path
-            )
+            let pgm = atlasPGMFilename()
+            let result = GSFontAtlas.exportAtlas(font: self, atlasPath: pgm.path)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let jsonData: Data = try encoder.encode(result.metadata)
             return [
-                GSFont.atlasPGM: result.imageData,
-                GSFont.fontJSON: GoDData(data: jsonData, byteOrder: .big)
+                pgm: result.imageData,
+                jsonFilename: GoDData(data: jsonData, byteOrder: .big)
             ]
         }
     }

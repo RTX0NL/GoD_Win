@@ -20,10 +20,20 @@ import Foundation
 /// formats can nest paths like `File("textures/tex_03.png")`.
 public protocol FileFormat {
     static var formatName: String { get }
+    /// Base name (no extension) used to build output filenames. Default
+    /// is `formatName`; set explicitly when dumping a known source file
+    /// so artifacts are named after it (e.g. `name = "absol"` produces
+    /// `absol.atx.json`, `absol_frame_000.png`).
+    var name: String { get set }
     init(binary: GoDData) throws
     init(outputs: [File: GoDData]) throws
     var binaryData: GoDData { get throws }
     var outputs: [File: GoDData] { get throws }
+}
+
+public extension FileFormat {
+    /// `<name>.<formatName>.json` — the metadata JSON every format emits.
+    var jsonFilename: File { File("\(name).\(Self.formatName).json") }
 }
 
 public enum FileFormatErrors: Error, CustomStringConvertible {

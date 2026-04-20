@@ -42,6 +42,11 @@ import Structs
 public struct GSFont {
     public static let formatName = "fnt"
 
+    /// Base filename used by FileFormat outputs/init(outputs:). Default
+    /// `fnt` produces `fnt.fnt.json`/`fnt.fnt.pgm`; set to e.g. "pda_menu"
+    /// to produce `pda_menu.fnt.json`/`pda_menu.fnt.pgm`.
+    public var name: String = "fnt"
+
     public struct Glyph {
         /// Character code (Unicode / Shift-JIS depending on font)
         public let code: UInt16

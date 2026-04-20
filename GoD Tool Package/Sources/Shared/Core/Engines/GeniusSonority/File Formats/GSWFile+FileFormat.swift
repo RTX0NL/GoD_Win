@@ -2,9 +2,9 @@
 //  GSWFile+FileFormat.swift
 //
 //  Bridges GSWParser.parse / GSWParser.serialize onto the FileFormat
-//  contract. Outputs are one JSON metadata file plus per-texture PNGs
-//  nested under `textures/` — each GSWTextureRef's `pngPath` points at
-//  its sidecar, so the JSON is self-describing.
+//  contract. Artifacts (using project-wide naming):
+//    <name>.gsw.json
+//    <name>_texture_001.png, <name>_texture_002.png, ...
 //
 
 import Foundation
@@ -12,11 +12,14 @@ import GoDFoundation
 import GTX
 
 extension GSWFile {
-    public static let flashMenuJSON = File("flashmenu.json")
-
     public init(binary: GoDData) throws {
-        let parsed = try GSWParser.parse(data: binary)
+        try self.init(binary: binary, name: "gsw")
+    }
+
+    public init(binary: GoDData, name: String) throws {
+        let parsed = try GSWParser.parse(data: binary, name: name)
         self.init(header: parsed.file.header, tags: parsed.file.tags, images: parsed.images)
+        self.name = name
     }
 
     public var binaryData: GoDData {
@@ -26,8 +29,13 @@ extension GSWFile {
     }
 
     public init(outputs: [File: GoDData]) throws {
-        guard let jsonData = outputs[GSWFile.flashMenuJSON] else {
-            throw GSWFile.missingOutputError(key: GSWFile.flashMenuJSON.path)
+        let suffix = ".\(GSWFile.formatName).json"
+        guard let jsonKey = outputs.keys.first(where: { $0.path.hasSuffix(suffix) }) else {
+            throw GSWFile.missingOutputError(key: "*\(suffix)")
+        }
+        let stem = String(jsonKey.path.dropLast(suffix.count))
+        guard let jsonData = outputs[jsonKey] else {
+            throw GSWFile.missingOutputError(key: jsonKey.path)
         }
         let metadata: GSWFile
         do {
@@ -49,6 +57,7 @@ extension GSWFile {
         }
 
         self.init(header: metadata.header, tags: metadata.tags, images: images)
+        self.name = stem.isEmpty ? "gsw" : stem
     }
 
     public var outputs: [File: GoDData] {
@@ -58,7 +67,7 @@ extension GSWFile {
             let jsonData: Data = try encoder.encode(self)
 
             var artifacts: [File: GoDData] = [
-                GSWFile.flashMenuJSON: GoDData(data: jsonData, byteOrder: .big)
+                jsonFilename: GoDData(data: jsonData, byteOrder: .big)
             ]
 
             let refs = allTextureRefs

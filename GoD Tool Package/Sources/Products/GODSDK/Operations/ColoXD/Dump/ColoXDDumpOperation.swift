@@ -296,13 +296,14 @@ extension ColoXD {
             return
         }
         fileSystem.createFolder(at: outputFolder, overwrite: overwrite)
-        let artifacts = try parsed.outputs
-        guard let json = artifacts[MSGFile.messagesJSON] else {
-            throw MSGFile.missingOutputError(key: MSGFile.messagesJSON.path)
+        // Use the format's standard naming (<name>.msg.json) so the build
+        // op can read it back via ATX-style folder scan if needed.
+        var named = parsed
+        named.name = name
+        for (relative, bytes) in try named.outputs {
+            fileSystem.writeFile(bytes, at: outputFolder.file(relative.path), overwrite: overwrite)
         }
-        let outputFile = outputFolder.file("\(name).json")
-        fileSystem.writeFile(json, at: outputFile, overwrite: overwrite)
-        logger?.log(.info("  \(name): \(parsed.entries.count) entries → \(outputFile.fileName)"))
+        logger?.log(.info("  \(name): \(parsed.entries.count) entries → \(outputFolder.path)"))
     }
     
     private static func dumpColosseum(

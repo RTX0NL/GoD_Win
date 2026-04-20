@@ -109,7 +109,7 @@ final class GSWTests: XCTestCase {
         XCTAssertEqual(ref.format, .C8)
         XCTAssertEqual(ref.width, 4)
         XCTAssertEqual(ref.height, 4)
-        XCTAssertEqual(ref.pngPath, "./textures/texture_001.png")
+        XCTAssertEqual(ref.pngPath, "texture_001.png")
         // Marker is at payload offset 12 (after the 12-byte preMarker filler)
         XCTAssertEqual(ref.payloadOffset, 12)
 
