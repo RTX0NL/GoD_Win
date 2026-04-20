@@ -177,11 +177,6 @@ public struct GSWTextureRef: Codable, Equatable {
     public var paletteFormat: GXPaletteFormat?
     public var width: Int
     public var height: Int
-    /// Path to the extracted PNG, relative to the metadata `.json` file's
-    /// parent folder (e.g. `./textures/<gswName>_texture_001.png`). Stored as
-    /// a path rather than a bare filename so the textures folder can be
-    /// renamed or relocated without losing the link.
-    public var pngPath: String
 
     public init(
         id: Int,
@@ -190,8 +185,7 @@ public struct GSWTextureRef: Codable, Equatable {
         format: GXTextureFormat,
         paletteFormat: GXPaletteFormat?,
         width: Int,
-        height: Int,
-        pngPath: String
+        height: Int
     ) {
         self.id = id
         self.payloadOffset = payloadOffset
@@ -200,6 +194,5 @@ public struct GSWTextureRef: Codable, Equatable {
         self.paletteFormat = paletteFormat
         self.width = width
         self.height = height
-        self.pngPath = pngPath
     }
 }

@@ -77,24 +77,37 @@ public struct RELFile: FileFormat {
         self.imports = imports
     }
 
-    /// One section entry. Empty sections (size=0) and the BSS section
-    /// (size>0, no file bytes) are kept so the section table preserves
-    /// indices and the loader sees the original layout.
+    /// One section entry. Empty sections (no data, no bssSize) and the
+    /// BSS section (bssSize > 0, no file bytes) are kept so the section
+    /// table preserves indices and the loader sees the original layout.
+    ///
+    /// `size` and `isBSS` are computed from the fundamental fields so they
+    /// can't drift: a section is BSS exactly when `bssSize > 0`, and its
+    /// declared size is either `bssSize` (BSS) or `data.count` (on-disc).
     public struct Section: Codable, Equatable {
         public var index: Int
-        public var size: UInt32
         public var isExecutable: Bool
-        /// True for the BSS section (`size > 0 && fileOffset == 0`).
-        public var isBSS: Bool
-        /// Section bytes (empty for BSS and zero-sized sections).
+        /// Declared allocation size for a BSS section. Zero for non-BSS
+        /// sections (empty or on-disc).
+        public var bssSize: UInt32
+        /// On-disc bytes. Empty for BSS (bssSize > 0) and zero-size
+        /// sections.
         public var data: [UInt8]
 
-        public init(index: Int, size: UInt32, isExecutable: Bool, isBSS: Bool, data: [UInt8] = []) {
+        public init(index: Int, isExecutable: Bool, bssSize: UInt32 = 0, data: [UInt8] = []) {
             self.index = index
-            self.size = size
             self.isExecutable = isExecutable
-            self.isBSS = isBSS
+            self.bssSize = bssSize
             self.data = data
+        }
+
+        /// True when this section carries a non-zero bssSize (and no
+        /// on-disc bytes).
+        public var isBSS: Bool { bssSize > 0 }
+
+        /// Declared byte count: bssSize for BSS, data count otherwise.
+        public var size: UInt32 {
+            isBSS ? bssSize : UInt32(data.count)
         }
     }
 
@@ -233,9 +246,8 @@ public struct RELFile: FileFormat {
             }
             parsedSections.append(Section(
                 index: i,
-                size: size,
                 isExecutable: isExecutable,
-                isBSS: isBSS,
+                bssSize: isBSS ? size : 0,
                 data: sectionBytes
             ))
         }
@@ -451,29 +463,25 @@ public struct RELFile: FileFormat {
         self.fixSize = dto.fixSize
         self.imports = dto.imports
 
-        // Reattach section data from sidecar files.
+        // Reattach section data from sidecar files. A section's size
+        // comes from its .bin file (non-BSS) or from `bssSize` (BSS).
+        // Empty sections have neither.
         var rebuilt: [Section] = []
         rebuilt.reserveCapacity(dto.sections.count)
         for sectionDTO in dto.sections {
             var sectionBytes: [UInt8] = []
-            if !sectionDTO.isBSS && sectionDTO.size > 0 {
+            let bssSize = sectionDTO.bssSize ?? 0
+            if bssSize == 0 {
                 let binKey = File("\(self.name)_section_\(String(format: "%03d", sectionDTO.index)).bin")
-                guard let data = outputs[binKey] else {
-                    throw RELFile.missingOutputError(key: binKey.path)
+                if let data = outputs[binKey] {
+                    sectionBytes = data.rawBytes
                 }
-                sectionBytes = data.rawBytes
-                guard sectionBytes.count == Int(sectionDTO.size) else {
-                    throw FileFormatErrors.failedToEncode(
-                        format: RELFile.formatName,
-                        target: "section \(sectionDTO.index) size mismatch (\(sectionBytes.count) vs declared \(sectionDTO.size))"
-                    )
-                }
+                // No .bin file → assume the section is empty (size 0).
             }
             rebuilt.append(Section(
                 index: sectionDTO.index,
-                size: sectionDTO.size,
                 isExecutable: sectionDTO.isExecutable,
-                isBSS: sectionDTO.isBSS,
+                bssSize: bssSize,
                 data: sectionBytes
             ))
         }
@@ -500,12 +508,11 @@ public struct RELFile: FileFormat {
                 sectionAlign: sectionAlign,
                 bssAlign: bssAlign,
                 fixSize: fixSize,
-                sections: sections.map {
+                sections: sections.map { section in
                     SectionDTO(
-                        index: $0.index,
-                        size: $0.size,
-                        isExecutable: $0.isExecutable,
-                        isBSS: $0.isBSS
+                        index: section.index,
+                        isExecutable: section.isExecutable,
+                        bssSize: section.isBSS ? section.bssSize : nil
                     )
                 },
                 imports: imports
@@ -551,8 +558,9 @@ public struct RELFile: FileFormat {
 
     private struct SectionDTO: Codable {
         let index: Int
-        let size: UInt32
         let isExecutable: Bool
-        let isBSS: Bool
+        /// Only set for BSS sections. Non-BSS sections derive their size
+        /// from the paired `<name>_section_NNN.bin` file (or 0 if no file).
+        let bssSize: UInt32?
     }
 }

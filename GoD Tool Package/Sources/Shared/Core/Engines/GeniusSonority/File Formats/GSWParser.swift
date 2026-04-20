@@ -32,9 +32,10 @@ public enum GSWParser {
     /// Returns the structured `GSWFile` plus a parallel array of `GoDImage`s,
     /// one per `file.allTextureRefs` entry (in iteration order across tags).
     ///
-    /// `name` is used to build each texture's `pngPath`. Textures are named
-    /// `<name>_texture_<id>.png` (flat — same folder as the JSON metadata)
-    /// when `name` is non-empty; otherwise the bare `texture_<id>.png` form.
+    /// `name` is retained for compatibility with callers that passed it
+    /// (e.g. to build PNG filenames at a higher layer). No field on
+    /// GSWTextureRef records it — the filename is derived at serialize
+    /// time in `GSWFile+FileFormat`.
     public static func parse(data: GoDData, name: String = "") throws -> (file: GSWFile, images: [GoDImage]) {
         data.setByteOrder(.big)
         guard data.length >= headerSize else { throw FileFormatErrors.invalid(format: GSWFile.formatName) }
@@ -76,8 +77,7 @@ public enum GSWParser {
                     id: id,
                     decoder: decoder
                 ) else { continue }
-                let prefix = name.isEmpty ? "" : "\(name)_"
-                let pngPath = "\(prefix)texture_\(String(format: "%03d", id)).png"
+                _ = name  // retained for source compatibility; not stored
                 tags[tagIndex].textures.append(GSWTextureRef(
                     id: id,
                     payloadOffset: extracted.markerOffset,
@@ -85,8 +85,7 @@ public enum GSWParser {
                     format: extracted.metadata.format,
                     paletteFormat: extracted.metadata.paletteFormat,
                     width: extracted.metadata.width,
-                    height: extracted.metadata.height,
-                    pngPath: pngPath
+                    height: extracted.metadata.height
                 ))
                 images.append(extracted.image)
                 break

@@ -209,7 +209,8 @@ final class FileFormatProtocolTests: XCTestCase {
                 width: 4, height: 4,
                 pixels: GoDData(byteStream: rgba, byteOrder: .big)
             ),
-            metadata: GXTextureMetadata(width: 4, height: 4, format: .RGBA32, paletteFormat: nil),
+            format: .RGBA32,
+            paletteFormat: nil,
             name: "sample"
         )
     }
@@ -219,8 +220,8 @@ final class FileFormatProtocolTests: XCTestCase {
         let parsed = try GTXFile(binary: bytes)
         XCTAssertEqual(parsed.image.width, 4)
         XCTAssertEqual(parsed.image.height, 4)
-        XCTAssertEqual(parsed.metadata.format, .RGBA32)
-        XCTAssertNil(parsed.metadata.paletteFormat)
+        XCTAssertEqual(parsed.format, .RGBA32)
+        XCTAssertNil(parsed.paletteFormat)
     }
 
     func testGTX_binaryData_writesKnownHeaderBytes() throws {
@@ -242,7 +243,7 @@ final class FileFormatProtocolTests: XCTestCase {
         XCTAssertEqual(parsed.name, "sample")
         XCTAssertEqual(parsed.image.width, 4)
         XCTAssertEqual(parsed.image.height, 4)
-        XCTAssertEqual(parsed.metadata.format, .RGBA32)
+        XCTAssertEqual(parsed.format, .RGBA32)
     }
 
     func testGTX_outputs_emitsNamedJSONAndPNG() throws {
@@ -251,13 +252,14 @@ final class FileFormatProtocolTests: XCTestCase {
         XCTAssertNotNil(artifacts[File("sample.gtx.json")])
         XCTAssertNotNil(artifacts[File("sample.gtx.png")])
 
-        // JSON's pngPath field should point at the sidecar by name.
+        // JSON's pngPath field should point at the sidecar by name; format
+        // is present but width/height are derivable from the PNG and NOT
+        // stored in the DTO.
         let json = artifacts[File("sample.gtx.json")]!
         let dto = try JSONDecoder().decode(GTXFile.DTO.self, from: json.data)
         XCTAssertEqual(dto.pngPath, "sample.gtx.png")
-        XCTAssertEqual(dto.width, 4)
-        XCTAssertEqual(dto.height, 4)
         XCTAssertEqual(dto.format, .RGBA32)
+        XCTAssertNil(dto.paletteFormat)
     }
 
     // MARK: - ATXFile

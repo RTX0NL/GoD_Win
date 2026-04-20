@@ -315,33 +315,27 @@ extension ColoXD {
         fileSystem: FileSystemTree,
         logger: Logger?
     ) throws {
-        guard fileSystem.inspectFile(at: metadataFile) != nil else {
-            throw FSTErrors.fileNotFound(metadataFile, .init())
-        }
-        let file: GSWFile = try fileSystem.decodeJSON(from: metadataFile)
-
-        guard let baseFolder = metadataFile.parentFolder else {
+        guard fileSystem.inspectFile(at: metadataFile) != nil,
+              let baseFolder = metadataFile.parentFolder else {
             throw FSTErrors.fileNotFound(metadataFile, .init())
         }
 
-        let allRefs = file.allTextureRefs
-        var images = [GoDImage]()
-        images.reserveCapacity(allRefs.count)
-        for ref in allRefs {
-            let pngFile = ColoXD.resolveRelativeFile(ref.pngPath, in: baseFolder)
-            guard let pngData = fileSystem.readFile(at: pngFile) else {
-                throw FSTErrors.fileNotFound(pngFile, .init())
+        // Feed every file in the project folder into GSWFile.init(outputs:)
+        // and let the format resolve PNG filenames from the name + id
+        // convention.
+        var outputs: [File: GoDData] = [:]
+        if let meta = fileSystem.inspectFolder(at: baseFolder) {
+            for f in meta.files {
+                if let data = fileSystem.readFile(at: f) {
+                    outputs[File(f.fileName)] = data
+                }
             }
-            guard let image = GoDImage.fromPNG(pngData) else {
-                throw FSTErrors.fileNotFound(pngFile, .init())
-            }
-            images.append(image)
         }
-
-        let gswData = try GSWParser.serialize(file: file, images: images)
+        let gsw = try GSWFile(outputs: outputs)
+        let gswData = try gsw.binaryData
         if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
             fileSystem.writeFile(gswData, at: outputFile, overwrite: overwrite)
-            logger?.log(.info("Built flash menu \(outputFile.fileName) (\(file.tags.count) tags, \(allRefs.count) textures, \(gswData.length) bytes)"))
+            logger?.log(.info("Built flash menu \(outputFile.fileName) (\(gsw.tags.count) tags, \(gsw.allTextureRefs.count) textures, \(gswData.length) bytes)"))
         }
     }
 

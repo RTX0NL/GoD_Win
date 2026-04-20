@@ -98,7 +98,6 @@ final class GSWTests: XCTestCase {
         XCTAssertEqual(ref.format, .C8)
         XCTAssertEqual(ref.width, 4)
         XCTAssertEqual(ref.height, 4)
-        XCTAssertEqual(ref.pngPath, "texture_001.png")
         XCTAssertEqual(ref.payloadOffset, 12, "marker sits past 12 bytes of pre-filler")
         XCTAssertEqual(images.count, 1)
     }

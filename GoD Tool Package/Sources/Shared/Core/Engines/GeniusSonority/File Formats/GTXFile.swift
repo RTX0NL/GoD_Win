@@ -2,11 +2,12 @@
 //  GTXFile.swift
 //
 //  FileFormat wrapper over GXTextureDecoder. The decoder itself is
-//  stateless; this wrapper owns the decoded image + header metadata so the
-//  registry can move GTX chunks uniformly.
+//  stateless; this wrapper owns the decoded image plus the format flags
+//  needed to re-encode. Width and height come from `image` rather than
+//  being stored separately so there's no chance of them drifting.
 //
 //  Artifacts (using project-wide naming pattern):
-//    <name>.gtx.json  — metadata (dimensions, formats, `pngPath` reference)
+//    <name>.gtx.json  — metadata (format flags + `pngPath` reference)
 //    <name>.gtx.png   — RGBA8888 decoded pixels
 //
 
@@ -17,17 +18,33 @@ import GTX
 public struct GTXFile: FileFormat {
     public static let formatName = "gtx"
 
-    /// Base name (no extension) used for output filenames. Defaults to
-    /// `gtx`; set explicitly when dumping a known source file so the
-    /// artifacts are named after it.
+    /// Base name (no extension) used for output filenames.
     public var name: String = "gtx"
 
     public var image: GoDImage
-    public var metadata: GXTextureMetadata
+    public var format: GXTextureFormat
+    public var paletteFormat: GXPaletteFormat?
 
-    public init(image: GoDImage, metadata: GXTextureMetadata, name: String = "gtx") {
+    /// Computed wrapper matching the shape GXTextureDecoder expects. Width
+    /// and height are taken from `image` so they can't disagree.
+    public var metadata: GXTextureMetadata {
+        GXTextureMetadata(
+            width: image.width,
+            height: image.height,
+            format: format,
+            paletteFormat: paletteFormat
+        )
+    }
+
+    public init(
+        image: GoDImage,
+        format: GXTextureFormat,
+        paletteFormat: GXPaletteFormat? = nil,
+        name: String = "gtx"
+    ) {
         self.image = image
-        self.metadata = metadata
+        self.format = format
+        self.paletteFormat = paletteFormat
         self.name = name
     }
 
@@ -42,7 +59,8 @@ public struct GTXFile: FileFormat {
             throw GTXFile.invalidFileError
         }
         self.image = image
-        self.metadata = meta
+        self.format = meta.format
+        self.paletteFormat = meta.paletteFormat
     }
 
     public init(binary: GoDData, name: String) throws {
@@ -60,26 +78,19 @@ public struct GTXFile: FileFormat {
         }
     }
 
-    /// Metadata DTO — wraps GXTextureMetadata with a `pngPath` reference so
-    /// the JSON is self-describing about where to find its PNG sidecar.
+    /// JSON DTO. `pngPath` is the on-disc filename for the PNG sidecar;
+    /// `format` and `paletteFormat` are the only fundamental fields
+    /// (width/height come from the PNG itself).
     public struct DTO: Codable, Equatable {
-        public let width: Int
-        public let height: Int
         public let format: GXTextureFormat
         public let paletteFormat: GXPaletteFormat?
         /// Path of the PNG sidecar, relative to this JSON's parent folder.
         public let pngPath: String
 
-        public init(metadata: GXTextureMetadata, pngPath: String) {
-            self.width = metadata.width
-            self.height = metadata.height
-            self.format = metadata.format
-            self.paletteFormat = metadata.paletteFormat
+        public init(format: GXTextureFormat, paletteFormat: GXPaletteFormat?, pngPath: String) {
+            self.format = format
+            self.paletteFormat = paletteFormat
             self.pngPath = pngPath
-        }
-
-        public var metadata: GXTextureMetadata {
-            GXTextureMetadata(width: width, height: height, format: format, paletteFormat: paletteFormat)
         }
     }
 
@@ -106,7 +117,8 @@ public struct GTXFile: FileFormat {
             throw GTXFile.invalidFileError
         }
         self.image = image
-        self.metadata = dto.metadata
+        self.format = dto.format
+        self.paletteFormat = dto.paletteFormat
         self.name = stem.isEmpty ? "gtx" : stem
     }
 
@@ -116,7 +128,7 @@ public struct GTXFile: FileFormat {
                 throw GTXFile.failedToEncodeError(target: "png")
             }
             let pngFile = texturePNGFilename()
-            let dto = DTO(metadata: metadata, pngPath: pngFile.path)
+            let dto = DTO(format: format, paletteFormat: paletteFormat, pngPath: pngFile.path)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let jsonData: Data = try encoder.encode(dto)

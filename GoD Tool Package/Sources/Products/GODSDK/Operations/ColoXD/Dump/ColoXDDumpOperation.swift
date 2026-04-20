@@ -347,21 +347,16 @@ extension ColoXD {
         }
 
         fileSystem.createFolder(at: outputFolder, overwrite: overwrite)
-        let allRefs = parsed.file.allTextureRefs
-
-        let metadataFile = outputFolder.file("\(name).json")
-        try fileSystem.encodeJSON(parsed.file, to: metadataFile, overwrite: overwrite)
-
-        for (index, ref) in allRefs.enumerated() {
-            guard index < parsed.images.count,
-                  let png = parsed.images[index].pngData() else { continue }
-            let pngFile = resolveRelativeFile(ref.pngPath, in: outputFolder)
-            if overwrite || fileSystem.inspectFile(at: pngFile) == nil {
-                fileSystem.writeFile(png, at: pngFile, overwrite: overwrite)
-            }
+        // Route through FileFormat outputs so filenames follow the
+        // project-wide `<name>_texture_NNN.png` convention and nothing
+        // needs to know a stored `pngPath` per ref.
+        var gsw = parsed.file
+        gsw.name = name
+        gsw.images = parsed.images
+        for (relative, bytes) in try gsw.outputs {
+            fileSystem.writeFile(bytes, at: outputFolder.file(relative.path), overwrite: overwrite)
         }
-
-        logger?.log(.info("  \(name): \(parsed.file.tags.count) tags, \(allRefs.count) textures → \(outputFolder.path)"))
+        logger?.log(.info("  \(name): \(gsw.tags.count) tags, \(gsw.allTextureRefs.count) textures → \(outputFolder.path)"))
     }
 
     private static func dumpXD(

@@ -6,12 +6,20 @@
 //    <name>.gsw.json
 //    <name>_texture_001.png, <name>_texture_002.png, ...
 //
+//  The PNG filename for each GSWTextureRef is derived from the parent
+//  GSWFile's `name` and the ref's id — not stored on the ref itself.
+//
 
 import Foundation
 import GoDFoundation
 import GTX
 
 extension GSWFile {
+    /// Filename for the PNG that backs a given texture ref.
+    public func pngFilename(for ref: GSWTextureRef) -> File {
+        File("\(name)_texture_\(String(format: "%03d", ref.id)).png")
+    }
+
     public init(binary: GoDData) throws {
         try self.init(binary: binary, name: "gsw")
     }
@@ -43,10 +51,12 @@ extension GSWFile {
         } catch {
             throw GSWFile.invalidFileError
         }
+        var rebuilt = metadata
+        rebuilt.name = stem.isEmpty ? "gsw" : stem
 
         var images = [GoDImage]()
-        for ref in metadata.allTextureRefs {
-            let key = File(GSWFile.normalizePNGPath(ref.pngPath))
+        for ref in rebuilt.allTextureRefs {
+            let key = rebuilt.pngFilename(for: ref)
             guard let pngData = outputs[key] else {
                 throw GSWFile.missingOutputError(key: key.path)
             }
@@ -56,8 +66,8 @@ extension GSWFile {
             images.append(image)
         }
 
-        self.init(header: metadata.header, tags: metadata.tags, images: images)
-        self.name = stem.isEmpty ? "gsw" : stem
+        rebuilt.images = images
+        self = rebuilt
     }
 
     public var outputs: [File: GoDData] {
@@ -81,17 +91,9 @@ extension GSWFile {
                 guard let png = image.pngData() else {
                     throw GSWFile.failedToEncodeError(target: "PNG for texture \(ref.id)")
                 }
-                artifacts[File(GSWFile.normalizePNGPath(ref.pngPath))] = png
+                artifacts[pngFilename(for: ref)] = png
             }
             return artifacts
         }
-    }
-
-    /// Drops a leading `./` from a `GSWTextureRef.pngPath` so keys stay
-    /// cleanly relative when placed into the outputs dict.
-    private static func normalizePNGPath(_ path: String) -> String {
-        var p = path
-        if p.hasPrefix("./") { p.removeFirst(2) }
-        return p
     }
 }

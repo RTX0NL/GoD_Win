@@ -59,8 +59,8 @@ final class RELFileTests: XCTestCase {
             moduleID: 0x2A,
             version: 3,
             sections: [
-                .init(index: 0, size: 0, isExecutable: false, isBSS: false),
-                .init(index: 1, size: 8, isExecutable: true, isBSS: false,
+                .init(index: 0, isExecutable: false),
+                .init(index: 1, isExecutable: true,
                       data: [0x4E, 0x80, 0x00, 0x20, 0x60, 0x00, 0x00, 0x00])
             ],
             imports: [
@@ -114,6 +114,9 @@ final class RELFileTests: XCTestCase {
     /// Construct outputs artifacts for a trivial REL and confirm
     /// init(outputs:) rebuilds the declared structure.
     func testREL_initOutputs_parsesJSONAndSectionBins() throws {
+        // Section 0 is empty (no bssSize, no bin file).
+        // Section 1 is an on-disc 4-byte code section (data comes from
+        // the .bin file — no `size` declared in JSON).
         let jsonText = """
         {
           "moduleID": 123,
@@ -134,8 +137,8 @@ final class RELFileTests: XCTestCase {
           "bssAlign": 1,
           "fixSize": 0,
           "sections": [
-            {"index": 0, "size": 0, "isExecutable": false, "isBSS": false},
-            {"index": 1, "size": 4, "isExecutable": true, "isBSS": false}
+            {"index": 0, "isExecutable": false},
+            {"index": 1, "isExecutable": true}
           ],
           "imports": []
         }
@@ -151,9 +154,10 @@ final class RELFileTests: XCTestCase {
         XCTAssertEqual(parsed.name, "mod")
         XCTAssertEqual(parsed.moduleID, 123)
         XCTAssertEqual(parsed.sections.count, 2)
-        XCTAssertEqual(parsed.sections[1].size, 4)
+        XCTAssertEqual(parsed.sections[1].size, 4, "size derived from .bin byte count")
         XCTAssertTrue(parsed.sections[1].isExecutable)
         XCTAssertEqual(parsed.sections[1].data, [0x60, 0x00, 0x00, 0x00])
+        XCTAssertFalse(parsed.sections[1].isBSS)
         XCTAssertTrue(parsed.imports.isEmpty)
     }
 
@@ -167,12 +171,12 @@ final class RELFileTests: XCTestCase {
             moduleID: 7,
             version: 3,
             sections: [
-                .init(index: 0, size: 0, isExecutable: false, isBSS: false),
-                .init(index: 1, size: 4, isExecutable: true, isBSS: false, data: payload),
-                .init(index: 2, size: 0, isExecutable: false, isBSS: false),
-                .init(index: 3, size: 8, isExecutable: false, isBSS: false,
+                .init(index: 0, isExecutable: false),
+                .init(index: 1, isExecutable: true, data: payload),
+                .init(index: 2, isExecutable: false),
+                .init(index: 3, isExecutable: false,
                       data: [UInt8](repeating: 0xFF, count: 8)),
-                .init(index: 4, size: 16, isExecutable: false, isBSS: true)   // BSS — no bytes
+                .init(index: 4, isExecutable: false, bssSize: 16)    // BSS — no bytes
             ],
             imports: []
         )
@@ -187,11 +191,11 @@ final class RELFileTests: XCTestCase {
         XCTAssertNil(artifacts[File("mod_section_004.bin")],
                      "BSS section gets no sidecar")
 
-        // JSON declares all 5 sections (including BSS and zero-sized).
+        // JSON declares all 5 sections; the BSS section carries bssSize.
         let json = artifacts[File("mod.rel.json")]!.data
         let text = String(data: json, encoding: .utf8) ?? ""
         XCTAssertTrue(text.contains("\"moduleID\" : 7"))
-        XCTAssertTrue(text.contains("\"isBSS\" : true"),
+        XCTAssertTrue(text.contains("\"bssSize\" : 16"),
                       "BSS section is present in the JSON")
     }
 
