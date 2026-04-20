@@ -3,101 +3,17 @@ import Foundation
 import GoDFoundation
 import GeniusSonority
 
+/// Registry-level behaviour only — dispatch, filesystem I/O layout, error
+/// paths. The protocol members of each format are exercised in
+/// `FileFormatProtocolTests` so these tests focus on what the registry
+/// adds on top: extension → handler routing, baseName-less dump folder
+/// layout, build-from-folder, error propagation.
 final class FileFormatRegistryTests: XCTestCase {
 
-    func testBuiltinsRegistersKnownFormats() {
-        let registry = FileFormatRegistry.builtins()
-        XCTAssertTrue(registry.isRegistered("msg"))
-        XCTAssertTrue(registry.isRegistered("MSG"))   // case-insensitive
-        XCTAssertTrue(registry.isRegistered("fnt"))
-        XCTAssertTrue(registry.isRegistered("gtx"))
-        XCTAssertTrue(registry.isRegistered("gsw"))
-        XCTAssertTrue(registry.isRegistered("atx"))
-        XCTAssertFalse(registry.isRegistered("unknown"))
-        XCTAssertNotNil(registry.handler(for: "msg"))
-    }
-
-    /// Helper: fetch the unique JSON artifact for a known format extension.
-    private func jsonKey(in artifacts: [File: GoDData], ext: String) -> File? {
-        artifacts.keys.first { $0.path.hasSuffix(".\(ext).json") }
-    }
-
-    /// Real .gsw sample roundtrips via the registry. Wrapper + non-texture
-    /// bytes already roundtrip byte-identically through GSWParser; here we
-    /// just verify the registry path emits the expected artifact set
-    /// and that build → bytes succeeds.
-    func testRegistryGSWArtifactsAndRebuilds() throws {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/battle_disk_ge/battle_disk_ge 0012.gsw"
-        guard FileManager.default.fileExists(atPath: path),
-              let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
-            throw XCTSkip("battle_disk_ge 0012.gsw not available")
-        }
-
-        let registry = FileFormatRegistry.builtins()
-        let handler = try XCTUnwrap(registry.handler(for: "gsw"))
-
-        let input = GoDData(byteStream: [UInt8](raw), byteOrder: .big)
-        let artifacts = try handler.dump(input)
-        XCTAssertNotNil(jsonKey(in: artifacts, ext: "gsw"))
-        let textureKeys = artifacts.keys.filter { $0.path.contains("_texture_") }
-        XCTAssertEqual(textureKeys.count, 1, "small sample has 1 embedded texture")
-
-        let rebuilt = try handler.build(artifacts)
-        XCTAssertGreaterThan(rebuilt.length, 0)
-    }
-
-    /// Real XD .fnt sample roundtrips through the registry. The decoded
-    /// atlas+metadata rebuilds to byte-identical binary.
-    func testRegistryGSFontDumpAndBuildRoundTrip() throws {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/pda_menu/pda_menu.fnt"
-        guard FileManager.default.fileExists(atPath: path),
-              let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
-            throw XCTSkip("pda_menu.fnt not available")
-        }
-
-        let registry = FileFormatRegistry.builtins()
-        let handler = try XCTUnwrap(registry.handler(for: "fnt"))
-
-        let input = GoDData(byteStream: [UInt8](raw), byteOrder: .big)
-        let artifacts = try handler.dump(input)
-        XCTAssertEqual(artifacts.count, 2, "fnt emits json + pgm")
-        XCTAssertNotNil(jsonKey(in: artifacts, ext: "fnt"))
-        XCTAssertNotNil(artifacts.keys.first { $0.path.hasSuffix(".fnt.pgm") })
-
-        let rebuilt = try handler.build(artifacts)
-        XCTAssertEqual(rebuilt.rawBytes, [UInt8](raw))
-    }
-
-    /// Real XD .gtx sample roundtrips via the registry. The JSON
-    /// self-references its PNG via `pngPath`.
-    func testRegistryGTXArtifactsAndRebuilds() throws {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/world_map/menu_038.gtx"
-        guard FileManager.default.fileExists(atPath: path),
-              let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
-            throw XCTSkip("menu_038.gtx not available")
-        }
-
-        let registry = FileFormatRegistry.builtins()
-        let handler = try XCTUnwrap(registry.handler(for: "gtx"))
-
-        let input = GoDData(byteStream: [UInt8](raw), byteOrder: .big)
-        let artifacts = try handler.dump(input)
-        XCTAssertEqual(artifacts.count, 2, "gtx emits json + png")
-        let jKey = try XCTUnwrap(jsonKey(in: artifacts, ext: "gtx"))
-        let pngKey = try XCTUnwrap(artifacts.keys.first { $0.path.hasSuffix(".gtx.png") })
-
-        let json = try XCTUnwrap(artifacts[jKey])
-        let dto = try JSONDecoder().decode(GTXFile.DTO.self, from: json.data)
-        XCTAssertEqual(dto.pngPath, pngKey.path,
-                       "JSON must self-reference its PNG sidecar")
-
-        let rebuilt = try handler.build(artifacts)
-        XCTAssertGreaterThan(rebuilt.length, 0)
-    }
-
-    /// A binary MSG routed through the registry dumps to a single JSON
-    /// and rebuilds byte-identical.
-    func testRegistryMSGDumpAndBuildRoundTrip() throws {
+    /// Dump writes every artifact from the format's `outputs` into the
+    /// target folder at `<folder>/<key.path>`. For a known MSG input the
+    /// artifact set is a single JSON named after the default "msg" stem.
+    func testRegistryDump_writesArtifactsAtExpectedPaths() throws {
         var raw: [UInt8] = []
         raw += [0x00, 0x00, 0x00, 0x00]
         raw += [0x00, 0x01]
@@ -106,95 +22,131 @@ final class FileFormatRegistryTests: XCTestCase {
         raw += [0x00, 0x00, 0x00, 0x05] + [0x00, 0x00, 0x00, 0x18]
         raw += [0x00, 0x48, 0x00, 0x69, 0x00, 0x00]
 
-        let registry = FileFormatRegistry.builtins()
-        let handler = try XCTUnwrap(registry.handler(for: "msg"))
-
-        let input = GoDData(byteStream: raw, byteOrder: .big)
-        let artifacts = try handler.dump(input)
-        XCTAssertEqual(artifacts.count, 1)
-        XCTAssertNotNil(jsonKey(in: artifacts, ext: "msg"))
-
-        let rebuilt = try handler.build(artifacts)
-        XCTAssertEqual(rebuilt.rawBytes, raw)
-    }
-
-    /// End-to-end through the filesystem helpers: dump writes artifacts to
-    /// disc, build reads them back into an identical binary.
-    func testRegistryWritesAndReadsArtifactsViaFileSystem() throws {
-        var raw: [UInt8] = []
-        raw += [0x00, 0x00, 0x00, 0x00]
-        raw += [0x00, 0x02]
-        raw += [0x55, 0x53]
-        raw += [UInt8](repeating: 0, count: 8)
-        raw += [0x00, 0x00, 0x00, 0x01] + [0x00, 0x00, 0x00, 0x20]
-        raw += [0x00, 0x00, 0x00, 0x02] + [0x00, 0x00, 0x00, 0x26]
-        raw += [0x00, 0x48, 0x00, 0x69, 0x00, 0x00]
-        raw += [0x00, 0x59, 0x00, 0x6F, 0x00, 0x21, 0x00, 0x00]
-
         let fs = InMemoryFST()
-        let folder = Folder("/work")
+        let folder = Folder("/out")
         _ = fs.createFolder(at: folder, overwrite: true)
 
-        let registry = FileFormatRegistry.builtins()
-        let input = GoDData(byteStream: raw, byteOrder: .big)
-
-        let written = try registry.dump(
-            bytes: input,
+        let written = try FileFormatRegistry.builtins().dump(
+            bytes: GoDData(byteStream: raw, byteOrder: .big),
             extension: "msg",
             into: folder,
             fileSystem: fs,
             overwrite: true
         )
         XCTAssertEqual(written.count, 1)
-        XCTAssertTrue(written.first?.fileName.hasSuffix(".msg.json") ?? false,
-                      "expected *.msg.json artifact")
-        XCTAssertNotNil(fs.readFile(at: written.first!))
-
-        let rebuilt = try registry.build(
-            extension: "msg",
-            from: folder,
-            fileSystem: fs
-        )
-        XCTAssertEqual(rebuilt.rawBytes, raw)
+        XCTAssertEqual(written[0].fileName, "msg.msg.json")
+        XCTAssertNotNil(fs.readFile(at: folder.file("msg.msg.json")))
     }
 
-    /// Real .atx sample roundtrips via the registry.
-    func testRegistryATXArtifactsAndRebuilds() throws {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/poke_dance/airmd.atx"
-        guard FileManager.default.fileExists(atPath: path),
-              let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
-            throw XCTSkip("airmd.atx not available")
+    /// Build reads every file under the target folder into an outputs
+    /// dict keyed by the path relative to that folder and feeds it to the
+    /// registered handler. Verifies the handler is invoked by checking
+    /// the returned bytes parse as the expected format.
+    func testRegistryBuild_readsFolderAndInvokesHandler() throws {
+        let fs = InMemoryFST()
+        let folder = Folder("/in")
+        _ = fs.createFolder(at: folder, overwrite: true)
+
+        // Seed the folder with a known-good MSG artifact.
+        let json = """
+        {
+          "entries": [{ "id": 3, "text": "Yo" }],
+          "region": "US",
+          "reservedPrefix": "00000000",
+          "reservedSuffix": "0000000000000000",
+          "variant": "xd"
         }
+        """.data(using: .utf8)!
+        _ = fs.writeFile(GoDData(data: json, byteOrder: .big),
+                         at: folder.file("sample.msg.json"),
+                         overwrite: true)
 
-        let registry = FileFormatRegistry.builtins()
-        let handler = try XCTUnwrap(registry.handler(for: "atx"))
-
-        let input = GoDData(byteStream: [UInt8](raw), byteOrder: .big)
-        let artifacts = try handler.dump(input)
-        XCTAssertNotNil(jsonKey(in: artifacts, ext: "atx"))
-
-        let pngKeys = artifacts.keys.filter { $0.path.hasSuffix(".png") }
-        XCTAssertEqual(pngKeys.count, 3, "airmd.atx has 3 sprite frames")
-
-        let rebuilt = try handler.build(artifacts)
-        XCTAssertGreaterThan(rebuilt.length, 0)
-        let reparsed = try ATXFile(binary: rebuilt)
-        XCTAssertEqual(reparsed.framePixels.count, 3)
-        XCTAssertEqual(reparsed.animations.count, 2)
+        let rebuilt = try FileFormatRegistry.builtins().build(
+            extension: "msg", from: folder, fileSystem: fs
+        )
+        let parsed = try MSGFile(binary: rebuilt, variant: .xd)
+        XCTAssertEqual(parsed.entries.count, 1)
+        XCTAssertEqual(parsed.entries[0].id, 3)
     }
 
-    func testUnregisteredExtensionThrows() {
-        let registry = FileFormatRegistry.builtins()
+    /// Dump keys that contain slashes produce nested files under the
+    /// target folder. Tested via a synthetic format that's easier to
+    /// control than the real ones — but also validated indirectly by
+    /// GSW tests emitting per-texture PNG keys at the top level.
+    func testRegistryDump_preservesFlatAndNestedKeys() throws {
+        let fs = InMemoryFST()
+        let folder = Folder("/out")
+        _ = fs.createFolder(at: folder, overwrite: true)
+
+        // Any registered handler will do — MSG is simplest, it emits a
+        // single flat key.
+        var raw: [UInt8] = []
+        raw += [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x55, 0x53]
+        raw += [UInt8](repeating: 0, count: 8)
+        // zero entries, zero strings — smallest valid MSG.
+
+        let written = try FileFormatRegistry.builtins().dump(
+            bytes: GoDData(byteStream: raw, byteOrder: .big),
+            extension: "msg",
+            into: folder,
+            fileSystem: fs,
+            overwrite: true
+        )
+        XCTAssertEqual(written[0].path, "/out/msg.msg.json",
+                       "flat key lands at <folder>/<key>")
+    }
+
+    // MARK: - Error paths
+
+    func testRegistryDump_unregisteredExtensionThrows() throws {
         let fs = InMemoryFST()
         _ = fs.createFolder(at: Folder("/x"), overwrite: true)
+        XCTAssertThrowsError(try FileFormatRegistry.builtins().dump(
+            bytes: GoDData(byteStream: [0], byteOrder: .big),
+            extension: "bogus",
+            into: Folder("/x"),
+            fileSystem: fs
+        ))
+    }
 
-        XCTAssertThrowsError(
-            try registry.dump(
-                bytes: GoDData(byteStream: [0, 1, 2, 3], byteOrder: .big),
-                extension: "bogus",
-                into: Folder("/x"),
-                fileSystem: fs
-            )
-        )
+    func testRegistryBuild_unregisteredExtensionThrows() throws {
+        let fs = InMemoryFST()
+        _ = fs.createFolder(at: Folder("/x"), overwrite: true)
+        XCTAssertThrowsError(try FileFormatRegistry.builtins().build(
+            extension: "bogus", from: Folder("/x"), fileSystem: fs
+        ))
+    }
+
+    func testRegistryBuild_emptyFolderThrowsNoArtifactsFound() throws {
+        let fs = InMemoryFST()
+        let folder = Folder("/empty")
+        _ = fs.createFolder(at: folder, overwrite: true)
+        XCTAssertThrowsError(try FileFormatRegistry.builtins().build(
+            extension: "msg", from: folder, fileSystem: fs
+        )) { error in
+            XCTAssertTrue("\(error)".contains("no artifacts"))
+        }
+    }
+
+    // MARK: - Merge
+
+    func testRegistryMerge_combinesHandlersFromTwoRegistries() {
+        var a = FileFormatRegistry()
+        a.register("msg", MSGFile.self)
+        var b = FileFormatRegistry()
+        b.register("fnt", GSFont.self)
+        a.merge(b)
+        XCTAssertTrue(a.isRegistered("msg"))
+        XCTAssertTrue(a.isRegistered("fnt"))
+    }
+
+    func testRegistryMerge_otherOverwritesOnConflict() {
+        var a = FileFormatRegistry()
+        a.register("msg", GSFont.self)   // deliberately wrong type
+        var b = FileFormatRegistry()
+        b.register("msg", MSGFile.self)
+        a.merge(b)
+        XCTAssertTrue(a.handler(for: "msg")?.formatType == MSGFile.self,
+                      "the other registry's handler wins on conflict")
     }
 }

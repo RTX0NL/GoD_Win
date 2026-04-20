@@ -2,107 +2,81 @@ import XCTest
 import Foundation
 import GoDFoundation
 import GeniusSonority
+import GTX
 
+/// Format-specific tests for ATXFile that go beyond the minimum 4-member
+/// coverage in FileFormatProtocolTests — per-frame offset overrides,
+/// frame PNG naming, animation step decoding.
 final class ATXFileTests: XCTestCase {
 
-    /// Real absol.atx: 3 frames, 2 animations, all frames share the same
-    /// anchor offsets. Filenames reflect the ATX name ("absol").
-    func testAbsolATXRoundTripsViaOutputs() throws {
+    private var absolBytes: [UInt8]? {
         let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/poke_dance/absol.atx"
         guard FileManager.default.fileExists(atPath: path),
-              let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
-            throw XCTSkip("absol.atx not available")
-        }
-        let original = try ATXFile(
-            binary: GoDData(byteStream: [UInt8](raw), byteOrder: .big),
-            name: "absol"
-        )
-
-        XCTAssertEqual(original.framePixels.count, 3)
-        XCTAssertEqual(original.animations.count, 2)
-        XCTAssertEqual(original.textureFormat, .C8)
-        XCTAssertEqual(original.paletteFormat, .RGB5A3_3)
-
-        // All frames share the same anchor — no per-frame overrides.
-        XCTAssertEqual(original.xOffset, -31)
-        XCTAssertEqual(original.yOffset, -64)
-        XCTAssertTrue(original.frameOverrides.isEmpty)
-
-        // First animation: single 10-tick step referencing absol_frame_000.png.
-        XCTAssertEqual(original.animations[0].steps.count, 1)
-        XCTAssertEqual(original.animations[0].steps[0].frame, File("absol_frame_000.png"))
-        XCTAssertEqual(original.animations[0].steps[0].timing, 10)
-        XCTAssertEqual(original.animations[0].steps[0].loopTarget, 0)
-
-        // binary → outputs → binary → re-parse yields the same structure.
-        let artifacts = try original.outputs
-        let rebuilt = try ATXFile(outputs: artifacts).binaryData
-        let reparsed = try ATXFile(binary: rebuilt, name: "absol")
-        XCTAssertEqual(reparsed.framePixels.count, original.framePixels.count)
-        XCTAssertEqual(reparsed.animations.count, original.animations.count)
+              let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
+        return [UInt8](raw)
     }
 
-    /// Emitted outputs contain exactly the `<name>.atx.json` + N PNG
-    /// frames, all in the same flat folder (no nested "textures/").
-    func testOutputsShapeMatchesFrames() throws {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/poke_dance/absol.atx"
-        guard FileManager.default.fileExists(atPath: path),
-              let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
-            throw XCTSkip("absol.atx not available")
-        }
-        let file = try ATXFile(
-            binary: GoDData(byteStream: [UInt8](raw), byteOrder: .big),
-            name: "absol"
-        )
-        let artifacts = try file.outputs
+    /// Animation 0 is a single 10-tick frame looping on frame 0.
+    /// Animation 1 cycles through four 5-tick frames then loops to 0.
+    /// Confirms the animation decoder resolves frameDelta → filename.
+    func testATX_initBinary_resolvesAnimationStepsToFrameFilenames() throws {
+        guard let raw = absolBytes else { throw XCTSkip("absol.atx not available") }
+        let atx = try ATXFile(binary: GoDData(byteStream: raw, byteOrder: .big), name: "absol")
 
-        XCTAssertEqual(artifacts.count, 1 + file.framePixels.count,
-                       "expected <name>.atx.json + N frame PNGs")
-        XCTAssertNotNil(artifacts[File("absol.atx.json")])
-        XCTAssertNotNil(artifacts[File("absol_frame_000.png")])
-        XCTAssertNotNil(artifacts[File("absol_frame_001.png")])
-        XCTAssertNotNil(artifacts[File("absol_frame_002.png")])
-        // Flat layout — no nested directory components.
-        for key in artifacts.keys {
-            XCTAssertFalse(key.path.contains("/"),
-                           "expected flat layout; got \(key.path)")
-        }
+        XCTAssertEqual(atx.animations[0].steps,
+                       [.init(timing: 10, frame: File("absol_frame_000.png"), loopTarget: 0)])
+        XCTAssertEqual(atx.animations[1].steps.map(\.frame),
+                       [File("absol_frame_000.png"),
+                        File("absol_frame_001.png"),
+                        File("absol_frame_002.png"),
+                        File("absol_frame_001.png")])
+        XCTAssertEqual(atx.animations[1].steps.last?.loopTarget, 0)
     }
 
-    /// airmd.atx has per-frame yOffset variation (frame 1 uses -63 while
-    /// the others use -64). That surfaces as a `frameOverrides` entry.
-    func testPerFrameOffsetOverride() throws {
+    /// airmd.atx has per-frame yOffset variation — frame 1 anchors at
+    /// yOffset = -63 while frames 0 and 2 use -64. Verifies that
+    /// init(binary:) surfaces the difference as a `frameOverrides` entry.
+    func testATX_initBinary_capturesPerFrameOffsetOverrides() throws {
         let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/poke_dance/airmd.atx"
         guard FileManager.default.fileExists(atPath: path),
               let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             throw XCTSkip("airmd.atx not available")
         }
-        let file = try ATXFile(
-            binary: GoDData(byteStream: [UInt8](raw), byteOrder: .big),
-            name: "airmd"
-        )
-        XCTAssertEqual(file.xOffset, -32)
-        XCTAssertEqual(file.yOffset, -64)
-        // Frame 1 differs: yOffset = -63
-        XCTAssertEqual(
-            file.frameOverrides[File("airmd_frame_001.png")],
-            ATXFile.FrameOverride(yOffset: -63)
-        )
-        XCTAssertEqual(file.frameOverrides.count, 1)
+        let atx = try ATXFile(binary: GoDData(byteStream: [UInt8](raw), byteOrder: .big),
+                              name: "airmd")
+        XCTAssertEqual(atx.xOffset, -32)
+        XCTAssertEqual(atx.yOffset, -64)
+        XCTAssertEqual(atx.frameOverrides.count, 1)
+        XCTAssertEqual(atx.frameOverrides[File("airmd_frame_001.png")],
+                       ATXFile.FrameOverride(yOffset: -63))
     }
 
-    /// init(outputs:) recovers the base name from the JSON filename.
-    func testInitOutputsRecoversName() throws {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/poke_dance/absol.atx"
-        guard FileManager.default.fileExists(atPath: path),
-              let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
-            throw XCTSkip("absol.atx not available")
-        }
-        let original = try ATXFile(
-            binary: GoDData(byteStream: [UInt8](raw), byteOrder: .big),
-            name: "absol"
+    /// framePNGName() produces the expected zero-padded filename.
+    func testATX_framePNGName_producesZeroPaddedFilename() {
+        var atx = ATXFile(
+            textureFormat: .C8,
+            paletteFormat: .RGB5A3,
+            xOffset: 0,
+            yOffset: 0,
+            framePixels: [],
+            animations: []
         )
-        let round = try ATXFile(outputs: try original.outputs)
-        XCTAssertEqual(round.name, "absol")
+        atx.name = "foo"
+        XCTAssertEqual(atx.framePNGName(index: 0), File("foo_frame_000.png"))
+        XCTAssertEqual(atx.framePNGName(index: 7), File("foo_frame_007.png"))
+        XCTAssertEqual(atx.framePNGName(index: 142), File("foo_frame_142.png"))
+    }
+
+    /// Missing frame PNG referenced by an animation step surfaces at
+    /// binaryData time with a helpful error.
+    func testATX_binaryData_withMissingReferencedFrame_throws() throws {
+        guard let raw = absolBytes else { throw XCTSkip("absol.atx not available") }
+        let atx = try ATXFile(binary: GoDData(byteStream: raw, byteOrder: .big), name: "absol")
+        var outputs = try atx.outputs
+        outputs.removeValue(forKey: atx.framePNGName(index: 1))
+        let rebuilt = try ATXFile(outputs: outputs)
+        XCTAssertThrowsError(try rebuilt.binaryData) { error in
+            XCTAssertTrue("\(error)".contains("frame_001.png") || "\(error)".contains("unknown frame"))
+        }
     }
 }
