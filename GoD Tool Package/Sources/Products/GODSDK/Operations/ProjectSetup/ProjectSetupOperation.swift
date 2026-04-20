@@ -244,6 +244,10 @@ enum Project {
             let messagesFolder = unpackedFolder.folder("Data").folder("Text").folder("Messages")
             // Editable per-MSG JSON files.
             let messagesSourceFolder = sourceFolder.folder("Text").folder("Messages")
+            // FSYS unpack puts raw .atx files under /Unpacked/Assets/Images/Misc.
+            let atxFolder = unpackedFolder.folder("Assets").folder("Images").folder("Misc")
+            // Per-ATX project subfolders (each with `<name>.atx.json` + frame PNGs).
+            let atxSourceFolder = sourceFolder.folder("Animations").folder("ATX")
 
             if isColosseum, let game = gsGame {
                 let gsEngine = GeniusSonorityEngine.defaultEngine(for: game)
@@ -271,6 +275,14 @@ enum Project {
                                     operation: .buildMessages(
                                         jsonFolder: messagesSourceFolder.prefixed("."),
                                         outputFolder: messagesFolder.prefixed("."),
+                                        overwrite: true
+                                    ),
+                                    enabled: .no
+                                ),
+                                OperationConfig(
+                                    operation: .buildATXs(
+                                        projectsFolder: atxSourceFolder.prefixed("."),
+                                        outputFolder: atxFolder.prefixed("."),
                                         overwrite: true
                                     ),
                                     enabled: .no
@@ -319,6 +331,14 @@ enum Project {
                                     operation: .buildMessages(
                                         jsonFolder: messagesSourceFolder.prefixed("."),
                                         outputFolder: messagesFolder.prefixed("."),
+                                        overwrite: true
+                                    ),
+                                    enabled: .no
+                                ),
+                                OperationConfig(
+                                    operation: .buildATXs(
+                                        projectsFolder: atxSourceFolder.prefixed("."),
+                                        outputFolder: atxFolder.prefixed("."),
                                         overwrite: true
                                     ),
                                     enabled: .no
@@ -444,6 +464,14 @@ enum Project {
                                                 variant: "colo"
                                             ),
                                             enabled: .no
+                                        ),
+                                        OperationConfig(
+                                            operation: .dumpATXs(
+                                                atxFolder: atxFolder.prefixed("."),
+                                                outputFolder: atxSourceFolder.prefixed("."),
+                                                overwrite: false
+                                            ),
+                                            enabled: .no
                                         )
                                     ]
                                 )
@@ -490,6 +518,14 @@ enum Project {
                                                 outputFolder: messagesSourceFolder.prefixed("."),
                                                 overwrite: false,
                                                 variant: "xd"
+                                            ),
+                                            enabled: .no
+                                        ),
+                                        OperationConfig(
+                                            operation: .dumpATXs(
+                                                atxFolder: atxFolder.prefixed("."),
+                                                outputFolder: atxSourceFolder.prefixed("."),
+                                                overwrite: false
                                             ),
                                             enabled: .no
                                         )
