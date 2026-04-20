@@ -12,7 +12,7 @@ extension DolDisassembly {
         settings: GoddessSettings,
         fileSystem: FileSystemTree,
         logger: Logger? = nil,
-        registry: FileFormatRegistry = .builtins()
+        registry: FileFormatRegistry = .all()
     ) throws {
         let dolphinEngine = try DolphinEngine(from: config.dolphinEngine, in: fileSystem)
 

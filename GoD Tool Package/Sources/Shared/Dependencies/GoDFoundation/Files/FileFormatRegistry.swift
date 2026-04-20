@@ -40,6 +40,14 @@ public struct FileFormatRegistry {
         handlers[ext.lowercased()]
     }
 
+    /// Merge another registry's handlers into this one. Conflicting
+    /// extensions are overwritten by `other`.
+    public mutating func merge(_ other: FileFormatRegistry) {
+        for (ext, handler) in other.handlers {
+            handlers[ext] = handler
+        }
+    }
+
     /// True if a handler is registered for the given extension.
     public func isRegistered(_ ext: String) -> Bool {
         handlers[ext.lowercased()] != nil
