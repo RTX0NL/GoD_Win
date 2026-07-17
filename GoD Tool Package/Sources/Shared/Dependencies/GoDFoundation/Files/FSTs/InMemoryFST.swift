@@ -148,14 +148,45 @@ public class InMemoryFST: FileSystemTree {
     public func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) -> Bool {
         guard !itemExists(at: newPath) || overwrite else { return false }
         guard let node = fst[path.path], case .folder = node else { return false }
-        fst[newPath.path] = node
-        fst[path.path] = nil
-        if let parent = parentPath(of: path.path) {
-            children[parent]?.remove(path.path)
+
+        let oldPrefix = path.path
+        let newPrefix = newPath.path
+
+        // Rekey a descendant path from the old folder prefix to the new one.
+        // Handles the folder itself (suffix == "") and every nested entry.
+        func rekey(_ old: String) -> String {
+            newPrefix + String(old.dropFirst(oldPrefix.count))
         }
-        children[newPath.path] = children[path.path]
-        children[path.path] = nil
-        registerChild(path: newPath.path)
+
+        // Detach the moved folder from its old parent.
+        if let parent = parentPath(of: oldPrefix) {
+            children[parent]?.remove(oldPrefix)
+        }
+
+        // Move the folder node itself.
+        fst[newPrefix] = node
+        fst[oldPrefix] = nil
+
+        // Rekey every descendant file/folder node so its stored path reflects
+        // the new location (a shallow rename left stale old-prefixed keys).
+        let descendantNodeKeys = fst.keys.filter { $0.hasPrefix(oldPrefix + "/") }
+        for key in descendantNodeKeys {
+            fst[rekey(key)] = fst[key]
+            fst[key] = nil
+        }
+
+        // Rekey the children index: the folder's own entry plus every nested
+        // folder, remapping both the keys and the child paths they contain.
+        let childIndexKeys = children.keys.filter { $0 == oldPrefix || $0.hasPrefix(oldPrefix + "/") }
+        for key in childIndexKeys {
+            if let set = children[key] {
+                children[rekey(key)] = Set(set.map(rekey))
+            }
+            children[key] = nil
+        }
+
+        // Re-register the moved folder under its new parent.
+        registerChild(path: newPrefix)
         return true
     }
 
