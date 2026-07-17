@@ -19,6 +19,21 @@ struct GoddessConfig: Codable {
         case dolDisassembly(config: DolDisassembly.Config)
         case dolAssembly(config: DolAssembly.Config)
         case relDisassembly(config: RelDisassembly.Config)
+        case relAssembly(config: RelAssembly.Config)
+        case commonRelDump(config: CommonRelDump.Config)
+        case commonRelBuild(config: CommonRelBuild.Config)
+        case mapRelDump(config: MapRelDump.SingleConfig)
+        case mapRelBuild(config: MapRelBuild.SingleConfig)
+        case mapRelsDump(config: MapRelDump.BatchConfig)
+        case mapRelsBuild(config: MapRelBuild.BatchConfig)
+        case cisoDump(config: CISODump.Config)
+        case cisoBuild(config: CISOBuild.Config)
+        case gciDump(config: GCIOps.DumpConfig)
+        case gciBuild(config: GCIOps.BuildConfig)
+        case xdSaveDump(config: XDSaveOps.DumpConfig)
+        case xdSaveBuild(config: XDSaveOps.BuildConfig)
+        case coloSaveDump(config: ColoSaveOps.DumpConfig)
+        case coloSaveBuild(config: ColoSaveOps.BuildConfig)
     }
     
     let name: String

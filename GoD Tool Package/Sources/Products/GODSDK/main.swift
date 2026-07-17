@@ -36,8 +36,12 @@ do {
             continue
         }
         switch fileType {
-        case "iso", "gcm":
+        case "iso", "gcm", "ciso", "wia", "rvz":
+            // Raw `.iso`/`.gcm` pass straight through; compressed
+            // variants are auto-decoded inside `Project.setup`.
             try Project.setup(iso: inputFile)
+        case "gci":
+            try Project.setup(gci: inputFile)
         case "json":
             let config = try GoddessConfig.decodeFromFile(inputFile, fileSystem: fileSystem)
 
@@ -72,6 +76,36 @@ do {
                         try DolAssembly.assemble(config: asmConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     case .relDisassembly(let relConfig):
                         try RelDisassembly.disassemble(config: relConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .relAssembly(let relConfig):
+                        try RelAssembly.assemble(config: relConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .commonRelDump(let cfg):
+                        try CommonRelDump.dump(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .commonRelBuild(let cfg):
+                        try CommonRelBuild.build(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .mapRelDump(let cfg):
+                        try MapRelDump.dump(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .mapRelBuild(let cfg):
+                        try MapRelBuild.build(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .mapRelsDump(let cfg):
+                        try MapRelDump.dump(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .mapRelsBuild(let cfg):
+                        try MapRelBuild.build(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .cisoDump(let cisoConfig):
+                        try CISODump.dump(config: cisoConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .cisoBuild(let cisoConfig):
+                        try CISOBuild.build(config: cisoConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .gciDump(let gciConfig):
+                        try GCIOps.dump(config: gciConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .gciBuild(let gciConfig):
+                        try GCIOps.build(config: gciConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .xdSaveDump(let xdConfig):
+                        try XDSaveOps.dump(config: xdConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .xdSaveBuild(let xdConfig):
+                        try XDSaveOps.build(config: xdConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .coloSaveDump(let coloConfig):
+                        try ColoSaveOps.dump(config: coloConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+                    case .coloSaveBuild(let coloConfig):
+                        try ColoSaveOps.build(config: coloConfig, settings: settings, fileSystem: fileSystem, logger: logger)
                     }
                     logger.log(.info("Operation \(index + 1)/\(enabledOps.count) completed"))
                 }

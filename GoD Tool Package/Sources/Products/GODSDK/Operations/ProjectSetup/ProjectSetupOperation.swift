@@ -7,8 +7,28 @@ import PBR
 import GeniusSonority
 import Colosseum
 import XD
+import Pokemon
 
 enum Project {
+    /// Resolves the on-disk DOL symbol map path for the active game,
+    /// reading the single `dolSymbolMap` field from the game engine's
+    /// `Data.Resources`. Returns nil when neither XD nor Colosseum is
+    /// active — the op consumer should treat a missing path as "no
+    /// symbol resolution available" rather than failing.
+    static func dolSymbolMapFile(
+        isXD: Bool,
+        isColosseum: Bool,
+        enginesFolder: Folder
+    ) -> File? {
+        if isXD, let engine = try? XDEngine.defaults() {
+            return enginesFolder.folder(engine.name).file(engine.data.resources.dolSymbolMap.path).prefixed(".")
+        }
+        if isColosseum, let engine = try? ColosseumEngine.defaults() {
+            return enginesFolder.folder(engine.name).file(engine.data.resources.dolSymbolMap.path).prefixed(".")
+        }
+        return nil
+    }
+
     static func setup(iso isoInputFile: File) throws {
         let fileSystem = FileSystem.shared
         let projectFileSystem = InMemoryFST()
@@ -22,9 +42,33 @@ enum Project {
         let settingsFolder = Folder("/Settings")
         let enginesFolder = Folder("/Engines")
 
-        guard let isoData = fileSystem.readFile(at: isoInputFile) else {
+        guard let rawInput = fileSystem.readFile(at: isoInputFile) else {
             throw ProjectSetupErrors.isoNotFound(isoInputFile, .init())
         }
+
+        // Pre-decode compressed disc image formats to a raw ISO before
+        // the rest of setup runs. This lets a user drop a `.ciso` /
+        // `.nkit.iso` / `.rvz` at the same entry point as a raw ISO.
+        let detected = DiscImageFormat.detect(in: rawInput)
+        let isoData: GoDData
+        switch detected {
+        case .gamecubeISO, .wiiISO, .unknown:
+            // Unknown falls through as "treat as raw ISO" — the game-ID
+            // read below will fail with a useful error if it isn't.
+            isoData = rawInput
+        case .ciso:
+            isoData = try CISOConverter.dump(ciso: rawInput)
+        case .nkitGC:
+            isoData = try NKitGCConverter.dump(nkit: rawInput)
+        case .nkitWii, .wiaOrRVZ:
+            // Format detected but the decoder isn't wired up yet. Fail
+            // loudly rather than trying to parse the compressed bytes
+            // as a raw disc image.
+            throw ProjectSetupErrors.unsupportedInputFormat(
+                format: detected.description, file: isoInputFile, .init()
+            )
+        }
+
         isoData.setByteOrder(.big)
         guard let gameID = isoData.readString(atAddress: 0, format: .utf8, maxCharacters: 4) else {
             throw ProjectSetupErrors.invalidGameID(.init())
@@ -43,7 +87,16 @@ enum Project {
         // so we don't precreate empty directories here. Operations and
         // writeFile calls will create whatever they need.
 
-        let isoOutputFile = isoFolder.file(isoInputFile.fileName)
+        // Normalise the in-project filename to a `.iso` extension if
+        // we decoded from a compressed variant — the bytes we just
+        // wrote are raw disc data, regardless of the source filename.
+        let outputFilename: String = {
+            if detected == .gamecubeISO || detected == .wiiISO || detected == .unknown {
+                return isoInputFile.fileName
+            }
+            return isoInputFile.fileName.withoutExtensions + ".iso"
+        }()
+        let isoOutputFile = isoFolder.file(outputFilename)
         projectFileSystem.writeFile(isoData, at: isoOutputFile, overwrite: false)
 
         var settings = GoddessSettings.default
@@ -101,14 +154,48 @@ enum Project {
             engines.append(try ColosseumEngine.defaults())
         }
 
+        // The Pokémon engine ships canonical species/move/item/ability/
+        // nature/type enums plus the combined Trainer struct. Every GS
+        // game (Colo/XD/PBR) consumes it for name↔id resolution.
+        if isGeniusSonority {
+            engines.append(try PokemonEngine.defaults())
+        }
+
         engines.forEach { engine in
             engine.write(to: projectFileSystem, in: enginesFolder, overwrite: false)
         }
 
-        // Write bundled symbol map for XD games
-        if isXD, let symbolMapData = PokemonXD.symbolMapData(for: gameID) {
-            let symbolMapFile = enginesFolder.folder(dolphinEngine.name).file(gameID + ".map")
-            projectFileSystem.writeFile(symbolMapData, at: symbolMapFile, overwrite: false)
+        // Write the region-matched DOL symbol map into the engine's
+        // declared `dolSymbolMap` slot. The engine itself carries only
+        // the region-neutral path; the bytes that land there are chosen
+        // here based on the ROM's game ID.
+        if isXD,
+           let regionalMap = PokemonXD.symbolMapData(for: gameID),
+           let xdEngine = try? XDEngine.defaults() {
+            let mapPath = enginesFolder.folder(xdEngine.name)
+                .file(xdEngine.data.resources.dolSymbolMap.path)
+            projectFileSystem.writeFile(regionalMap, at: mapPath, overwrite: true)
+        }
+        if isColosseum,
+           let regionalMap = PokemonColosseum.symbolMapData(for: gameID),
+           let coloEngine = try? ColosseumEngine.defaults() {
+            let mapPath = enginesFolder.folder(coloEngine.name)
+                .file(coloEngine.data.resources.dolSymbolMap.path)
+            projectFileSystem.writeFile(regionalMap, at: mapPath, overwrite: true)
+        }
+
+        // common.rel pointer-index → label name varies by region for
+        // Colosseum (StringTable*/Script live at different indices per
+        // build). The bundle ships one map per region; pick the matching
+        // one and write it to the engine's region-neutral path. XD's
+        // common.rel layout is region-stable so it stays bundled by
+        // `XDEngine.bundledResources()`.
+        if isColosseum,
+           let regionalSymbols = PokemonColosseum.commonRelSymbolMapData(for: gameID),
+           let coloEngine = try? ColosseumEngine.defaults() {
+            let symbolPath = enginesFolder.folder(coloEngine.name)
+                .file(coloEngine.data.resources.commonRelSymbolMap.path)
+            projectFileSystem.writeFile(regionalSymbols, at: symbolPath, overwrite: true)
         }
 
         // Build config generation
@@ -248,9 +335,69 @@ enum Project {
             let atxFolder = unpackedFolder.folder("Assets").folder("Images").folder("Misc")
             // Per-ATX project subfolders (each with `<name>.atx.json` + frame PNGs).
             let atxSourceFolder = sourceFolder.folder("Animations").folder("ATX")
+            // common.rel is routed to /Assets/Data/Common by the
+            // GeniusSonority engine override (not /Data/Relocatable Modules)
+            // so the dedicated dump/build ops can target it directly.
+            let commonRelFile = unpackedFolder.folder("Assets").folder("Data").folder("Common").file("common.rel")
+            // Disassembled source for common.rel — sits alongside the
+            // DOL disassembly output under /Source/Code.
+            let commonRelSourceFolder = sourceFolder.folder("Code").folder("common_rel")
+            // Map .rel files all sit under the relocatable-modules folder.
+            // Map disassembly source lands under /Source/Code/maps/.
+            let relocatableModulesFolder = unpackedFolder.folder("Data").folder("Relocatable Modules")
+            let mapsSourceFolder = sourceFolder.folder("Code").folder("maps")
+            // Colosseum splits maps into Type 1 / Type 2 layouts; XD
+            // routes "unused" leftover-Colo maps to a separate folder.
+            let mapsSourceFolderType1 = sourceFolder.folder("Code").folder("maps_type1")
+            let mapsSourceFolderType2 = sourceFolder.folder("Code").folder("maps_type2")
+            let unusedMapsSourceFolder = sourceFolder.folder("Code").folder("maps_unused")
 
             if isColosseum, let game = gsGame {
                 let gsEngine = GeniusSonorityEngine.defaultEngine(for: game)
+                // Rebuild common.rel from /Source/Code/common_rel back to
+                // its Unpacked location *before* the FSYS pack, so the
+                // packed archive picks up edits. Disabled by default
+                // until the typed-chunk reassembly path lands.
+                buildOperations.append(
+                    OperationConfig(
+                        operation: .commonRelBuild(
+                            config: CommonRelBuild.Config(
+                                inputFolder: commonRelSourceFolder.prefixed("."),
+                                relName: "common",
+                                outputPath: commonRelFile.prefixed("."),
+                                overwrite: true
+                            )
+                        ),
+                        enabled: .no
+                    )
+                )
+                // Rebuild Colosseum maps from both type folders, writing
+                // each rebuilt `.rel` back into the shared relocatable-
+                // modules folder where the FSYS packer expects them.
+                buildOperations.append(
+                    OperationConfig(
+                        operation: .mapRelsBuild(
+                            config: MapRelBuild.BatchConfig(
+                                inputFolder: mapsSourceFolderType1.prefixed("."),
+                                outputFolder: relocatableModulesFolder.prefixed("."),
+                                overwrite: true
+                            )
+                        ),
+                        enabled: .no
+                    )
+                )
+                buildOperations.append(
+                    OperationConfig(
+                        operation: .mapRelsBuild(
+                            config: MapRelBuild.BatchConfig(
+                                inputFolder: mapsSourceFolderType2.prefixed("."),
+                                outputFolder: relocatableModulesFolder.prefixed("."),
+                                overwrite: true
+                            )
+                        ),
+                        enabled: .no
+                    )
+                )
                 buildOperations.append(
                     OperationConfig(operation: .coloXDBuild(
                         config: ColoXD.BuildConfig(
@@ -281,7 +428,7 @@ enum Project {
                                 ),
                                 OperationConfig(
                                     operation: .buildATXs(
-                                        projectsFolder: atxSourceFolder.prefixed("."),
+                                        jsonFolder: atxSourceFolder.prefixed("."),
                                         outputFolder: atxFolder.prefixed("."),
                                         overwrite: true
                                     ),
@@ -308,6 +455,47 @@ enum Project {
             if isXD, let game = gsGame {
                 let gsEngine = GeniusSonorityEngine.defaultEngine(for: game)
                 buildOperations.append(
+                    OperationConfig(
+                        operation: .commonRelBuild(
+                            config: CommonRelBuild.Config(
+                                inputFolder: commonRelSourceFolder.prefixed("."),
+                                relName: "common",
+                                outputPath: commonRelFile.prefixed("."),
+                                overwrite: true
+                            )
+                        ),
+                        enabled: .no
+                    )
+                )
+                // Rebuild XD maps from both the regular and the
+                // unused-Colo folders. Both feed into the shared
+                // relocatable-modules folder; the FSYS packer pulls
+                // from there during the FSYS rebuild step.
+                buildOperations.append(
+                    OperationConfig(
+                        operation: .mapRelsBuild(
+                            config: MapRelBuild.BatchConfig(
+                                inputFolder: mapsSourceFolder.prefixed("."),
+                                outputFolder: relocatableModulesFolder.prefixed("."),
+                                overwrite: true
+                            )
+                        ),
+                        enabled: .no
+                    )
+                )
+                buildOperations.append(
+                    OperationConfig(
+                        operation: .mapRelsBuild(
+                            config: MapRelBuild.BatchConfig(
+                                inputFolder: unusedMapsSourceFolder.prefixed("."),
+                                outputFolder: relocatableModulesFolder.prefixed("."),
+                                overwrite: true
+                            )
+                        ),
+                        enabled: .no
+                    )
+                )
+                buildOperations.append(
                     OperationConfig(operation: .coloXDBuild(
                         config: ColoXD.BuildConfig(
                             operations: [
@@ -337,7 +525,7 @@ enum Project {
                                 ),
                                 OperationConfig(
                                     operation: .buildATXs(
-                                        projectsFolder: atxSourceFolder.prefixed("."),
+                                        jsonFolder: atxSourceFolder.prefixed("."),
                                         outputFolder: atxFolder.prefixed("."),
                                         overwrite: true
                                     ),
@@ -398,12 +586,11 @@ enum Project {
                 operations: buildOperations
             )
 
-            dumpConfig = GoddessConfig(
-                name: "Dump ISO",
-                description: "Config for dumping ISO files to Contents folder",
-                settingsFile: settingsFile.prefixed("."),
-                rootFolder: "..",
-                operations: [
+            // Assemble dump operations as a typed local — the chained
+            // `.conditionalAppend(...)` builder is too deep for Swift's
+            // type-checker to handle inline alongside the surrounding
+            // `GoddessConfig(...)` literal.
+            let dumpOps: [OperationConfig<GoddessConfig.Operations>] = [
                     OperationConfig(
                         operation: .gamecubeDump(
                             config: Gamecube.DumpConfig(
@@ -536,20 +723,143 @@ enum Project {
                             )
                         ]
                     )
+                .conditionalAppend(
+                    isColosseum || isXD,
+                    contents: [
+                        OperationConfig(
+                            operation: .commonRelDump(
+                                config: CommonRelDump.Config(
+                                    relPath: commonRelFile.prefixed("."),
+                                    outputFolder: commonRelSourceFolder.prefixed("."),
+                                    overwrite: false,
+                                    dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
+                                    // Engine names are stable instance
+                                    // properties (see XDEngine/ColosseumEngine).
+                                    // Hardcode here to avoid triggering
+                                    // engine-default initialization (some
+                                    // sub-tables construct Folders that
+                                    // depend on inputs we don't have here).
+                                    gameEngine: enginesFolder
+                                        .folder(isXD ? "XD Engine" : "Colosseum Engine")
+                                        .prefixed(".")
+                                )
+                            ),
+                            enabled: .yes
+                        )
+                    ]
+                )
+                .conditionalAppend(
+                    isColosseum,
+                    contents: [
+                        // Colosseum maps come in two layouts. The legacy
+                        // parser detects them at runtime via an angle
+                        // sentinel; until that runtime-classifier is
+                        // ported, project setup ships both ops disabled
+                        // and the user opts in once the per-game prefix
+                        // list is known. Output folders are split so
+                        // both ops can run independently.
+                        OperationConfig(
+                            operation: .mapRelsDump(
+                                config: MapRelDump.BatchConfig(
+                                    relsFolder: relocatableModulesFolder.prefixed("."),
+                                    outputFolder: mapsSourceFolderType1.prefixed("."),
+                                    overwrite: false,
+                                    typeMapPath: enginesFolder.folder("Colosseum Engine").file("Resources/map_rel_typemap_type1.json").prefixed("."),
+                                    dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
+                                    gameEngine: enginesFolder.folder("Colosseum Engine").prefixed("."),
+                                    filter: .coloType1
+                                )
+                            ),
+                            enabled: .no
+                        ),
+                        OperationConfig(
+                            operation: .mapRelsDump(
+                                config: MapRelDump.BatchConfig(
+                                    relsFolder: relocatableModulesFolder.prefixed("."),
+                                    outputFolder: mapsSourceFolderType2.prefixed("."),
+                                    overwrite: false,
+                                    typeMapPath: enginesFolder.folder("Colosseum Engine").file("Resources/map_rel_typemap_type2.json").prefixed("."),
+                                    dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
+                                    gameEngine: enginesFolder.folder("Colosseum Engine").prefixed("."),
+                                    filter: .coloType2
+                                )
+                            ),
+                            enabled: .no
+                        )
+                    ]
+                )
+                .conditionalAppend(
+                    isXD,
+                    contents: [
+                        // XD: dump the regular maps (excluding the
+                        // leftover Colo-format ones), then dump the
+                        // unused-prefix maps to a separate folder with
+                        // no typemap. Disabled by default until users
+                        // opt into map disassembly.
+                        OperationConfig(
+                            operation: .mapRelsDump(
+                                config: MapRelDump.BatchConfig(
+                                    relsFolder: relocatableModulesFolder.prefixed("."),
+                                    outputFolder: mapsSourceFolder.prefixed("."),
+                                    overwrite: false,
+                                    typeMapPath: enginesFolder.folder("XD Engine").file("Resources/map_rel_typemap.json").prefixed("."),
+                                    dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
+                                    gameEngine: enginesFolder.folder("XD Engine").prefixed("."),
+                                    // Default unused-Colo prefixes from
+                                    // XDEngine.Data.unusedColosseumMapPrefixes;
+                                    // hardcoded here for the same reason
+                                    // as the engine-name string above.
+                                    filter: .excludePrefixes(["B1_", "M1_"])
+                                )
+                            ),
+                            enabled: .no
+                        ),
+                        OperationConfig(
+                            operation: .mapRelsDump(
+                                config: MapRelDump.BatchConfig(
+                                    relsFolder: relocatableModulesFolder.prefixed("."),
+                                    outputFolder: unusedMapsSourceFolder.prefixed("."),
+                                    overwrite: false,
+                                    typeMapPath: enginesFolder.folder("XD Engine").file("Resources/map_rel_typemap.json").prefixed("."),
+                                    dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
+                                    gameEngine: enginesFolder.folder("XD Engine").prefixed("."),
+                                    filter: .onlyPrefixes(["B1_", "M1_"])
+                                )
+                            ),
+                            enabled: .no
+                        )
+                    ]
+                )
                 + [
                     OperationConfig(
                         operation: .dolDisassembly(
                             config: DolDisassembly.Config(
                                 dolPath: contentsFolder.folder("sys").file("main.dol").prefixed("."),
                                 outputFolder: sourceFolder.folder("Code").prefixed("."),
-                                symbolMapPath: enginesFolder.folder(dolphinEngine.name).file(gameID + ".map").prefixed("."),
+                                // DOL symbol maps now live under the game
+                                // engine's Resources folder (copied there
+                                // by `Engine.write`/`bundledResources()`).
+                                // Resolve the path for this game ID via
+                                // the game engine's `Data.Resources`.
+                                symbolMapPath: dolSymbolMapFile(
+                                    isXD: isXD,
+                                    isColosseum: isColosseum,
+                                    enginesFolder: enginesFolder
+                                ),
                                 dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed(".")
                             )
                         ),
                         enabled: .yes
                     )
                 ]
-                )
+
+            dumpConfig = GoddessConfig(
+                name: "Dump ISO",
+                description: "Config for dumping ISO files to Contents folder",
+                settingsFile: settingsFile.prefixed("."),
+                rootFolder: "..",
+                operations: dumpOps
+            )
         }
 
         let buildConfigFile = configFolder.file("Build-Config.json")
