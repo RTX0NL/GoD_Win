@@ -23,7 +23,11 @@ public extension PathRepresentable {
     }
     
     var name: String {
-        let nameIndex = path.lastIndex(of: "/") ?? path.endIndex
+        // A bare filename (no "/") is its own name; otherwise take
+        // everything after the last slash.
+        guard let nameIndex = path.lastIndex(of: "/") else {
+            return path
+        }
         return path.substring(from: nameIndex, to: path.endIndex).substring(from: 1)
     }
     

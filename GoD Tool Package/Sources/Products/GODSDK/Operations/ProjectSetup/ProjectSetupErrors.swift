@@ -3,6 +3,8 @@ import GoDFoundation
 public enum ProjectSetupErrors: GoDError {
     case isoNotFound(File, ErrorTrace)
     case gciNotFound(File, ErrorTrace)
+    case fsysNotFound(File, ErrorTrace)
+    case fsysParseFailed(File, underlying: String, ErrorTrace)
     case invalidGameID(ErrorTrace)
     case unsupportedInputFormat(format: String, file: File, ErrorTrace)
     case unrecognisedGCIGamecode(String, ErrorTrace)
@@ -13,6 +15,10 @@ public enum ProjectSetupErrors: GoDError {
             return "Error: Couldn't load iso file: \(file)\n\(errorTrace)"
         case let .gciNotFound(file, errorTrace):
             return "Error: Couldn't load gci file: \(file)\n\(errorTrace)"
+        case let .fsysNotFound(file, errorTrace):
+            return "Error: Couldn't load fsys file: \(file)\n\(errorTrace)"
+        case let .fsysParseFailed(file, underlying, errorTrace):
+            return "Error: Couldn't parse \(file) as an FSYS archive with any known engine (XD, Colosseum, PBR). Last error: \(underlying)\n\(errorTrace)"
         case let .invalidGameID(errorTrace):
             return "Error: Couldn't read Game ID\n\(errorTrace)"
         case let .unsupportedInputFormat(format, file, errorTrace):

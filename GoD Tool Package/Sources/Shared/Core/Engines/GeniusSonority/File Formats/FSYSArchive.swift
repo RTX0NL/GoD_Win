@@ -9,11 +9,29 @@ public final class FSYSArchive {
         public let unknownFlag1: Bool
         public let unknownFlag2: Bool
         public let debugFlag: Bool
-        
+
         public let unknown1: Int
         public let unknown2: Int
         public let unknown3: Int
         public let unknown4: Int
+
+        public init(
+            unknownFlag1: Bool,
+            unknownFlag2: Bool,
+            debugFlag: Bool,
+            unknown1: Int,
+            unknown2: Int,
+            unknown3: Int,
+            unknown4: Int
+        ) {
+            self.unknownFlag1 = unknownFlag1
+            self.unknownFlag2 = unknownFlag2
+            self.debugFlag = debugFlag
+            self.unknown1 = unknown1
+            self.unknown2 = unknown2
+            self.unknown3 = unknown3
+            self.unknown4 = unknown4
+        }
     }
     
     public struct Entry {

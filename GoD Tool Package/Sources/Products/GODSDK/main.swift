@@ -42,6 +42,8 @@ do {
             try Project.setup(iso: inputFile)
         case "gci":
             try Project.setup(gci: inputFile)
+        case "fsys":
+            try Project.unpack(fsys: inputFile)
         case "json":
             let config = try GoddessConfig.decodeFromFile(inputFile, fileSystem: fileSystem)
 

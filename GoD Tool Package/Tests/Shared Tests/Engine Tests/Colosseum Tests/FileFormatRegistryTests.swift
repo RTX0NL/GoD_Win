@@ -34,8 +34,10 @@ final class FileFormatRegistryTests: XCTestCase {
             overwrite: true
         )
         XCTAssertEqual(written.count, 1)
-        XCTAssertEqual(written[0].fileName, "msg.msg.json")
-        XCTAssertNotNil(fs.readFile(at: folder.file("msg.msg.json")))
+        // The registry names the synthetic input "input.msg", so the MSG
+        // format derives its stem from that ("input"), not the fallback.
+        XCTAssertEqual(written[0].fileName, "input.msg.json")
+        XCTAssertNotNil(fs.readFile(at: folder.file("input.msg.json")))
     }
 
     /// Build reads every file under the target folder into an outputs
@@ -92,7 +94,7 @@ final class FileFormatRegistryTests: XCTestCase {
             fileSystem: fs,
             overwrite: true
         )
-        XCTAssertEqual(written[0].path, "/out/msg.msg.json",
+        XCTAssertEqual(written[0].path, "/out/input.msg.json",
                        "flat key lands at <folder>/<key>")
     }
 
