@@ -1,0 +1,34 @@
+{
+  "engines": [],
+  "chunks": [
+    { "table": { "name": "CharacterModels", "start": "CharacterModels", "entryType": "CharacterModel" } }
+  ],
+  "_todo_tables": [
+    "LegendaryPokemon — needs Pokemon struct",
+    "PokefaceTextures — needs Pokeface struct",
+    "PeopleIDs — needs PeopleID struct (2 bytes person id + 4 bytes string id)",
+    "Rooms — needs Room struct",
+    "TrainerClasses — needs TrainerClass struct",
+    "BattleFields — needs BattleField struct",
+    "Doors — needs Door struct",
+    "BattleTypes — needs BattleType struct",
+    "KeyboardCharacters / Keyboard2Characters / Keyboard3Characters — each needs KeyboardCharacter struct",
+    "BattleStyles — needs BattleStyle struct",
+    "Trainers — needs Trainer struct",
+    "TrainerAIData — needs TrainerAIData struct",
+    "TrainerPokemonData — needs TrainerPokemonData struct",
+    "Battles — needs Battle struct",
+    "SoundFiles — needs SoundFile struct",
+    "AIWeightEffects — needs AIWeightEffect struct",
+    "AIPokemonRoles — needs PokemonAIRole struct",
+    "TreasureBoxData — needs Treasure struct",
+    "Moves — needs Move struct",
+    "Natures — needs Nature struct",
+    "PokemonStats — needs PokemonStat struct",
+    "NatureMultipliers — needs Multiplier struct",
+    "ShadowData — needs ShadowData struct",
+    "PokemonMetLocations — needs MetLocation struct",
+    "InteractionPoints — needs InteractionPoint struct"
+  ],
+  "_source": "Generated from legacy CMRelIndexes.swift; scope is intentionally narrow while Colo struct definitions are ported — entries unblock as their struct types land."
+}

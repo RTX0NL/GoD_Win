@@ -1,9 +1,10 @@
 import Foundation
 import Wii
-import Pokemon
 
-public struct PBREngine: PokemonEngine {
-    // Stub — will be expanded when PBR support is implemented
+public struct PBREngine {
+    // Stub — will be expanded when PBR support is implemented. The
+    // cross-game `Pokemon` engine is a separate `Engine` conformer
+    // and is loaded into PBR projects independently by `ProjectSetup`.
 }
 
 public enum PokemonBattleRevolution {

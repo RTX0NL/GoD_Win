@@ -52,6 +52,18 @@ public extension XDEngine {
                 XDStructDefaults.battleTypeStruct,
                 XDStructDefaults.rgbaColourStruct,
                 XDStructDefaults.pokemonMenuAnimationStruct,
+                // Deck structs (per trainer deck file)
+                XDStructDefaults.deckTrainerStruct,
+                XDStructDefaults.deckTrainerPokemonStruct,
+                XDStructDefaults.deckTrainerAIStruct,
+                XDStructDefaults.deckShadowPokemonStruct,
+                // Save sub-block structs
+                XDStructDefaults.savePokemonStruct,
+                XDStructDefaults.saveConfigStruct,
+                XDStructDefaults.saveTrainer1Struct,
+                XDStructDefaults.saveBoxStruct,
+                XDStructDefaults.savePCBoxStruct,
+                XDStructDefaults.saveDaycareStruct,
             ]
         }
     }

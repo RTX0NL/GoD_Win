@@ -1,0 +1,5 @@
+{
+  "engines": [],
+  "chunks": [],
+  "_source": "Colosseum 'Type 2' map REL layout — the alternate format detected at runtime via the angle sentinel check (legacy XGMapRel.swift:35-53). Entry-point pointers at indices 0/1; character pointers at indices 5/6. The discriminator: read the half-word at the candidate first-entry-point offset; expected angles are {0, ±45, ±90, ±120, ±180, ±270}, anything else (or numberOfEntryPoints > 20) means Type 2. Chunks empty until structs are ported."
+}

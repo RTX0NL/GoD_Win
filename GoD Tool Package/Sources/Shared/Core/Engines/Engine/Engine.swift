@@ -13,16 +13,25 @@ public protocol Engine {
     associatedtype DataType: Codable
     associatedtype EnumsType: EngineEnums
     associatedtype StructsType: EngineStructs
-    
+
     var name: String { get }
     var data: DataType { get }
     var enums: EnumsType { get }
     var structs: StructsType { get }
-    
+
     init(data: DataType, enums: EnumsType, structs: StructsType) throws
+
+    /// Bundled files that should be copied into the engine folder
+    /// alongside the engine JSON on first project setup. Keys are paths
+    /// relative to the engine folder (matching the `File` fields on the
+    /// engine's `Data.Resources`); values are the bytes to write.
+    /// Default: no bundled resources.
+    func bundledResources() -> [File: GoDData]
 }
 
 public extension Engine {
+    func bundledResources() -> [File: GoDData] { [:] }
+
     func getEnum(_ name: String) -> Enum? {
         enums.entries.first(where: { $0.name == name })
     }
@@ -108,7 +117,18 @@ public extension Engine {
                 return false
             }
         }
-        
+
+        // Copy bundled reference resources (REL typemap, symbol indexes,
+        // DOL symbol maps, etc.) into the engine folder so users can
+        // edit them in the project and ops can read them via the
+        // `File` paths declared on the engine's Data.
+        for (relativeFile, data) in bundledResources() {
+            let target = engineFolder.file(relativeFile.path)
+            guard fst.writeFile(data, at: target, overwrite: overwrite) else {
+                return false
+            }
+        }
+
         return true
     }
     

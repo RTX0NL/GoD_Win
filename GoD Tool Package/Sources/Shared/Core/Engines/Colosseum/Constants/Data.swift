@@ -1,4 +1,5 @@
 import GoDFoundation
+import GoDEngine
 import ScriptDecompiler
 
 public extension ColosseumEngine {
@@ -6,8 +7,116 @@ public extension ColosseumEngine {
         /// Script built-in function definitions keyed by function ID (as string)
         public var scriptBuiltInFunctions: [String: ScriptFunctionDef]
 
-        public init(scriptBuiltInFunctions: [String: ScriptFunctionDef]? = nil) {
+        /// Filesystem paths (relative to the engine folder) for the
+        /// bundled reference resources: REL typemap, symbol indexes, and
+        /// per-region DOL symbol maps. See `XDEngine.Data.Resources` for
+        /// the shape rationale.
+        public var resources: Resources
+
+        /// Save-data sections inside a Colo save slot, in physical
+        /// order from the slot body. Position in the array is the
+        /// section's logical index (used by `sectionStructTypes`).
+        ///
+        /// Colo has no in-slot TOC like XD — sections sit at fixed
+        /// offsets dictated by the engine itself. Since the array is
+        /// sequential with no gaps, each section's offset is the
+        /// cumulative sum of preceding sections' lengths added to
+        /// the body base (`bodyBaseOffset` below). Each section's
+        /// length comes from its struct binding via
+        /// `sectionStructTypes` → `engine.structs`. Both offset and
+        /// length are therefore derivable from `saveSections` +
+        /// `sectionStructTypes` + the registered structs alone.
+        ///
+        /// Defaults reproduce PKHeX's `SAV3Colosseum.cs` partition,
+        /// extended with two opaque placeholders for the regions
+        /// PKHeX doesn't name: `BattleData` (the gap between PCBox
+        /// and Daycare) and `Tail` (the trailing region after
+        /// StrategyMemo, up to the cipher's 0x20-byte hash trailer).
+        public var saveSections: [SaveSectionSpec] = Self.defaultSaveSections
+
+        static let defaultSaveSections: [SaveSectionSpec] = [
+            .structInstance(name: "Config"),       // 0 — slot+0x08, len 0x70
+            .binary(name: "Trainer1"),             // 1 — slot+0x78, len 0xB18
+            .binary(name: "PCBox"),                // 2 — slot+0xB90, len 0x6DEC
+            .binary(name: "BattleData"),           // 3 — slot+0x797C, len 0x7F4 (unknown)
+            .binary(name: "Daycare"),              // 4 — slot+0x8170, len 0x140
+            .binary(name: "StrategyMemo"),         // 5 — slot+0x82B0, len 0xB10
+            .binary(name: "Tail"),                 // 6 — slot+0x8DC0, len 0x15240
+        ]
+
+        /// Body-base offset — where the first section starts in the
+        /// slot. The 8 bytes before it (`slot[0..0x08]`) are the
+        /// slot's plaintext header (magic + counter).
+        public var bodyBaseOffset: Int = 0x08
+
+        /// Section index → registered struct definition name. Every
+        /// Colo section binds to a struct so its length can be
+        /// derived. See `XDEngine.Data.sectionStructTypes` for the
+        /// mod-authoring rationale.
+        public var sectionStructTypes: [Int: String] = Self.defaultSectionStructTypes
+
+        static let defaultSectionStructTypes: [Int: String] = [
+            0: "ColoSaveConfig",
+            1: "ColoTrainer1",
+            2: "ColoPCBox",
+            3: "ColoBattleData",
+            4: "ColoDaycare",
+            5: "ColoStrategyMemo",
+            6: "ColoSaveTail",
+        ]
+
+        public struct Resources: Codable {
+            /// Region-neutral path. The actual bytes are region-specific
+            /// (see legacy `CMRelIndexes.swift:108-126`) and selected by
+            /// `ProjectSetup` based on the ROM's game ID.
+            public var commonRelSymbolMap: File = "Resources/common_rel_symbols.json"
+            public var commonRelTypeMap: File = "Resources/common_rel_typemap.json"
+            public var mapRelSymbolMap: File = "Resources/map_rel_symbols.json"
+            /// Colosseum ships two map REL layouts. Type 1 = the standard
+            /// format (entry-point indices 1/2, character indices 3/4);
+            /// Type 2 = the alternate format (indices 0/1 and 5/6) that
+            /// the legacy parser detects via the angle-sentinel check at
+            /// `XGMapRel.swift:35-53`. Each gets its own typemap so the
+            /// disassembler can resolve labels independently.
+            public var mapRelTypeMapType1: File = "Resources/map_rel_typemap_type1.json"
+            public var mapRelTypeMapType2: File = "Resources/map_rel_typemap_type2.json"
+            public var pocketMenuSymbolMap: File = "Resources/pocket_menu_symbols.json"
+            /// Relative path of the DOL symbol map. No map is bundled
+            /// yet for Colosseum; `ProjectSetup` writes a region-matched
+            /// map here once one lands in the bundle.
+            public var dolSymbolMap: File = "Resources/dol.map"
+
+            public init(
+                commonRelSymbolMap: File = "Resources/common_rel_symbols.json",
+                commonRelTypeMap: File = "Resources/common_rel_typemap.json",
+                mapRelSymbolMap: File = "Resources/map_rel_symbols.json",
+                mapRelTypeMapType1: File = "Resources/map_rel_typemap_type1.json",
+                mapRelTypeMapType2: File = "Resources/map_rel_typemap_type2.json",
+                pocketMenuSymbolMap: File = "Resources/pocket_menu_symbols.json",
+                dolSymbolMap: File = "Resources/dol.map"
+            ) {
+                self.commonRelSymbolMap = commonRelSymbolMap
+                self.commonRelTypeMap = commonRelTypeMap
+                self.mapRelSymbolMap = mapRelSymbolMap
+                self.mapRelTypeMapType1 = mapRelTypeMapType1
+                self.mapRelTypeMapType2 = mapRelTypeMapType2
+                self.pocketMenuSymbolMap = pocketMenuSymbolMap
+                self.dolSymbolMap = dolSymbolMap
+            }
+        }
+
+        public init(
+            scriptBuiltInFunctions: [String: ScriptFunctionDef]? = nil,
+            resources: Resources = Resources(),
+            saveSections: [SaveSectionSpec]? = nil,
+            bodyBaseOffset: Int = 0x08,
+            sectionStructTypes: [Int: String]? = nil
+        ) {
             self.scriptBuiltInFunctions = scriptBuiltInFunctions ?? Self.defaultBuiltInFunctions
+            self.resources = resources
+            self.saveSections = saveSections ?? Self.defaultSaveSections
+            self.bodyBaseOffset = bodyBaseOffset
+            self.sectionStructTypes = sectionStructTypes ?? Self.defaultSectionStructTypes
         }
 
         /// Look up a function name by ID
