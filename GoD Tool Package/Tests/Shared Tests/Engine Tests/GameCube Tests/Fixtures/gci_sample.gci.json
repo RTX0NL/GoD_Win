@@ -1,0 +1,17 @@
+{
+  "animSpeed" : 3,
+  "bannerAndIconFlags" : 2,
+  "blockCount" : 1,
+  "commentsAddr" : 80,
+  "copyCounter" : 0,
+  "filename" : "pokemon_save_data",
+  "firstBlock" : 5,
+  "gamecode" : "GXXE",
+  "iconFmt" : 2,
+  "imageOffset" : 64,
+  "makercode" : "01",
+  "modtime" : 305419896,
+  "permissions" : 4,
+  "unused1" : 255,
+  "unused2" : 65535
+}

@@ -1,0 +1,12 @@
+{
+  "channelCount" : 2,
+  "interleaveSize" : 32768,
+  "loop" : {
+    "enabled" : false,
+    "endSample" : 0,
+    "startSample" : 0
+  },
+  "sampleRate" : 8000,
+  "toolDate" : 0,
+  "wavPath" : "isf_sample.wav"
+}

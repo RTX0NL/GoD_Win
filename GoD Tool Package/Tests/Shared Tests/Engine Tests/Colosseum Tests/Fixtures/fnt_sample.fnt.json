@@ -1,0 +1,51 @@
+{
+  "atlasPath" : "fnt_sample.fnt.pgm",
+  "blocks" : [
+    {
+      "fontId" : 0,
+      "glyphHeight" : 22,
+      "glyphWidth" : 22,
+      "glyphs" : [
+        {
+          "advanceWidth" : 10,
+          "character" : "A",
+          "code" : 65,
+          "flags" : 0,
+          "gridCol" : 0,
+          "gridRow" : 0,
+          "height" : 22
+        },
+        {
+          "advanceWidth" : 10,
+          "character" : "B",
+          "code" : 66,
+          "flags" : 0,
+          "gridCol" : 1,
+          "gridRow" : 0,
+          "height" : 22
+        }
+      ],
+      "gridOriginRow" : 0,
+      "rows" : 1
+    },
+    {
+      "fontId" : 1,
+      "glyphHeight" : 18,
+      "glyphWidth" : 18,
+      "glyphs" : [
+        {
+          "advanceWidth" : 9,
+          "character" : "C",
+          "code" : 67,
+          "flags" : 0,
+          "gridCol" : 0,
+          "gridRow" : 0,
+          "height" : 18
+        }
+      ],
+      "gridOriginRow" : 22,
+      "rows" : 1
+    }
+  ],
+  "columns" : 32
+}

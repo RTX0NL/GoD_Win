@@ -1,0 +1,12 @@
+{
+  "variant" : "xd",
+  "reservedPrefix" : "00000000",
+  "region" : "US",
+  "reservedSuffix" : "0000000000000000",
+  "entries" : [
+    {
+      "id" : 5,
+      "text" : "Hi"
+    }
+  ]
+}

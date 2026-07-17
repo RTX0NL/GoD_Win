@@ -1,0 +1,32 @@
+{
+  "header" : {
+    "canvasHeightTwips" : 3072,
+    "canvasWidthTwips" : 4096,
+    "characterCount" : 0,
+    "frameRate" : 12800,
+    "padding_0x1C" : "AAAAAAAAAAAAAAAAAAAAAA==",
+    "spriteDepthCount" : 1,
+    "tagDataSize" : 28,
+    "unknown_0x0C" : 0,
+    "unknown_0x10" : 9600,
+    "unknown_0x14" : 0,
+    "unknown_0x2C" : 0,
+    "version" : 7
+  },
+  "tags" : [
+    {
+      "code" : 4,
+      "payload" : "PKSO0A==",
+      "textures" : [
+
+      ]
+    },
+    {
+      "code" : 26,
+      "payload" : "P6OfobYPjHU=",
+      "textures" : [
+
+      ]
+    }
+  ]
+}

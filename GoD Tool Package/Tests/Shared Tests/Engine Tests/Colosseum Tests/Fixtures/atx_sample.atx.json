@@ -1,0 +1,26 @@
+{
+  "animations" : [
+    {
+      "steps" : [
+        {
+          "frame" : "atx_sample_frame_000.png",
+          "timing" : 4
+        },
+        {
+          "frame" : "atx_sample_frame_001.png",
+          "timing" : 6
+        }
+      ]
+    }
+  ],
+  "frameOverrides" : [
+
+  ],
+  "framePaths" : [
+    "atx_sample_frame_000.png",
+    "atx_sample_frame_001.png"
+  ],
+  "textureFormat" : "RGBA32",
+  "xOffset" : -32,
+  "yOffset" : -64
+}

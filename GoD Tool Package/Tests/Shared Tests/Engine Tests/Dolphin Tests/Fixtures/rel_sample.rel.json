@@ -1,0 +1,142 @@
+{
+  "bssAlign" : "0x8",
+  "epilogOffset" : "0x0",
+  "epilogSection" : 0,
+  "fixSize" : "0x0",
+  "headerPadByte" : 0,
+  "importedModules" : [
+    "0x2a",
+    "0x0"
+  ],
+  "moduleID" : "0x2a",
+  "nameStringOffset" : "0x0",
+  "nameStringSize" : "0x0",
+  "nextLink" : "0x0",
+  "prevLink" : "0x0",
+  "prologOffset" : "0x0",
+  "prologSection" : 1,
+  "sectionAlign" : "0x4",
+  "sections" : [
+    {
+      "body" : {
+        "empty" : {
+          "fileOffset" : "0x0"
+        }
+      },
+      "index" : 0
+    },
+    {
+      "body" : {
+        "text" : {
+          "instructions" : [
+            {
+              "raw" : "0x4e800020"
+            },
+            {
+              "raw" : "0x60000000"
+            },
+            {
+              "fixup" : 6,
+              "raw" : "0x3c600000",
+              "ref" : {
+                "moduleID" : "0x0",
+                "offset" : "0x1234",
+                "section" : 2
+              }
+            },
+            {
+              "fixup" : 4,
+              "raw" : "0x38630000",
+              "ref" : {
+                "moduleID" : "0x0",
+                "offset" : "0x1234",
+                "section" : 2
+              }
+            },
+            {
+              "raw" : "0x90610008"
+            },
+            {
+              "raw" : "0x38000001"
+            },
+            {
+              "fixup" : 1,
+              "raw" : "0x0",
+              "ref" : {
+                "moduleID" : "0x2a",
+                "offset" : "0x0",
+                "section" : 1
+              }
+            },
+            {
+              "raw" : "0x4e800020"
+            }
+          ]
+        }
+      },
+      "index" : 1
+    },
+    {
+      "body" : {
+        "data" : {
+          "chunks" : [
+            {
+              "binary" : {
+                "bytes" : [
+                  42,
+                  128,
+                  120,
+                  148,
+                  49,
+                  47,
+                  18,
+                  63
+                ]
+              }
+            },
+            {
+              "pointer" : {
+                "ref" : {
+                  "moduleID" : "0x2a",
+                  "offset" : "0x8",
+                  "section" : 1
+                },
+                "restValue" : "0x0"
+              }
+            },
+            {
+              "binary" : {
+                "bytes" : [
+                  147,
+                  45,
+                  192,
+                  39,
+                  226,
+                  20,
+                  213,
+                  126,
+                  211,
+                  254,
+                  221,
+                  55
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "index" : 2
+    },
+    {
+      "body" : {
+        "bss" : {
+          "size" : 32
+        }
+      },
+      "index" : 3
+    }
+  ],
+  "unresolvedOffset" : "0x0",
+  "unresolvedSection" : 0,
+  "version" : 3
+}
