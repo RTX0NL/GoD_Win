@@ -52,6 +52,7 @@ let package = Package(
                 "PBR",
                 "XD",
                 "Colosseum",
+                "Pokemon",
                 "GeniusSonority",
                 "GoDFoundation",
                 "Disassembler"
@@ -105,8 +106,7 @@ let package = Package(
             dependencies: [
 //                .product(name: "TokamakShim", package: "Tokamak")
             ],
-            path: "Sources/Shared/Core/Contexts/GUI",
-            resources: [.process("Resources")]
+            path: "Sources/Shared/Core/Contexts/GUI"
         ),
         .target(
             name: "GoDCLI",
@@ -114,8 +114,7 @@ let package = Package(
                 "GoDFoundation",
                 "Persistence"
             ],
-            path: "Sources/Shared/Core/Contexts/CLI",
-            resources: [.process("Resources")]
+            path: "Sources/Shared/Core/Contexts/CLI"
         ),
         
         // MARK: - Core Library Engine Targets
@@ -148,8 +147,7 @@ let package = Package(
                 "GoDFoundation",
                 "Structs"
             ],
-            path: "Sources/Shared/Core/Engines/GameCube",
-            resources: [.process("Resources")]
+            path: "Sources/Shared/Core/Engines/GameCube"
         ),
         .target(
             name: "Dolphin",
@@ -158,8 +156,7 @@ let package = Package(
                 "GoDFoundation",
                 "Structs"
             ],
-            path: "Sources/Shared/Core/Engines/Dolphin",
-            resources: [.process("Resources")]
+            path: "Sources/Shared/Core/Engines/Dolphin"
         ),
         .target(
             name: "Orre",
@@ -168,8 +165,7 @@ let package = Package(
                 "GoDFoundation",
                 "Structs"
             ],
-            path: "Sources/Shared/Core/Engines/Orre",
-            resources: [.process("Resources")]
+            path: "Sources/Shared/Core/Engines/Orre"
         ),
         .target(
             name: "GeniusSonority",
@@ -179,8 +175,7 @@ let package = Package(
                 "Structs",
                 "GTX"
             ],
-            path: "Sources/Shared/Core/Engines/GeniusSonority",
-            resources: [.process("Resources")]
+            path: "Sources/Shared/Core/Engines/GeniusSonority"
         ),
         .target(
             name: "PBR",
@@ -189,16 +184,16 @@ let package = Package(
                 "Wii",
                 "Pokemon"
             ],
-            path: "Sources/Shared/Core/Engines/PBR",
-            resources: [.process("Resources")]
+            path: "Sources/Shared/Core/Engines/PBR"
         ),
         .target(
             name: "Pokemon",
             dependencies: [
-                "GoDFoundation"
+                "GoDFoundation",
+                "GoDEngine",
+                "Structs"
             ],
-            path: "Sources/Shared/Core/Engines/Pokemon",
-            resources: [.process("Resources")]
+            path: "Sources/Shared/Core/Engines/Pokemon"
         ),
         .target(
             name: "Wii",
@@ -208,8 +203,7 @@ let package = Package(
                 "GoDFoundation",
                 "Structs"
             ],
-            path: "Sources/Shared/Core/Engines/Wii",
-            resources: [.process("Resources")]
+            path: "Sources/Shared/Core/Engines/Wii"
         ),
         .target(
             name: "XD",
@@ -292,6 +286,7 @@ let package = Package(
             dependencies: [
             ],
             path: "Sources/Shared/Dependencies/Third Party/xxHash",
+            exclude: ["LICENSE", "README.md"],
             resources: []
         ),
         
@@ -300,8 +295,7 @@ let package = Package(
         .testTarget(
             name: "GoDFoundationTests",
             dependencies: ["GoDFoundation"],
-            path: "Tests/Shared Tests/Dependency Tests/GoD Foundation Tests",
-            resources: [.process("Resources")]),
+            path: "Tests/Shared Tests/Dependency Tests/GoD Foundation Tests"),
         .testTarget(
             name: "GoDStructTests",
             dependencies: ["Structs"],
