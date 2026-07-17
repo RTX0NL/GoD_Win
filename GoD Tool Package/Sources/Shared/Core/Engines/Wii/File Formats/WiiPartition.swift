@@ -67,7 +67,10 @@ public final class WiiPartition: FileSystemTree {
         self.ticket = ticketData
 
         // Decrypt title key
-        let titleKey = WiiCrypto.decryptTitleKey(ticketData: ticketData, commonKey: commonKey)
+        guard let titleKey = WiiCrypto.decryptTitleKey(ticketData: ticketData, commonKey: commonKey) else {
+            logger?.log(.error("Failed to decrypt title key for \(partTypeName) partition (truncated ticket)"))
+            throw FileFormatErrors.invalid(format: Self.formatName)
+        }
         logger?.log(.info("Decrypted title key for \(partTypeName) partition at 0x\(String(partitionOffset, radix: 16, uppercase: true))"))
         logger?.log(.info("  Title ID: \(ticketData.read(atAddress: 0x1DC, length: 8)?.rawBytes.map { String(format: "%02x", $0) }.joined() ?? "?")"))
         logger?.log(.info("  Title key: \(titleKey.map { String(format: "%02x", $0) }.joined())"))
@@ -357,51 +360,39 @@ public final class WiiPartition: FileSystemTree {
         let bootDataOffset = dolphinEngine.data.systemFiles.bootDataOffset
         decryptedData.write(struct: bootStruct, atAddress: bootDataOffset)
 
-        // Now encrypt the decrypted data into groups
-        let groupSize = wiiEngine.data.disc.dataGroupSize
-        let userDataPerGroup = wiiEngine.data.disc.userDataPerGroup
-
-        // Pad to group boundary
-        let totalDataLength = decryptedData.length.aligned(to: userDataPerGroup)
-        let paddingNeeded = totalDataLength - decryptedData.length
-        if paddingNeeded > 0 {
-            decryptedData.pad(by: paddingNeeded)
-        }
-
-        let groupCount = totalDataLength / userDataPerGroup
-        logger?.log(.info("  Encrypting \(groupCount) groups (\(totalDataLength) bytes)"))
-
         // Read ticket for title key
         guard let ticketData = readFile(at: partFiles.ticketFile) else {
             logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
             throw FileFormatErrors.failedToEncode(format: Self.formatName, target: "Wii partition")
         }
-        let titleKey = WiiCrypto.decryptTitleKey(ticketData: ticketData, commonKey: commonKey)
-
-        // Encrypt all groups
-        var encryptedGroups = GoDData(byteOrder: .big)
-        for i in 0..<groupCount {
-            let offset = i * userDataPerGroup
-            guard let groupUserData = decryptedData.read(atAddress: offset, length: userDataPerGroup) else {
-                logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
-                throw FileFormatErrors.failedToEncode(format: Self.formatName, target: "Wii partition")
-            }
-            let emptyHashes = [[UInt8]](repeating: [UInt8](repeating: 0, count: 20), count: 8)
-            let encrypted = WiiCrypto.encryptGroup(
-                userData: groupUserData,
-                h1Hashes: emptyHashes,
-                h2Hashes: emptyHashes,
-                subgroupIndex: i % 8,
-                groupIndex: (i / 8) % 8,
-                titleKey: titleKey
-            )
-            encryptedGroups.append(encrypted)
-
-            if groupCount > 0, (i + 1) % max(groupCount / 20, 1) == 0 || i == groupCount - 1 {
-                let percentage = Percentage(Double(i + 1) / Double(groupCount) * 100)
-                logger?.log(.taskStatus(taskName: taskName, status: .progress(percentage)))
-            }
+        guard let titleKey = WiiCrypto.decryptTitleKey(ticketData: ticketData, commonKey: commonKey) else {
+            logger?.log(.error("Failed to decrypt title key for \(typeName) partition (truncated ticket)"))
+            logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
+            throw FileFormatErrors.failedToEncode(format: Self.formatName, target: "Wii partition")
         }
+
+        // Encrypt the entire decrypted user data, building the full H0/H1/H2/H3 hash tree.
+        // encryptPartitionData zero-pads up to a whole number of 64-cluster groups.
+        let (encryptedBytes, h3TableBytes) = WiiCrypto.encryptPartitionData(
+            decryptedUserData: decryptedData.rawBytes,
+            titleKey: titleKey
+        )
+        let encryptedData = GoDData(byteStream: encryptedBytes.map(Int.init), byteOrder: .big)
+        let h3TableData = GoDData(byteStream: h3TableBytes.map(Int.init), byteOrder: .big)
+        logger?.log(.info("  Encrypted \(encryptedBytes.count / 0x8000) clusters (\(encryptedBytes.count) bytes); rebuilt H3 table"))
+
+        // Persist the rebuilt H3 table into the /sys h3 file image.
+        fst.writeFile(h3TableData, at: partFiles.h3File, overwrite: true)
+
+        // Link + fakesign the TMD:
+        //   - content 0's SHA-1 (TMD offset 0x1F4, 20 bytes) = SHA1(rebuilt H3 table)
+        //   - then fakesign so the (now-invalid) RSA signature passes signature-strip loaders.
+        // The ticket is written verbatim (its original signature covers only the title key, which we did not change).
+        let tmdCopy = GoDData(byteStream: tmd.rawBytes.map(Int.init), byteOrder: .big)
+        let h3Hash = SHA1.hash(h3TableBytes)
+        tmdCopy.write(GoDData(byteStream: h3Hash.map(Int.init), byteOrder: .big), atAddress: 0x1F4)
+        let fakesignedTMD = WiiCrypto.fakesignTMD(tmdCopy)
+        fst.writeFile(fakesignedTMD, at: partFiles.tmdFile, overwrite: true)
 
         // Build partition: ticket + header area + TMD + cert + H3 + encrypted data
         let result = GoDData(byteOrder: .big)
@@ -411,24 +402,24 @@ public final class WiiPartition: FileSystemTree {
 
         // Partition header at offset 0x2A4
         let tmdOffsetInPartition = 0x2C0
-        let certOffsetInPartition = (tmdOffsetInPartition + tmd.length).aligned(to: 0x20)
+        let certOffsetInPartition = (tmdOffsetInPartition + fakesignedTMD.length).aligned(to: 0x20)
         let h3OffsetInPartition = (certOffsetInPartition + certChain.length).aligned(to: 0x20)
         let dataOffsetInPartition = (h3OffsetInPartition + 0x18000).aligned(to: 0x8000)
 
         // Write header
-        result.write(UInt32(tmd.length), atAddress: 0x2A4)
+        result.write(UInt32(fakesignedTMD.length), atAddress: 0x2A4)
         result.write(UInt32(tmdOffsetInPartition >> 2), atAddress: 0x2A8)
         result.write(UInt32(certChain.length), atAddress: 0x2AC)
         result.write(UInt32(certOffsetInPartition >> 2), atAddress: 0x2B0)
         result.write(UInt32(h3OffsetInPartition >> 2), atAddress: 0x2B4)
         result.write(UInt32(dataOffsetInPartition >> 2), atAddress: 0x2B8)
-        result.write(UInt32(encryptedGroups.length >> 2), atAddress: 0x2BC)
+        result.write(UInt32(encryptedData.length >> 2), atAddress: 0x2BC)
 
-        // Write TMD, cert, H3, data
-        result.write(tmd, atAddress: tmdOffsetInPartition)
+        // Write fakesigned TMD, cert, rebuilt H3 table, and encrypted data.
+        result.write(fakesignedTMD, atAddress: tmdOffsetInPartition)
         result.write(certChain, atAddress: certOffsetInPartition)
-        result.write(h3Table, atAddress: h3OffsetInPartition)
-        result.write(encryptedGroups, atAddress: dataOffsetInPartition)
+        result.write(h3TableData, atAddress: h3OffsetInPartition)
+        result.write(encryptedData, atAddress: dataOffsetInPartition)
 
         logger?.log(.taskStatus(taskName: taskName, status: .completed(true)))
         return result

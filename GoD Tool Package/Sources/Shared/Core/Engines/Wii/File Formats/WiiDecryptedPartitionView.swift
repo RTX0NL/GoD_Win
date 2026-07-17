@@ -68,7 +68,9 @@ public final class WiiDecryptedPartitionView: GoDReadable {
         guard let groupData = encryptedData.read(atAddress: encryptedOffset, length: groupSize) else {
             return nil
         }
-        let (_, userData) = WiiCrypto.decryptGroup(groupData: groupData, titleKey: titleKey)
+        guard let (_, userData) = WiiCrypto.decryptGroup(groupData: groupData, titleKey: titleKey) else {
+            return nil
+        }
 
         if cache.count >= maxCacheSize {
             cache.removeAll()
