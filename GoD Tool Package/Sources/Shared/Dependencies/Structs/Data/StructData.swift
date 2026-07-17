@@ -183,26 +183,7 @@ public class StructData {
               let property = definition.property(for: keypath) else { return nil }
         
         func getInteger(_ type: IntegerProperties) -> Int? {
-            switch type {
-            case .uint8, .uint16, .uint24, .uint32, .uint64:
-                return Int(data: data)
-            case .int8:
-                return data.readTypeAsInt(Int8.self, atAddress: 0)
-            case .int16:
-                return data.readTypeAsInt(Int16.self, atAddress: 0)
-            case .int24:
-                guard let firstByte: UInt8 = data.readValue(atAddress: 0) else {
-                    return Int(data: data)
-                }
-                let isNegative = firstByte > 0x7F
-                let fillByte = GoDData(byteStream: [isNegative ? 0xFF : 0x00], byteOrder: self.byteOrder)
-                data.insert(fillByte, atOffset: 0)
-                return data.readTypeAsInt(Int32.self, atAddress: 0)
-            case .int32:
-                return data.readTypeAsInt(Int32.self, atAddress: 0)
-            case .int64:
-                return data.readTypeAsInt(Int64.self, atAddress: 0)
-            }
+            Self.readInteger(from: data, width: type.length, signed: type.isSigned, byteOrder: self.byteOrder)
         }
         
         switch property {
@@ -266,20 +247,28 @@ public class StructData {
         let newValue = value?.copy ?? GoDData(length: length, byteOrder: self.byteOrder)
 
         if newValue.length > length {
+            // Truncate to the field width by dropping the most-significant
+            // (high-order) bytes. Those live at the FRONT for big-endian and
+            // at the BACK for little-endian, so the delete position depends
+            // on byte order. (The previous word-chunk logic always deleted
+            // from the front, which discards the LOW bytes on little-endian
+            // and corrupts the value.)
             let extra = newValue.length - length
-            let extraWords = extra / wordSize
-            let extraBytes = extra % wordSize
-            for _ in 0 ..< extraWords {
-                newValue.delete(start: 0, count: wordSize)
-            }
             if byteOrder == .little {
-                newValue.delete(start: wordSize - extraBytes, count: extraBytes)
+                newValue.delete(start: length, count: extra)
             } else {
-                newValue.delete(start: 0, count: extraBytes)
+                newValue.delete(start: 0, count: extra)
             }
         }
         if newValue.length < length {
-            newValue.prepend(GoDData(length: length - newValue.length, byteOrder: self.byteOrder))
+            // Zero-extend on the high-order side: the front for big-endian,
+            // the back for little-endian.
+            let padding = GoDData(length: length - newValue.length, byteOrder: self.byteOrder)
+            if byteOrder == .little {
+                newValue.append(padding)
+            } else {
+                newValue.prepend(padding)
+            }
         }
         data.write(newValue, atAddress: offset)
     }
@@ -365,20 +354,7 @@ extension StructData: Encodable {
     
     public func encode(to encoder: Encoder) throws {
         func readInt(subType: IntegerProperties, from data: GoDData) -> Int {
-            switch subType {
-            case .uint8: return data.readTypeAsInt(UInt8.self, atAddress: 0)
-            case .int8: return data.readTypeAsInt(Int8.self, atAddress: 0)
-            case .uint16: return data.readTypeAsInt(UInt16.self, atAddress: 0)
-            case .int16: return data.readTypeAsInt(Int16.self, atAddress: 0)
-            case .uint24, .int24:
-                let extended = GoDData(length: 4, byteOrder: data.byteOrder)
-                extended.write(data, atAddress: 1)
-                return extended.readTypeAsInt(Int32.self, atAddress: 0)
-            case .uint32: return data.readTypeAsInt(UInt32.self, atAddress: 0)
-            case .int32: return data.readTypeAsInt(Int32.self, atAddress: 0)
-            case .uint64: return data.readTypeAsInt(UInt64.self, atAddress: 0)
-            case .int64: return data.readTypeAsInt(Int64.self, atAddress: 0)
-            }
+            StructData.readInteger(from: data, width: subType.length, signed: subType.isSigned, byteOrder: data.byteOrder) ?? 0
         }
         
         func readEnum(definition: Enum, from data: GoDData) throws -> String {
@@ -1025,6 +1001,36 @@ public extension StructData {
         }
     }
 
+    /// Reads a `width`-byte integer from `data` (starting at offset 0),
+    /// interpreting the bytes in `byteOrder` and sign-extending from the
+    /// field's top bit when `signed`. Handles widths 1...8 uniformly, so
+    /// it is correct for 24-bit fields and for little-endian layouts —
+    /// unlike the old per-width paths, which assumed big-endian byte order
+    /// and zero-extended 24-bit values (so negative int24 read as large
+    /// positives). Returns nil if `data` is shorter than `width`.
+    static func readInteger(
+        from data: GoDData,
+        width: Int,
+        signed: Bool,
+        byteOrder: ByteOrder
+    ) -> Int? {
+        let raw = data.rawBytes
+        guard width >= 1, width <= 8, raw.count >= width else { return nil }
+        var value: UInt64 = 0
+        for i in 0..<width {
+            // Accumulate most-significant byte first, resolved per byte order.
+            let byte = (byteOrder == .big) ? raw[i] : raw[width - 1 - i]
+            value = (value << 8) | UInt64(byte)
+        }
+        if signed, width < 8 {
+            let signBit: UInt64 = 1 << (width * 8 - 1)
+            if value & signBit != 0 {
+                value |= ~UInt64(0) << (width * 8)   // sign-extend to 64 bits
+            }
+        }
+        return Int(bitPattern: UInt(value))
+    }
+
     private static func writeInteger(
         _ value: Int,
         width: Int,
@@ -1168,19 +1174,6 @@ public struct LosslessDouble: Codable, Equatable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(String(describing: value))
-    }
-}
-
-// `IntegerProperties.isSigned` — used by the integer writer. Kept
-// alongside the decoder rather than alongside the type definition
-// because `signed` is a decode-only concern (encode reads the bytes
-// either way).
-private extension IntegerProperties {
-    var isSigned: Bool {
-        switch self {
-        case .uint8, .uint16, .uint24, .uint32, .uint64: return false
-        case .int8, .int16, .int24, .int32, .int64:      return true
-        }
     }
 }
 

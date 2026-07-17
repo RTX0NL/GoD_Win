@@ -29,6 +29,17 @@ public enum IntegerProperties: String, Codable, Equatable, CaseIterable {
             return 8
         }
     }
+
+    /// Whether the type is a signed (two's-complement) integer.
+    /// Drives sign-extension when reading and is byte-order agnostic.
+    var isSigned: Bool {
+        switch self {
+        case .int8, .int16, .int24, .int32, .int64:
+            return true
+        case .uint8, .uint16, .uint24, .uint32, .uint64:
+            return false
+        }
+    }
 }
 
 public enum StructPrimitives: Equatable, Codable {
