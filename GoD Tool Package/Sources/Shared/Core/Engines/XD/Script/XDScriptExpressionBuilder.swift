@@ -265,7 +265,9 @@ public struct XDExpressionBuilder {
         guard nextIdx < instructions.count else { return 0 }
         let next = instructions[nextIdx]
         guard next.opcodeID == .pop else { return 0 }
-        return next.subOpCode
+        // Clamp: a malformed/negative decoded count would otherwise form
+        // an invalid range (`0..<negative`) in the pop loops and trap.
+        return max(0, next.subOpCode)
     }
 
     private func flushStatements(_ stack: inout [XDExpr], into expressions: inout [XDExpr]) {

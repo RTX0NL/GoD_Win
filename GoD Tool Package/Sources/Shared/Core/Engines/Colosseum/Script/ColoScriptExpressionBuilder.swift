@@ -200,7 +200,10 @@ public struct ColoExpressionBuilder {
 
             case .printf(_, let argc):
                 var args = [ColoExpr]()
-                for _ in 1..<argc {
+                // `argc` includes the format-string pointer; the real
+                // args are `argc - 1`. Clamp so `argc == 0` doesn't form
+                // an invalid range (`1..<0`) and trap the decompile.
+                for _ in 0..<max(0, Int(argc) - 1) {
                     args.append(safePop(&stack))
                 }
                 // Last pop is the format string pointer
@@ -218,9 +221,10 @@ public struct ColoExpressionBuilder {
                 stack.append(.yield(frames))
 
             case .callStandard(_, let argc):
-                // Pop argc-1 real arguments
+                // Pop argc-1 real arguments. Clamp so `argc == 0` doesn't
+                // form an invalid range (`0..<(-1)`) and trap.
                 var args = [ColoExpr]()
-                for _ in 0..<(Int(argc) - 1) {
+                for _ in 0..<max(0, Int(argc) - 1) {
                     args.append(safePop(&stack))
                 }
                 // Pop function ID (search for integer constant)
