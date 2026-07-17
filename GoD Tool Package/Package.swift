@@ -83,6 +83,23 @@ let package = Package(
             ],
             path: "Sources/Products/Discord Plays Orre"
         ),
+        .executableTarget(
+            // Temporary decompiler-validation harness — remove when done.
+            name: "ColoScriptDecomp",
+            dependencies: [
+                "Colosseum",
+                "ScriptDecompiler",
+                "GoDFoundation"
+            ],
+            path: "Sources/Products/ColoScriptDecomp"
+        ),
+        .executableTarget(
+            name: "FixtureGen",
+            dependencies: [
+                "FixtureCatalog"
+            ],
+            path: "Sources/Products/FixtureGen"
+        ),
         
         // MARK: - Base Library Targets
         
@@ -279,14 +296,25 @@ let package = Package(
             path: "Sources/Shared/Dependencies/ScriptDecompiler",
             resources: []
         ),
-        
-        // MARK: - Third Party Dependency Library Targets
         .target(
-            name: "xxHash",
+            name: "TestSupport",
             dependencies: [
+                "GoDFoundation",
             ],
-            path: "Sources/Shared/Dependencies/Third Party/xxHash",
-            exclude: ["LICENSE", "README.md"],
+            path: "Sources/Shared/Dependencies/TestSupport",
+            resources: []
+        ),
+        .target(
+            name: "FixtureCatalog",
+            dependencies: [
+                "GoDFoundation",
+                "GeniusSonority",
+                "Dolphin",
+                "GameCube",
+                "GTX",
+                "Disassembler",
+            ],
+            path: "Sources/Shared/Dependencies/FixtureCatalog",
             resources: []
         ),
         
@@ -294,32 +322,45 @@ let package = Package(
         
         .testTarget(
             name: "GoDFoundationTests",
-            dependencies: ["GoDFoundation"],
-            path: "Tests/Shared Tests/Dependency Tests/GoD Foundation Tests"),
+            dependencies: ["GoDFoundation", "TestSupport"],
+            path: "Tests/Shared Tests/Dependency Tests/GoD Foundation Tests",
+            exclude: ["Fixtures"]),
         .testTarget(
             name: "GoDStructTests",
             dependencies: ["Structs"],
             path: "Tests/Shared Tests/Dependency Tests/GoD Struct Tests"),
+        .testTarget(
+            name: "DisassemblerTests",
+            dependencies: ["Disassembler", "Structs", "GoDFoundation", "TestSupport", "FixtureCatalog"],
+            path: "Tests/Shared Tests/Dependency Tests/Disassembler Tests",
+            exclude: ["Fixtures"]),
+        .testTarget(
+            name: "ScriptDecompilerTests",
+            dependencies: ["ScriptDecompiler", "GoDFoundation"],
+            path: "Tests/Shared Tests/Dependency Tests/Script Decompiler Tests"),
         .testTarget(
             name: "PPCTests",
             dependencies: ["Dolphin", "GoDFoundation"],
             path: "Tests/Shared Tests/Engine Tests/PPC Tests"),
         .testTarget(
             name: "DolphinTests",
-            dependencies: ["Dolphin", "GoDFoundation", "Structs"],
-            path: "Tests/Shared Tests/Engine Tests/Dolphin Tests"),
+            dependencies: ["Dolphin", "GoDFoundation", "Structs", "TestSupport"],
+            path: "Tests/Shared Tests/Engine Tests/Dolphin Tests",
+            exclude: ["Fixtures"]),
         .testTarget(
             name: "WiiTests",
             dependencies: ["Wii", "Dolphin", "GoDFoundation", "Structs"],
             path: "Tests/Shared Tests/Engine Tests/Wii Tests"),
         .testTarget(
             name: "GameCubeTests",
-            dependencies: ["GameCube", "Dolphin", "GoDFoundation", "Structs"],
-            path: "Tests/Shared Tests/Engine Tests/GameCube Tests"),
+            dependencies: ["GameCube", "Dolphin", "GoDFoundation", "Structs", "TestSupport"],
+            path: "Tests/Shared Tests/Engine Tests/GameCube Tests",
+            exclude: ["Fixtures"]),
         .testTarget(
             name: "ColosseumTests",
-            dependencies: ["Colosseum", "GeniusSonority", "GoDFoundation", "ScriptDecompiler", "GTX"],
-            path: "Tests/Shared Tests/Engine Tests/Colosseum Tests"),
+            dependencies: ["Colosseum", "GeniusSonority", "GoDFoundation", "ScriptDecompiler", "GTX", "TestSupport", "FixtureCatalog"],
+            path: "Tests/Shared Tests/Engine Tests/Colosseum Tests",
+            exclude: ["Fixtures"]),
         .testTarget(
             name: "XDTests",
             dependencies: ["XD", "GoDFoundation"],
