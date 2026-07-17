@@ -1,0 +1,10 @@
+{
+  "section" : "data0",
+  "chunks" : [
+    { "label" : "lbl_80456200", "type" : "binary", "file" : "lbl_80456200.bin", "size" : 16 },
+    { "label" : "trainer_table", "type" : "table", "file" : "trainer_table.json", "structType" : "Trainer", "countLabel" : "trainer_count" },
+    { "label" : "player_start", "type" : "struct", "file" : "player_start.json", "structType" : "Vector3" },
+    { "label" : "intro_text", "type" : "file", "file" : "intro_text.msg", "fileExtension" : "msg", "size" : 256 },
+    { "label" : "boot_hook", "type" : "assembly", "file" : "boot_hook.s" }
+  ]
+}

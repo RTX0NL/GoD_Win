@@ -1,0 +1,9 @@
+# DOL Section Layout
+# Entry point: 0x80003154
+# BSS: 0x804205C0 (849860 bytes)
+# Symbols: 42
+
+text0: 0x80003100 (9472 bytes)
+text1: 0x80005600 (1048576 bytes)
+data0: 0x80456200 (4096 bytes)
+data5: 0x80457200 
