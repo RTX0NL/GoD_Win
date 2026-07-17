@@ -13,7 +13,7 @@ GoD-Tool is a CLI utility for unpacking, editing, and rebuilding GameCube and Wi
 - **Export → Edit → Rebuild**, not direct ROM injection
 - **Data-driven engines**: Game-specific knowledge lives in JSON definitions (structs, enums), not hardcoded Swift. New games should be addable without code changes.
 - **Minimal assumptions**: Don't couple to specific game structures. The legacy tool broke when making complex modifications because it assumed too much about the data.
-- **1:1 rebuild accuracy**: Each dump/rebuild stage must produce bit-identical output to the original input before implementing the next stage.
+- **Correctness, not byte-identical round-trip**: Rebuild recomputes/rederives everything from scratch. The goal is a *correct* rebuild, not one whose bytes match the original. Where practical, rederive native conventions (padding, alignment, ordering) so output looks native — but that is a nice-to-have, never the objective. A from-scratch rebuild that differs byte-for-byte but is functionally correct is a success. Do not add "replay original bytes for round-trip fidelity" logic; do fix genuine correctness bugs in writers (wrong values, dropped data, crashes).
 - **CLI-first**: GUI tools are wrappers that generate configs and invoke the CLI.
 
 ## Build & Run
