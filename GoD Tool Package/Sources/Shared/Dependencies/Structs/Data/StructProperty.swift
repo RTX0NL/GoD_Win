@@ -35,6 +35,16 @@ public enum StructPrimitives: Equatable, Codable {
     case void
     case integer(IntegerProperties)
     case float, double
+    /// Like `.float`, but encoded to JSON as a *string* via the
+    /// Swift Float printer's lossless decimal form. Use this for
+    /// fields where bit-pattern preservation matters across the
+    /// JSON edit cycle — e.g. denormal Float32 values that would
+    /// lose precision through JSONEncoder's number-to-string
+    /// formatting otherwise. On disk it's still 4 bytes BE / LE
+    /// per the surrounding `GoDData.byteOrder`.
+    case lossless_float
+    /// Same as `.lossless_float`, but for Float64 (`.double`).
+    case lossless_double
     case boolean, character(StringFormats)
 
     public var length: Int {
@@ -43,9 +53,9 @@ public enum StructPrimitives: Equatable, Codable {
             return 0
         case .integer(let type):
             return type.length
-        case .float:
+        case .float, .lossless_float:
             return 4
-        case .double:
+        case .double, .lossless_double:
             return 8
         case .boolean:
             return 1
@@ -125,6 +135,8 @@ public extension StructProperty {
     static var int64: StructProperty { .primitive(.integer(.int64))}
     static var float: StructProperty { .primitive(.float)}
     static var double: StructProperty { .primitive(.double)}
+    static var losslessFloat: StructProperty { .primitive(.lossless_float)}
+    static var losslessDouble: StructProperty { .primitive(.lossless_double)}
     static var labelPointer: StructProperty { .label }
 }
 
@@ -168,6 +180,8 @@ extension StructPrimitives: CustomStringConvertible {
         case .integer(let type): return type.description
         case .float: return "float"
         case .double: return "double"
+        case .lossless_float: return "lossless_float"
+        case .lossless_double: return "lossless_double"
         case .boolean: return "boolean"
         case .character(let format):
             switch format {
@@ -195,6 +209,8 @@ extension StructPrimitives: CustomStringConvertible {
         case "char": return .integer(.uint8)
         case "float": return .float
         case "double": return .double
+        case "lossless_float": return .lossless_float
+        case "lossless_double": return .lossless_double
         case "boolean": return .boolean
         case "char_utf8": return .character(.utf8)
         case "char_utf16_big": return .character(.utf16_big)

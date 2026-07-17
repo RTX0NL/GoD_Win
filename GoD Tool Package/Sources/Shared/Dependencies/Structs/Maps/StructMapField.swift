@@ -35,6 +35,8 @@ public extension StructField {
     static var int64: StructField { .primitive(.integer(.int64))}
     static var float: StructField { .primitive(.float)}
     static var double: StructField { .primitive(.double)}
+    static var losslessFloat: StructField { .primitive(.lossless_float)}
+    static var losslessDouble: StructField { .primitive(.lossless_double)}
     static var labelPointer: StructField { .label }
 }
 

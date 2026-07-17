@@ -169,6 +169,18 @@ public extension StructMap.Property {
     static func double(name: String, description: String? = nil) -> StructMap.Property {
         StructMap.Property(name: name, type: .double, description: description)
     }
+
+    /// `lossless_float` — JSON-encoded as a string for bit-pattern-
+    /// stable round-trip across float ↔ JSON ↔ float. See
+    /// `StructPrimitives.lossless_float` for rationale (denormals,
+    /// JSON-number-precision).
+    static func losslessFloat(name: String, description: String? = nil) -> StructMap.Property {
+        StructMap.Property(name: name, type: .primitive(.lossless_float), description: description)
+    }
+
+    static func losslessDouble(name: String, description: String? = nil) -> StructMap.Property {
+        StructMap.Property(name: name, type: .primitive(.lossless_double), description: description)
+    }
     
     
     static func boolean(name: String, description: String? = nil) -> StructMap.Property {

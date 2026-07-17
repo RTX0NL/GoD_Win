@@ -313,10 +313,10 @@ extension StructData: CustomStringConvertible {
             case .integer:
                 guard let value: Int = get(name) else { return "\(name) = N/A" }
                 return "\(name) = \(value)"
-            case .float:
+            case .float, .lossless_float:
                 guard let value: Float = get(name) else { return "\(name) = N/A" }
                 return "\(name) = \(value)"
-            case .double:
+            case .double, .lossless_double:
                 guard let value: Double = get(name) else { return "\(name) = N/A" }
                 return "\(name) = \(value)"
             case .boolean:
@@ -356,7 +356,7 @@ extension StructData: CustomStringConvertible {
                 continue
             }
         }
-        result.removeLast()
+        if !result.isEmpty { result.removeLast() }
         return result
     }
 }
@@ -385,6 +385,19 @@ extension StructData: Encodable {
             let value = readInt(subType: definition.propertyType, from: data)
             let enumCase = try definition.get(value)
             return enumCase.name
+        }
+
+        // Raised when a single-value field's backing data is too short
+        // to decode the expected primitive (previously a force-unwrap
+        // crash on malformed / truncated struct data).
+        func encodeReadError(_ key: CustomCodingKeys, _ typeName: String) -> EncodingError {
+            EncodingError.invalidValue(
+                typeName,
+                EncodingError.Context(
+                    codingPath: [key],
+                    debugDescription: "StructData: field data too short to read \(typeName) for key '\(key.stringValue)'"
+                )
+            )
         }
         
         func encode(
@@ -428,6 +441,22 @@ extension StructData: Encodable {
                         }
                         offset += Double.byteLength
                     }
+                case .lossless_float:
+                    var offset = 0
+                    for _ in 0 ..< count {
+                        if let value: Float = data.readPrimtive(atAddress: offset) {
+                            try container.encode(LosslessFloat(value))
+                        }
+                        offset += Float.byteLength
+                    }
+                case .lossless_double:
+                    var offset = 0
+                    for _ in 0 ..< count {
+                        if let value: Double = data.readPrimtive(atAddress: offset) {
+                            try container.encode(LosslessDouble(value))
+                        }
+                        offset += Double.byteLength
+                    }
                 case .boolean:
                     var offset = 0
                     for _ in 0 ..< count {
@@ -466,37 +495,64 @@ extension StructData: Encodable {
                         var container = container.nestedContainer(keyedBy: CustomCodingKeys.self)
                         let structData = StructData(definition: definition, data: data)
                         structData.labelValues = labels
+                        var subPaddingIdx = 0
+                        var subOffset = 0
                         try definition.properties.forEach { property in
-                            try encodeProperty(property, of: structData, labels: structData.labelValues, container: &container)
+                            try encodeProperty(property, of: structData, labels: structData.labelValues, paddingIndex: &subPaddingIdx, offset: &subOffset, alignment: definition.alignmentStyle, container: &container)
                         }
                     }
                     offset += definition.length
                 }
-                var container = container.nestedContainer(keyedBy: CustomCodingKeys.self)
-                let structData = StructData(definition: definition, data: data)
-                structData.labelValues = labels
-                try definition.properties.forEach { property in
-                    try encodeProperty(property, of: structData, labels: structData.labelValues, container: &container)
-                }
             }
+        }
+
+        // `.padding(length:)` produces a property literally named
+        // `"padding"`, so a struct with multiple padding regions
+        // would collide on the same JSON key. We auto-rename them
+        // to `padding_<i>` at encode time, where `i` counts padding
+        // properties within the current keyed-container scope.
+        // The decoder applies the same scheme symmetrically.
+        func paddingKey(_ index: Int) -> CustomCodingKeys {
+            CustomCodingKeys("padding_\(index)")
         }
 
         func encodeProperty(
             _ property: StructDefinition.Property,
             of structData: StructData,
             labels: [String: String],
+            paddingIndex: inout Int,
+            offset: inout Int,
+            alignment: StructAlignmentStyles,
             container: inout KeyedEncodingContainer<CustomCodingKeys>
         ) throws {
-            let key = CustomCodingKeys(property.name)
+            switch alignment {
+            case .none:
+                break
+            case .cStyle:
+                let alignmentOffset = offset % property.type.alignment
+                if alignmentOffset > 0 {
+                    offset += property.type.alignment - alignmentOffset
+                }
+            }
+
+            let key: CustomCodingKeys
+            if property.name == "padding" {
+                key = paddingKey(paddingIndex)
+                paddingIndex += 1
+            } else {
+                key = CustomCodingKeys(property.name)
+            }
+            let length = property.type.length
             switch property.type {
             case .label:
                 let labelName = structData.labelValues[property.name] ?? ""
                 try container.encode(labelName, forKey: key)
             default:
-                if let data: GoDData = structData.get(property.name) {
+                if let data: GoDData = structData.data.read(atAddress: offset, length: length) {
                     try encode(data: data, type: property.type, key: key, labels: labels, container: &container)
                 }
             }
+            offset += length
         }
 
         func encode(
@@ -519,16 +575,32 @@ extension StructData: Encodable {
                     let value = readInt(subType: subType, from: data)
                     try container.encode(value, forKey: key)
                 case .float:
-                    let value: Float = data.readPrimtive(atAddress: 0)!
+                    guard let value: Float = data.readPrimtive(atAddress: 0) else {
+                        throw encodeReadError(key, "Float")
+                    }
                     try container.encode(value, forKey: key)
                 case .double:
-                    let value: Double = data.readPrimtive(atAddress: 0)!
+                    guard let value: Double = data.readPrimtive(atAddress: 0) else {
+                        throw encodeReadError(key, "Double")
+                    }
                     try container.encode(value, forKey: key)
+                case .lossless_float:
+                    guard let value: Float = data.readPrimtive(atAddress: 0) else {
+                        throw encodeReadError(key, "LosslessFloat")
+                    }
+                    try container.encode(LosslessFloat(value), forKey: key)
+                case .lossless_double:
+                    guard let value: Double = data.readPrimtive(atAddress: 0) else {
+                        throw encodeReadError(key, "LosslessDouble")
+                    }
+                    try container.encode(LosslessDouble(value), forKey: key)
                 case .boolean:
                     let value: Bool = !data.isNull
                     try container.encode(value, forKey: key)
                 case .character(let format):
-                    let value: String = data.readString(atAddress: 0, format: format, maxCharacters: 1)!
+                    guard let value: String = data.readString(atAddress: 0, format: format, maxCharacters: 1) else {
+                        throw encodeReadError(key, "String")
+                    }
                     try container.encode(value, forKey: key)
                 }
             case .enumeration(let definition):
@@ -541,8 +613,10 @@ extension StructData: Encodable {
                 var container = container.nestedContainer(keyedBy: CustomCodingKeys.self, forKey: key)
                 let structData = StructData(definition: definition, data: data)
                 structData.labelValues = labels
+                var subPaddingIdx = 0
+                var subOffset = 0
                 try definition.properties.forEach { property in
-                    try encodeProperty(property, of: structData, labels: structData.labelValues, container: &container)
+                    try encodeProperty(property, of: structData, labels: structData.labelValues, paddingIndex: &subPaddingIdx, offset: &subOffset, alignment: definition.alignmentStyle, container: &container)
                 }
             }
         }
@@ -553,8 +627,595 @@ extension StructData: Encodable {
 
         // Encode struct properties using encodeProperty for label-aware encoding
         var dataContainer = container.nestedContainer(keyedBy: CustomCodingKeys.self, forKey: "data")
+        var topPaddingIdx = 0
+        var topOffset = 0
         for property in definition.properties {
-            try encodeProperty(property, of: self, labels: self.labelValues, container: &dataContainer)
+            try encodeProperty(property, of: self, labels: self.labelValues, paddingIndex: &topPaddingIdx, offset: &topOffset, alignment: definition.alignmentStyle, container: &dataContainer)
+        }
+    }
+}
+
+// MARK: - JSON → StructData decode
+//
+// Inverse of `encode(to:)`. Mirrors the encoder's switch ladder
+// case-by-case so the two halves stay byte-identical when no edits
+// are made — this is what unblocks edits-survive-rebuild for both
+// the save pipeline and the DOL/REL chunk pipeline.
+//
+// `StructData` can't conform to plain `Decodable` because the JSON
+// alone doesn't carry the schema — the `StructDefinition` has to
+// come in from outside. Two equivalent entry points:
+//   1. `init(definition:json:)` for callers that have a `GoDData`
+//      / `Data` blob in hand (the common case for ops reading a
+//      `.json` file off disk).
+//   2. `init(definition:from:)` for callers using `JSONDecoder`
+//      manually — pass the definition through `decoder.userInfo`
+//      under `StructData.definitionUserInfoKey` and standard
+//      `decode(StructData.self, from:)` works.
+//
+// `.label` properties round-trip into `self.labelValues`. The
+// underlying 4 on-disk bytes are left zero — the symbol resolver
+// (DOL/REL) or the in-place save layout (XD/Colo) writes the real
+// pointer at assembly / repack time. Same shape as encode, where
+// `.label` only emits the label name and not its on-disk value.
+//
+// `.padding` properties are no-ops on both sides — neither the
+// encoder nor the decoder touches the underlying bytes, so they
+// stay whatever the surrounding context wrote into them. (For a
+// fresh `StructData(definition:byteOrder:)` that's zeros.)
+
+public extension StructData {
+
+    /// Pass a `StructDefinition` in `JSONDecoder.userInfo` under
+    /// this key to use vanilla `decode(StructData.self, from:)`.
+    static let definitionUserInfoKey = CodingUserInfoKey(rawValue: "structData.definition")!
+
+    /// Decode JSON bytes into a fresh `StructData` of the given
+    /// definition. The JSON must match the shape `encode(to:)`
+    /// produces: a top-level object with `"type"` (definition name,
+    /// for sanity-checking) and `"data"` (the field tree).
+    convenience init(
+        definition: StructDefinition,
+        json: GoDData,
+        byteOrder: ByteOrder = .big
+    ) throws {
+        self.init(definition: definition, byteOrder: byteOrder)
+
+        let raw = try JSONSerialization.jsonObject(with: json.data, options: [])
+        guard let root = raw as? [String: Any] else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: [],
+                debugDescription: "StructData JSON is not a top-level object"
+            ))
+        }
+        if let typeName = root["type"] as? String, typeName != definition.name {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: [CustomCodingKeys("type")],
+                debugDescription: "StructData JSON 'type' is '\(typeName)', expected '\(definition.name)'"
+            ))
+        }
+        guard let dataNode = root["data"] as? [String: Any] else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: [CustomCodingKeys("data")],
+                debugDescription: "StructData JSON missing 'data' object"
+            ))
+        }
+
+        try StructData.populate(
+            properties: definition.properties,
+            into: data,
+            atOffset: 0,
+            wordSize: definition.wordSize,
+            alignment: definition.alignmentStyle,
+            from: dataNode,
+            labelValues: &self.labelValues,
+            byteOrder: byteOrder
+        )
+    }
+
+    convenience init(from decoder: Decoder) throws {
+        guard let definition = decoder.userInfo[StructData.definitionUserInfoKey] as? StructDefinition else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: decoder.codingPath,
+                debugDescription: "StructData.init(from:) needs a StructDefinition under decoder.userInfo[StructData.definitionUserInfoKey]"
+            ))
+        }
+        // Re-encode the decoder's container back into JSON bytes,
+        // then run the schema-aware path. This is slightly wasteful
+        // but lets us reuse the JSONSerialization-driven implementation
+        // — Decoder doesn't expose enough machinery to walk a
+        // schema-driven tree directly.
+        let container = try decoder.singleValueContainer()
+        let any = try container.decode(JSONAny.self).value
+        let bytes = try JSONSerialization.data(withJSONObject: any, options: [])
+        try self.init(
+            definition: definition,
+            json: GoDData(byteStream: [UInt8](bytes), byteOrder: .big)
+        )
+    }
+
+    // MARK: - Field walker
+
+    private static func populate(
+        properties: [StructDefinition.Property],
+        into data: GoDData,
+        atOffset baseOffset: Int,
+        wordSize: Int,
+        alignment: StructAlignmentStyles,
+        from dataNode: [String: Any],
+        labelValues: inout [String: String],
+        byteOrder: ByteOrder
+    ) throws {
+        var offset = baseOffset
+        // Mirror the encoder's auto-indexed padding scheme — each
+        // padding-named property gets the synthesized JSON key
+        // `padding_<i>`, scoped to this populate call (so each
+        // sub-struct has its own padding counter).
+        var paddingIndex = 0
+        for property in properties {
+            switch alignment {
+            case .none:
+                break
+            case .cStyle:
+                let alignmentOffset = offset % property.type.alignment
+                if alignmentOffset > 0 {
+                    offset += property.type.alignment - alignmentOffset
+                }
+            }
+
+            // The bare `.padding` StructProperty case never appears
+            // in JSON output — encode skips it — so we skip it here
+            // too. (Note: `.padding(length:)` on the StructDefinition.
+            // Property *helper* expands to `.array(.uint8, count: N)`
+            // with name "padding"; that path goes through `.array`
+            // with the synthesized key below.)
+            if case .padding = property.type {
+                offset += property.type.length
+                continue
+            }
+
+            // Synthesize the JSON key — `padding_<i>` for padding
+            // properties, the property's own name otherwise.
+            let key: String
+            if property.name == "padding" {
+                key = "padding_\(paddingIndex)"
+                paddingIndex += 1
+            } else {
+                key = property.name
+            }
+            let value = dataNode[key]
+
+            try writeValue(
+                value,
+                type: property.type,
+                propertyName: key,
+                into: data,
+                atOffset: offset,
+                labelValues: &labelValues,
+                byteOrder: byteOrder
+            )
+            offset += property.type.length
+        }
+    }
+
+    private static func writeValue(
+        _ value: Any?,
+        type: StructProperty,
+        propertyName: String,
+        into data: GoDData,
+        atOffset offset: Int,
+        labelValues: inout [String: String],
+        byteOrder: ByteOrder
+    ) throws {
+        switch type {
+        case .padding:
+            return    // already handled by caller
+        case .label:
+            // Recover the label name into `labelValues`; leave the
+            // 4 on-disk bytes zero (matches `encode`'s asymmetry).
+            if let name = value as? String {
+                labelValues[propertyName] = name
+            }
+            return
+        case .primitive(let prim):
+            try writePrimitive(
+                value,
+                primitive: prim,
+                propertyName: propertyName,
+                into: data,
+                atOffset: offset,
+                count: 1,
+                byteOrder: byteOrder
+            )
+        case .enumeration(let definition):
+            guard let name = value as? String else {
+                throw decodingError("expected String for enum '\(definition.name)' at '\(propertyName)'", offset)
+            }
+            let resolved = try definition.get(name)
+            try writeInteger(
+                resolved.rawValue,
+                width: definition.propertyType.length,
+                signed: definition.propertyType.isSigned,
+                into: data,
+                atOffset: offset,
+                byteOrder: byteOrder
+            )
+        case .array(let subProperty, let count):
+            try writeArray(
+                value,
+                element: subProperty,
+                count: count,
+                propertyName: propertyName,
+                into: data,
+                atOffset: offset,
+                labelValues: &labelValues,
+                byteOrder: byteOrder
+            )
+        case .subStruct(let definition):
+            guard let nested = value as? [String: Any] else {
+                throw decodingError("expected object for sub-struct '\(definition.name)' at '\(propertyName)'", offset)
+            }
+            try populate(
+                properties: definition.properties,
+                into: data,
+                atOffset: offset,
+                wordSize: definition.wordSize,
+                alignment: definition.alignmentStyle,
+                from: nested,
+                labelValues: &labelValues,
+                byteOrder: byteOrder
+            )
+        }
+    }
+
+    private static func writeArray(
+        _ value: Any?,
+        element: StructProperty,
+        count: Int,
+        propertyName: String,
+        into data: GoDData,
+        atOffset offset: Int,
+        labelValues: inout [String: String],
+        byteOrder: ByteOrder
+    ) throws {
+        // Special case: an array of characters. The encoder uses a
+        // nested unkeyed container with a single `readString(
+        // maxCharacters: count)` element, so the JSON shape is an
+        // array containing one string — `["hello"]`. Tolerate
+        // either the wrapped or unwrapped form on decode.
+        if case .primitive(.character(let format)) = element {
+            let string: String?
+            if let s = value as? String {
+                string = s
+            } else if let arr = value as? [Any], let s = arr.first as? String {
+                string = s
+            } else {
+                string = nil
+            }
+            guard let unwrapped = string else {
+                throw decodingError("expected String (or [String]) for char array at '\(propertyName)'", offset)
+            }
+            try writeString(
+                unwrapped,
+                format: format,
+                count: count,
+                into: data,
+                atOffset: offset,
+                byteOrder: byteOrder
+            )
+            return
+        }
+
+        // Otherwise the JSON shape is an array of `count` elements.
+        // Each element is dispatched via `writeValue` at its own
+        // offset — using the array's own per-element stride
+        // (`element.length`).
+        guard let array = value as? [Any] else {
+            throw decodingError("expected array for '\(propertyName)' (\(element))", offset)
+        }
+        let stride = element.length
+        let take = Swift.min(array.count, count)
+        for i in 0..<take {
+            // Array elements have no name in the JSON — synthesise
+            // one for error messages.
+            let elementName = "\(propertyName)[\(i)]"
+            try writeValue(
+                array[i],
+                type: element,
+                propertyName: elementName,
+                into: data,
+                atOffset: offset + i * stride,
+                labelValues: &labelValues,
+                byteOrder: byteOrder
+            )
+        }
+        // `take < count` is silently tolerated — trailing elements
+        // stay zero. Matches the encoder, which only emits as many
+        // elements as it could read.
+    }
+
+    private static func writePrimitive(
+        _ value: Any?,
+        primitive: StructPrimitives,
+        propertyName: String,
+        into data: GoDData,
+        atOffset offset: Int,
+        count: Int,
+        byteOrder: ByteOrder
+    ) throws {
+        switch primitive {
+        case .void:
+            return
+        case .integer(let subType):
+            guard let intValue = coerceToInt(value) else {
+                throw decodingError("expected number for '\(propertyName)' (\(subType))", offset)
+            }
+            try writeInteger(
+                intValue,
+                width: subType.length,
+                signed: subType.isSigned,
+                into: data,
+                atOffset: offset,
+                byteOrder: byteOrder
+            )
+        case .float:
+            guard let dbl = coerceToDouble(value) else {
+                throw decodingError("expected number for '\(propertyName)' (float)", offset)
+            }
+            let bits = Float(dbl).bitPattern
+            try writeInteger(
+                Int(bits),
+                width: 4,
+                signed: false,
+                into: data,
+                atOffset: offset,
+                byteOrder: byteOrder
+            )
+        case .double:
+            guard let dbl = coerceToDouble(value) else {
+                throw decodingError("expected number for '\(propertyName)' (double)", offset)
+            }
+            let bits = dbl.bitPattern
+            // UInt64 → 8 bytes via the same writer (Int(bits) on
+            // 64-bit Swift is fine; bit-pattern preserved).
+            try writeInteger(
+                Int(bitPattern: UInt(bits)),
+                width: 8,
+                signed: false,
+                into: data,
+                atOffset: offset,
+                byteOrder: byteOrder
+            )
+        case .lossless_float:
+            // Encoded as a JSON string of `Float.description`. Round-
+            // trips bit-pattern-stable for normals AND denormals.
+            guard let s = value as? String, let f = Float(s) else {
+                throw decodingError("expected string-encoded Float for '\(propertyName)' (lossless_float)", offset)
+            }
+            try writeInteger(
+                Int(f.bitPattern),
+                width: 4,
+                signed: false,
+                into: data,
+                atOffset: offset,
+                byteOrder: byteOrder
+            )
+        case .lossless_double:
+            guard let s = value as? String, let d = Double(s) else {
+                throw decodingError("expected string-encoded Double for '\(propertyName)' (lossless_double)", offset)
+            }
+            try writeInteger(
+                Int(bitPattern: UInt(d.bitPattern)),
+                width: 8,
+                signed: false,
+                into: data,
+                atOffset: offset,
+                byteOrder: byteOrder
+            )
+        case .boolean:
+            guard let b = coerceToBool(value) else {
+                throw decodingError("expected bool for '\(propertyName)'", offset)
+            }
+            data.write(GoDData(byteStream: [b ? UInt8(1) : UInt8(0)], byteOrder: byteOrder), atAddress: offset)
+        case .character(let format):
+            guard let string = value as? String else {
+                throw decodingError("expected String for '\(propertyName)' (char)", offset)
+            }
+            try writeString(string, format: format, count: count, into: data, atOffset: offset, byteOrder: byteOrder)
+        }
+    }
+
+    private static func writeInteger(
+        _ value: Int,
+        width: Int,
+        signed: Bool,
+        into data: GoDData,
+        atOffset offset: Int,
+        byteOrder: ByteOrder
+    ) throws {
+        // Use 64-bit two's-complement representation, then truncate
+        // to `width` bytes in big- or little-endian order. This
+        // handles all signed/unsigned widths uniformly without
+        // worrying about Swift's narrower-width int literals.
+        let unsigned = UInt64(bitPattern: Int64(value))
+        var bytes = [UInt8](repeating: 0, count: width)
+        for i in 0..<width {
+            let shift = (byteOrder == .big) ? (width - 1 - i) * 8 : i * 8
+            bytes[i] = UInt8((unsigned >> shift) & 0xFF)
+        }
+        data.write(GoDData(byteStream: bytes, byteOrder: byteOrder), atAddress: offset)
+        _ = signed   // silence unused warning; sign is implicit in the bit pattern above
+    }
+
+    private static func writeString(
+        _ string: String,
+        format: StringFormats,
+        count: Int,
+        into data: GoDData,
+        atOffset offset: Int,
+        byteOrder: ByteOrder
+    ) throws {
+        // Encode the string in the format's encoding, truncate or
+        // zero-pad to exactly `count` characters' worth of bytes.
+        let stride = format.characterLength
+        let totalBytes = count * stride
+        let encoded = string.data(format: format)
+        var raw = encoded.rawBytes
+        // Foundation prepends a UTF-16 BOM that on-card data never
+        // has. Strip it for any format that lands on a UTF-16-shaped
+        // encoding (gs* + utf16/unicode).
+        switch format {
+        case .gs, .gsColo, .gsXD, .gsPBR, .utf16_big, .unicode_big:
+            if raw.count >= 2, raw[0] == 0xFE, raw[1] == 0xFF {
+                raw.removeFirst(2)
+            }
+        case .utf16_little, .unicode_little:
+            if raw.count >= 2, raw[0] == 0xFF, raw[1] == 0xFE {
+                raw.removeFirst(2)
+            }
+        default:
+            break
+        }
+        var out = [UInt8](repeating: 0, count: totalBytes)
+        let copy = Swift.min(raw.count, totalBytes)
+        for i in 0..<copy { out[i] = raw[i] }
+        data.write(GoDData(byteStream: out, byteOrder: byteOrder), atAddress: offset)
+    }
+
+    // MARK: - Coercions
+
+    private static func coerceToInt(_ value: Any?) -> Int? {
+        if let i = value as? Int { return i }
+        if let n = value as? NSNumber { return n.intValue }
+        if let d = value as? Double { return Int(d) }
+        if let s = value as? String { return Int(s) }
+        return nil
+    }
+
+    private static func coerceToDouble(_ value: Any?) -> Double? {
+        if let d = value as? Double { return d }
+        if let n = value as? NSNumber { return n.doubleValue }
+        if let i = value as? Int { return Double(i) }
+        if let s = value as? String { return Double(s) }
+        return nil
+    }
+
+    private static func coerceToBool(_ value: Any?) -> Bool? {
+        if let b = value as? Bool { return b }
+        if let n = value as? NSNumber { return n.boolValue }
+        return nil
+    }
+
+    private static func decodingError(_ message: String, _ offset: Int) -> DecodingError {
+        DecodingError.dataCorrupted(.init(
+            codingPath: [],
+            debugDescription: "StructData decode @+\(String(format: "0x%X", offset)): \(message)"
+        ))
+    }
+}
+
+// MARK: - LosslessFloat / LosslessDouble
+//
+// Wrappers used by the `.lossless_float` / `.lossless_double`
+// primitive types to encode / decode floats as JSON *strings*. The
+// motivating case is denormal Float32 values (subnormal exponents,
+// e.g. `Float(bitPattern: 0x00000010)` ≈ 1.4e-44) that lose bits
+// when JSONEncoder serializes them through its number-format path.
+// Swift's `Float.description` / `Double.description` produce the
+// shortest decimal that round-trips back to the same bit pattern,
+// so wrapping the value in a string-only Codable shape gives a
+// bit-stable round-trip without changing the JSON shape for
+// non-lossless-flagged float fields.
+
+public struct LosslessFloat: Codable, Equatable {
+    public let value: Float
+    public init(_ value: Float) { self.value = value }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let s = try container.decode(String.self)
+        guard let parsed = Float(s) else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: decoder.codingPath,
+                debugDescription: "LosslessFloat: '\(s)' is not a valid Float"
+            ))
+        }
+        self.value = parsed
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(String(describing: value))
+    }
+}
+
+public struct LosslessDouble: Codable, Equatable {
+    public let value: Double
+    public init(_ value: Double) { self.value = value }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let s = try container.decode(String.self)
+        guard let parsed = Double(s) else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: decoder.codingPath,
+                debugDescription: "LosslessDouble: '\(s)' is not a valid Double"
+            ))
+        }
+        self.value = parsed
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(String(describing: value))
+    }
+}
+
+// `IntegerProperties.isSigned` — used by the integer writer. Kept
+// alongside the decoder rather than alongside the type definition
+// because `signed` is a decode-only concern (encode reads the bytes
+// either way).
+private extension IntegerProperties {
+    var isSigned: Bool {
+        switch self {
+        case .uint8, .uint16, .uint24, .uint32, .uint64: return false
+        case .int8, .int16, .int24, .int32, .int64:      return true
+        }
+    }
+}
+
+// `JSONAny` — escape hatch for the `init(from: Decoder)` path. The
+// vanilla `Decoder` API can't walk arbitrary JSON without a schema,
+// so we round-trip through `JSONSerialization` to get back a usable
+// `[String: Any]` tree. This wrapper exists to thread that
+// round-trip through Swift's strongly-typed Codable system.
+private struct JSONAny: Decodable {
+    let value: Any
+
+    init(from decoder: Decoder) throws {
+        if let container = try? decoder.container(keyedBy: CustomCodingKeys.self) {
+            var dict: [String: Any] = [:]
+            for key in container.allKeys {
+                dict[key.stringValue] = try container.decode(JSONAny.self, forKey: key).value
+            }
+            self.value = dict
+        } else if var container = try? decoder.unkeyedContainer() {
+            var arr: [Any] = []
+            while !container.isAtEnd {
+                arr.append(try container.decode(JSONAny.self).value)
+            }
+            self.value = arr
+        } else {
+            let single = try decoder.singleValueContainer()
+            if let b = try? single.decode(Bool.self) { self.value = b; return }
+            if let i = try? single.decode(Int.self) { self.value = i; return }
+            if let d = try? single.decode(Double.self) { self.value = d; return }
+            if let s = try? single.decode(String.self) { self.value = s; return }
+            if single.decodeNil() { self.value = NSNull(); return }
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: decoder.codingPath,
+                debugDescription: "Unsupported JSON value"
+            ))
         }
     }
 }

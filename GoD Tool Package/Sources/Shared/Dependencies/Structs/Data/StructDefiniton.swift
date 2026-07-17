@@ -123,7 +123,7 @@ public struct StructDefinition: Equatable, Nameable {
         let keypathParts = keypath
             .split(separator: ".")
             .map { Self.keyFor(String($0)) }
-        let currentKey = keypathParts[0]
+        guard let currentKey = keypathParts.first else { return nil }
         let remainingKeyPath = keypathParts.count == 1 ? nil : keypathParts[1...].joined(separator: ".")
 
         var offset: Int = 0
@@ -160,7 +160,7 @@ public struct StructDefinition: Equatable, Nameable {
         let keypathParts = keypath
             .split(separator: ".")
             .map { Self.keyFor(String($0)) }
-        let currentKey = keypathParts[0]
+        guard let currentKey = keypathParts.first else { return nil }
         let remainingKeyPath = keypathParts.count == 1 ? nil : keypathParts[1...].joined(separator: ".")
 
         for property in properties {
@@ -240,6 +240,14 @@ public extension StructDefinition.Property {
 
     static func double(name: String, description: String? = nil) -> StructDefinition.Property {
         StructDefinition.Property(name: name, type: .double, description: description)
+    }
+
+    static func losslessFloat(name: String, description: String? = nil) -> StructDefinition.Property {
+        StructDefinition.Property(name: name, type: .losslessFloat, description: description)
+    }
+
+    static func losslessDouble(name: String, description: String? = nil) -> StructDefinition.Property {
+        StructDefinition.Property(name: name, type: .losslessDouble, description: description)
     }
     
     

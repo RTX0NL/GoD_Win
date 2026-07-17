@@ -117,11 +117,22 @@ public struct DataSectionImporter {
                       let jsonData = fileSystem.readFile(at: file) else {
                     continue
                 }
-
-                // Decode JSON → StructData with label definition
-                // For now, decode as the uint32 version and reconstruct
-                // TODO: Implement full JSON → StructData decoding with label support
-                let structData = StructData(definition: definition, byteOrder: byteOrder)
+                // Decode JSON → StructData. The dump-side wrapping (DOL
+                // `BulkTableJSON`-style) optionally puts the field map
+                // under a "data" key; accept both shapes by trying the
+                // root dict first and falling back to `obj["data"]`.
+                let structData: StructData = {
+                    if let obj = try? JSONSerialization.jsonObject(
+                        with: Data(jsonData.rawBytes)) as? [String: Any] {
+                        let payload = (obj["data"] as? [String: Any]) ?? obj
+                        return typedImporter.decodeStruct(
+                            from: payload,
+                            definition: definition,
+                            byteOrder: byteOrder
+                        )
+                    }
+                    return StructData(definition: definition, byteOrder: byteOrder)
+                }()
                 let imported = typedImporter.importStruct(
                     structData: structData,
                     labelTable: labelTable,
@@ -136,9 +147,34 @@ public struct DataSectionImporter {
                       let count = chunk.count else {
                     continue
                 }
-
-                // TODO: Implement full JSON table decoding
-                let tableData = GoDData(length: definition.length * count, byteOrder: byteOrder)
+                let entries: [LabeledData]
+                if let jsonData = fileSystem.readFile(at: file),
+                   let decoded = typedImporter.decodeTable(
+                    jsonBytes: jsonData,
+                    definition: definition,
+                    byteOrder: byteOrder
+                   ) {
+                    entries = decoded
+                } else {
+                    entries = []
+                }
+                // Pad-or-truncate to the manifest's declared count so
+                // section size stays stable even if the JSON has been
+                // hand-edited to add/remove rows. Surplus entries are
+                // dropped; missing ones are filled with a zero StructData.
+                var normalised = Array(entries.prefix(count))
+                while normalised.count < count {
+                    normalised.append(LabeledData(
+                        label: nil,
+                        data: StructData(definition: definition, byteOrder: byteOrder)
+                    ))
+                }
+                let tableData = typedImporter.importTable(
+                    entries: normalised,
+                    definition: definition,
+                    labelTable: labelTable,
+                    byteOrder: byteOrder
+                )
                 result.append(tableData)
                 currentAddress += UInt32(definition.length * count)
 
