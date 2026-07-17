@@ -838,7 +838,13 @@ private extension PPCEncoder {
     }
 
     func encodeCtrBranch(_ mnemonic: String, _ ops: [PPCInstruction.Operand], _ pc: UInt32) -> UInt32? {
-        let bo: UInt32 = mnemonic.hasPrefix("bdnz") ? 16 : 18
+        // BO encodings (no condition test, no hint):
+        //   `bdnz` decrements CTR + branches if CTR != 0 → BO = 16
+        //   `bdz`  decrements CTR + branches if CTR == 0 → BO = 24
+        // Hinted forms (BO=18 / BO=26) come through `encodeBc` as
+        // explicit `bc BO,BI,target` so we don't need to handle them
+        // here.
+        let bo: UInt32 = mnemonic.hasPrefix("bdnz") ? 16 : 24
         let lk: UInt32 = mnemonic.hasSuffix("l") ? 1 : 0
         guard let target = branchTarget(ops, 0) else { return nil }
         let offset = Int32(bitPattern: target) &- Int32(bitPattern: pc)

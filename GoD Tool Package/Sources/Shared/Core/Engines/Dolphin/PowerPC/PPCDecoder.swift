@@ -262,11 +262,15 @@ private extension PPCDecoder {
         let suffix = link ? "l" : ""
         let crOps: [Op] = crField != 0 ? [.crField(crField)] : []
 
-        // Decrement CTR, branch if CTR != 0 (and no condition)
+        // Decrement CTR, branch if CTR != 0 / == 0 (no condition test).
+        // Only the *unhinted* BO encodings collapse to the simplified
+        // mnemonic; the prediction-hint bit (BO[3]=1, e.g. BO=18 / 26)
+        // would round-trip back to BO=16 / 24 if we simplified them and
+        // re-assembled, which loses one bit per affected instruction.
+        // The hinted forms fall through to the explicit `bc BO,BI,tgt`
+        // path which preserves the encoding verbatim.
         if bo == 16 { return D(mnemonic: "bdnz" + suffix, operands: [.branchTarget(target)]) }
-        if bo == 18 { return D(mnemonic: "bdnz" + suffix, operands: [.branchTarget(target)]) }
-        // Branch if CTR == 0
-        if bo == 18 { return D(mnemonic: "bdz" + suffix, operands: [.branchTarget(target)]) }
+        if bo == 24 { return D(mnemonic: "bdz" + suffix, operands: [.branchTarget(target)]) }
 
         // Branch on condition
         switch (bo, crBit) {
@@ -416,11 +420,15 @@ private extension PPCDecoder {
         case 0:   return decodeCmp(raw, signed: true)
         case 32:  return decodeCmp(raw, signed: false)
 
-        // Logical
-        case 28:
+        // Logical. Note: ext=28 is `and`, ext=444 is `or` — they were
+        // previously swapped (with a duplicated `case 28 where xo10==28`
+        // catch-all that was unreachable). The `mr` simplification
+        // (`mr rA, rS` ⇔ `or rA, rS, rS`) belongs on `or` (444), not
+        // `and` (28).
+        case 28:   return D(mnemonic: "and" + dot, operands: [.gpr(ra), .gpr(rd), .gpr(rb)])
+        case 444:
             if rd == rb { return D(mnemonic: "mr" + dot, operands: [.gpr(ra), .gpr(rd)]) }
             return D(mnemonic: "or" + dot, operands: [.gpr(ra), .gpr(rd), .gpr(rb)])
-        case 444:  return D(mnemonic: "or" + dot, operands: [.gpr(ra), .gpr(rd), .gpr(rb)])
         case 60:   return D(mnemonic: "andc" + dot, operands: [.gpr(ra), .gpr(rd), .gpr(rb)])
         case 124:
             if rd == rb { return D(mnemonic: "not" + dot, operands: [.gpr(ra), .gpr(rd)]) }
@@ -430,10 +438,6 @@ private extension PPCDecoder {
         case 412:  return D(mnemonic: "orc" + dot, operands: [.gpr(ra), .gpr(rd), .gpr(rb)])
         case 476:  return D(mnemonic: "nand" + dot, operands: [.gpr(ra), .gpr(rd), .gpr(rb)])
         case 26:   return D(mnemonic: "cntlzw" + dot, operands: [.gpr(ra), .gpr(rd)])
-
-        // And
-        case 28 where xo10 == 28:
-            return D(mnemonic: "and" + dot, operands: [.gpr(ra), .gpr(rd), .gpr(rb)])
 
         // Shift
         case 24:   return D(mnemonic: "slw" + dot, operands: [.gpr(ra), .gpr(rd), .gpr(rb)])

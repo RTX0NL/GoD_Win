@@ -276,6 +276,14 @@ extension DolDisassembly {
                         if let json: GoDData = try? JSONEncoder.prettyPrinted.encode(tableJSON) {
                             output.writeFile(json, at: sectionFolder.file(fileName), overwrite: true)
                         }
+                        // Byte-identical sidecar — `DolAssembly` reads
+                        // this back when typed-chunk JSON decode would
+                        // lose precision (NaN/Inf floats, etc.).
+                        output.writeFile(
+                            GoDData(byteStream: tableBytes, byteOrder: .big),
+                            at: sectionFolder.file("\(table.name).bin"),
+                            overwrite: true
+                        )
                         manifest.chunks.append(.init(
                             label: table.start, type: .table, file: fileName,
                             structType: table.entryType, count: count
@@ -299,6 +307,12 @@ extension DolDisassembly {
                         if let json: GoDData = try? JSONEncoder.prettyPrinted.encode(structData) {
                             output.writeFile(json, at: sectionFolder.file(fileName), overwrite: true)
                         }
+                        // Byte-identical sidecar (see table-case note above).
+                        output.writeFile(
+                            GoDData(byteStream: structBytes, byteOrder: .big),
+                            at: sectionFolder.file("\(single.label).bin"),
+                            overwrite: true
+                        )
                         manifest.chunks.append(.init(
                             label: single.label, type: .struct, file: fileName,
                             structType: single.type

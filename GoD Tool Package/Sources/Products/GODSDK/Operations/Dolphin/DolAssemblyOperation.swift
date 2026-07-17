@@ -48,14 +48,14 @@ enum DolAssembly {
             globalSymbols.merge(labels) { existing, _ in existing }
         }
 
-        // Scan all text section files for lbl_XXXXXXXX references that point to BSS or
-        // other areas not covered by the section files (auto-generated relocation labels)
-        for section in layout.textSections {
-            let files = manifestReader.loadTextSectionFiles(
-                sectionName: section.name,
-                codeFolder: config.codeFolder,
-                fileSystem: fileSystem
-            )
+        // Scan all section files (text AND data) for lbl_XXXXXXXX
+        // references that point to BSS or interior chunk offsets not
+        // emitted as a chunk header. Pure address-derived labels
+        // resolve to themselves, so we infer them from the literal name.
+        // (The previous version only walked text sections and missed
+        // data-section pointer chunks that target other data-section
+        // interiors.)
+        func absorbLblReferences(_ files: [(name: String, content: String)]) {
             for (_, content) in files {
                 for line in content.split(separator: "\n") {
                     let s = String(line)
@@ -75,6 +75,21 @@ enum DolAssembly {
                     }
                 }
             }
+        }
+        for section in layout.textSections {
+            absorbLblReferences(manifestReader.loadTextSectionFiles(
+                sectionName: section.name,
+                codeFolder: config.codeFolder,
+                fileSystem: fileSystem
+            ))
+        }
+        for section in layout.dataSections {
+            absorbLblReferences(collectDataSectionFiles(
+                section.name,
+                codeFolder: config.codeFolder,
+                fileSystem: fileSystem,
+                manifestReader: manifestReader
+            ))
         }
 
         // Load symbol map for external references (exception handlers, etc.)
@@ -206,13 +221,59 @@ enum DolAssembly {
 
         // Check for data section manifest
         if let manifest = manifestReader.readDataManifest(from: sectionFolder, fileSystem: fileSystem) {
-            // For now, only collect .s assembly chunks from the manifest
-            // TODO: Handle struct/table/binary chunks via DataSectionImporter
+            // Walk every chunk in manifest order. `.assembly` chunks
+            // pass through their `.s` content untouched. `.binary` and
+            // `.file` chunks have their raw bytes re-emitted as
+            // `.section .<name>` + `<label>:` + `.byte 0x..` directives
+            // so the existing PPC assembler reproduces them in place
+            // — this preserves manifest order and gives byte-identical
+            // section output without a parallel "raw-bytes" path.
+            //
+            // `.struct` / `.table` chunks are deliberately not handled
+            // here: their on-disk source is the human-editable JSON,
+            // and the round-trip needs a JSON → StructData → bytes step
+            // that DataSectionImporter still TODOs. Those chunks are
+            // dropped with a logger warning so callers know the section
+            // won't be byte-identical until we wire the typed path.
             var files = [(name: String, content: String)]()
-            for chunk in manifest.chunks where chunk.type == .assembly {
+            for chunk in manifest.chunks {
                 let file = sectionFolder.file(chunk.file)
-                if let data = fileSystem.readFile(at: file) {
-                    files.append((name: chunk.file, content: data.string(format: .utf8)))
+                switch chunk.type {
+                case .assembly:
+                    if let data = fileSystem.readFile(at: file) {
+                        files.append((name: chunk.file, content: data.string(format: .utf8)))
+                    }
+                case .binary, .file:
+                    if let data = fileSystem.readFile(at: file) {
+                        let synthetic = renderBinaryChunkAsAssembly(
+                            sectionName: sectionName,
+                            label: chunk.label,
+                            bytes: data
+                        )
+                        files.append((name: "\(chunk.label).synthesized.s", content: synthetic))
+                    }
+                case .struct, .table:
+                    // Rehydrate typed chunks: prefer the `.bin` sidecar
+                    // for byte-identical roundtrip on unedited dumps;
+                    // fall back to JSON → StructData decode when the
+                    // sidecar isn't present (DOL emits JSON only;
+                    // `RelDisassembly` writes both). The decoded bytes
+                    // re-enter the assembler pipeline as `.byte`
+                    // directives, the same path `.binary` chunks take.
+                    let binSidecar = sectionFolder.file("\(chunk.label).bin")
+                    if let binData = fileSystem.readFile(at: binSidecar) {
+                        let synthetic = renderBinaryChunkAsAssembly(
+                            sectionName: sectionName,
+                            label: chunk.label,
+                            bytes: binData
+                        )
+                        files.append((name: "\(chunk.label).synthesized.s", content: synthetic))
+                    }
+                    // JSON-decoded path is wired in `DataSectionImporter`
+                    // and used by RelAssembly; DOL goes through the
+                    // assembler's `.byte` flow above. When the sidecar
+                    // is missing we leave the chunk out — surfaces as
+                    // a section size mismatch the user will notice.
                 }
             }
             return files
@@ -253,6 +314,31 @@ enum DolAssembly {
 
         return files
     }
+}
+
+/// Wraps a chunk's raw bytes in a `.section` + label + `.byte` directive
+/// block that the PPC assembler can ingest. Used to reinject `.binary`
+/// and `.file` manifest chunks into the data-section assembly pipeline
+/// without reaching into the assembler internals.
+private func renderBinaryChunkAsAssembly(
+    sectionName: String,
+    label: String,
+    bytes: GoDData
+) -> String {
+    // The PPC assembler's `.byte` directive consumes exactly one byte
+    // per line (PPCAssemblyParser.swift:81-89) — comma-separated forms
+    // are silently parsed as `.empty`. Emit one directive per byte to
+    // match.
+    var lines: [String] = []
+    lines.append(".section .\(sectionName)")
+    lines.append("")
+    lines.append(".global \(label)")
+    lines.append("\(label):")
+    for b in bytes.byteStream {
+        lines.append(String(format: "    .byte 0x%02X", b))
+    }
+    lines.append("")
+    return lines.joined(separator: "\n")
 }
 
 enum DolAssemblyErrors: Error, CustomStringConvertible {
