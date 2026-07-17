@@ -103,6 +103,12 @@ public struct GeniusSonorityEngine: Engine {
             data.fsys.archiveFileOverrides = [
                 "common": [
                     "DeckData_DarkPokemon": "/Data/Decks",
+                    // common.rel is the source of truth for shared game
+                    // tables (Pokemon, Moves, Trainers, etc.) — surface
+                    // it next to the other shared data rather than under
+                    // the generic relocatable-modules folder. The
+                    // dedicated `commonRelDump` op reads from here.
+                    "common": "/Assets/Data/Common",
                 ],
             ]
         case .galeOfDarkness:
@@ -121,6 +127,10 @@ public struct GeniusSonorityEngine: Engine {
                 "common": [
                     "DeckData_DarkPokemon": "/Data/Decks",
                     "DeckData_DarkPokemon_EU": "/Data/Decks",
+                    // common.rel hosts the shared game tables; route it
+                    // to the data tree where the dedicated `commonRelDump`
+                    // op picks it up.
+                    "common": "/Assets/Data/Common",
                 ],
             ]
         case .battleRevolution:
@@ -177,7 +187,11 @@ public struct GeniusSonorityEngine: Engine {
         archiveName: String
     ) -> FolderResolution {
         let entryExtension = File(entryFilename).fileType
-        let entryName = File(entryFilename).fileName.withoutExtensions
+        // `entryFilename` here is a bare basename (no slashes) — e.g.
+        // `common.rel`. `File(_).fileName` walks for the last slash and
+        // returns "" when none is present, so use the raw filename
+        // rather than going through `File` for the override-lookup key.
+        let entryName = entryFilename.withoutExtensions
         let fsys = data.fsys
         let (baseName, language) = stripLanguageSuffix(from: archiveName)
 

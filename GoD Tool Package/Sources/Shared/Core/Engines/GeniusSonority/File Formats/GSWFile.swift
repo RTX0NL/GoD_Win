@@ -55,6 +55,19 @@ public struct GSWFile: FileFormat {
         tags.flatMap(\.textures)
     }
 
+    /// Write the canonical PNG path (`<name>_texture_NNN.png`) onto every
+    /// embedded texture ref so the emitted JSON is a self-describing
+    /// manifest. Called at serialise time; readers that encounter an
+    /// unstamped dump fall back to reconstructing the filename.
+    public mutating func stampTexturePaths() {
+        for tagIdx in tags.indices {
+            for texIdx in tags[tagIdx].textures.indices {
+                let ref = tags[tagIdx].textures[texIdx]
+                tags[tagIdx].textures[texIdx].pngPath = "\(name)_texture_\(String(format: "%03d", ref.id)).png"
+            }
+        }
+    }
+
     // MARK: - Codable / Equatable (images excluded)
 
     private enum CodingKeys: String, CodingKey { case header, tags }
@@ -177,6 +190,11 @@ public struct GSWTextureRef: Codable, Equatable {
     public var paletteFormat: GXPaletteFormat?
     public var width: Int
     public var height: Int
+    /// Path of the PNG sidecar, relative to the JSON's parent folder.
+    /// Stamped by `GSWFile.stampTexturePaths()` when serialising so the
+    /// build side can resolve siblings without a naming-convention scan.
+    /// Absent on older dumps — readers fall back to the canonical pattern.
+    public var pngPath: String?
 
     public init(
         id: Int,
@@ -185,7 +203,8 @@ public struct GSWTextureRef: Codable, Equatable {
         format: GXTextureFormat,
         paletteFormat: GXPaletteFormat?,
         width: Int,
-        height: Int
+        height: Int,
+        pngPath: String? = nil
     ) {
         self.id = id
         self.payloadOffset = payloadOffset
@@ -194,5 +213,6 @@ public struct GSWTextureRef: Codable, Equatable {
         self.paletteFormat = paletteFormat
         self.width = width
         self.height = height
+        self.pngPath = pngPath
     }
 }

@@ -74,10 +74,14 @@ public struct MSGFile: FileFormat, Equatable {
 
     // MARK: - FileFormat (binary)
 
-    /// Convenience init: parses with XD control-code semantics. Use
-    /// `init(binary:variant:)` to parse with Colo semantics.
-    public init(binary: GoDData) throws {
-        try self.init(binary: binary, variant: .xd, name: "msg")
+    /// Parse from a single raw `.msg` binary. Defaults to XD control-code
+    /// semantics; use `init(binary:variant:)` for Colo.
+    public init(binaries: [FileData]) throws {
+        guard let first = binaries.first else {
+            throw MSGFile.invalidFileError
+        }
+        let stem = first.file.fileName.withoutExtensions
+        try self.init(binary: first.data, variant: .xd, name: stem.isEmpty ? "msg" : stem)
     }
 
     public init(binary: GoDData, variant: Variant, name: String = "msg") throws {
@@ -122,13 +126,26 @@ public struct MSGFile: FileFormat, Equatable {
         self.name = name
     }
 
-    public var binaryData: GoDData {
+    public var binaries: [FileData] {
+        get throws {
+            [FileData(file: File("\(name).\(MSGFile.formatName)"), data: try computedBinaryData)]
+        }
+    }
+
+    private var computedBinaryData: GoDData {
         get throws {
             let out = GoDData(byteOrder: .big)
 
             // Header bytes 0x00..0x03
             for b in paddedBytes(reservedPrefix, to: 4) { out.append(UInt8(b)) }
-            // Header bytes 0x04..0x05 — count
+            // Header bytes 0x04..0x05 — count. The field is a u16, so an
+            // over-large table would trap on the conversion; reject it.
+            guard entries.count <= 0xFFFF else {
+                throw FileFormatErrors.failedToEncode(
+                    format: MSGFile.formatName,
+                    target: "entry count \(entries.count) exceeds the u16 header field maximum (65535)"
+                )
+            }
             out.append(UInt16(entries.count))
             // Header bytes 0x06..0x07 — region
             for b in paddedBytes(region, to: 2) { out.append(UInt8(b)) }
@@ -179,13 +196,14 @@ public struct MSGFile: FileFormat, Equatable {
 
     // MARK: - FileFormat (outputs / JSON)
 
-    public init(outputs: [File: GoDData]) throws {
+    public init(outputs: [FileData]) throws {
+        let dict = outputs.byFile
         let suffix = ".\(MSGFile.formatName).json"
-        guard let jsonKey = outputs.keys.first(where: { $0.path.hasSuffix(suffix) }) else {
+        guard let jsonKey = dict.keys.first(where: { $0.path.hasSuffix(suffix) }) else {
             throw MSGFile.missingOutputError(key: "*\(suffix)")
         }
         let stem = String(jsonKey.path.dropLast(suffix.count))
-        guard let jsonData = outputs[jsonKey] else {
+        guard let jsonData = dict[jsonKey] else {
             throw MSGFile.missingOutputError(key: jsonKey.path)
         }
         let decoder = JSONDecoder()
@@ -206,7 +224,7 @@ public struct MSGFile: FileFormat, Equatable {
         self.name = stem.isEmpty ? "msg" : stem
     }
 
-    public var outputs: [File: GoDData] {
+    public var outputs: [FileData] {
         get throws {
             let dto = DTO(
                 variant: variant,
@@ -220,7 +238,7 @@ public struct MSGFile: FileFormat, Equatable {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data: Data = try encoder.encode(dto)
-            return [jsonFilename: GoDData(data: data, byteOrder: .big)]
+            return [FileData(file: jsonFilename, data: GoDData(data: data, byteOrder: .big))]
         }
     }
 

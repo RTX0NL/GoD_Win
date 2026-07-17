@@ -137,6 +137,14 @@ public struct ATXFile: FileFormat {
 
     // MARK: - Binary
 
+    public init(binaries: [FileData]) throws {
+        guard let first = binaries.first else {
+            throw ATXFile.invalidFileError
+        }
+        let stem = first.file.fileName.withoutExtensions
+        try self.init(binary: first.data, name: stem.isEmpty ? "atx" : stem)
+    }
+
     public init(binary: GoDData) throws {
         try self.init(binary: binary, name: "atx")
     }
@@ -204,7 +212,13 @@ public struct ATXFile: FileFormat {
         )
     }
 
-    public var binaryData: GoDData {
+    public var binaries: [FileData] {
+        get throws {
+            [FileData(file: File("\(name).\(ATXFile.formatName)"), data: try atxBinary)]
+        }
+    }
+
+    private var atxBinary: GoDData {
         get throws {
             guard !framePixels.isEmpty else {
                 throw FileFormatErrors.failedToEncode(
@@ -255,7 +269,16 @@ public struct ATXFile: FileFormat {
                                 target: "unknown frame reference '\(f.path)'"
                             )
                         }
-                        frameDelta = UInt8(clamping: idx)
+                        // The frame delta is stored as a u8; silently
+                        // clamping a larger index would corrupt the
+                        // animation. Reject it instead.
+                        guard idx <= Int(UInt8.max) else {
+                            throw FileFormatErrors.failedToEncode(
+                                format: ATXFile.formatName,
+                                target: "frame index \(idx) exceeds the u8 frame-delta maximum (255)"
+                            )
+                        }
+                        frameDelta = UInt8(idx)
                     }
                     wireFrames.append(ATXFrame(
                         timing: step.timing,
@@ -306,10 +329,11 @@ public struct ATXFile: FileFormat {
 
     // MARK: - Outputs / JSON
 
-    public init(outputs: [File: GoDData]) throws {
+    public init(outputs: [FileData]) throws {
+        let dict = outputs.byFile
         // Recover the name stem from whichever *.atx.json key is present.
         let suffix = ".\(ATXFile.formatName).json"
-        guard let jsonKey = outputs.keys.first(where: { $0.path.hasSuffix(suffix) }) else {
+        guard let jsonKey = dict.keys.first(where: { $0.path.hasSuffix(suffix) }) else {
             throw ATXFile.missingOutputError(key: "*\(suffix)")
         }
         let stem = String(jsonKey.path.dropLast(suffix.count))
@@ -317,7 +341,7 @@ public struct ATXFile: FileFormat {
             throw ATXFile.invalidFileError
         }
 
-        let jsonData = outputs[jsonKey]!
+        let jsonData = dict[jsonKey]!
         let dto: DTO
         do {
             dto = try JSONDecoder().decode(DTO.self, from: jsonData.data)
@@ -325,22 +349,28 @@ public struct ATXFile: FileFormat {
             throw ATXFile.invalidFileError
         }
 
-        // Gather frame PNGs for this stem. Sorted alphabetically — zero-
-        // padded indices guarantee sort order = frame order.
-        let framePrefix = "\(stem)_frame_"
-        let frameKeys: [(index: Int, key: File)] = outputs.keys.compactMap { k in
-            guard let idx = ATXFile.parseFrameIndex(k.path, prefix: framePrefix) else { return nil }
-            return (idx, k)
-        }.sorted { $0.index < $1.index }
+        // Resolve frame PNGs: prefer the explicit `framePaths` list stored
+        // in the JSON; fall back to the legacy `<stem>_frame_NNN.png` scan
+        // for older dumps.
+        let frameFiles: [File]
+        if let paths = dto.framePaths, !paths.isEmpty {
+            frameFiles = paths.map { File($0) }
+        } else {
+            let framePrefix = "\(stem)_frame_"
+            frameFiles = dict.keys.compactMap { k -> (Int, File)? in
+                guard let idx = ATXFile.parseFrameIndex(k.path, prefix: framePrefix) else { return nil }
+                return (idx, k)
+            }.sorted(by: { $0.0 < $1.0 }).map { $0.1 }
+        }
 
-        guard !frameKeys.isEmpty else {
-            throw ATXFile.missingOutputError(key: "\(framePrefix)NNN.png")
+        guard !frameFiles.isEmpty else {
+            throw ATXFile.missingOutputError(key: "\(stem)_frame_NNN.png")
         }
 
         var framePixels = [GoDImage]()
-        framePixels.reserveCapacity(frameKeys.count)
-        for (_, key) in frameKeys {
-            guard let png = outputs[key] else {
+        framePixels.reserveCapacity(frameFiles.count)
+        for key in frameFiles {
+            guard let png = dict[key] else {
                 throw ATXFile.missingOutputError(key: key.path)
             }
             guard let image = GoDImage.fromPNG(png) else {
@@ -370,7 +400,7 @@ public struct ATXFile: FileFormat {
         )
     }
 
-    public var outputs: [File: GoDData] {
+    public var outputs: [FileData] {
         get throws {
             var overridesDTO = [FrameOverrideDTO]()
             for (file, ov) in frameOverrides.sorted(by: { $0.key.path < $1.key.path }) {
@@ -381,11 +411,17 @@ public struct ATXFile: FileFormat {
                 ))
             }
 
+            // Frame PNGs are named deterministically; the JSON records
+            // their paths so the build op can read just the manifest and
+            // resolve frames from its declared filenames.
+            let frameFiles: [File] = (0..<framePixels.count).map { framePNGName(index: $0) }
+
             let dto = DTO(
                 textureFormat: textureFormat,
                 paletteFormat: paletteFormat,
                 xOffset: xOffset,
                 yOffset: yOffset,
+                framePaths: frameFiles.map { $0.path },
                 frameOverrides: overridesDTO,
                 animations: animations.map { AnimationDTO(steps: $0.steps) }
             )
@@ -393,14 +429,14 @@ public struct ATXFile: FileFormat {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let jsonData: Data = try encoder.encode(dto)
 
-            var artifacts: [File: GoDData] = [
-                jsonFilename: GoDData(data: jsonData, byteOrder: .big)
+            var artifacts: [FileData] = [
+                FileData(file: jsonFilename, data: GoDData(data: jsonData, byteOrder: .big))
             ]
             for (i, image) in framePixels.enumerated() {
                 guard let png = image.pngData() else {
                     throw ATXFile.failedToEncodeError(target: "PNG for frame \(i)")
                 }
-                artifacts[framePNGName(index: i)] = png
+                artifacts.append(FileData(file: frameFiles[i], data: png))
             }
             return artifacts
         }
@@ -413,6 +449,12 @@ public struct ATXFile: FileFormat {
         let paletteFormat: GXPaletteFormat?
         let xOffset: Int16
         let yOffset: Int16
+        /// Paths (relative to the JSON's parent folder) of each frame PNG,
+        /// in frame index order. Present so the build op can resolve
+        /// siblings from the manifest alone — no naming-convention scan.
+        /// Older dumps without this field fall back to the `<name>_frame_NNN.png`
+        /// convention in `init(outputs:)`.
+        let framePaths: [String]?
         let frameOverrides: [FrameOverrideDTO]
         let animations: [AnimationDTO]
     }

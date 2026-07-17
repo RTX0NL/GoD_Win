@@ -60,6 +60,17 @@ extension ColoXD {
                 outputFolder: Folder,
                 overwrite: Bool
             )
+            case dumpAudios(
+                audioFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
+            case dumpAudio(
+                ishFile: File,
+                isdFile: File,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
         }
         
         let operations: [OperationConfig<Operations>]

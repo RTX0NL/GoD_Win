@@ -61,7 +61,7 @@ final class FileFormatRegistryTests: XCTestCase {
                          at: folder.file("sample.msg.json"),
                          overwrite: true)
 
-        let rebuilt = try FileFormatRegistry.builtins().build(
+        let rebuilt = try FileFormatRegistry.builtins().buildSingle(
             extension: "msg", from: folder, fileSystem: fs
         )
         let parsed = try MSGFile(binary: rebuilt, variant: .xd)

@@ -72,10 +72,12 @@ final class ATXFileTests: XCTestCase {
     func testATX_binaryData_withMissingReferencedFrame_throws() throws {
         guard let raw = absolBytes else { throw XCTSkip("absol.atx not available") }
         let atx = try ATXFile(binary: GoDData(byteStream: raw, byteOrder: .big), name: "absol")
-        var outputs = try atx.outputs
-        outputs.removeValue(forKey: atx.framePNGName(index: 1))
-        let rebuilt = try ATXFile(outputs: outputs)
-        XCTAssertThrowsError(try rebuilt.binaryData) { error in
+        let frameToRemove = atx.framePNGName(index: 1)
+        let outputs = try atx.outputs.filter { $0.file != frameToRemove }
+        // Missing frame now surfaces at init(outputs:) time because the
+        // JSON's `framePaths` list drives the lookup and the missing PNG
+        // is reported up-front.
+        XCTAssertThrowsError(try ATXFile(outputs: outputs)) { error in
             XCTAssertTrue("\(error)".contains("frame_001.png") || "\(error)".contains("unknown frame"))
         }
     }

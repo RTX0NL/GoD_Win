@@ -161,7 +161,7 @@ public final class FSYSArchive {
                     throw FileFormatErrors.invalid(format: Self.formatName)
                 }
                 let uncompressedSize: Int? = lzssHeader.uncompressedSize
-                entryData = compressor.decompress(compressedData, expectedSize: uncompressedSize)
+                entryData = try compressor.decompress(compressedData, expectedSize: uncompressedSize)
             }
             
             return Entry(

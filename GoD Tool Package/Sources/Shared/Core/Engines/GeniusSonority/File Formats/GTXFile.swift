@@ -50,6 +50,15 @@ public struct GTXFile: FileFormat {
 
     public func texturePNGFilename() -> File { File("\(name).\(GTXFile.formatName).png") }
 
+    public init(binaries: [FileData]) throws {
+        guard let first = binaries.first else {
+            throw GTXFile.invalidFileError
+        }
+        try self.init(binary: first.data)
+        let stem = first.file.fileName.withoutExtensions
+        if !stem.isEmpty { self.name = stem }
+    }
+
     public init(binary: GoDData) throws {
         let decoder = GXTextureDecoder()
         guard let meta = decoder.parseHeader(data: binary) else {
@@ -68,13 +77,13 @@ public struct GTXFile: FileFormat {
         self.name = name
     }
 
-    public var binaryData: GoDData {
+    public var binaries: [FileData] {
         get throws {
             let decoder = GXTextureDecoder()
             guard let data = decoder.encode(image: image, metadata: metadata) else {
                 throw GTXFile.failedToEncodeError(target: "gtx")
             }
-            return data
+            return [FileData(file: File("\(name).\(GTXFile.formatName)"), data: data)]
         }
     }
 
@@ -94,13 +103,14 @@ public struct GTXFile: FileFormat {
         }
     }
 
-    public init(outputs: [File: GoDData]) throws {
+    public init(outputs: [FileData]) throws {
+        let dict = outputs.byFile
         let suffix = ".\(GTXFile.formatName).json"
-        guard let jsonKey = outputs.keys.first(where: { $0.path.hasSuffix(suffix) }) else {
+        guard let jsonKey = dict.keys.first(where: { $0.path.hasSuffix(suffix) }) else {
             throw GTXFile.missingOutputError(key: "*\(suffix)")
         }
         let stem = String(jsonKey.path.dropLast(suffix.count))
-        guard let jsonData = outputs[jsonKey] else {
+        guard let jsonData = dict[jsonKey] else {
             throw GTXFile.missingOutputError(key: jsonKey.path)
         }
         let dto: DTO
@@ -110,7 +120,7 @@ public struct GTXFile: FileFormat {
             throw GTXFile.invalidFileError
         }
         let pngKey = File(dto.pngPath)
-        guard let pngData = outputs[pngKey] else {
+        guard let pngData = dict[pngKey] else {
             throw GTXFile.missingOutputError(key: dto.pngPath)
         }
         guard let image = GoDImage.fromPNG(pngData) else {
@@ -122,7 +132,7 @@ public struct GTXFile: FileFormat {
         self.name = stem.isEmpty ? "gtx" : stem
     }
 
-    public var outputs: [File: GoDData] {
+    public var outputs: [FileData] {
         get throws {
             guard let png = image.pngData() else {
                 throw GTXFile.failedToEncodeError(target: "png")
@@ -133,8 +143,8 @@ public struct GTXFile: FileFormat {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let jsonData: Data = try encoder.encode(dto)
             return [
-                pngFile: png,
-                jsonFilename: GoDData(data: jsonData, byteOrder: .big)
+                FileData(file: jsonFilename, data: GoDData(data: jsonData, byteOrder: .big)),
+                FileData(file: pngFile, data: png)
             ]
         }
     }

@@ -63,13 +63,23 @@ extension [File] {
     }
 }
 
-/// A named blob of data, pairing a filename with its contents.
+/// A `File` reference paired with its contents. Used as the common
+/// currency for `FileFormat` inputs/outputs and anywhere else a blob
+/// needs to travel with its destination/source path.
 public struct FileData {
-    public let fileName: String
+    public let file: File
     public let data: GoDData
 
-    public init(fileName: String, data: GoDData) {
-        self.fileName = fileName
+    public init(file: File, data: GoDData) {
+        self.file = file
         self.data = data
     }
+
+    /// Convenience: accept a bare filename and wrap it as a `File`.
+    public init(fileName: String, data: GoDData) {
+        self.init(file: File(fileName), data: data)
+    }
+
+    /// Path-level filename of the backing `File`.
+    public var fileName: String { file.fileName }
 }

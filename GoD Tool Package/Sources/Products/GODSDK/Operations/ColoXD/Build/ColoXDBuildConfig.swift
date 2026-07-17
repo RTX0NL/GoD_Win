@@ -67,13 +67,24 @@ extension ColoXD {
                 overwrite: Bool
             )
             case buildATXs(
-                projectsFolder: Folder,
+                jsonFolder: Folder,
                 outputFolder: Folder,
                 overwrite: Bool
             )
             case buildATX(
-                projectFolder: Folder,
+                metadataFile: File,
                 outputFile: File,
+                overwrite: Bool
+            )
+            case buildAudios(
+                jsonFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
+            case buildAudio(
+                metadataFile: File,
+                ishOutputFile: File,
+                isdOutputFile: File,
                 overwrite: Bool
             )
         }

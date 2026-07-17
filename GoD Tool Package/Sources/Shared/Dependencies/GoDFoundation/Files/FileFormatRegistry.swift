@@ -13,11 +13,11 @@ import Foundation
 public struct FileFormatRegistry {
 
     public struct Handler {
-        /// Parse `bytes` as this format and return its output artifacts,
-        /// keyed by the relative `File` each artifact should be written at.
-        public let dump: (GoDData) throws -> [File: GoDData]
-        /// Reconstruct the binary from a set of output artifacts.
-        public let build: ([File: GoDData]) throws -> GoDData
+        /// Parse a set of raw game-side binaries as this format and return
+        /// its editable output artifacts (JSON manifest + companions).
+        public let dump: ([FileData]) throws -> [FileData]
+        /// Reconstruct the raw game-side binaries from an artifact bundle.
+        public let build: ([FileData]) throws -> [FileData]
         /// The format type, for diagnostics.
         public let formatType: FileFormat.Type
     }
@@ -30,8 +30,8 @@ public struct FileFormatRegistry {
     public mutating func register<F: FileFormat>(_ ext: String, _ type: F.Type) {
         let key = ext.lowercased()
         handlers[key] = Handler(
-            dump: { bytes in try F(binary: bytes).outputs },
-            build: { outputs in try F(outputs: outputs).binaryData },
+            dump: { binaries in try F(binaries: binaries).outputs },
+            build: { outputs in try F(outputs: outputs).binaries },
             formatType: F.self
         )
     }
@@ -67,14 +67,35 @@ public struct FileFormatRegistry {
         fileSystem: FileSystemTree,
         overwrite: Bool = true
     ) throws -> [File] {
+        try dump(
+            binaries: [FileData(file: File("input.\(ext)"), data: bytes)],
+            extension: ext,
+            into: folder,
+            fileSystem: fileSystem,
+            overwrite: overwrite
+        )
+    }
+
+    /// Multi-binary variant: pass paired inputs (e.g. ISF's ISH + ISD) as
+    /// an ordered `[FileData]` list. Each entry's `file` is used only for
+    /// name-stem recovery inside the format — the actual output layout is
+    /// decided by the format itself.
+    @discardableResult
+    public func dump(
+        binaries: [FileData],
+        extension ext: String,
+        into folder: Folder,
+        fileSystem: FileSystemTree,
+        overwrite: Bool = true
+    ) throws -> [File] {
         guard let handler = handler(for: ext) else {
             throw RegistryError.unregistered(ext: ext)
         }
-        let artifacts = try handler.dump(bytes)
+        let artifacts = try handler.dump(binaries)
         var written: [File] = []
-        for (relativeFile, data) in artifacts {
-            let outFile = resolve(relativeFile, in: folder)
-            if !fileSystem.writeFile(data, at: outFile, overwrite: overwrite) {
+        for artifact in artifacts {
+            let outFile = resolve(artifact.file, in: folder)
+            if !fileSystem.writeFile(artifact.data, at: outFile, overwrite: overwrite) {
                 throw RegistryError.writeFailed(file: outFile)
             }
             written.append(outFile)
@@ -82,19 +103,34 @@ public struct FileFormatRegistry {
         return written
     }
 
-    /// Read every file under `folder` and rebuild the binary via the handler
-    /// registered for `ext`. Every regular file beneath `folder` becomes an
-    /// entry in the outputs dict keyed by its path relative to `folder`.
+    /// Read every file under `folder` and rebuild the binaries via the
+    /// handler registered for `ext`. Every regular file beneath `folder`
+    /// becomes a `FileData` entry keyed by its path relative to `folder`.
+    /// Returns the reconstructed binary list in the format's canonical
+    /// order.
     public func build(
         extension ext: String,
         from folder: Folder,
         fileSystem: FileSystemTree
-    ) throws -> GoDData {
+    ) throws -> [FileData] {
         guard let handler = handler(for: ext) else {
             throw RegistryError.unregistered(ext: ext)
         }
         let outputs = try readArtifacts(in: folder, fileSystem: fileSystem)
         return try handler.build(outputs)
+    }
+
+    /// Single-binary convenience for the common case.
+    public func buildSingle(
+        extension ext: String,
+        from folder: Folder,
+        fileSystem: FileSystemTree
+    ) throws -> GoDData {
+        let built = try build(extension: ext, from: folder, fileSystem: fileSystem)
+        guard let first = built.first else {
+            throw RegistryError.noArtifactsFound(folder: folder.path)
+        }
+        return first.data
     }
 
     // MARK: - Internals
@@ -113,8 +149,8 @@ public struct FileFormatRegistry {
     private func readArtifacts(
         in folder: Folder,
         fileSystem: FileSystemTree
-    ) throws -> [File: GoDData] {
-        var outputs: [File: GoDData] = [:]
+    ) throws -> [FileData] {
+        var outputs: [FileData] = []
         collectNested(prefix: "", in: folder, fileSystem: fileSystem, into: &outputs)
         if outputs.isEmpty {
             throw RegistryError.noArtifactsFound(folder: folder.path)
@@ -126,13 +162,13 @@ public struct FileFormatRegistry {
         prefix: String,
         in folder: Folder,
         fileSystem: FileSystemTree,
-        into outputs: inout [File: GoDData]
+        into outputs: inout [FileData]
     ) {
         guard let meta = fileSystem.inspectFolder(at: folder) else { return }
         for file in meta.files {
             let key = prefix.isEmpty ? file.fileName : "\(prefix)/\(file.fileName)"
             if let data = fileSystem.readFile(at: file) {
-                outputs[File(key)] = data
+                outputs.append(FileData(file: File(key), data: data))
             }
         }
         for sub in meta.subFolders {

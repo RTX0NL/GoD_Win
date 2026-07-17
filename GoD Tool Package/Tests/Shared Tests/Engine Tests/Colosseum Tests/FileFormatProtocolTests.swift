@@ -115,8 +115,8 @@ final class FileFormatProtocolTests: XCTestCase {
           "variant": "xd"
         }
         """.data(using: .utf8)!
-        let outputs: [File: GoDData] = [
-            File("sample.msg.json"): GoDData(data: json, byteOrder: .big)
+        let outputs: [FileData] = [
+            FileData(file: File("sample.msg.json"), data: GoDData(data: json, byteOrder: .big))
         ]
         let parsed = try MSGFile(outputs: outputs)
         XCTAssertEqual(parsed.name, "sample")
@@ -135,9 +135,10 @@ final class FileFormatProtocolTests: XCTestCase {
         let artifacts = try msg.outputs
 
         XCTAssertEqual(artifacts.count, 1, "MSG emits a single JSON artifact")
+        let byFile = artifacts.byFile
         let jsonKey = File("sample.msg.json")
-        XCTAssertNotNil(artifacts[jsonKey])
-        let text = String(data: artifacts[jsonKey]!.data, encoding: .utf8) ?? ""
+        XCTAssertNotNil(byFile[jsonKey])
+        let text = String(data: byFile[jsonKey]!.data, encoding: .utf8) ?? ""
         XCTAssertTrue(text.contains("\"id\" : 7"), "JSON should mention id 7")
         XCTAssertTrue(text.contains("\"text\" : \"Hello\""),
                       "JSON should include the pretty-printed entry text")
@@ -192,10 +193,11 @@ final class FileFormatProtocolTests: XCTestCase {
         let artifacts = try font.outputs
 
         XCTAssertEqual(artifacts.count, 2)
-        XCTAssertNotNil(artifacts[File("pda_menu.fnt.json")])
-        XCTAssertNotNil(artifacts[File("pda_menu.fnt.pgm")])
+        let byFile = artifacts.byFile
+        XCTAssertNotNil(byFile[File("pda_menu.fnt.json")])
+        XCTAssertNotNil(byFile[File("pda_menu.fnt.pgm")])
         // PGM header starts with "P5\n".
-        let pgmBytes = artifacts[File("pda_menu.fnt.pgm")]!.rawBytes
+        let pgmBytes = byFile[File("pda_menu.fnt.pgm")]!.rawBytes
         XCTAssertEqual(Array(pgmBytes[0..<3]), [0x50, 0x35, 0x0A])
     }
 
@@ -249,13 +251,14 @@ final class FileFormatProtocolTests: XCTestCase {
     func testGTX_outputs_emitsNamedJSONAndPNG() throws {
         let artifacts = try makeKnownGTX().outputs
         XCTAssertEqual(artifacts.count, 2)
-        XCTAssertNotNil(artifacts[File("sample.gtx.json")])
-        XCTAssertNotNil(artifacts[File("sample.gtx.png")])
+        let byFile = artifacts.byFile
+        XCTAssertNotNil(byFile[File("sample.gtx.json")])
+        XCTAssertNotNil(byFile[File("sample.gtx.png")])
 
         // JSON's pngPath field should point at the sidecar by name; format
         // is present but width/height are derivable from the PNG and NOT
         // stored in the DTO.
-        let json = artifacts[File("sample.gtx.json")]!
+        let json = byFile[File("sample.gtx.json")]!
         let dto = try JSONDecoder().decode(GTXFile.DTO.self, from: json.data)
         XCTAssertEqual(dto.pngPath, "sample.gtx.png")
         XCTAssertEqual(dto.format, .RGBA32)
@@ -319,15 +322,16 @@ final class FileFormatProtocolTests: XCTestCase {
         let artifacts = try atx.outputs
 
         XCTAssertEqual(artifacts.count, 1 + atx.framePixels.count)
-        XCTAssertNotNil(artifacts[File("absol.atx.json")])
-        XCTAssertNotNil(artifacts[File("absol_frame_000.png")])
-        XCTAssertNotNil(artifacts[File("absol_frame_001.png")])
-        XCTAssertNotNil(artifacts[File("absol_frame_002.png")])
+        let byFile = artifacts.byFile
+        XCTAssertNotNil(byFile[File("absol.atx.json")])
+        XCTAssertNotNil(byFile[File("absol_frame_000.png")])
+        XCTAssertNotNil(byFile[File("absol_frame_001.png")])
+        XCTAssertNotNil(byFile[File("absol_frame_002.png")])
 
         // Flat layout — no keys should contain a "/".
-        for key in artifacts.keys {
-            XCTAssertFalse(key.path.contains("/"),
-                           "expected flat layout; got \(key.path)")
+        for artifact in artifacts {
+            XCTAssertFalse(artifact.file.path.contains("/"),
+                           "expected flat layout; got \(artifact.file.path)")
         }
     }
 
@@ -376,13 +380,14 @@ final class FileFormatProtocolTests: XCTestCase {
         let gsw = try GSWFile(binary: GoDData(byteStream: raw, byteOrder: .big), name: "flash")
         let artifacts = try gsw.outputs
 
-        XCTAssertNotNil(artifacts[File("flash.gsw.json")])
-        let textureKeys = artifacts.keys.filter { $0.path.hasPrefix("flash_texture_") }
+        let byFile = artifacts.byFile
+        XCTAssertNotNil(byFile[File("flash.gsw.json")])
+        let textureKeys = byFile.keys.filter { $0.path.hasPrefix("flash_texture_") }
         XCTAssertEqual(textureKeys.count, gsw.allTextureRefs.count)
         // Flat layout — no "textures/" prefix on any key.
-        for key in artifacts.keys {
-            XCTAssertFalse(key.path.contains("/"),
-                           "expected flat layout; got \(key.path)")
+        for artifact in artifacts {
+            XCTAssertFalse(artifact.file.path.contains("/"),
+                           "expected flat layout; got \(artifact.file.path)")
         }
     }
 }

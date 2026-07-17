@@ -197,19 +197,27 @@ extension ColoXD {
                     logger: logger
                 )
 
-            case let .buildATXs(projectsFolder, outputFolder, overwrite):
-                // Each ATX lives in its own subfolder (<name>/) containing
-                // <name>.atx.json plus its frame PNGs.
-                guard let meta = fileSystem.inspectFolder(at: projectsFolder) else {
-                    logger?.log(.warning("ATX projects folder not found: \(projectsFolder.path)"))
-                    break
+            case let .buildATXs(jsonFolder, outputFolder, overwrite):
+                // Each ATX is driven by its `<name>.atx.json` manifest which
+                // declares its frame PNG siblings. Recurse so nested layouts
+                // (e.g. poke_dance/<name>/<name>.atx.json) still get picked
+                // up without the build op needing to know about them.
+                var manifests = [File]()
+                func collect(_ folder: Folder) {
+                    guard let contents = fileSystem.inspectFolder(at: folder) else { return }
+                    for file in contents.files where file.fileName.hasSuffix(".atx.json") {
+                        manifests.append(file)
+                    }
+                    for sub in contents.subFolders { collect(sub) }
                 }
-                logger?.log(.info("Building \(meta.subFolders.count) ATX projects"))
-                for project in meta.subFolders {
-                    let name = project.folderName
-                    let outputFile = outputFolder.file("\(name).atx")
+                collect(jsonFolder)
+                logger?.log(.info("Building \(manifests.count) ATX manifests"))
+                for manifest in manifests {
+                    let stem = manifest.fileName
+                        .replacingOccurrences(of: ".atx.json", with: "")
+                    let outputFile = outputFolder.file("\(stem).atx")
                     try buildATX(
-                        projectFolder: project,
+                        metadataFile: manifest,
                         outputFile: outputFile,
                         overwrite: overwrite,
                         fileSystem: fileSystem,
@@ -217,14 +225,52 @@ extension ColoXD {
                     )
                 }
 
-            case let .buildATX(projectFolder, outputFile, overwrite):
+            case let .buildATX(metadataFile, outputFile, overwrite):
                 try buildATX(
-                    projectFolder: projectFolder,
+                    metadataFile: metadataFile,
                     outputFile: outputFile,
                     overwrite: overwrite,
                     fileSystem: fileSystem,
                     logger: logger
                 )
+
+            case let .buildAudios(jsonFolder, outputFolder, overwrite):
+                // Each audio pair is driven by its `<name>.isf.json`
+                // manifest which references the sibling `.wav`. Output
+                // filenames (`.ish` + `.isd`) are stem-derived.
+                var manifests = [File]()
+                func collect(_ folder: Folder) {
+                    guard let contents = fileSystem.inspectFolder(at: folder) else { return }
+                    for file in contents.files where file.fileName.hasSuffix(".isf.json") {
+                        manifests.append(file)
+                    }
+                    for sub in contents.subFolders { collect(sub) }
+                }
+                collect(jsonFolder)
+                logger?.log(.info("Building \(manifests.count) ISF audio manifests"))
+                for manifest in manifests {
+                    let stem = manifest.fileName
+                        .replacingOccurrences(of: ".isf.json", with: "")
+                    try buildAudio(
+                        metadataFile: manifest,
+                        ishOutputFile: outputFolder.file("\(stem).ish"),
+                        isdOutputFile: outputFolder.file("\(stem).isd"),
+                        overwrite: overwrite,
+                        fileSystem: fileSystem,
+                        logger: logger
+                    )
+                }
+
+            case let .buildAudio(metadataFile, ishOutputFile, isdOutputFile, overwrite):
+                try buildAudio(
+                    metadataFile: metadataFile,
+                    ishOutputFile: ishOutputFile,
+                    isdOutputFile: isdOutputFile,
+                    overwrite: overwrite,
+                    fileSystem: fileSystem,
+                    logger: logger
+                )
+
             }
         }
     }
@@ -243,33 +289,103 @@ extension ColoXD {
         // know the source filename here, so use a generic key — the format
         // recovers any stem (or empty) from the suffix match.
         let stem = jsonFile.fileName.withoutExtensions
-        let file = try MSGFile(outputs: [File("\(stem).msg.json"): json])
+        let file = try MSGFile(outputs: [FileData(file: File("\(stem).msg.json"), data: json)])
         let binary = try file.binaryData
         fileSystem.writeFile(binary, at: outputFile, overwrite: overwrite)
         logger?.log(.info("  \(jsonFile.fileName): \(file.entries.count) entries → \(outputFile.fileName)"))
     }
 
-    /// Reads every file in `projectFolder` into an outputs dict and feeds it
-    /// through `ATXFile.init(outputs:).binaryData`.
+    /// Reads the ATX manifest JSON and the sibling frame PNGs it references,
+    /// feeds them through `ATXFile.init(outputs:)`, and writes the rebuilt
+    /// `.atx` binary. Only files named in the manifest's `framePaths` list
+    /// are read — no folder-wide scan — so the JSON is the single entry
+    /// point.
     private static func buildATX(
-        projectFolder: Folder,
+        metadataFile: File,
         outputFile: File,
         overwrite: Bool,
         fileSystem: FileSystemTree,
         logger: Logger?
     ) throws {
-        guard let meta = fileSystem.inspectFolder(at: projectFolder) else {
-            throw FSTErrors.fileNotFound(projectFolder.file("."), .init())
+        guard let jsonData = fileSystem.readFile(at: metadataFile),
+              let baseFolder = metadataFile.parentFolder else {
+            throw FSTErrors.fileNotFound(metadataFile, .init())
         }
-        var outputs: [File: GoDData] = [:]
-        for file in meta.files {
-            guard let data = fileSystem.readFile(at: file) else { continue }
-            outputs[File(file.fileName)] = data
+        var outputs: [FileData] = [
+            // Feed the JSON into ATXFile using just its filename so
+            // `init(outputs:)` recovers the correct `<stem>` from the key.
+            FileData(file: File(metadataFile.fileName), data: jsonData)
+        ]
+
+        // Peek at the DTO purely to discover the declared frame paths.
+        // Older manifests without `framePaths` fall back to a folder scan
+        // of PNGs matching `<stem>_frame_NNN.png`.
+        struct FramePathsOnly: Codable { let framePaths: [String]? }
+        let peek = (try? JSONDecoder().decode(FramePathsOnly.self, from: jsonData.data))
+        let framePaths: [String]
+        if let declared = peek?.framePaths, !declared.isEmpty {
+            framePaths = declared
+        } else {
+            let stem = metadataFile.fileName
+                .replacingOccurrences(of: ".atx.json", with: "")
+            let framePrefix = "\(stem)_frame_"
+            framePaths = (fileSystem.inspectFolder(at: baseFolder)?.files ?? [])
+                .map(\.fileName)
+                .filter { $0.hasPrefix(framePrefix) && $0.hasSuffix(".png") }
+                .sorted()
         }
+
+        for relative in framePaths {
+            let file = ColoXD.resolveRelativeFile(relative, in: baseFolder)
+            guard let data = fileSystem.readFile(at: file) else {
+                throw FSTErrors.fileNotFound(file, .init())
+            }
+            outputs.append(FileData(file: File(relative), data: data))
+        }
+
         let atx = try ATXFile(outputs: outputs)
         let binary = try atx.binaryData
         fileSystem.writeFile(binary, at: outputFile, overwrite: overwrite)
         logger?.log(.info("  \(atx.name): \(atx.framePixels.count) frames → \(outputFile.fileName)"))
+    }
+
+    /// Reads an ISF manifest JSON, resolves the sibling `.wav` it points
+    /// at, re-encodes DSP ADPCM, and writes paired `.ish` + `.isd` files.
+    /// The JSON is the single entry point — no folder scan.
+    private static func buildAudio(
+        metadataFile: File,
+        ishOutputFile: File,
+        isdOutputFile: File,
+        overwrite: Bool,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws {
+        guard let jsonData = fileSystem.readFile(at: metadataFile),
+              let baseFolder = metadataFile.parentFolder else {
+            throw FSTErrors.fileNotFound(metadataFile, .init())
+        }
+        // Peek at the manifest just to find the wavPath; full parsing
+        // happens inside ISFFile.init(outputs:).
+        struct WavPathOnly: Codable { let wavPath: String }
+        let peek = try JSONDecoder().decode(WavPathOnly.self, from: jsonData.data)
+        let wavFile = ColoXD.resolveRelativeFile(peek.wavPath, in: baseFolder)
+        guard let wavData = fileSystem.readFile(at: wavFile) else {
+            throw FSTErrors.fileNotFound(wavFile, .init())
+        }
+
+        let outputs: [FileData] = [
+            FileData(file: File(metadataFile.fileName), data: jsonData),
+            FileData(file: File(peek.wavPath), data: wavData)
+        ]
+        let isf = try ISFFile(outputs: outputs)
+        let (ish, isd) = try isf.ishISDBytes()
+        if overwrite || fileSystem.inspectFile(at: ishOutputFile) == nil {
+            fileSystem.writeFile(ish, at: ishOutputFile, overwrite: overwrite)
+        }
+        if overwrite || fileSystem.inspectFile(at: isdOutputFile) == nil {
+            fileSystem.writeFile(isd, at: isdOutputFile, overwrite: overwrite)
+        }
+        logger?.log(.info("Built ISF \(ishOutputFile.fileName)/\(isdOutputFile.fileName) (\(isf.sampleRate) Hz, \(isf.channelCount) ch, \(ish.length + isd.length) bytes)"))
     }
 
     // MARK: - GSfsys.toc building
@@ -315,22 +431,47 @@ extension ColoXD {
         fileSystem: FileSystemTree,
         logger: Logger?
     ) throws {
-        guard fileSystem.inspectFile(at: metadataFile) != nil,
+        guard let jsonData = fileSystem.readFile(at: metadataFile),
               let baseFolder = metadataFile.parentFolder else {
             throw FSTErrors.fileNotFound(metadataFile, .init())
         }
 
-        // Feed every file in the project folder into GSWFile.init(outputs:)
-        // and let the format resolve PNG filenames from the name + id
-        // convention.
-        var outputs: [File: GoDData] = [:]
-        if let meta = fileSystem.inspectFolder(at: baseFolder) {
-            for f in meta.files {
-                if let data = fileSystem.readFile(at: f) {
-                    outputs[File(f.fileName)] = data
+        // Preflight the JSON to discover the sibling PNG paths the GSW
+        // declares. Only those files are read — the JSON is the single
+        // entry point.
+        struct TextureRefPath: Codable { let pngPath: String? }
+        struct TagTextures: Codable { let textures: [TextureRefPath] }
+        struct GSWManifestPeek: Codable { let tags: [TagTextures] }
+        let peek = try? JSONDecoder().decode(GSWManifestPeek.self, from: jsonData.data)
+        let declaredPaths = (peek?.tags ?? [])
+            .flatMap(\.textures)
+            .compactMap(\.pngPath)
+
+        var outputs: [FileData] = [
+            FileData(file: File(metadataFile.fileName), data: jsonData)
+        ]
+
+        if !declaredPaths.isEmpty {
+            for relative in declaredPaths {
+                let file = ColoXD.resolveRelativeFile(relative, in: baseFolder)
+                guard let data = fileSystem.readFile(at: file) else {
+                    throw FSTErrors.fileNotFound(file, .init())
+                }
+                outputs.append(FileData(file: File(relative), data: data))
+            }
+        } else {
+            // Legacy dumps without stamped texture paths — scan the folder
+            // for PNG siblings. Leave it permissive so existing projects
+            // keep building.
+            if let meta = fileSystem.inspectFolder(at: baseFolder) {
+                for f in meta.files where f.fileName != metadataFile.fileName {
+                    if let data = fileSystem.readFile(at: f) {
+                        outputs.append(FileData(file: File(f.fileName), data: data))
+                    }
                 }
             }
         }
+
         let gsw = try GSWFile(outputs: outputs)
         let gswData = try gsw.binaryData
         if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
@@ -377,25 +518,69 @@ extension ColoXD {
 
     // MARK: - Core FSYS packing
 
-    /// Packs a single FSYS archive from its registry and resolved entry file data.
-    private static func packFSYS(
-        registry: FSYSRegistry,
-        entryFiles: [FileData],
-        gsEngine: GeniusSonorityEngine
-    ) throws -> FSYSArchive {
-        let entries = zip(registry.entries, entryFiles).map { registryEntry, fileData in
-            FSYSArchive.Entry(
-                metadata: registryEntry.metadata,
-                filename: fileData.fileName,
-                data: fileData.data
-            )
+    /// Resolves one `FSYSRegistry.Entry` to the list of archive entries
+    /// it expands to. Most registry entries map 1:1 to an archive entry;
+    /// THP-pair entries expand into the two THH + THD entries the
+    /// archive originally held.
+    private static func resolveArchiveEntries(
+        registryEntry: FSYSRegistry.Entry,
+        sourceFolder: Folder,
+        fileSystem: FileSystemTree
+    ) throws -> [FSYSArchive.Entry] {
+        let filePath = sourceFolder.file(registryEntry.file.path)
+        guard let data = fileSystem.readFile(at: filePath) else {
+            throw FSTErrors.fileNotFound(filePath, .init())
         }
 
-        return FSYSArchive(metadata: registry.metaData, entries: entries)
+        // THP pair: split the combined `.thp` back into THH + THD and
+        // emit two FSYS entries with the preserved metadata pair.
+        if let thdMetadata = registryEntry.thdMetadata {
+            let thp = try THPFile(outputs: [
+                FileData(file: registryEntry.file, data: data)
+            ])
+            let (thh, thd) = try thp.splitCombined()
+            return [
+                FSYSArchive.Entry(
+                    metadata: registryEntry.metadata,
+                    filename: registryEntry.metadata.name + "." + registryEntry.metadata.fileType,
+                    data: thh
+                ),
+                FSYSArchive.Entry(
+                    metadata: thdMetadata,
+                    filename: thdMetadata.name + "." + thdMetadata.fileType,
+                    data: thd
+                )
+            ]
+        }
+
+        // Re-encode PNG back to GTX/ATX if texture metadata is present.
+        var entryData = data
+        if filePath.fileType == "png" {
+            let decoder = GXTextureDecoder()
+            if let atxMeta = registryEntry.atxMetadata {
+                if let image = GoDImage.fromPNG(data),
+                   let atxData = decoder.encodeATX(image: image, metadata: atxMeta) {
+                    entryData = atxData
+                }
+            } else if let texMeta = registryEntry.textureMetadata {
+                if let image = GoDImage.fromPNG(data),
+                   let gtxData = decoder.encode(image: image, metadata: texMeta) {
+                    entryData = gtxData
+                }
+            }
+        }
+        let filename = registryEntry.metadata.name + "." + registryEntry.metadata.fileType
+        return [
+            FSYSArchive.Entry(
+                metadata: registryEntry.metadata,
+                filename: filename,
+                data: entryData
+            )
+        ]
     }
 
-    /// Reads a registry JSON and its entry files from the filesystem, packs into an FSYS archive.
-    /// Pure function safe for concurrent use.
+    /// Reads a registry JSON and its entry files from the filesystem,
+    /// packs into an FSYS archive. Pure function safe for concurrent use.
     private static func packFSYSFromRegistry(
         registryFile: File,
         sourceFolder: Folder,
@@ -404,34 +589,21 @@ extension ColoXD {
     ) throws -> FileData {
         let registry: FSYSRegistry = try fileSystem.decodeJSON(from: registryFile)
 
-        let entryFiles = try registry.entries.map { registryEntry -> FileData in
-            let filePath = sourceFolder.file(registryEntry.file.path)
-            guard let data = fileSystem.readFile(at: filePath) else {
-                throw FSTErrors.fileNotFound(filePath, .init())
-            }
-            var entryData = data
-            // Re-encode PNG back to GTX/ATX if texture metadata is present
-            if filePath.fileType == "png" {
-                let decoder = GXTextureDecoder()
-                if let atxMeta = registryEntry.atxMetadata {
-                    if let image = GoDImage.fromPNG(data),
-                       let atxData = decoder.encodeATX(image: image, metadata: atxMeta) {
-                        entryData = atxData
-                    }
-                } else if let texMeta = registryEntry.textureMetadata {
-                    if let image = GoDImage.fromPNG(data),
-                       let gtxData = decoder.encode(image: image, metadata: texMeta) {
-                        entryData = gtxData
-                    }
-                }
-            }
-            let filename = registryEntry.metadata.name + "." + registryEntry.metadata.fileType
-            return FileData(fileName: filename, data: entryData)
+        var archiveEntries: [FSYSArchive.Entry] = []
+        for registryEntry in registry.entries {
+            archiveEntries.append(contentsOf: try resolveArchiveEntries(
+                registryEntry: registryEntry,
+                sourceFolder: sourceFolder,
+                fileSystem: fileSystem
+            ))
         }
 
-        let archiveData = try packFSYS(registry: registry, entryFiles: entryFiles, gsEngine: gsEngine)
+        let archive = FSYSArchive(metadata: registry.metaData, entries: archiveEntries)
         let fsysFileName = registryFile.fileName.withoutExtension
-        return FileData(fileName: fsysFileName, data: try archiveData.data(groupID: registry.groupID, engine: gsEngine))
+        return FileData(
+            fileName: fsysFileName,
+            data: try archive.data(groupID: registry.groupID, engine: gsEngine)
+        )
     }
 
     // MARK: - Build all FSYS archives from an unpacked project

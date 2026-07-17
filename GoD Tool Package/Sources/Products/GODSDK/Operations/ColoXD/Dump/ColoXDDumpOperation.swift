@@ -234,6 +234,53 @@ extension ColoXD {
                     fileSystem: fileSystem,
                     logger: logger
                 )
+
+            case let .dumpAudios(audioFolder, outputFolder, overwrite):
+                // ISH/ISD come in pairs sharing a stem. Scan `audioFolder`
+                // (recursively) for .ish files, then locate the matching
+                // .isd sibling in the same folder.
+                var ishFiles = [(file: File, relativeFolder: Folder)]()
+                func collect(_ folder: Folder, _ relative: Folder) {
+                    guard let contents = fileSystem.inspectFolder(at: folder) else { return }
+                    for file in contents.files where file.fileType == "ish" {
+                        ishFiles.append((file, relative))
+                    }
+                    for sub in contents.subFolders {
+                        collect(sub, relative.folder(sub.folderName))
+                    }
+                }
+                collect(audioFolder, Folder("."))
+                logger?.log(.info("Found \(ishFiles.count) ISH/ISD audio pairs"))
+
+                for (ishFile, relative) in ishFiles {
+                    let stem = ishFile.fileName.withoutExtensions
+                    guard let parent = ishFile.parentFolder else { continue }
+                    let isdFile = parent.file("\(stem).isd")
+                    guard fileSystem.inspectFile(at: isdFile) != nil else {
+                        logger?.log(.warning("Missing ISD sibling for \(ishFile.fileName); skipping"))
+                        continue
+                    }
+                    let projectFolder = outputFolder.folder(relative.path)
+                    try dumpAudio(
+                        ishFile: ishFile,
+                        isdFile: isdFile,
+                        outputFolder: projectFolder,
+                        overwrite: overwrite,
+                        fileSystem: fileSystem,
+                        logger: logger
+                    )
+                }
+
+            case let .dumpAudio(ishFile, isdFile, outputFolder, overwrite):
+                try dumpAudio(
+                    ishFile: ishFile,
+                    isdFile: isdFile,
+                    outputFolder: outputFolder,
+                    overwrite: overwrite,
+                    fileSystem: fileSystem,
+                    logger: logger
+                )
+
             }
         }
     }
@@ -260,10 +307,45 @@ extension ColoXD {
             return
         }
         fileSystem.createFolder(at: outputFolder, overwrite: overwrite)
-        for (relative, bytes) in try parsed.outputs {
-            fileSystem.writeFile(bytes, at: outputFolder.file(relative.path), overwrite: overwrite)
+        for artifact in try parsed.outputs {
+            fileSystem.writeFile(artifact.data, at: outputFolder.file(artifact.file.path), overwrite: overwrite)
         }
         logger?.log(.info("  \(name): \(parsed.framePixels.count) frames, \(parsed.animations.count) animations → \(outputFolder.path)"))
+    }
+
+    /// Parses an ISH/ISD pair, decodes DSP ADPCM → PCM → WAV, and writes
+    /// `<stem>.isf.json` + `<stem>.wav` into `outputFolder`. Shared between
+    /// the batch (`dumpAudios`) and single-pair (`dumpAudio`) ops.
+    private static func dumpAudio(
+        ishFile: File,
+        isdFile: File,
+        outputFolder: Folder,
+        overwrite: Bool,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws {
+        guard let ishData = fileSystem.readFile(at: ishFile) else {
+            throw FSTErrors.fileNotFound(ishFile, .init())
+        }
+        guard let isdData = fileSystem.readFile(at: isdFile) else {
+            throw FSTErrors.fileNotFound(isdFile, .init())
+        }
+        let stem = ishFile.fileName.withoutExtensions
+        let parsed: ISFFile
+        do {
+            parsed = try ISFFile(ish: ishData, isd: isdData, name: stem)
+        } catch {
+            logger?.log(.warning("Failed to parse ISF pair \(ishFile.fileName): \(error)"))
+            return
+        }
+        fileSystem.createFolder(at: outputFolder, overwrite: overwrite)
+        for artifact in try parsed.outputs {
+            fileSystem.writeFile(artifact.data, at: outputFolder.file(artifact.file.path), overwrite: overwrite)
+        }
+        let loopDesc = parsed.loop.enabled
+            ? "loop \(parsed.loop.startSample)-\(parsed.loop.endSample) samples"
+            : "no loop"
+        logger?.log(.info("  \(stem): \(parsed.sampleRate) Hz, \(parsed.channelCount) ch, \(parsed.sampleCountPerChannel) samples/ch, \(loopDesc) → \(outputFolder.path)"))
     }
 
     private static func parseMSGVariant(_ value: String) -> MSGFile.Variant {
@@ -300,8 +382,8 @@ extension ColoXD {
         // op can read it back via ATX-style folder scan if needed.
         var named = parsed
         named.name = name
-        for (relative, bytes) in try named.outputs {
-            fileSystem.writeFile(bytes, at: outputFolder.file(relative.path), overwrite: overwrite)
+        for artifact in try named.outputs {
+            fileSystem.writeFile(artifact.data, at: outputFolder.file(artifact.file.path), overwrite: overwrite)
         }
         logger?.log(.info("  \(name): \(parsed.entries.count) entries → \(outputFolder.path)"))
     }
@@ -353,8 +435,8 @@ extension ColoXD {
         var gsw = parsed.file
         gsw.name = name
         gsw.images = parsed.images
-        for (relative, bytes) in try gsw.outputs {
-            fileSystem.writeFile(bytes, at: outputFolder.file(relative.path), overwrite: overwrite)
+        for artifact in try gsw.outputs {
+            fileSystem.writeFile(artifact.data, at: outputFolder.file(artifact.file.path), overwrite: overwrite)
         }
         logger?.log(.info("  \(name): \(gsw.tags.count) tags, \(gsw.allTextureRefs.count) textures → \(outputFolder.path)"))
     }
@@ -401,6 +483,24 @@ extension ColoXD {
 
         let textureDecoder = GXTextureDecoder()
 
+        // Pre-pass: pair THH + THD entries by stem. Each pair is
+        // collapsed into a single combined `.thp` artifact; the
+        // registry keeps both FSYS metadata blocks so pack can emit
+        // two entries again. Orphan THH or THD (without a partner in
+        // the same archive) fall through to the normal extraction
+        // path and stay as-is.
+        var thdByStem: [String: FSYSArchive.Entry] = [:]
+        for entry in archive.entries where entry.metadata.fileType == "thd" {
+            thdByStem[entry.metadata.name] = entry
+        }
+        var thhStemsPaired = Set<String>()
+        var thdStemsPaired = Set<String>()
+        for entry in archive.entries
+        where entry.metadata.fileType == "thh" && thdByStem[entry.metadata.name] != nil {
+            thhStemsPaired.insert(entry.metadata.name)
+            thdStemsPaired.insert(entry.metadata.name)
+        }
+
         for entry in archive.entries {
             let targetFolder = gsEngine.resolveFolder(
                 forFileType: entry.metadata.fileType,
@@ -409,6 +509,34 @@ extension ColoXD {
             ).resolvedFolder
 
             let fileType = entry.metadata.fileType
+
+            // THH half of a paired video — combine with its THD sibling
+            // and emit a single `.thp`.
+            if fileType == "thh" && thhStemsPaired.contains(entry.metadata.name),
+               let thd = thdByStem[entry.metadata.name] {
+                let thpName = entry.metadata.name + ".thp"
+                let thpFile = targetFolder.file(thpName)
+                do {
+                    let thp = try THPFile(thh: entry.data, thd: thd.data, name: entry.metadata.name)
+                    entries.append(.init(
+                        metadata: entry.metadata,
+                        file: thpFile,
+                        thdMetadata: thd.metadata
+                    ))
+                    extractedFiles.append((file: thpFile, data: thp.combined))
+                } catch {
+                    // Fall back to extracting the THH raw if pairing failed.
+                    let targetFile = targetFolder.file(entry.filename)
+                    entries.append(.init(metadata: entry.metadata, file: targetFile))
+                    extractedFiles.append((file: targetFile, data: entry.data))
+                }
+                continue
+            }
+            // THD half of a paired video — already emitted via its THH.
+            if fileType == "thd" && thdStemsPaired.contains(entry.metadata.name) {
+                continue
+            }
+
             if fileType == "gtx" {
                 let texMeta = textureDecoder.parseHeader(data: entry.data)
                 if let image = textureDecoder.decode(data: entry.data),

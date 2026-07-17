@@ -7,17 +7,20 @@
 
 import Foundation
 
-/// A file format that can be parsed from binary and serialized to a set of
-/// editable artifacts (and back) without any external engine/context. These
-/// are the formats eligible for `FileFormatRegistry` routing.
+/// A file format that can be parsed from one or more raw binary files and
+/// serialized to a set of editable artifacts (and back) without any external
+/// engine/context. These are the formats eligible for `FileFormatRegistry`
+/// routing.
 ///
-/// `outputs` is keyed by the relative `File` each artifact should be written
-/// at (under a caller-chosen folder). Each format picks its own filenames;
-/// callers providing a shared folder are expected to namespace via
-/// subfolders to avoid collisions. A single-JSON format returns one entry
-/// like `[File("metadata.json"): …]`; a texture format returns two like
-/// `[File("metadata.json"): …, File("texture.png"): …]`; multi-asset
-/// formats can nest paths like `File("textures/tex_03.png")`.
+/// Both sides are expressed as `[FileData]` — an ordered list where each
+/// entry carries the `File` (path) its bytes belong to. Most formats have a
+/// single binary (one `[FileData]` element on the binary side) and one or
+/// more artifact files on the outputs side (a `.json` manifest plus any
+/// companion assets it references).
+///
+/// Multi-binary formats (e.g. ISF's paired `.ish` + `.isd`) represent all
+/// pieces on the binary side; their outputs still funnel through a single
+/// `.json` manifest that carries paths to the companion files.
 public protocol FileFormat {
     static var formatName: String { get }
     /// Base name (no extension) used to build output filenames. Default
@@ -25,15 +28,65 @@ public protocol FileFormat {
     /// so artifacts are named after it (e.g. `name = "absol"` produces
     /// `absol.atx.json`, `absol_frame_000.png`).
     var name: String { get set }
-    init(binary: GoDData) throws
-    init(outputs: [File: GoDData]) throws
-    var binaryData: GoDData { get throws }
-    var outputs: [File: GoDData] { get throws }
+
+    /// Parse from raw game-side binaries. For single-binary formats this
+    /// is a one-element array; for paired formats (ISF) it carries every
+    /// piece. Implementations should use the `File` on each entry to
+    /// recover a sensible `name` stem when the caller hasn't set one.
+    init(binaries: [FileData]) throws
+
+    /// Rebuild the raw game-side binaries from the parsed state. Single-
+    /// binary formats return one element; paired formats return each piece.
+    var binaries: [FileData] { get throws }
+
+    /// Parse from the editable artifact set (e.g. a `.json` manifest that
+    /// points at companion assets, plus the assets themselves as they were
+    /// read from the project folder). Build ops typically only need to
+    /// supply the manifest — companion assets are read out of its declared
+    /// paths — but the protocol accepts the fully-materialised bundle to
+    /// keep it self-describing.
+    init(outputs: [FileData]) throws
+
+    /// Serialize to an editable artifact bundle. The first entry is the
+    /// JSON manifest (`<name>.<formatName>.json`); subsequent entries are
+    /// whatever companion files the manifest's paths resolve to.
+    var outputs: [FileData] { get throws }
 }
 
 public extension FileFormat {
     /// `<name>.<formatName>.json` — the metadata JSON every format emits.
     var jsonFilename: File { File("\(name).\(Self.formatName).json") }
+
+    /// Single-binary convenience: returns the first binary's bytes. Formats
+    /// with multiple binaries should call `binaries` directly.
+    var binaryData: GoDData {
+        get throws {
+            let bins = try binaries
+            guard let first = bins.first else {
+                throw FileFormatErrors.failedToEncode(
+                    format: Self.formatName,
+                    target: "no binaries produced"
+                )
+            }
+            return first.data
+        }
+    }
+
+    /// Dict view of `outputs`, keyed by each artifact's `File`. Handy for
+    /// formats that prefer keyed lookup while parsing back from artifacts.
+    var outputsByFile: [File: GoDData] {
+        get throws {
+            Dictionary(uniqueKeysWithValues: try outputs.map { ($0.file, $0.data) })
+        }
+    }
+}
+
+public extension Array where Element == FileData {
+    /// Dict view keyed by each entry's `File`. Used by format parsers that
+    /// want keyed lookup over an ordered `[FileData]` input.
+    var byFile: [File: GoDData] {
+        Dictionary(uniqueKeysWithValues: map { ($0.file, $0.data) })
+    }
 }
 
 public enum FileFormatErrors: Error, CustomStringConvertible {
