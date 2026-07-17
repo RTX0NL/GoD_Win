@@ -97,13 +97,11 @@ public struct ColoExpressionBuilder {
             }
         }
 
-        var currentOffset = 0
         for inst in instructions {
             // Insert location marker at jump targets
             if jumpTargets.contains(inst.offset) {
                 expressions.append(.location(inst.offset))
             }
-            currentOffset = inst.offset
 
             switch inst.opcode {
             case .nop:
@@ -124,23 +122,30 @@ public struct ColoExpressionBuilder {
                 stack.append(.call(Int(funcID), args.reversed()))
 
             case .returnOp:
-                // Peek: if top is `variableAssignment(variable(local, const(0)), value)`, convert to returnResult
-                if let top = stack.last, case .variableAssignment(let target, let value) = top {
-                    if case .variable(let v, .constant(.integer(0))) = target, v.isLocal {
-                        stack.removeLast()
-                        expressions.append(.returnResult(value))
-                    } else {
-                        expressions.append(.returnVoid)
-                    }
-                } else {
-                    expressions.append(.returnVoid)
+                // Peek: if top is `variableAssignment(variable(local, const(0)), value)`, convert to returnResult.
+                // Consume the return value first, then flush the preceding
+                // statements so they emit *before* the return (previously the
+                // return was emitted inline while pending side-effect calls
+                // stayed parked on the stack and flushed after it — producing
+                // a `return` followed by the whole function body).
+                var returnExpr: ColoExpr = .returnVoid
+                if let top = stack.last, case .variableAssignment(let target, let value) = top,
+                   case .variable(let v, .constant(.integer(0))) = target, v.isLocal {
+                    stack.removeLast()
+                    returnExpr = .returnResult(value)
                 }
+                flushStatements(&stack, into: &expressions)
+                expressions.append(returnExpr)
 
             case .jump(let offset):
+                flushStatements(&stack, into: &expressions)
                 expressions.append(.jump(Int(offset)))
 
             case .jumpFalse(let offset):
+                // Pop the branch condition, then flush the statements that
+                // precede the branch so they emit before the jump.
                 let condition = safePop(&stack)
+                flushStatements(&stack, into: &expressions)
                 expressions.append(.jumpFalse(condition, Int(offset)))
 
             case .pushImmediate(let type, let value):
@@ -153,8 +158,18 @@ public struct ColoExpressionBuilder {
 
             case .pushVar(let v):
                 handlePushVar(v, stack: &stack, argCount: &argCount)
-            case .pushMultiVar(let v, _):
+            case .pushMultiVar(let v, let count):
+                // The VM resolves the variable once (consuming one index from
+                // the stack) then pushes the result `count` times. Duplicate
+                // the wrapped expression for the remaining count-1 pushes so
+                // the expression stack stays aligned. The legacy tool left
+                // count > 1 unhandled ("Unhandled push multi var with
+                // count > 1"), silently corrupting every later expression in
+                // the function. Real data: M2_enter_1F.scd uses count=3 twice.
                 handlePushVar(v, stack: &stack, argCount: &argCount)
+                if count > 1, let top = stack.last {
+                    for _ in 1..<count { stack.append(top) }
+                }
             case .pushVar2(let v):
                 handlePushVar(v, stack: &stack, argCount: &argCount)
 
@@ -245,10 +260,12 @@ public struct ColoExpressionBuilder {
                 break
             }
 
-            // After processing, insert location marker if next instruction is a target
+            // At a basic-block boundary (next instruction is a jump target),
+            // flush any pending statements so they belong to this block.
+            // Terminators (return/jump/jumpFalse) already flushed above, so
+            // their stack is empty here.
             let nextOffset = inst.offset + inst.opcode.length
-            if jumpTargets.contains(nextOffset) && inst.opcode != .returnOp {
-                // Flush any pending statements from the stack
+            if jumpTargets.contains(nextOffset) {
                 flushStatements(&stack, into: &expressions)
             }
         }
@@ -288,9 +305,12 @@ public struct ColoExpressionBuilder {
     }
 
     private func flushStatements(_ stack: inout [ColoExpr], into expressions: inout [ColoExpr]) {
-        while let expr = stack.popLast() {
-            expressions.append(expr)
-        }
+        // Statements were pushed in program order (stack bottom → top), so
+        // emit them front-to-back. Using popLast() here would reverse a
+        // multi-statement run — masked today only because jump-target
+        // boundaries usually chunk flushes into single statements.
+        expressions.append(contentsOf: stack)
+        stack.removeAll(keepingCapacity: true)
     }
 }
 
@@ -432,6 +452,30 @@ public struct ColoExprFormatter {
 
     public func formatFunction(index: Int, name: String, argCount: Int, body: [ColoExpr]) -> String {
         let args = (0..<argCount).map { "arg\($0)" }.joined(separator: ", ")
+
+        // Cosmetic: the Genius Sonority script compiler appends an implicit
+        // terminating `returnOp` to every function (see ColoScript's format
+        // notes). When a real return already precedes it, that trailing
+        // `.returnVoid` is *unreachable* dead code — e.g. `return 1; return`.
+        // Drop it in that case only. We deliberately do NOT strip a trailing
+        // return that is reachable (e.g. the fall-through `return` after an
+        // `if { return … }`), since that one is meaningful, not redundant.
+        //
+        // RECOMPILER NOTE: the terminating return is NOT optional in the
+        // binary — every function must end with a `returnOp`. When the
+        // compiler side is built it must re-emit this trailing return for
+        // every function regardless of whether the decompiled source shows
+        // one; don't infer from a missing final `return` that none is needed.
+        var body = body
+        if body.count >= 2, case .returnVoid = body[body.count - 1] {
+            let redundant: Bool
+            switch body[body.count - 2] {
+            case .returnVoid, .returnResult: redundant = true   // preceding return makes this one unreachable
+            default: redundant = false
+            }
+            if redundant { body.removeLast() }
+        }
+
         var lines = ["func \(name)(\(args)) {"]
         lines += formatExprs(body, depth: 1)
         lines.append("}")

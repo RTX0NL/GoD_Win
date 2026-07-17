@@ -6,6 +6,15 @@ import GoDFoundation
 /// - Header (24 bytes): script type ID, function count, unknown, code pointers
 /// - Function table: array of 4-byte offsets (one per function → bytecode start)
 /// - Bytecode: variable-length instructions
+///
+/// Calling convention note (relevant to a future recompiler): the Genius
+/// Sonority script compiler appends an implicit terminating `returnOp` to
+/// **every** function. A value-returning path emits `local0 = value; returnOp`
+/// (which decompiles to `return <value>`) and is then followed by this trailing
+/// terminator `returnOp` — so many functions physically end in two returns
+/// (e.g. `return 1; return`). The decompiler cosmetically hides the redundant
+/// (unreachable) trailing return, but a recompiler MUST re-emit a terminating
+/// `returnOp` for every function to reproduce valid bytecode.
 public final class ColoScript {
 
     public static let headerSize = 24
