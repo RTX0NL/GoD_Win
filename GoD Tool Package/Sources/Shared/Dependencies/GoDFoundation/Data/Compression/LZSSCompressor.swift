@@ -1,5 +1,19 @@
 import Foundation
 
+public enum LZSSError: Error, CustomStringConvertible {
+    case unexpectedEndOfInput(position: Int, length: Int)
+    case truncatedOutput(produced: Int, expected: Int)
+
+    public var description: String {
+        switch self {
+        case let .unexpectedEndOfInput(position, length):
+            return "LZSS: unexpected end of input — tried to read byte \(position) of a \(length)-byte stream"
+        case let .truncatedOutput(produced, expected):
+            return "LZSS: decompressed \(produced) bytes but expected \(expected) — stream is truncated or corrupt"
+        }
+    }
+}
+
 public class LZSSCompressor: Compressor {
 
     // ported code from QuickBMS by Luigi Auriemma
@@ -24,11 +38,11 @@ public class LZSSCompressor: Compressor {
         self.P = P
     }
 
-    public func decompress(_ data: GoDData) -> GoDData {
-        decompress(data, expectedSize: nil)
+    public func decompress(_ data: GoDData) throws -> GoDData {
+        try decompress(data, expectedSize: nil)
     }
 
-    public func decompress(_ data: GoDData, expectedSize: Int?) -> GoDData {
+    public func decompress(_ data: GoDData, expectedSize: Int?) throws -> GoDData {
         var N = 1 << EI
         var F = 1 << EJ
         let rless = 2
@@ -43,7 +57,13 @@ public class LZSSCompressor: Compressor {
             outputBytes.reserveCapacity(expectedSize)
         }
 
-        func readChar() -> UInt8 {
+        // Bounds-checked read: a truncated/corrupt stream can demand
+        // more flag/literal/offset bytes than remain — throw instead of
+        // indexing out of bounds.
+        func readChar() throws -> UInt8 {
+            guard inputPosition < inputBytes.count else {
+                throw LZSSError.unexpectedEndOfInput(position: inputPosition, length: inputBytes.count)
+            }
             let char = inputBytes[inputPosition]
             inputPosition += 1
             return char
@@ -56,18 +76,22 @@ public class LZSSCompressor: Compressor {
         F -= 1
 
         while inputPosition < inputBytes.count {
+            // Stop once we've produced the expected number of bytes —
+            // avoids over-reading trailing padding on the stream.
+            if let expectedSize, outputBytes.count >= expectedSize { break }
+
             if (flags & 0x100) == 0 {
-                flags = UInt(readChar())
+                flags = UInt(try readChar())
                 flags |= 0xff00
             }
             if((flags & 1) != 0) {
-                let c = readChar()
+                let c = try readChar()
                 outputBytes.append(c)
                 slidingWindow[r] = c
                 r = (r + 1) & N
             } else {
-                var i = Int(readChar())
-                var j = Int(readChar())
+                var i = Int(try readChar())
+                var j = Int(try readChar())
 
                 i |= ((j >> EJ) << 8)
                 j  = (j & F) + P
@@ -80,6 +104,17 @@ public class LZSSCompressor: Compressor {
             }
 
             flags >>= 1
+        }
+
+        // If an expected size was supplied, a copy can overshoot it in
+        // its inner loop; trim to the exact length and validate we
+        // reached it.
+        if let expectedSize {
+            if outputBytes.count > expectedSize {
+                outputBytes.removeLast(outputBytes.count - expectedSize)
+            } else if outputBytes.count < expectedSize {
+                throw LZSSError.truncatedOutput(produced: outputBytes.count, expected: expectedSize)
+            }
         }
 
         return GoDData(byteStream: outputBytes, byteOrder: data.byteOrder)
