@@ -62,11 +62,12 @@ public extension XDEngine {
             4: "XDSaveDaycare",
         ]
 
-        /// Slot-format parameters (sub-block count + TOC table offsets).
-        /// Defaults to the retail XD format. A ROM mod that adds sub-
-        /// blocks overrides this (and must patch the game's own save
-        /// code to match) — the dump/build drive off these values, not
-        /// hardcoded constants. See `XDSaveSlot.Layout`.
+        /// Slot-format TOC table offsets (size table, offset table, body
+        /// base). Defaults to the retail XD format. The sub-block *count*
+        /// is NOT stored here — it's derived from `saveSections.count`,
+        /// so adding a section spec is enough. A ROM mod that adds sub-
+        /// blocks also sets these offsets (and must patch the game's own
+        /// save code to match). See `XDSaveSlot.Layout`.
         public var saveSlotLayout: XDSaveSlot.Layout = .stock
 
 

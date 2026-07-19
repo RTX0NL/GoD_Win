@@ -77,7 +77,8 @@ extension XDSaveOps {
         // Assemble the plaintext slot from scratch: header region + fresh
         // sub-blocks at their TOC offsets, inter-block gaps and unused
         // tail zeroed (see XDSaveSlot.assembled). Then re-encrypt.
-        let plaintext = try XDSaveSlot.assembled(headerRegion: headerRegion, sections: sections, layout: xdEngine.data.saveSlotLayout)
+        let layout = xdEngine.data.saveSlotLayout.with(subBlockCount: xdEngine.data.saveSections.count)
+        let plaintext = try XDSaveSlot.assembled(headerRegion: headerRegion, sections: sections, layout: layout)
         let slotBytes = try encryptIfNeeded(plaintext, decrypted: decrypted)
 
         // Replace ONLY the latest physical slot. The other slot's

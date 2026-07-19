@@ -111,7 +111,9 @@ extension XDSaveOps {
             throw XDSaveOpsErrors.missingSlot(file: slotBFile, .init())
         }
 
-        let layout = xdEngine.data.saveSlotLayout
+        // Sub-block count comes from the registered section list, not a
+        // hardcoded/persisted number — one source of truth.
+        let layout = xdEngine.data.saveSlotLayout.with(subBlockCount: xdEngine.data.saveSections.count)
         let slotA = try XDSaveSlot(raw: decryptedPlaintext(of: slotABytes, decrypted: decrypted, logger: logger), layout: layout)
         let slotB = try XDSaveSlot(raw: decryptedPlaintext(of: slotBBytes, decrypted: decrypted, logger: logger), layout: layout)
 

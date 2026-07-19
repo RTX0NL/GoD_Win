@@ -70,10 +70,14 @@ public struct XDSaveSlot: Equatable {
     /// save code to match. The four values are all that the TOC read/
     /// write and the from-scratch assembler need to relocate/resize.
     public struct Layout: Codable, Equatable {
-        public var subBlockCount: Int
-        public var sizeTableOffset: Int
-        public var offsetTableOffset: Int
-        public var subBlockBaseOffset: Int
+        /// Number of sub-block TOC entries. NOT read from persisted
+        /// config — the dump/build set it from `saveSections.count` so
+        /// the section list is the single source of truth for the count
+        /// (add a section spec and the count follows automatically).
+        public var subBlockCount: Int = XDSaveSlot.subBlockCount
+        public var sizeTableOffset: Int = XDSaveSlot.sizeTableOffset
+        public var offsetTableOffset: Int = XDSaveSlot.offsetTableOffset
+        public var subBlockBaseOffset: Int = XDSaveSlot.subBlockBaseOffset
 
         public init(
             subBlockCount: Int = XDSaveSlot.subBlockCount,
@@ -87,7 +91,20 @@ public struct XDSaveSlot: Equatable {
             self.subBlockBaseOffset = subBlockBaseOffset
         }
 
-        /// Retail XD save format.
+        /// Only the TOC table offsets are persisted; `subBlockCount` is
+        /// derived from `saveSections.count` at runtime.
+        private enum CodingKeys: String, CodingKey {
+            case sizeTableOffset, offsetTableOffset, subBlockBaseOffset
+        }
+
+        /// Returns a copy with the sub-block count set (from the section list).
+        public func with(subBlockCount: Int) -> Layout {
+            var copy = self
+            copy.subBlockCount = subBlockCount
+            return copy
+        }
+
+        /// Retail XD save format (TOC offsets; count follows the section list).
         public static let stock = Layout()
     }
 
