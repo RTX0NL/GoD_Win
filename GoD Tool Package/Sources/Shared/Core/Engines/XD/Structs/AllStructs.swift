@@ -58,6 +58,8 @@ public extension XDEngine {
                 XDStructDefaults.deckTrainerAIStruct,
                 XDStructDefaults.deckShadowPokemonStruct,
                 // Save sub-block structs
+                XDStructDefaults.saveWazaStruct,
+                XDStructDefaults.saveItemStruct,
                 XDStructDefaults.savePokemonStruct,
                 XDStructDefaults.saveConfigStruct,
                 XDStructDefaults.saveTrainer1Struct,

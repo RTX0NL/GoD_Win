@@ -1,3 +1,4 @@
+import Foundation
 import GoDFoundation
 import Structs
 import GoDEngine
@@ -39,106 +40,113 @@ extension XDSaveOps {
     ) throws {
         logger?.log(.taskStatus(taskName: "Build XD Save", status: .started))
 
-        let repackedA = try repackedSlotForBuild(
-            slotFolder: inputFolder.folder(slot1FolderName),
-            engine: xdEngine,
-            fileSystem: fileSystem,
-            logger: logger
-        )
-        let repackedB = try repackedSlotForBuild(
-            slotFolder: inputFolder.folder(slot2FolderName),
-            engine: xdEngine,
-            fileSystem: fileSystem,
-            logger: logger
-        )
+        let saveMeta: XDSaveOps.SaveMetadata =
+            try fileSystem.decodeJSON(from: inputFolder.file(saveMetadataFilename))
+        let slotFolder = inputFolder.folder(latestSlotFolderName)
+        let slotMeta: XDSaveOps.SlotMetadata =
+            try fileSystem.decodeJSON(from: slotFolder.file(slotMetadataFilename))
 
-        let slotABytes = try encryptIfNeeded(repackedA, decrypted: decrypted)
-        let slotBBytes = try encryptIfNeeded(repackedB, decrypted: decrypted)
+        // Decode the captured 0xA8 header region — carries the cipher
+        // seed, the sub-block TOC, and the size fields.
+        guard let headerData = Data(base64Encoded: slotMeta.headerRegion) else {
+            throw XDSaveOpsErrors.invalidHeaderRegion(.init())
+        }
+        let headerRegion = GoDData(byteStream: [UInt8](headerData), byteOrder: .big)
 
-        fileSystem.writeFile(
-            slotABytes,
-            at: unpackedFolder.file(GCIOps.slotAFilename),
-            overwrite: overwrite
-        )
-        fileSystem.writeFile(
-            slotBBytes,
-            at: unpackedFolder.file(GCIOps.slotBFilename),
-            overwrite: overwrite
-        )
+        // Rebuild every sub-block from its artifact (JSON when it exists,
+        // else the raw `.bin`), hard-checking each against the size the
+        // dump recorded. Nothing about the sub-block bytes is inherited
+        // from a raw slot — this is a from-scratch rebuild.
+        var sections: [Int: GoDData] = [:]
+        for entry in slotMeta.sections {
+            let bytes = try reconstructSection(
+                entry: entry,
+                slotFolder: slotFolder,
+                engine: xdEngine,
+                fileSystem: fileSystem
+            )
+            guard bytes.length == entry.length else {
+                throw XDSaveOpsErrors.sectionSizeMismatch(
+                    index: entry.index, name: entry.name,
+                    expected: entry.length, actual: bytes.length, .init()
+                )
+            }
+            sections[entry.index] = bytes
+        }
 
+        // Assemble the plaintext slot from scratch: header region + fresh
+        // sub-blocks at their TOC offsets, inter-block gaps and unused
+        // tail zeroed (see XDSaveSlot.assembled). Then re-encrypt.
+        let plaintext = try XDSaveSlot.assembled(headerRegion: headerRegion, sections: sections, layout: xdEngine.data.saveSlotLayout)
+        let slotBytes = try encryptIfNeeded(plaintext, decrypted: decrypted)
+
+        // Replace ONLY the latest physical slot. The other slot's
+        // original encrypted bytes remain in the unpacked GCI and pass
+        // through to the GCI rebuild untouched.
+        let latestFilename = saveMeta.latestSlot == "B"
+            ? GCIOps.slotBFilename
+            : GCIOps.slotAFilename
+        fileSystem.writeFile(slotBytes, at: unpackedFolder.file(latestFilename), overwrite: overwrite)
+
+        logger?.log(.info("XD save build: rebuilt \(slotMeta.sections.count) sub-blocks from scratch (gaps zeroed); wrote latest slot \(saveMeta.latestSlot) → \(latestFilename) (other slot untouched)"))
         logger?.log(.taskStatus(taskName: "Build XD Save", status: .completed(true)))
     }
 
-    /// Reads `raw-slot.bin` as the canonical edit form, then for any
-    /// section that has an edited `<idx>-<name>.json` sidecar runs
-    /// it through `StructData(definition:json:)` to re-derive the
-    /// section's bytes. The collected overrides flow into
-    /// `XDSaveSlot.repacked(sectionOverrides:)` which preserves the
-    /// load-time placement order while recomputing offsets from the
-    /// (possibly-changed) section sizes. With no JSON edits the
-    /// repack is a no-op and the output is byte-identical to
-    /// `raw-slot.bin`.
-    private static func repackedSlotForBuild(
+    /// Rebuilds one section's bytes from its dumped artifact. When the
+    /// dump wrote a JSON sidecar (struct/table sections that tile
+    /// exactly), that JSON is the source of truth and is re-encoded
+    /// through the struct definition; otherwise the raw `.bin` slice
+    /// is used verbatim. Padding round-trips through the JSON as uint8
+    /// arrays, so struct sections are fully covered.
+    private static func reconstructSection(
+        entry: XDSaveOps.SlotMetadata.SectionEntry,
         slotFolder: Folder,
         engine: XDEngine,
-        fileSystem: FileSystemTree,
-        logger: Logger?
+        fileSystem: FileSystemTree
     ) throws -> GoDData {
-        let rawPath = slotFolder.file(rawSlotFilename)
-        guard let raw = fileSystem.readFile(at: rawPath) else {
-            throw XDSaveOpsErrors.missingSlot(file: rawPath, .init())
-        }
-        let slot = try XDSaveSlot(raw: raw)
-
-        // Walk the engine's section list — for each index whose
-        // section has a JSON sidecar on disk *and* the engine binds
-        // a struct for it, decode the JSON into bytes and capture
-        // as an override. Indices without JSON, or with `.binary`
-        // type, fall through to whatever's already in raw-slot.bin.
-        var overrides: [Int: GoDData] = [:]
-        for index in 0..<XDSaveSlot.subBlockCount {
-            guard index < engine.data.saveSections.count else { continue }
-            let spec = engine.data.saveSections[index]
-            guard spec.type != .binary else { continue }
-            guard let structName = engine.data.sectionStructTypes[index] else { continue }
-
-            let stem = String(format: "%02d-%@", index, spec.name)
-            let jsonPath = slotFolder.file("\(stem).json")
-            guard let jsonBytes = fileSystem.readFile(at: jsonPath) else { continue }
-
-            do {
-                let definition = try engine.getStruct(structName) as StructDefinition
+        if let jsonName = entry.json {
+            let jsonFile = slotFolder.file(jsonName)
+            guard let jsonBytes = fileSystem.readFile(at: jsonFile) else {
+                throw XDSaveOpsErrors.missingArtifact(file: jsonFile, .init())
+            }
+            guard let structName = entry.structType,
+                  let definition = try? engine.getStruct(structName) as StructDefinition else {
+                throw XDSaveOpsErrors.missingStructBinding(index: entry.index, name: entry.name, .init())
+            }
+            switch entry.type {
+            case .struct:
                 let parsed = try StructData(definition: definition, json: jsonBytes)
-                // The struct may describe only the known prefix of
-                // a section that's actually longer (XDSaveConfig is
-                // 0x70 bytes; the on-card Config section can be
-                // 0x88). Preserve the trailing bytes by copying
-                // them from raw-slot.bin so unknown fields don't
-                // get truncated and shift later sections. When the
-                // struct length matches the section, the trailing
-                // copy is a no-op.
-                let originalSize = slot.subBlockSize(at: index)
-                let structBytes = parsed.data
-                let merged = GoDData(byteStream: structBytes.rawBytes, byteOrder: .big)
-                if merged.length < originalSize,
-                   let originalSection = slot.subBlockBytes(at: index),
-                   merged.length < originalSection.length,
-                   let trailing = originalSection.read(
-                        atAddress: UInt(merged.length),
-                        length: UInt(originalSection.length - merged.length)) {
-                    merged.append(trailing)
+                return GoDData(byteStream: parsed.data.rawBytes, byteOrder: .big)
+            case .table:
+                // The dump writes a JSON array of struct objects. Decode
+                // each element through `StructData(definition:json:)` and
+                // concatenate — same entry point as the `.struct` path.
+                let root = try JSONSerialization.jsonObject(with: jsonBytes.data)
+                guard let elements = root as? [Any] else {
+                    throw XDSaveOpsErrors.missingArtifact(file: jsonFile, .init())
                 }
-                overrides[index] = merged
-                let reason = merged.length == structBytes.length
-                    ? "matched struct length \(structBytes.length)"
-                    : "padded struct \(structBytes.length) → section \(merged.length) with trailing raw bytes"
-                logger?.log(.info("XD save build: section \(index) '\(spec.name)' from JSON (\(reason))"))
-            } catch {
-                logger?.log(.info("XD save build: section \(index) '\(spec.name)' JSON decode failed (\(error)) — keeping raw-slot bytes"))
+                var out: [UInt8] = []
+                for element in elements {
+                    let elementData = try JSONSerialization.data(withJSONObject: element)
+                    let parsed = try StructData(
+                        definition: definition,
+                        json: GoDData(byteStream: [UInt8](elementData), byteOrder: .big)
+                    )
+                    out.append(contentsOf: parsed.data.rawBytes)
+                }
+                return GoDData(byteStream: out, byteOrder: .big)
+            case .binary:
+                break   // .binary sections never carry JSON — fall to .bin
             }
         }
-
-        return try slot.repacked(sectionOverrides: overrides)
+        if let binName = entry.bin {
+            let binFile = slotFolder.file(binName)
+            guard let binBytes = fileSystem.readFile(at: binFile) else {
+                throw XDSaveOpsErrors.missingArtifact(file: binFile, .init())
+            }
+            return binBytes
+        }
+        throw XDSaveOpsErrors.missingArtifact(file: slotFolder.file(entry.name), .init())
     }
 
     private static func encryptIfNeeded(_ plaintext: GoDData, decrypted: Bool) throws -> GoDData {

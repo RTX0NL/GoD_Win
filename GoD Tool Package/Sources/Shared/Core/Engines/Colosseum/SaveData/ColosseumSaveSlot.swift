@@ -72,13 +72,57 @@ public struct ColosseumSaveSlot: Equatable {
     }
 }
 
+public extension ColosseumSaveSlot {
+
+    /// Builds a complete decrypted slot *from scratch* from a captured
+    /// header region plus each section's reconstructed bytes placed at
+    /// its recorded offset.
+    ///
+    /// `headerRegion` is the verbatim `slot[0x00..bodyBaseOffset]`
+    /// (magic + counter). Colo has no in-slot TOC — section offsets are
+    /// the cumulative sums the dump derived from struct lengths and
+    /// recorded per section — so placement is driven straight from
+    /// `placements`. The sections tile the whole body (a trailing
+    /// catch-all covers the remainder), so nothing is left uncovered.
+    /// The header checksum (`0x0C`) and body SHA-1 are regenerated at
+    /// encrypt time.
+    static func assembled(headerRegion: GoDData, placements: [(offset: Int, bytes: GoDData)]) throws -> GoDData {
+        let headerBytes = headerRegion.rawBytes
+        guard headerBytes.count <= slotSize else {
+            throw ColosseumSaveSlotError.invalidHeaderRegion(actual: headerBytes.count)
+        }
+
+        var output = [UInt8](repeating: 0, count: slotSize)
+        for i in 0..<headerBytes.count { output[i] = headerBytes[i] }
+
+        for placement in placements {
+            let end = placement.offset + placement.bytes.length
+            guard placement.offset >= headerBytes.count, end <= slotSize else {
+                throw ColosseumSaveSlotError.sectionOverflow(
+                    offset: placement.offset, length: placement.bytes.length, slotSize: slotSize
+                )
+            }
+            let payload = placement.bytes.rawBytes
+            for i in 0..<payload.count { output[placement.offset + i] = payload[i] }
+        }
+
+        return GoDData(byteStream: output, byteOrder: .big)
+    }
+}
+
 public enum ColosseumSaveSlotError: Error, CustomStringConvertible {
     case invalidSlotSize(expected: Int, actual: Int)
+    case invalidHeaderRegion(actual: Int)
+    case sectionOverflow(offset: Int, length: Int, slotSize: Int)
 
     public var description: String {
         switch self {
         case let .invalidSlotSize(expected, actual):
             return "ColosseumSaveSlot: slot size \(actual) does not match expected \(expected) (0x1E000)"
+        case let .invalidHeaderRegion(actual):
+            return "ColosseumSaveSlot: captured header region is \(actual) bytes, larger than the \(ColosseumSaveSlot.slotSize)-byte slot"
+        case let .sectionOverflow(offset, length, slotSize):
+            return "ColosseumSaveSlot: section at +\(String(format: "0x%X", offset)) (len \(length)) overflows the \(slotSize)-byte slot"
         }
     }
 }

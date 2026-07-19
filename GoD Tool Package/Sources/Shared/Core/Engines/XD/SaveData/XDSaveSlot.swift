@@ -62,6 +62,35 @@ public struct XDSaveSlot: Equatable {
     /// Base address sub-block offsets are computed relative to.
     public static let subBlockBaseOffset: Int = 0xA8
 
+    /// Configurable slot-format parameters. Defaults (`.stock`) match
+    /// the retail XD save format (16 sub-blocks, size table at 0x20,
+    /// offset table at 0x40, body base at 0xA8). A ROM mod that changes
+    /// the slot's sub-block layout can override these via the engine's
+    /// `saveSlotLayout` — it's on the modder to patch the game's own
+    /// save code to match. The four values are all that the TOC read/
+    /// write and the from-scratch assembler need to relocate/resize.
+    public struct Layout: Codable, Equatable {
+        public var subBlockCount: Int
+        public var sizeTableOffset: Int
+        public var offsetTableOffset: Int
+        public var subBlockBaseOffset: Int
+
+        public init(
+            subBlockCount: Int = XDSaveSlot.subBlockCount,
+            sizeTableOffset: Int = XDSaveSlot.sizeTableOffset,
+            offsetTableOffset: Int = XDSaveSlot.offsetTableOffset,
+            subBlockBaseOffset: Int = XDSaveSlot.subBlockBaseOffset
+        ) {
+            self.subBlockCount = subBlockCount
+            self.sizeTableOffset = sizeTableOffset
+            self.offsetTableOffset = offsetTableOffset
+            self.subBlockBaseOffset = subBlockBaseOffset
+        }
+
+        /// Retail XD save format.
+        public static let stock = Layout()
+    }
+
     /// Plaintext slot header. Only the first 8 bytes of a slot are
     /// unencrypted (magic + reserved + counter) — and they're *not*
     /// the cipher key seed (PKHeX's `XDCrypto.DecryptSlot` reads keys
@@ -96,8 +125,10 @@ public struct XDSaveSlot: Equatable {
     /// byte-identically.
     public var raw: GoDData
     public let header: Header
+    /// Slot-format parameters this slot was parsed with.
+    public let layout: Layout
 
-    public init(raw: GoDData) throws {
+    public init(raw: GoDData, layout: Layout = .stock) throws {
         guard raw.length == XDSaveSlot.slotSize else {
             throw XDSaveSlotError.invalidSlotSize(expected: XDSaveSlot.slotSize, actual: raw.length)
         }
@@ -114,6 +145,7 @@ public struct XDSaveSlot: Equatable {
 
         self.raw = raw
         self.header = Header(magic: magic, reserved: reserved, counter: counter)
+        self.layout = layout
     }
 
     public func assemble() -> GoDData {
@@ -126,8 +158,8 @@ public struct XDSaveSlot: Equatable {
     /// `slot[0x20 + 2*index]`. PKHeX doesn't apply caps to these
     /// values when reading, so we don't either.
     public func subBlockSize(at index: Int) -> Int {
-        precondition(index >= 0 && index < XDSaveSlot.subBlockCount)
-        let off = XDSaveSlot.sizeTableOffset + index * 2
+        precondition(index >= 0 && index < layout.subBlockCount)
+        let off = layout.sizeTableOffset + index * 2
         let v: UInt16 = raw.readSafely(atAddress: off)
         return Int(v)
     }
@@ -137,11 +169,11 @@ public struct XDSaveSlot: Equatable {
     ///     subOffset = u16BE(slot[0x40+4i]) | (u16BE(slot[0x40+4i+2]) << 16)
     ///     absolute  = subOffset + 0xA8
     public func subBlockOffset(at index: Int) -> Int {
-        precondition(index >= 0 && index < XDSaveSlot.subBlockCount)
-        let base = XDSaveSlot.offsetTableOffset + index * 4
+        precondition(index >= 0 && index < layout.subBlockCount)
+        let base = layout.offsetTableOffset + index * 4
         let lo: UInt16 = raw.readSafely(atAddress: base)
         let hi: UInt16 = raw.readSafely(atAddress: base + 2)
-        return Int(UInt32(lo) | (UInt32(hi) << 16)) + XDSaveSlot.subBlockBaseOffset
+        return Int(UInt32(lo) | (UInt32(hi) << 16)) + layout.subBlockBaseOffset
     }
 
     /// Reads the bytes for sub-block at `index`. Returns nil only
@@ -204,7 +236,7 @@ public extension XDSaveSlot {
     /// preserved.
     func sectionsInPlacementOrder() -> [(index: Int, offset: Int, size: Int)] {
         var triples: [(index: Int, offset: Int, size: Int)] = []
-        for index in 0..<XDSaveSlot.subBlockCount {
+        for index in 0..<layout.subBlockCount {
             let size = subBlockSize(at: index)
             guard size > 0 else { continue }
             triples.append((index: index, offset: subBlockOffset(at: index), size: size))
@@ -245,7 +277,7 @@ public extension XDSaveSlot {
         // Stage 1: clear the body so we don't leave stale bytes
         // lying around when sections shift left. Header + tables
         // are written in stage 2.
-        for i in XDSaveSlot.bodyStartOffset..<XDSaveSlot.bodyEndOffset {
+        for i in layout.subBlockBaseOffset..<XDSaveSlot.bodyEndOffset {
             output[i] = 0
         }
 
@@ -253,7 +285,7 @@ public extension XDSaveSlot {
         // record the new offset/size for the table writes at end.
         var newOffsets: [Int: Int] = [:]
         var newSizes:  [Int: Int] = [:]
-        var cursor = XDSaveSlot.bodyStartOffset
+        var cursor = layout.subBlockBaseOffset
 
         for (placementIdx, triple) in triples.enumerated() {
             let index = triple.index
@@ -336,24 +368,92 @@ public extension XDSaveSlot {
         // indices including the zero-size ones (which keep their
         // existing entries — this matches how the in-game allocator
         // leaves untouched slots alone).
-        for index in 0..<XDSaveSlot.subBlockCount {
+        for index in 0..<layout.subBlockCount {
             // Size table: u16 BE at slot[0x20 + 2*index].
             let size = newSizes[index] ?? subBlockSize(at: index)
-            let sizeOffset = XDSaveSlot.sizeTableOffset + index * 2
+            let sizeOffset = layout.sizeTableOffset + index * 2
             output[sizeOffset]     = UInt8((size >> 8) & 0xFF)
             output[sizeOffset + 1] = UInt8(size & 0xFF)
 
             // Offset table: u32 stored as (lowHalf, highHalf), each
             // u16 BE, at slot[0x40 + 4*index].
             let absoluteOffset = newOffsets[index] ?? subBlockOffset(at: index)
-            let relativeOffset = UInt32(absoluteOffset - XDSaveSlot.subBlockBaseOffset)
+            let relativeOffset = UInt32(absoluteOffset - layout.subBlockBaseOffset)
             let lo = UInt16(relativeOffset & 0xFFFF)
             let hi = UInt16((relativeOffset >> 16) & 0xFFFF)
-            let offBase = XDSaveSlot.offsetTableOffset + index * 4
+            let offBase = layout.offsetTableOffset + index * 4
             output[offBase]     = UInt8((lo >> 8) & 0xFF)
             output[offBase + 1] = UInt8(lo & 0xFF)
             output[offBase + 2] = UInt8((hi >> 8) & 0xFF)
             output[offBase + 3] = UInt8(hi & 0xFF)
+        }
+
+        return GoDData(byteStream: output, byteOrder: .big)
+    }
+
+    /// Builds a complete decrypted slot *from scratch* out of a captured
+    /// header region plus a fresh set of section payloads.
+    ///
+    /// `headerRegion` is the verbatim `slot[0x00..0xA8]` captured at dump
+    /// time. It is carried as opaque metadata because it is too
+    /// intertwined with the game's on-card format to safely regenerate:
+    /// the cipher key seed (`0x08`), the running-sum checksum tags
+    /// (`0x10`, overwritten at encrypt), the 24-entry TOC and scattered
+    /// size fields (`0x18..0x98`) the game's `memcardGetMultiSaveDataToSTRUCT`
+    /// reads to locate each sub-block, and its 8-byte tail. Everything
+    /// *editable* — the sub-block payloads — is supplied fresh in
+    /// `sections`; nothing about the sub-block bytes is inherited.
+    ///
+    /// The inter-sub-block gaps and the large unused tail after the last
+    /// sub-block are **left zero**. Per the XD disassembly
+    /// (`_memcardStoreSaveData_multi`) those bytes are non-semantic
+    /// leftover the game carries forward from its reused I/O buffer — the
+    /// game never reads them and re-randomises them each save — so
+    /// zeroing them and recomputing the checksum yields a functionally
+    /// identical, game-valid slot.
+    ///
+    /// Each non-zero-size index in the captured TOC must be supplied in
+    /// `sections`, and its byte length must equal the TOC size for that
+    /// index; a mismatch throws `sectionSizeMismatch`.
+    static func assembled(headerRegion: GoDData, sections: [Int: GoDData], layout: Layout = .stock) throws -> GoDData {
+        let headerBytes = headerRegion.rawBytes
+        guard headerBytes.count == layout.subBlockBaseOffset else {
+            throw XDSaveSlotError.invalidHeaderRegion(
+                expected: layout.subBlockBaseOffset, actual: headerBytes.count
+            )
+        }
+
+        var output = [UInt8](repeating: 0, count: XDSaveSlot.slotSize)
+        for i in 0..<layout.subBlockBaseOffset { output[i] = headerBytes[i] }
+
+        for index in 0..<layout.subBlockCount {
+            // Size table: u16 BE at 0x20 + 2*index.
+            let sizeOff = layout.sizeTableOffset + index * 2
+            let size = Int(UInt16(headerBytes[sizeOff]) << 8 | UInt16(headerBytes[sizeOff + 1]))
+            guard size > 0 else { continue }
+
+            // Offset table: (lo u16 BE, hi u16 BE) at 0x40 + 4*index,
+            // combined as low | (high << 16), relative to 0xA8.
+            let offBase = layout.offsetTableOffset + index * 4
+            let lo = UInt32(UInt16(headerBytes[offBase]) << 8 | UInt16(headerBytes[offBase + 1]))
+            let hi = UInt32(UInt16(headerBytes[offBase + 2]) << 8 | UInt16(headerBytes[offBase + 3]))
+            let offset = Int(lo | (hi << 16)) + layout.subBlockBaseOffset
+
+            guard let section = sections[index] else {
+                throw XDSaveSlotError.missingSection(index: index, size: size)
+            }
+            guard section.length == size else {
+                throw XDSaveSlotError.sectionSizeMismatch(
+                    index: index, expected: size, actual: section.length
+                )
+            }
+            guard offset + size <= XDSaveSlot.slotSize else {
+                throw XDSaveSlotError.repackOverflow(
+                    section: index, needed: offset + size, available: XDSaveSlot.slotSize
+                )
+            }
+            let payload = section.rawBytes
+            for i in 0..<size { output[offset + i] = payload[i] }
         }
 
         return GoDData(byteStream: output, byteOrder: .big)
@@ -364,6 +464,9 @@ public enum XDSaveSlotError: Error, CustomStringConvertible {
     case invalidSlotSize(expected: Int, actual: Int)
     case badMagic(found: [UInt8])
     case repackOverflow(section: Int, needed: Int, available: Int)
+    case invalidHeaderRegion(expected: Int, actual: Int)
+    case missingSection(index: Int, size: Int)
+    case sectionSizeMismatch(index: Int, expected: Int, actual: Int)
 
     public var description: String {
         switch self {
@@ -374,6 +477,12 @@ public enum XDSaveSlotError: Error, CustomStringConvertible {
             return "XDSaveSlot: bad magic at slot start — expected 01 01 01, got \(hex)"
         case let .repackOverflow(section, needed, available):
             return "XDSaveSlot: repacking sub-block \(section) overflows the slot body — needs offset \(needed) but only \(available) bytes are available"
+        case let .invalidHeaderRegion(expected, actual):
+            return "XDSaveSlot: captured header region is \(actual) bytes, expected \(expected) (0xA8)"
+        case let .missingSection(index, size):
+            return "XDSaveSlot: cannot assemble — section \(index) (size \(size)) has no reconstructed bytes"
+        case let .sectionSizeMismatch(index, expected, actual):
+            return "XDSaveSlot: section \(index) rebuilt to \(actual) bytes but the slot TOC expects \(expected) — extend its struct's padding (or fix the edit) so it tiles the section exactly"
         }
     }
 }

@@ -5,9 +5,10 @@ import Colosseum
 
 extension ColoSaveOps {
 
-    /// Folder name for save slot N (1-indexed in the dump folder, but
-    /// 0-indexed when reading PKHeX-style slot bins).
-    static func slotFolderName(_ index: Int) -> String { "Slot \(index + 1)" }
+    /// Only the latest slot is dumped, into this single folder. The
+    /// other two slots stay untouched in the unpacked GCI and pass
+    /// straight through on rebuild.
+    static let latestSlotFolderName = "Latest Slot"
     static let saveMetadataFilename = "save-metadata.json"
     static let slotMetadataFilename = "slot-metadata.json"
     static let rawSlotFilename = "raw-slot.bin"
@@ -26,6 +27,12 @@ extension ColoSaveOps {
 
     struct SlotMetadata: Codable, Equatable {
         let header: ColosseumSaveSlot.Header
+        /// 0-based physical slot index these artifacts came from.
+        let physicalSlotIndex: Int
+        /// Base64 of `slot[0x00..bodyBaseOffset]` (magic + counter) —
+        /// the header bytes before the first section. Everything from
+        /// bodyBaseOffset on is reconstructed from the sections.
+        let headerRegion: String
         let decrypted: Bool
         let headerChecksumValid: Bool?
         let bodyChecksumValid: Bool?
@@ -81,31 +88,47 @@ extension ColoSaveOps {
     ) throws {
         logger?.log(.taskStatus(taskName: "Dump Colo Save", status: .started))
 
+        // Parse every slot (decrypt + header/body checksum validity)
+        // so we can pick the latest by counter and summarise all of
+        // them, but dump only the latest.
         var summaries: [SaveMetadata.SlotSummary] = []
+        var parsed: [(slot: ColosseumSaveSlot, headerOK: Bool?, bodyOK: Bool?)] = []
         for i in 0..<ColoSaveCardFile.slotCount {
             let path = unpackedFolder.file(GCIOps.coloSlotFilename(i))
             guard let raw = fileSystem.readFile(at: path) else {
                 throw ColoSaveOpsErrors.missingSlot(file: path, .init())
             }
-            let summary = try dumpOneSlot(
-                slotBytes: raw,
-                slotFolder: outputFolder.folder(slotFolderName(i)),
-                overwrite: overwrite,
-                decrypted: decrypted,
-                engine: engine,
-                fileSystem: fileSystem,
-                logger: logger
-            )
-            summaries.append(summary)
+            let (plaintext, headerOK, bodyOK) = try decryptedPlaintext(of: raw, decrypted: decrypted, logger: logger)
+            let slot = try ColosseumSaveSlot(raw: plaintext)
+            parsed.append((slot, headerOK, bodyOK))
+            summaries.append(.init(
+                counter: slot.header.counter,
+                headerChecksumValid: headerOK,
+                bodyChecksumValid: bodyOK
+            ))
         }
 
-        // Pick latest slot by counter — PKHeX `ColoCrypto.DetectLatest`.
-        let latest = summaries.enumerated().max { $0.element.counter < $1.element.counter }?.offset
+        // Latest = highest save counter — PKHeX `ColoCrypto.DetectLatest`.
+        let latestIndex = summaries.enumerated().max { $0.element.counter < $1.element.counter }?.offset ?? 0
+        let latest = parsed[latestIndex]
+
+        try dumpOneSlot(
+            slot: latest.slot,
+            physicalSlotIndex: latestIndex,
+            headerOK: latest.headerOK,
+            bodyOK: latest.bodyOK,
+            bodyBaseOffset: engine.data.bodyBaseOffset,
+            slotFolder: outputFolder.folder(latestSlotFolderName),
+            overwrite: overwrite,
+            engine: engine,
+            fileSystem: fileSystem,
+            logger: logger
+        )
 
         let topLevel = SaveMetadata(
             decrypted: decrypted,
             slots: summaries,
-            latestSlotIndex: latest
+            latestSlotIndex: latestIndex
         )
         try fileSystem.encodeJSON(
             topLevel,
@@ -113,43 +136,51 @@ extension ColoSaveOps {
             overwrite: overwrite
         )
 
+        logger?.log(.info("Colo save dump: latest is slot \(latestIndex + 1) (counter \(latest.slot.header.counter)) — dumped to \(latestSlotFolderName)/"))
         logger?.log(.taskStatus(taskName: "Dump Colo Save", status: .completed(true)))
     }
 
+    /// Decrypts a slot (or passes an already-plaintext one through),
+    /// returning the plaintext plus header/body checksum validity
+    /// (nil when the input was already decrypted).
+    private static func decryptedPlaintext(
+        of slotBytes: GoDData,
+        decrypted: Bool,
+        logger: Logger?
+    ) throws -> (GoDData, Bool?, Bool?) {
+        if decrypted { return (slotBytes, nil, nil) }
+        let copy = GoDData(byteStream: slotBytes.rawBytes, byteOrder: .big)
+        let result = try ColoSaveCipher.decrypt(slot: copy)
+        if !(result.headerValid && result.bodyValid) {
+            logger?.log(.info("Colo slot decrypt: header=\(result.headerValid), body=\(result.bodyValid)"))
+        }
+        return (copy, result.headerValid, result.bodyValid)
+    }
+
     private static func dumpOneSlot(
-        slotBytes: GoDData,
+        slot: ColosseumSaveSlot,
+        physicalSlotIndex: Int,
+        headerOK: Bool?,
+        bodyOK: Bool?,
+        bodyBaseOffset: Int,
         slotFolder: Folder,
         overwrite: Bool,
-        decrypted: Bool,
         engine: ColosseumEngine,
         fileSystem: FileSystemTree,
         logger: Logger?
-    ) throws -> SaveMetadata.SlotSummary {
-        // Decrypt unless the caller asserts the input is already
-        // plaintext. Decrypt also returns header/body checksum
-        // validity, which we propagate into the metadata.
-        let plaintextBytes: GoDData
-        var headerOK: Bool? = nil
-        var bodyOK: Bool? = nil
-        if decrypted {
-            plaintextBytes = slotBytes
-        } else {
-            plaintextBytes = GoDData(byteStream: slotBytes.rawBytes, byteOrder: .big)
-            let result = try ColoSaveCipher.decrypt(slot: plaintextBytes)
-            headerOK = result.headerValid
-            bodyOK = result.bodyValid
-            if !(result.headerValid && result.bodyValid) {
-                logger?.log(.info("Colo slot decrypt: header=\(result.headerValid), body=\(result.bodyValid)"))
-            }
-        }
-
-        let slot = try ColosseumSaveSlot(raw: plaintextBytes)
-
+    ) throws {
+        // raw-slot.bin is a read-only reference/diff artifact. Build
+        // never reads it — it reconstructs from header region + sections.
         fileSystem.writeFile(
             slot.raw,
             at: slotFolder.file(rawSlotFilename),
             overwrite: overwrite
         )
+
+        // Capture the pre-section header (magic + counter). Everything
+        // from bodyBaseOffset on is covered by the sections.
+        let headerRegion = slot.raw.read(atAddress: 0, length: UInt(bodyBaseOffset)) ?? slot.raw
+        let headerRegionBase64 = Data(headerRegion.rawBytes).base64EncodedString()
 
         // Walk the engine's section array sequentially. Each
         // section's physical offset is the cumulative sum of prior
@@ -227,6 +258,8 @@ extension ColoSaveOps {
 
         let slotMetadata = SlotMetadata(
             header: slot.header,
+            physicalSlotIndex: physicalSlotIndex,
+            headerRegion: headerRegionBase64,
             decrypted: true,
             headerChecksumValid: headerOK,
             bodyChecksumValid: bodyOK,
@@ -236,12 +269,6 @@ extension ColoSaveOps {
             slotMetadata,
             to: slotFolder.file(slotMetadataFilename),
             overwrite: overwrite
-        )
-
-        return SaveMetadata.SlotSummary(
-            counter: slot.header.counter,
-            headerChecksumValid: headerOK,
-            bodyChecksumValid: bodyOK
         )
     }
 }

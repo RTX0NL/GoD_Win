@@ -62,6 +62,13 @@ public extension XDEngine {
             4: "XDSaveDaycare",
         ]
 
+        /// Slot-format parameters (sub-block count + TOC table offsets).
+        /// Defaults to the retail XD format. A ROM mod that adds sub-
+        /// blocks overrides this (and must patch the game's own save
+        /// code to match) — the dump/build drive off these values, not
+        /// hardcoded constants. See `XDSaveSlot.Layout`.
+        public var saveSlotLayout: XDSaveSlot.Layout = .stock
+
 
         /// Name of the FSYS archive containing deck data (without .fsys extension)
         public var decksFsys: String = "deck_archive"

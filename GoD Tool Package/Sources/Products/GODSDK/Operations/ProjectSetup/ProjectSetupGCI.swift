@@ -23,9 +23,10 @@ extension Project {
     ///   /Config/Save-Build-Config.json
     ///
     /// The slot-level dump (decryption + sub-block JSON under
-    /// `/Source/Save/Slot 1` etc.) is added by the per-game ops in a
+    /// `/Source/Save/Latest Slot`) is added by the per-game ops in a
     /// later pass; the configs generated here just chain the GCI
-    /// envelope dump/build for now.
+    /// envelope dump/build for now. Only the latest slot is dumped and,
+    /// on rebuild, replaced — the other slot(s) pass through unchanged.
     static func setup(gci gciInputFile: File) throws {
         let fileSystem = FileSystem.shared
         let projectFileSystem = InMemoryFST()
@@ -111,12 +112,11 @@ extension Project {
         if isXD {
             let xdEngine = try XDEngine.defaults()
             let xdEngineFolder = enginesFolder.folder(xdEngine.name).prefixed(".")
-            // Per-slot folder structure under /Source/Save. The
-            // cipher decrypts incoming slots so the user can edit
-            // raw-slot.bin directly; build re-encrypts before the
-            // gciBuild step runs. Sub-block .bin edits don't survive
-            // the build path yet (TOC repack TBD) — only edits to
-            // raw-slot.bin do.
+            // Dumps only the latest slot into /Source/Save/Latest Slot
+            // (decrypted, as per-section JSON/.bin). Build reconstructs
+            // that slot from scratch from the section artifacts, re-
+            // encrypts, and replaces only the latest slot before the
+            // gciBuild step; the other slot passes through untouched.
             dumpOperations.append(
                 OperationConfig(
                     operation: .xdSaveDump(
@@ -165,9 +165,11 @@ extension Project {
         if isColosseum {
             let coloEngine = try ColosseumEngine.defaults()
             let coloEngineFolder = enginesFolder.folder(coloEngine.name).prefixed(".")
-            // Cipher is wired (PKHeX-aligned SHA-1 XOR cascade);
-            // ops enabled by default. Sub-block JSON build doesn't
-            // round-trip yet (raw-slot.bin is the source of truth).
+            // Cipher is wired (PKHeX-aligned SHA-1 XOR cascade); ops
+            // enabled by default. Dumps only the latest slot; build
+            // reconstructs it from scratch from the section artifacts
+            // and replaces only that slot, leaving the other two
+            // untouched.
             dumpOperations.append(
                 OperationConfig(
                     operation: .coloSaveDump(
