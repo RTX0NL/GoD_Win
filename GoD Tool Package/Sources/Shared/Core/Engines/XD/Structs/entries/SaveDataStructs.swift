@@ -205,6 +205,50 @@ public extension XDStructDefaults {
         ]
     )
 
+    // MARK: - Section 7: Darkpokemon table
+
+    /// One entry in XD's global Shadow-Pokémon table — **0x48 bytes**
+    /// (72), per `DarkPokemon::init`'s `memset(this, 0, 0x48)`. Section 7
+    /// is a run of exactly 128 of these (128 × 0x48 = 0x2400 = the real
+    /// on-card section size), matching `darkPokemonGetDarkPokemon`'s
+    /// `savedata + idx * 0x48` with its 0x80-bound. Layout from
+    /// `Documentation/Assembly Analysis/Data Structures/DarkPokemon.md`,
+    /// cross-referenced to the `DarkPokemon::get*/set*` accessors.
+    ///
+    /// This is the XD-unique record: Shadow status, purification
+    /// bookkeeping (poolExp / heart-gauge), Snatch metadata, and
+    /// Reverse ("Hyper") Mode state. Bytes 0x00/0x01 are dense
+    /// bitfields (kept as raw `u8` — the sub-bit accessors don't
+    /// decompose into byte fields); undocumented gaps are padding so
+    /// the row round-trips byte-for-byte regardless of field naming.
+    static let saveDarkPokemonStruct = StructMap(
+        name: "XDDarkPokemon",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .uint8(name: "statusFlags"),        // +0x00 packed: status(3b)/snatchFromWho(2b)/where
+            .uint8(name: "packedFlags"),        // +0x01 reversMode(0x20)/isUpdate(0x10)/isInformation(0x80)/isWazaNew
+            .padding(length: 2),                // +0x02..0x04
+            .uint32(name: "poolExp"),           // +0x04 pooled EXP awaiting purification
+            .padding(length: 3),                // +0x08..0x0B
+            .uint8(name: "statusRnd"),          // +0x0B per-status random salt
+            .padding(length: 7),                // +0x0C..0x13
+            .uint8(name: "snatchIndex"),        // +0x13
+            .uint16(name: "orgTrainer"),        // +0x14 original-trainer ID
+            .uint16(name: "catchFloorId"),      // +0x16
+            .uint16(name: "poolFriendLevel"),   // +0x18
+            .uint16(name: "pokemonID"),         // +0x1A this record's own table ID
+            .uint32(name: "rnd"),               // +0x1C DarkPokemon's own PID
+            .padding(length: 4),                // +0x20..0x24
+            .uint32(name: "darkPointDirect"),   // +0x24 heart gauge (raw i32, counts down)
+            .string(name: "trainerName", format: .gsXD, length: 11),  // +0x28..0x3E (22)
+            .uint16(name: "darkPokemonID"),     // +0x3E index into DeckDarkPokemon (species-in-set)
+            .uint8(name: "reversPattern"),      // +0x40
+            .padding(length: 3),                // +0x41..0x44
+            .uint32(name: "walkCount"),         // +0x44 step accumulator toward next DP drop
+        ]
+    )
+
     // MARK: - Section 4: Daycare
 
     /// XD save section 4 — Daycare. Per PKHeX:

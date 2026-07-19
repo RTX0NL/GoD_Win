@@ -14,30 +14,38 @@ public extension XDEngine {
         /// chunk system: `.binary` for raw, `.struct` for typed
         /// instances, `.table` for typed runs.
         ///
-        /// Named indices come straight from PKHeX: 0 Config, 1
-        /// Trainer1, 2 PCBox, 4 Daycare, 5 StrategyMemo, 7 ShadowInfo,
-        /// 14 Purifier. The unnamed indices get `Section<n>`
-        /// placeholders until their on-card shapes are
-        /// reverse-engineered.
+        /// Identities resolved by matching the empirically observed
+        /// on-card section sizes against the RAM `SystemSaveData` block
+        /// sizes documented in the XD disassembly
+        /// (`Overview/Save System.md` §2 + `Data Structures/
+        /// SystemSaveData.md`). The correspondence is tight (e.g. phys 7
+        /// = 0x2400 ≈ Darkpokemon RAM 0x2410; phys 15 = 0xC800 =
+        /// AnywaySave 0xC800; phys 14 = 0x2298 ≈ Relive 0x22B0). Note two
+        /// corrections to PKHeX's tentative names: index 7 is the global
+        /// **Darkpokemon** table (not "ShadowInfo"), and index 14 is
+        /// **Relive** / Relic-Forest state (not "Purifier"). Indices 3
+        /// and 9 are small opaque blocks not yet matched to a named RAM
+        /// block; 8 is the composite flag-bank bundle (FlagLevel0/1/2 +
+        /// ExRibbon, ≈0x6B4).
         public var saveSections: [SaveSectionSpec] = Self.defaultSaveSections
 
         static let defaultSaveSections: [SaveSectionSpec] = [
-            .structInstance(name: "Config"),         // 0  → XDSaveConfig
-            .structInstance(name: "Trainer1"),       // 1  → XDSaveTrainer1
-            .structInstance(name: "PCBox"),          // 2  → XDPCBox
-            .binary(name: "Section3"),               // 3
-            .structInstance(name: "Daycare"),        // 4  → XDSaveDaycare
-            .binary(name: "StrategyMemo"),           // 5
-            .binary(name: "Section6"),               // 6
-            .binary(name: "ShadowInfo"),             // 7
-            .binary(name: "Section8"),               // 8
-            .binary(name: "Section9"),               // 9
-            .binary(name: "Section10"),              // 10
-            .binary(name: "Section11"),              // 11
-            .binary(name: "Section12"),              // 12
-            .binary(name: "Section13"),              // 13
-            .binary(name: "Purifier"),               // 14
-            .binary(name: "Section15"),              // 15
+            .structInstance(name: "Config"),                    // 0  0x88   → XDSaveConfig (Gamedata)
+            .structInstance(name: "Trainer1"),                  // 1  0x978  → XDSaveTrainer1 (Hero)
+            .structInstance(name: "PCBox"),                     // 2  0xBC50 → XDPCBox
+            .binary(name: "Section3"),                          // 3  0x4A   (opaque small block)
+            .structInstance(name: "Daycare"),                   // 4  0xCC   → XDSaveDaycare (Sodateya)
+            .binary(name: "MemoData"),                          // 5  0x1774 (PDA memos / recordings)
+            .binary(name: "Tool"),                              // 6  0x364  (Battle CDs / tools)
+            .table(name: "Darkpokemon", count: 128),            // 7  0x2400 → 128 × XDDarkPokemon
+            .binary(name: "FlagBanks"),                         // 8  0x6B4  (FlagLevel0/1/2 + ExRibbon bundle)
+            .binary(name: "Section9"),                          // 9  0xB    (opaque tiny block)
+            .binary(name: "Yobi1"),                             // 10 0x400  (reserved block 1)
+            .binary(name: "Yobi2"),                             // 11 0x800  (reserved block 2)
+            .binary(name: "Yobi3"),                             // 12 0x1000 (reserved block 3)
+            .binary(name: "Yobi4"),                             // 13 0x2000 (reserved block 4)
+            .binary(name: "Relive"),                            // 14 0x2298 (Relic Forest / Relive Hall state)
+            .binary(name: "AnywaySave"),                        // 15 0xC800 (save-anywhere snapshot)
         ]
 
         /// Section index → registered struct definition name. The
@@ -60,6 +68,7 @@ public extension XDEngine {
             1: "XDSaveTrainer1",
             2: "XDPCBox",
             4: "XDSaveDaycare",
+            7: "XDDarkPokemon",
         ]
 
         /// Slot-format TOC table offsets (size table, offset table, body

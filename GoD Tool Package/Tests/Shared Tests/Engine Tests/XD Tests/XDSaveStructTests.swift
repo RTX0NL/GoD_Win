@@ -23,6 +23,14 @@ final class XDSaveStructTests: XCTestCase {
         XCTAssertEqual(try length("XDWaza"), 0x4)
         XCTAssertEqual(try length("XDItem"), 0x4)
         XCTAssertEqual(try length("XDPokemon"), 0xC4)
+        XCTAssertEqual(try length("XDDarkPokemon"), 0x48)
+    }
+
+    /// Section 7 is a run of 128 DarkPokemon records — 128 × 0x48 must
+    /// equal the real on-card section size (0x2400) for the table dump
+    /// to tile exactly.
+    func testDarkPokemonTableTilesSection7() throws {
+        XCTAssertEqual(try length("XDDarkPokemon") * 128, 0x2400, "section 7 Darkpokemon table")
     }
 
     /// Each bound section struct must equal its real on-card section
