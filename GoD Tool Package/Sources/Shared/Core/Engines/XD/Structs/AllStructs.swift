@@ -66,7 +66,7 @@ public extension XDEngine {
                 XDStructDefaults.saveBoxStruct,
                 XDStructDefaults.savePCBoxStruct,
                 XDStructDefaults.saveDaycareStruct,
-                XDStructDefaults.saveDarkPokemonStruct,
+                XDStructDefaults.saveShadowPokemonStruct,
             ]
         }
     }

@@ -19,11 +19,14 @@ public extension XDEngine {
         /// sizes documented in the XD disassembly
         /// (`Overview/Save System.md` §2 + `Data Structures/
         /// SystemSaveData.md`). The correspondence is tight (e.g. phys 7
-        /// = 0x2400 ≈ Darkpokemon RAM 0x2410; phys 15 = 0xC800 =
-        /// AnywaySave 0xC800; phys 14 = 0x2298 ≈ Relive 0x22B0). Note two
-        /// corrections to PKHeX's tentative names: index 7 is the global
-        /// **Darkpokemon** table (not "ShadowInfo"), and index 14 is
-        /// **Relive** / Relic-Forest state (not "Purifier"). Indices 3
+        /// = 0x2400 ≈ Shadow-Pokémon RAM block 0x2410; phys 15 = 0xC800 =
+        /// AnywaySave 0xC800; phys 14 = 0x2298 ≈ Purification/Relive
+        /// 0x22B0). Note two corrections to PKHeX's tentative names:
+        /// index 7 is the global **Shadow Pokémon Status** table (not
+        /// "ShadowInfo"), and index 14 is the **Purification** / Relic-
+        /// Forest state (game symbol `Relive`, not "Purifier"). We use
+        /// the English "Shadow Pokémon" term throughout, though the
+        /// game's own symbols say "DarkPokemon" (Japanese). Indices 3
         /// and 9 are small opaque blocks not yet matched to a named RAM
         /// block; 8 is the composite flag-bank bundle (FlagLevel0/1/2 +
         /// ExRibbon, ≈0x6B4).
@@ -37,14 +40,14 @@ public extension XDEngine {
             .structInstance(name: "Daycare"),                   // 4  0xCC   → XDSaveDaycare (Sodateya)
             .binary(name: "MemoData"),                          // 5  0x1774 (PDA memos / recordings)
             .binary(name: "Tool"),                              // 6  0x364  (Battle CDs / tools)
-            .table(name: "Darkpokemon", count: 128),            // 7  0x2400 → 128 × XDDarkPokemon
+            .table(name: "Shadow Pokemon Status", count: 128),  // 7  0x2400 → 128 × XDShadowPokemon
             .binary(name: "FlagBanks"),                         // 8  0x6B4  (FlagLevel0/1/2 + ExRibbon bundle)
             .binary(name: "Section9"),                          // 9  0xB    (opaque tiny block)
             .binary(name: "Yobi1"),                             // 10 0x400  (reserved block 1)
             .binary(name: "Yobi2"),                             // 11 0x800  (reserved block 2)
             .binary(name: "Yobi3"),                             // 12 0x1000 (reserved block 3)
             .binary(name: "Yobi4"),                             // 13 0x2000 (reserved block 4)
-            .binary(name: "Relive"),                            // 14 0x2298 (Relic Forest / Relive Hall state)
+            .binary(name: "Purification"),                      // 14 0x2298 (Relic Forest / Purify Chamber state; game symbol "Relive")
             .binary(name: "AnywaySave"),                        // 15 0xC800 (save-anywhere snapshot)
         ]
 
@@ -68,7 +71,7 @@ public extension XDEngine {
             1: "XDSaveTrainer1",
             2: "XDPCBox",
             4: "XDSaveDaycare",
-            7: "XDDarkPokemon",
+            7: "XDShadowPokemon",
         ]
 
         /// Slot-format TOC table offsets (size table, offset table, body
