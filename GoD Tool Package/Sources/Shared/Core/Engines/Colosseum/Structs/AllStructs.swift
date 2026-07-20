@@ -13,8 +13,12 @@ public extension ColosseumEngine {
         static public var allItems: [StructMap] {
             [
                 ColosseumStructDefaults.characterModelStruct,
+                // Native callStandard dispatch table entry (DOL data section)
+                ColosseumStructDefaults.scriptBuiltinFunctionStruct,
                 // Pokemon record — referenced by Trainer1 / PCBox /
-                // Daycare via .subStruct(name: "ColoPokemon").
+                // Daycare via .subStruct(name: "ColoPokemon"); its move
+                // slots reference ColoWaza.
+                ColosseumStructDefaults.saveWazaStruct,
                 ColosseumStructDefaults.savePokemonStruct,
                 // Save-slot sections — every Colo section has a
                 // struct binding so its length can be derived.
