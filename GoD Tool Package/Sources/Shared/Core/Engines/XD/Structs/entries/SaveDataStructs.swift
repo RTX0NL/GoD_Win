@@ -141,7 +141,7 @@ public extension XDStructDefaults {
     /// (cross-referenced to the `heroBios*` accessors). Embeds the party
     /// (6 × XDPokemon) and 8 inventory arrays (262 slots × XDItem).
     static let saveTrainer1Struct = StructMap(
-        name: "XDSaveTrainer1",
+        name: "XDSaveTrainer",
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
@@ -194,7 +194,7 @@ public extension XDStructDefaults {
     /// 0x40 on-card trailing region (the RAM `PCBOX` class is 0xBC10;
     /// the on-card section copies 0x40 more).
     static let savePCBoxStruct = StructMap(
-        name: "XDPCBox",
+        name: "XDSavePCBox",
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
@@ -224,7 +224,7 @@ public extension XDStructDefaults {
     /// decompose into byte fields); undocumented gaps are padding so
     /// the row round-trips byte-for-byte regardless of field naming.
     static let saveShadowPokemonStruct = StructMap(
-        name: "XDShadowPokemon",
+        name: "ShadowPokemonStatus",
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
@@ -269,6 +269,81 @@ public extension XDStructDefaults {
             .padding(length: 2),
             .uint32(name: "depositedEXP"),
             .subStruct(name: "pokemon", typeName: "XDPokemon"),
+        ]
+    )
+
+    // MARK: - Section 5: StrategyMemo
+
+    /// One Strategy-Memo entry — **0xC bytes**. Same layout as
+    /// Colosseum's (`text1/memo/*` matches byte-for-byte): a species +
+    /// the identity of the Pokémon logged into the Pokédex-like memo.
+    static let saveMemoEntryStruct = StructMap(
+        name: "XDMemoEntry",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .uint16(name: "speciesAndFlags"),   // +0x0 species (low 14 bits) | 0x8000 "new/unviewed"
+            .padding(length: 2),                // +0x2 reserved (never read/written)
+            .uint32(name: "catchTrainerRnd"),   // +0x4 OT identity (catch-trainer rnd)
+            .uint32(name: "pid"),               // +0x8 the logged Pokémon's rnd / PID
+        ]
+    )
+
+    /// XD save section 5 — the PDA "Strategy Memo" (Pokédex-like seen/
+    /// caught log). On-card size 0x1774: a `count`-prefixed array of
+    /// exactly 500 `XDMemoEntry` records (`savedataGetStatus(0,0xC)`;
+    /// entry stride 0xC). Header `count` (u16) + reserved (u16), then
+    /// entries from +0x4. 2 + 2 + 500×0xC = 0x1774 (no tail).
+    static let saveStrategyMemoStruct = StructMap(
+        name: "XDSaveStrategyMemo",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .uint16(name: "count"),             // +0x000 number of populated entries
+            .padding(length: 2),                // +0x002 reserved (only the count halfword is read)
+            .array(name: "entries", count: 500, of: .subStruct(name: "XDMemoEntry")),  // +0x004..0x1774
+        ]
+    )
+
+    // MARK: - Section 6: BattleMode (Taisen rule save)
+
+    /// One Battle-Mode rule slot — **0x90 bytes**. Field widths from the
+    /// slot-by-slot copy in `menuCBBios_RuleConstRuleSet` /
+    /// `menuCB_RULE_INIT`. Slots 0–2 are seeded from constant templates;
+    /// 3–5 are the user-editable custom slots. Most header/tail params
+    /// are battle-rule parameters whose individual meanings aren't
+    /// pinned down (kept as padding of the exact widths); the named
+    /// fields are the ones the disassembly identifies.
+    static let saveBattleRuleStruct = StructMap(
+        name: "XDBattleRule",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .padding(length: 0x1A),             // +0x00..0x1A rule header params (typed scalars, semantics TBD)
+            .uint16(name: "participationCount"),// +0x1A RULE_INIT sets 4 for custom slots
+            .padding(length: 2),                // +0x1C..0x1E (RULE_INIT sets 0)
+            .array(name: "regulationIds", count: 21, of: .uint16),  // +0x1E..0x48 regulation-ID list
+            .padding(length: 8),                // +0x48..0x50 (u32 ×2)
+            .uint16(name: "signature"),         // +0x50 per-slot validity magic (RuleEditSaveON marks slot "on")
+            .padding(length: 0x3E),             // +0x52..0x90 parameter block (u32 ×15 + u16)
+        ]
+    )
+
+    /// XD save section 6 — the **Battle Mode** ("Taisen") saved rule
+    /// configuration (game symbol `_TOOL_SAVEDATA`; reached via
+    /// `savedataGetStatus(0,0xE)`). NOT an item store — the player's
+    /// item inventory lives in the Trainer section. On-card size 0x364:
+    /// 6 rule slots (0x90 each) + the active-slot index byte + padding.
+    /// Proof: `menuCB_RULE_INIT` does `memset(block,0,0x364)` then fills
+    /// 6 slots and `stb 0x360`.
+    static let saveBattleModeStruct = StructMap(
+        name: "XDSaveBattleMode",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .array(name: "rules", count: 6, of: .subStruct(name: "XDBattleRule")),  // +0x000..0x360
+            .uint8(name: "currentSlot"),        // +0x360 active battle-mode index/flag
+            .padding(length: 3),                // +0x361..0x364
         ]
     )
 }

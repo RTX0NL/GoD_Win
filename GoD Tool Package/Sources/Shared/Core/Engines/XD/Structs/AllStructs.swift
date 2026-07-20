@@ -66,6 +66,10 @@ public extension XDEngine {
                 XDStructDefaults.saveBoxStruct,
                 XDStructDefaults.savePCBoxStruct,
                 XDStructDefaults.saveDaycareStruct,
+                XDStructDefaults.saveMemoEntryStruct,
+                XDStructDefaults.saveStrategyMemoStruct,
+                XDStructDefaults.saveBattleRuleStruct,
+                XDStructDefaults.saveBattleModeStruct,
                 XDStructDefaults.saveShadowPokemonStruct,
             ]
         }

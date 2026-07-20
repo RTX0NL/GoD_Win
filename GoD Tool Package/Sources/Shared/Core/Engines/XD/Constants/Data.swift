@@ -34,21 +34,21 @@ public extension XDEngine {
 
         static let defaultSaveSections: [SaveSectionSpec] = [
             .structInstance(name: "Config"),                    // 0  0x88   → XDSaveConfig (Gamedata)
-            .structInstance(name: "Trainer1"),                  // 1  0x978  → XDSaveTrainer1 (Hero)
-            .structInstance(name: "PCBox"),                     // 2  0xBC50 → XDPCBox
+            .structInstance(name: "Trainer"),                   // 1  0x978  → XDSaveTrainer (Hero)
+            .structInstance(name: "PCBox"),                     // 2  0xBC50 → XDSavePCBox
             .binary(name: "Section3"),                          // 3  0x4A   (opaque small block)
             .structInstance(name: "Daycare"),                   // 4  0xCC   → XDSaveDaycare (Sodateya)
-            .binary(name: "MemoData"),                          // 5  0x1774 (PDA memos / recordings)
-            .binary(name: "Tool"),                              // 6  0x364  (Battle CDs / tools)
-            .table(name: "Shadow Pokemon Status", count: 128),  // 7  0x2400 → 128 × XDShadowPokemon
-            .binary(name: "FlagBanks"),                         // 8  0x6B4  (FlagLevel0/1/2 + ExRibbon bundle)
+            .structInstance(name: "StrategyMemo"),              // 5  0x1774 → XDSaveStrategyMemo (PDA memos)
+            .structInstance(name: "BattleMode"),                // 6  0x364  → XDSaveBattleMode (Taisen rule save; game symbol "_TOOL_SAVEDATA")
+            .table(name: "ShadowStatusTable", count: 128),      // 7  0x2400 → 128 × ShadowPokemonStatus
+            .binary(name: "Flags"),                             // 8  0x6B4  (FlagLevel0/1/2 + ExRibbon bundle)
             .binary(name: "Section9"),                          // 9  0xB    (opaque tiny block)
             .binary(name: "Yobi1"),                             // 10 0x400  (reserved block 1)
             .binary(name: "Yobi2"),                             // 11 0x800  (reserved block 2)
             .binary(name: "Yobi3"),                             // 12 0x1000 (reserved block 3)
             .binary(name: "Yobi4"),                             // 13 0x2000 (reserved block 4)
             .binary(name: "Purification"),                      // 14 0x2298 (Relic Forest / Purify Chamber state; game symbol "Relive")
-            .binary(name: "AnywaySave"),                        // 15 0xC800 (save-anywhere snapshot)
+            .binary(name: "CurrentMapState"),                   // 15 0xC800 (save-anywhere snapshot; game symbol "AnywaySave")
         ]
 
         /// Section index → registered struct definition name. The
@@ -68,10 +68,12 @@ public extension XDEngine {
 
         static let defaultSectionStructTypes: [Int: String] = [
             0: "XDSaveConfig",
-            1: "XDSaveTrainer1",
-            2: "XDPCBox",
+            1: "XDSaveTrainer",
+            2: "XDSavePCBox",
             4: "XDSaveDaycare",
-            7: "XDShadowPokemon",
+            5: "XDSaveStrategyMemo",
+            6: "XDSaveBattleMode",
+            7: "ShadowPokemonStatus",
         ]
 
         /// Slot-format TOC table offsets (size table, offset table, body

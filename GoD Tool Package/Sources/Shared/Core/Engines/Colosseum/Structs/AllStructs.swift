@@ -28,6 +28,7 @@ public extension ColosseumEngine {
                 ColosseumStructDefaults.savePCBoxStruct,
                 ColosseumStructDefaults.saveBattleDataStruct,
                 ColosseumStructDefaults.saveDaycareStruct,
+                ColosseumStructDefaults.saveMemoEntryStruct,
                 ColosseumStructDefaults.saveStrategyMemoStruct,
                 ColosseumStructDefaults.saveTailStruct,
             ]

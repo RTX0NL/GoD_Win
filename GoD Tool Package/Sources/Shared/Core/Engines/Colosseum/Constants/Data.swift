@@ -35,13 +35,13 @@ public extension ColosseumEngine {
         public var saveSections: [SaveSectionSpec] = Self.defaultSaveSections
 
         static let defaultSaveSections: [SaveSectionSpec] = [
-            .structInstance(name: "Config"),       // 0 — slot+0x08, len 0x70
-            .structInstance(name: "Trainer1"),     // 1 — slot+0x78, len 0xB18 (OT + party of 6)
-            .structInstance(name: "PCBox"),        // 2 — slot+0xB90, len 0x6DEC (3 boxes × 30)
-            .binary(name: "BattleData"),           // 3 — slot+0x797C, len 0x7F4 (opaque)
-            .structInstance(name: "Daycare"),      // 4 — slot+0x8170, len 0x140
-            .binary(name: "StrategyMemo"),         // 5 — slot+0x82B0, len 0xB10 (opaque)
-            .binary(name: "Tail"),                 // 6 — slot+0x8DC0, len 0x15240 (opaque)
+            .structInstance(name: "Config"),       // 0 — slot+0x08, len 0x70    → ColoSaveConfig
+            .structInstance(name: "Trainer"),      // 1 — slot+0x78, len 0xB18   → ColoSaveTrainer (OT + party of 6)
+            .structInstance(name: "PCBox"),        // 2 — slot+0xB90, len 0x6DEC → ColoSavePCBox (3 boxes × 30)
+            .binary(name: "BattleMode"),           // 3 — slot+0x797C, len 0x7F4 → ColoSaveBattleMode (opaque)
+            .structInstance(name: "Daycare"),      // 4 — slot+0x8170, len 0x140 → ColoSaveDaycare
+            .structInstance(name: "StrategyMemo"), // 5 — slot+0x82B0, len 0xB10 → ColoSaveStrategyMemo
+            .binary(name: "Tail"),                 // 6 — slot+0x8DC0, len 0x15240 → ColoSaveTail (opaque)
         ]
 
         /// Body-base offset — where the first section starts in the
@@ -57,11 +57,11 @@ public extension ColosseumEngine {
 
         static let defaultSectionStructTypes: [Int: String] = [
             0: "ColoSaveConfig",
-            1: "ColoTrainer1",
-            2: "ColoPCBox",
-            3: "ColoBattleData",
-            4: "ColoDaycare",
-            5: "ColoStrategyMemo",
+            1: "ColoSaveTrainer",
+            2: "ColoSavePCBox",
+            3: "ColoSaveBattleMode",
+            4: "ColoSaveDaycare",
+            5: "ColoSaveStrategyMemo",
             6: "ColoSaveTail",
         ]
 

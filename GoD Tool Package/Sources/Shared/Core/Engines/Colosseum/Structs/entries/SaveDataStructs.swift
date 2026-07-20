@@ -100,10 +100,18 @@ public extension ColosseumStructDefaults {
             .uint16(name: "spDefIV"),                   // +0xAC
             .uint16(name: "speedIV"),                   // +0xAE
             .uint16(name: "friendship"),                // +0xB0
-            .padding(length: 5),                        // +0xB2..0xB7 contest stats
-            .padding(length: 5),                        // +0xB7..0xBC ribbon counts (G3 contest)
-            .uint8(name: "contestSheen"),               // +0xBC
-            .padding(length: 12),                       // +0xBD..0xC9 individual ribbon flags
+            .uint8(name: "contestCool"),                // +0xB2 contest stats (legacy GoD names)
+            .uint8(name: "contestBeauty"),              // +0xB3
+            .uint8(name: "contestCute"),                // +0xB4
+            .uint8(name: "contestSmart"),               // +0xB5
+            .uint8(name: "contestTough"),               // +0xB6
+            .uint8(name: "contestRankCool"),            // +0xB7 contest achievements / ranks
+            .uint8(name: "contestRankBeauty"),          // +0xB8
+            .uint8(name: "contestRankCute"),            // +0xB9
+            .uint8(name: "contestRankSmart"),           // +0xBA
+            .uint8(name: "contestRankTough"),           // +0xBB
+            .uint8(name: "contestLuster"),              // +0xBC contest sheen ("luster")
+            .array(name: "ribbons", count: 12, of: .uint8),  // +0xBD..0xC9 ribbon flags
             .padding(length: 1),                        // +0xC9 unused / fateful (JP)
             .uint8(name: "pokerusStrain"),              // +0xCA
             .uint8(name: "isEgg"),                      // +0xCB
@@ -160,7 +168,7 @@ public extension ColosseumStructDefaults {
     ///   - RUI_Name          @ +0xAC2 (20 bytes / 10 chars `gsColo`)
     /// Total length matches the section's hardcoded 0xB18 size.
     static let saveTrainer1Struct = StructMap(
-        name: "ColoTrainer1",
+        name: "ColoSaveTrainer",
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
@@ -202,7 +210,7 @@ public extension ColosseumStructDefaults {
     /// `ColoBox` entries packed back-to-back. Total 3 × 0x24A4 =
     /// 0x6DEC, matches the section length exactly.
     static let savePCBoxStruct = StructMap(
-        name: "ColoPCBox",
+        name: "ColoSavePCBox",
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
@@ -217,7 +225,7 @@ public extension ColosseumStructDefaults {
     /// legacy GoD tool's `kSaveFileRegisteredPokemonStartOffset`,
     /// but unverified — placeholder name + size only.
     static let saveBattleDataStruct = StructMap(
-        name: "ColoBattleData",
+        name: "ColoSaveBattleMode",
         wordSize: 1,
         alignmentStyle: .none,
         properties: [.padding(length: 0x7F4)]
@@ -232,7 +240,7 @@ public extension ColosseumStructDefaults {
     ///   - pokemon (CK3)     @ +0x08
     /// Total 0x08 + 0x138 = 0x140, matches the section length.
     static let saveDaycareStruct = StructMap(
-        name: "ColoDaycare",
+        name: "ColoSaveDaycare",
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
@@ -244,15 +252,40 @@ public extension ColosseumStructDefaults {
         ]
     )
 
-    // MARK: - Section 5: StrategyMemo (placeholder)
+    // MARK: - Section 5: StrategyMemo
 
-    /// Colo save section 5 (slot+0x82B0, length 0xB10) — Pokédex /
-    /// strategy memo entries. Internal layout TBD.
-    static let saveStrategyMemoStruct = StructMap(
-        name: "ColoStrategyMemo",
+    /// One Strategy-Memo entry — **0xC bytes**. The memo is the
+    /// Pokédex-like "seen/caught" log; each entry records a species plus
+    /// the identity of the Pokémon that was logged. Layout confirmed
+    /// from the `memoDataSet` / `memoDataGet*` accessors in the
+    /// Colosseum disassembly (entry stride `mulli …,0xC`; XD's
+    /// `text1/memo/*` routines match byte-for-byte).
+    static let saveMemoEntryStruct = StructMap(
+        name: "ColoMemoEntry",
         wordSize: 1,
         alignmentStyle: .none,
-        properties: [.padding(length: 0xB10)]
+        properties: [
+            .uint16(name: "speciesAndFlags"),   // +0x0 species (low 14 bits) | 0x8000 "new/unviewed"
+            .padding(length: 2),                // +0x2 reserved (never read/written)
+            .uint32(name: "catchTrainerRnd"),   // +0x4 OT identity (catch-trainer rnd)
+            .uint32(name: "pid"),               // +0x8 the logged Pokémon's rnd / PID
+        ]
+    )
+
+    /// Colo save section 5 (slot+0x82B0, length 0xB10) — the Strategy
+    /// Memo: a `count`-prefixed array of up to 235 `ColoMemoEntry`
+    /// records. Header `count` (u16) + reserved (u16), entries from
+    /// +0x4, then an 8-byte tail. 2 + 2 + 235×0xC + 8 = 0xB10.
+    static let saveStrategyMemoStruct = StructMap(
+        name: "ColoSaveStrategyMemo",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .uint16(name: "count"),             // +0x000 number of populated entries
+            .padding(length: 2),                // +0x002 reserved (only the count halfword is read)
+            .array(name: "entries", count: 235, of: .subStruct(name: "ColoMemoEntry")),  // +0x004..0xB08
+            .padding(length: 8),                // +0xB08..0xB10 tail (untouched by code)
+        ]
     )
 
     // MARK: - Section 6: Tail (large unknown region)
