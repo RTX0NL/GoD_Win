@@ -41,7 +41,7 @@ public extension XDEngine {
             .structInstance(name: "StrategyMemo"),              // 5  0x1774 → XDSaveStrategyMemo (PDA memos)
             .structInstance(name: "BattleMode"),                // 6  0x364  → XDSaveBattleMode (Taisen rule save; game symbol "_TOOL_SAVEDATA")
             .table(name: "ShadowStatusTable", count: 128),      // 7  0x2400 → 128 × ShadowPokemonStatus
-            .binary(name: "Flags"),                             // 8  0x6B4  (FlagLevel0/1/2 + ExRibbon bundle)
+            .binary(name: "Flags"),                             // 8  0x6B4  flag bit-banks: FlagLevel0(0x20)/1(0x80)/2(0x630-trunc)/ExRibbon(0x20). Raw chunk — decode via future flag op (descriptor table `flag_data` is in common.rel, 6B entries)
             .binary(name: "Section9"),                          // 9  0xB    (opaque tiny block)
             .binary(name: "Yobi1"),                             // 10 0x400  (reserved block 1)
             .binary(name: "Yobi2"),                             // 11 0x800  (reserved block 2)
@@ -207,6 +207,9 @@ public extension XDEngine {
             /// region-specific map when the ROM isn't US. One file, one
             /// path — downstream ops never need to know about regions.
             public var dolSymbolMap: File = "Resources/dol.map"
+            /// Typed regions within the main.dol data sections (struct tables
+            /// and embedded MSG files). US addresses; regenerate per region.
+            public var dolTypeMap: File = "Resources/dol_typemap.json"
 
             public init(
                 commonRelSymbolMap: File = "Resources/common_rel_symbols.json",
@@ -214,7 +217,8 @@ public extension XDEngine {
                 mapRelSymbolMap: File = "Resources/map_rel_symbols.json",
                 mapRelTypeMap: File = "Resources/map_rel_typemap.json",
                 pocketMenuSymbolMap: File = "Resources/pocket_menu_symbols.json",
-                dolSymbolMap: File = "Resources/dol.map"
+                dolSymbolMap: File = "Resources/dol.map",
+                dolTypeMap: File = "Resources/dol_typemap.json"
             ) {
                 self.commonRelSymbolMap = commonRelSymbolMap
                 self.commonRelTypeMap = commonRelTypeMap
@@ -222,6 +226,7 @@ public extension XDEngine {
                 self.mapRelTypeMap = mapRelTypeMap
                 self.pocketMenuSymbolMap = pocketMenuSymbolMap
                 self.dolSymbolMap = dolSymbolMap
+                self.dolTypeMap = dolTypeMap
             }
         }
 

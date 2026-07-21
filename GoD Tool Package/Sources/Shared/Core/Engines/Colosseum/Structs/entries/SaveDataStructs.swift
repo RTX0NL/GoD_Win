@@ -218,17 +218,51 @@ public extension ColosseumStructDefaults {
         ]
     )
 
-    // MARK: - Section 3: BattleData (unknown)
+    // MARK: - Section 3: PC Item Storage + Mailbox
 
-    /// Unknown region between PCBox end (0x797C) and Daycare start
-    /// (0x8170). Likely Battle Mode / registered party data per the
-    /// legacy GoD tool's `kSaveFileRegisteredPokemonStartOffset`,
-    /// but unverified — placeholder name + size only.
-    static let saveBattleDataStruct = StructMap(
-        name: "ColoSaveBattleMode",
+    /// One inventory slot (itemDataId + quantity). 4 bytes.
+    static let saveItemStruct = StructMap(
+        name: "ColoItem",
         wordSize: 1,
         alignmentStyle: .none,
-        properties: [.padding(length: 0x7F4)]
+        properties: [
+            .uint16(name: "itemId"),        // +0x0 itemDataId
+            .uint16(name: "count"),         // +0x2 quantity
+        ]
+    )
+
+    /// The PDA Mailbox — **0x448 bytes** (slot 0x7D28..0x8170). Layout
+    /// from `mailMainInit` (`zz_01d1fa8_`) in the Colosseum disassembly:
+    /// a 512-slot received-mail list, a count, a 512-bit "received"
+    /// bitfield indexed by mail ID (byte `id>>3`, bit `7-(id&7)`), and
+    /// 6 trailing flag bytes.
+    static let saveMailboxStruct = StructMap(
+        name: "ColoMailbox",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .array(name: "mailIds", count: 512, of: .uint16),   // +0x000..0x400 (0xFFFF = empty)
+            .uint16(name: "count"),                             // +0x400
+            .array(name: "receivedBits", count: 0x40, of: .uint8),  // +0x402..0x442 512-bit bitfield
+            .array(name: "flagBytes", count: 6, of: .uint8),    // +0x442..0x448
+        ]
+    )
+
+    /// Colo save section 3 (slot+0x797C, length 0x7F4). Despite PKHeX's
+    /// "BattleData"/"BattleMode" guess, the disassembly shows this
+    /// section is two adjacent save blocks: the **PC Item Storage**
+    /// (tail of the PCBox block — 235 × `ColoItem`, `pcboxGetNbItemSlot`
+    /// = 0xEB) followed by the **PDA Mailbox**. 235×4 + 0x448 = 0x7F4.
+    /// (The genuine battle-mode registered teams — `toolentryTaisen` —
+    /// live separately at slot 0x19744, inside `Tail`.)
+    static let savePCItemsMailboxStruct = StructMap(
+        name: "ColoSavePCItemsMailbox",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .array(name: "pcItems", count: 235, of: .subStruct(name: "ColoItem")),  // +0x000..0x3AC
+            .subStruct(name: "mailbox", typeName: "ColoMailbox"),                    // +0x3AC..0x7F4
+        ]
     )
 
     // MARK: - Section 4: Daycare
@@ -288,16 +322,28 @@ public extension ColosseumStructDefaults {
         ]
     )
 
-    // MARK: - Section 6: Tail (large unknown region)
+    // MARK: - Section 6: Tail (large mostly-unknown region)
 
-    /// Trailing slot region after StrategyMemo — runs from 0x8DC0
-    /// to 0x1E000 minus the cipher's 0x20-byte hash trailer. Holds
-    /// JP bonus-disc flags (`Data[0x1C118..0x1C11A]`) and large
-    /// unstructured payload areas; full layout TBD.
+    /// Trailing slot region after StrategyMemo (slot 0x8DC0..0x1E000).
+    /// Mostly unstructured, but it contains the game's **flag bit-banks**
+    /// at a known location, carved out here as a raw chunk. The flag
+    /// system is an indirection: the save holds only raw bits; the
+    /// meaning (flag → group/bit) lives in a static descriptor table in
+    /// main.dol. So `flagData` is dumped as an opaque byte chunk for now
+    /// — a future flag decode/encode operation will read/write it via
+    /// the descriptor table. Bank layout (from `zz_00057b0_` /
+    /// `zz_01909a8_` / `zz_trainer_get_data_pointer`): 3 contiguous
+    /// groups at slot 0x1BDBC (0x20) + 0x1BDDC (0x80) + 0x1BE5C (0x600)
+    /// = 0x6A0 total, i.e. Tail-relative 0x12FFC. (The JP bonus-disc
+    /// flags at slot 0x1C118 fall inside group 3.)
     static let saveTailStruct = StructMap(
         name: "ColoSaveTail",
         wordSize: 1,
         alignmentStyle: .none,
-        properties: [.padding(length: 0x15240)]
+        properties: [
+            .padding(length: 0x12FFC),                          // 0x8DC0..0x1BDBC
+            .array(name: "flagData", count: 0x6A0, of: .uint8), // 0x1BDBC..0x1C45C — 3 flag banks (opaque; decode via future op)
+            .padding(length: 0x15240 - 0x12FFC - 0x6A0),        // 0x1C45C..0x1E000 (0x1BA4)
+        ]
     )
 }

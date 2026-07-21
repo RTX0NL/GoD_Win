@@ -38,7 +38,7 @@ public extension ColosseumEngine {
             .structInstance(name: "Config"),       // 0 — slot+0x08, len 0x70    → ColoSaveConfig
             .structInstance(name: "Trainer"),      // 1 — slot+0x78, len 0xB18   → ColoSaveTrainer (OT + party of 6)
             .structInstance(name: "PCBox"),        // 2 — slot+0xB90, len 0x6DEC → ColoSavePCBox (3 boxes × 30)
-            .binary(name: "BattleMode"),           // 3 — slot+0x797C, len 0x7F4 → ColoSaveBattleMode (opaque)
+            .structInstance(name: "PCItemsAndMail"),// 3 — slot+0x797C, len 0x7F4 → ColoSavePCItemsMailbox (PC items + PDA mailbox)
             .structInstance(name: "Daycare"),      // 4 — slot+0x8170, len 0x140 → ColoSaveDaycare
             .structInstance(name: "StrategyMemo"), // 5 — slot+0x82B0, len 0xB10 → ColoSaveStrategyMemo
             .binary(name: "Tail"),                 // 6 — slot+0x8DC0, len 0x15240 → ColoSaveTail (opaque)
@@ -59,7 +59,7 @@ public extension ColosseumEngine {
             0: "ColoSaveConfig",
             1: "ColoSaveTrainer",
             2: "ColoSavePCBox",
-            3: "ColoSaveBattleMode",
+            3: "ColoSavePCItemsMailbox",
             4: "ColoSaveDaycare",
             5: "ColoSaveStrategyMemo",
             6: "ColoSaveTail",
