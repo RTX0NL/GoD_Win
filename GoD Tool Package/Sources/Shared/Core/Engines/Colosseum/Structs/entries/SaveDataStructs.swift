@@ -178,15 +178,30 @@ public extension ColosseumStructDefaults {
             .padding(length: 4),                                    // +0x028..0x02C
             .uint16(name: "SID16"),                                 // +0x02C
             .uint16(name: "TID16"),                                 // +0x02E
-            .array(name: "party", count: 6, of: .subStruct(name: "ColoPokemon")),
-            .uint8(name: "gender"),                                 // +0x780
-            .padding(length: 3),                                    // +0x781..0x784
-            .uint32(name: "money"),                                 // +0x784
-            .uint32(name: "coupons"),                               // +0x788
-            .uint32(name: "couponsTotal"),                          // +0x78C
-            .padding(length: 0x332),                                // +0x790..0xAC2
-            .string(name: "RUI_Name", format: .gsColo, length: 10), // +0xAC2  (20 bytes)
-            .padding(length: 0x42),                                 // +0xAD6..0xB18
+            .array(name: "party", count: 6, of: .subStruct(name: "ColoPokemon")),   // +0x030..0x780
+            // Bag pockets — stride-4 ColoItem {itemId,count}. Offsets from
+            // the Hero dispatcher (`zz_trainer_get_value_with_index` idx 4–9);
+            // the legacy tool never located these (kSaveFileBagItemsOffset=-1).
+            .array(name: "itemsNormal",  count: 20, of: .subStruct(name: "ColoItem")),  // +0x780..0x7D0
+            .array(name: "itemsKey",     count: 43, of: .subStruct(name: "ColoItem")),  // +0x7D0..0x87C
+            .array(name: "itemsBall",    count: 16, of: .subStruct(name: "ColoItem")),  // +0x87C..0x8BC
+            .array(name: "itemsTM",      count: 64, of: .subStruct(name: "ColoItem")),  // +0x8BC..0x9BC
+            .array(name: "itemsBerry",   count: 46, of: .subStruct(name: "ColoItem")),  // +0x9BC..0xA74
+            .array(name: "itemsCologne", count: 3,  of: .subStruct(name: "ColoItem")),  // +0xA74..0xA80
+            .uint8(name: "unknownA"),                               // +0xA80 (dispatcher idx 0xB)
+            .uint8(name: "unknownB"),                               // +0xA81 (dispatcher idx 0x19)
+            .padding(length: 2),                                    // +0xA82..0xA84 alignment
+            .uint32(name: "money"),                                 // +0xA84 pokedoru (heroAddPokedoru)
+            .uint32(name: "coupons"),                               // +0xA88 pokecoupon
+            .uint32(name: "couponsLifetime"),                       // +0xA8C pokecoupon total
+            // 9 story/battle boolean flags (dispatcher idx 0xF–0x16, 0x18);
+            // three are consumed as damage-modifier bools. Colosseum has no
+            // player gender or badges, so there are no such fields here.
+            .array(name: "storyFlags", count: 9, of: .uint8),      // +0xA90..0xA99
+            .padding(length: 1),                                   // +0xA99..0xA9A alignment
+            .array(name: "unknownEntries", count: 10, of: .uint32),// +0xA9A..0xAC2 (dispatcher idx 0xA; semantics TBD)
+            .string(name: "ruiName", format: .gsColo, length: 11), // +0xAC2..0xAD8 (22 bytes) RUI's name
+            .padding(length: 0x40),                                // +0xAD8..0xB18 unmapped tail
         ]
     )
 
