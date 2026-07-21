@@ -36,7 +36,19 @@ final class ColoSaveStructTests: XCTestCase {
         XCTAssertEqual(try length("ColoSavePCBox"), 0x6DEC, "section 2 PCBox")
         XCTAssertEqual(try length("ColoSavePCItemsMailbox"), 0x7F4, "section 3 PC items + mailbox")
         XCTAssertEqual(try length("ColoSaveDaycare"), 0x140, "section 4 Daycare")
-        XCTAssertEqual(try length("ColoSaveStrategyMemo"), 0xB10, "section 5 StrategyMemo")
-        XCTAssertEqual(try length("ColoSaveTail"), 0x15240, "section 6 Tail")
+        XCTAssertEqual(try length("ColoSaveStrategyMemo"), 0x1774, "section 5 StrategyMemo (500 entries, not PKHeX's 0xB10)")
+        XCTAssertEqual(try length("ColoSaveTail"), 0x145DC, "section 6 Tail (starts 0x9A24)")
+    }
+
+    /// The 7 sections must tile the whole slot exactly (body base 0x08
+    /// + Σ section lengths = 0x1E000). Guards the StrategyMemo/Tail
+    /// boundary correction.
+    func testSectionsTileWholeSlot() throws {
+        let engine = try ColosseumEngine.defaults()
+        let names = ["ColoSaveConfig", "ColoSaveTrainer", "ColoSavePCBox",
+                     "ColoSavePCItemsMailbox", "ColoSaveDaycare",
+                     "ColoSaveStrategyMemo", "ColoSaveTail"]
+        let total = try names.reduce(0) { $0 + (try engine.getStruct($1).length) }
+        XCTAssertEqual(engine.data.bodyBaseOffset + total, 0x1E000, "sections must tile the 0x1E000 slot")
     }
 }

@@ -321,10 +321,14 @@ public extension ColosseumStructDefaults {
         ]
     )
 
-    /// Colo save section 5 (slot+0x82B0, length 0xB10) — the Strategy
-    /// Memo: a `count`-prefixed array of up to 235 `ColoMemoEntry`
+    /// Colo save section 5 (slot+0x82B0, length **0x1774**) — the
+    /// Strategy Memo: a `count`-prefixed array of 500 `ColoMemoEntry`
     /// records. Header `count` (u16) + reserved (u16), entries from
-    /// +0x4, then an 8-byte tail. 2 + 2 + 235×0xC + 8 = 0xB10.
+    /// +0x4. 2 + 2 + 500×0xC = 0x1774 (no tail) — identical geometry to
+    /// XD's memo. NOTE: PKHeX undersized this block to 0xB10; the game's
+    /// own dispatcher (`zz_trainer_get_data_pointer` case 12 @ 0x82B0 →
+    /// next block card-e @ 0x9A24) proves it is 0x1774. Correcting it
+    /// shifts the Tail section's start from 0x8DC0 to 0x9A24.
     static let saveStrategyMemoStruct = StructMap(
         name: "ColoSaveStrategyMemo",
         wordSize: 1,
@@ -332,33 +336,44 @@ public extension ColosseumStructDefaults {
         properties: [
             .uint16(name: "count"),             // +0x000 number of populated entries
             .padding(length: 2),                // +0x002 reserved (only the count halfword is read)
-            .array(name: "entries", count: 235, of: .subStruct(name: "ColoMemoEntry")),  // +0x004..0xB08
-            .padding(length: 8),                // +0xB08..0xB10 tail (untouched by code)
+            .array(name: "entries", count: 500, of: .subStruct(name: "ColoMemoEntry")),  // +0x004..0x1774
         ]
     )
 
-    // MARK: - Section 6: Tail (large mostly-unknown region)
+    // MARK: - Section 6: Tail (now decomposed into named blocks)
 
-    /// Trailing slot region after StrategyMemo (slot 0x8DC0..0x1E000).
-    /// Mostly unstructured, but it contains the game's **flag bit-banks**
-    /// at a known location, carved out here as a raw chunk. The flag
-    /// system is an indirection: the save holds only raw bits; the
-    /// meaning (flag → group/bit) lives in a static descriptor table in
-    /// main.dol. So `flagData` is dumped as an opaque byte chunk for now
-    /// — a future flag decode/encode operation will read/write it via
-    /// the descriptor table. Bank layout (from `zz_00057b0_` /
-    /// `zz_01909a8_` / `zz_trainer_get_data_pointer`): 3 contiguous
-    /// groups at slot 0x1BDBC (0x20) + 0x1BDDC (0x80) + 0x1BE5C (0x600)
-    /// = 0x6A0 total, i.e. Tail-relative 0x12FFC. (The JP bonus-disc
-    /// flags at slot 0x1C118 fall inside group 3.)
+    /// Trailing slot region, section 6 — **0x145DC** bytes, slot
+    /// 0x9A24..0x1E000. (Shrunk from the old PKHeX 0x15240 catch-all now
+    /// that StrategyMemo is correctly 0x1774.) The game's save-block
+    /// dispatcher (`zz_trainer_get_data_pointer`) resolves several
+    /// distinct blocks in here; this struct names them and keeps genuine
+    /// gaps as padding. The section stays a raw `.bin` dump for now, so
+    /// these named fields document the layout (and locate the flag banks
+    /// for the future flag op) without inflating the dump into JSON. All
+    /// offsets are absolute slot offsets; sub-block sizes total 0x145DC.
+    ///
+    /// Blocks (dispatcher block id in parens):
+    ///  - Card-e save data (13) — e-Reader payload
+    ///  - Tool / battle-entry (14) — hdr + 4 registered battle teams
+    ///    (`toolentryTaisen`, 0x1660 each, party 6×CK3 at entry +0x5C) +
+    ///    tool misc / Pokécoupon mirror
+    ///  - Shadow monitor (15) — 97 shadow-Pokémon purification records
+    ///  - Flag bit-banks (4/5/6) — FlagLevel0/1/2; raw, decode via the
+    ///    future flag op (see [[gs-flag-system]])
+    ///  - ExRibbon (16) — bonus-disc ribbons (11 bytes)
     static let saveTailStruct = StructMap(
         name: "ColoSaveTail",
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
-            .padding(length: 0x12FFC),                          // 0x8DC0..0x1BDBC
-            .array(name: "flagData", count: 0x6A0, of: .uint8), // 0x1BDBC..0x1C45C — 3 flag banks (opaque; decode via future op)
-            .padding(length: 0x15240 - 0x12FFC - 0x6A0),        // 0x1C45C..0x1E000 (0x1BA4)
+            .padding(length: 0x49CC),           // 0x9A24..0xE3F0  Card-e save data (block 13)
+            .padding(length: 0xCC2C),           // 0xE3F0..0x1B01C Tool/battle-entry (block 14): hdr 0x24 + 4×0x1660 registered teams @0xE414 + tool misc
+            .padding(length: 0xDA8),            // 0x1B01C..0x1BDC4 Shadow monitor (block 15): 97 records
+            .array(name: "flagLevel0", count: 0x20, of: .uint8),   // 0x1BDC4 (block 4)
+            .array(name: "flagLevel1", count: 0x80, of: .uint8),   // 0x1BDE4 (block 5)
+            .array(name: "flagLevel2", count: 0x600, of: .uint8),  // 0x1BE64 (block 6) — JP bonus-disc flags near 0x1C120
+            .array(name: "exRibbon", count: 0xB, of: .uint8),      // 0x1C464 (block 16) bonus-disc ribbons
+            .padding(length: 0x1B91),           // 0x1C46F..0x1E000 reserved/unknown + cipher trailer (last 0x20)
         ]
     )
 }
