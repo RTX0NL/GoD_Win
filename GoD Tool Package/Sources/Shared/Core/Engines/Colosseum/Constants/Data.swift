@@ -40,8 +40,8 @@ public extension ColosseumEngine {
             .structInstance(name: "PCBox"),        // 2 — slot+0xB90, len 0x6DEC → ColoSavePCBox (3 boxes × 30)
             .structInstance(name: "PCItemsAndMail"),// 3 — slot+0x797C, len 0x7F4 → ColoSavePCItemsMailbox (PC items + PDA mailbox)
             .structInstance(name: "Daycare"),      // 4 — slot+0x8170, len 0x140 → ColoSaveDaycare
-            .structInstance(name: "StrategyMemo"), // 5 — slot+0x82B0, len 0xB10 → ColoSaveStrategyMemo
-            .binary(name: "Tail"),                 // 6 — slot+0x8DC0, len 0x15240 → ColoSaveTail (opaque)
+            .structInstance(name: "StrategyMemo"), // 5 — slot+0x82B0, len 0x1774  → ColoSaveStrategyMemo (500 entries)
+            .structInstance(name: "Tail"),         // 6 — slot+0x9A24, len 0x145DC → ColoSaveTail (fully decomposed)
         ]
 
         /// Body-base offset — where the first section starts in the

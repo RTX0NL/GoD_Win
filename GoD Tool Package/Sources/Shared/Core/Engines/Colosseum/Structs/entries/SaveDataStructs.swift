@@ -340,40 +340,66 @@ public extension ColosseumStructDefaults {
         ]
     )
 
-    // MARK: - Section 6: Tail (now decomposed into named blocks)
+    // MARK: - Section 6 sub-blocks
+
+    /// One registered Battle-Mode team — **0x1660 bytes** (`toolentry-
+    /// Taisen`, `zz_006b09c_`: block14 + 0x24 + idx*0x1660). Holds the
+    /// trainer id, a 6-mon party at entry +0x5C, and per-entry battle
+    /// config (semantics TBD → padding).
+    static let saveBattleEntryStruct = StructMap(
+        name: "ColoBattleEntry",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .uint16(name: "trainerDataID"),     // +0x00
+            .padding(length: 0x5A),             // +0x02..0x5C order/config words (semantics TBD)
+            .array(name: "party", count: 6, of: .subStruct(name: "ColoPokemon")),  // +0x5C..0x7AC
+            .padding(length: 0xEB4),            // +0x7AC..0x1660 per-entry battle data (TBD)
+        ]
+    )
+
+    /// Shadow-Pokémon monitor — **0xDA8 bytes** (`zz_01ef128_`): a
+    /// header word + two parallel arrays of 97 records (purification
+    /// counters / shadow ids). Record internals TBD → raw arrays.
+    static let saveShadowMonitorStruct = StructMap(
+        name: "ColoShadowMonitor",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .uint32(name: "header"),                                // +0x000
+            .array(name: "recordsA", count: 0x48C, of: .uint8),     // +0x004..0x490 (97 × 0xC)
+            .array(name: "recordsB", count: 0x918, of: .uint8),     // +0x490..0xDA8 (97 × 0x18)
+        ]
+    )
+
+    // MARK: - Section 6: Tail (fully decomposed)
 
     /// Trailing slot region, section 6 — **0x145DC** bytes, slot
     /// 0x9A24..0x1E000. (Shrunk from the old PKHeX 0x15240 catch-all now
-    /// that StrategyMemo is correctly 0x1774.) The game's save-block
-    /// dispatcher (`zz_trainer_get_data_pointer`) resolves several
-    /// distinct blocks in here; this struct names them and keeps genuine
-    /// gaps as padding. The section stays a raw `.bin` dump for now, so
-    /// these named fields document the layout (and locate the flag banks
-    /// for the future flag op) without inflating the dump into JSON. All
-    /// offsets are absolute slot offsets; sub-block sizes total 0x145DC.
-    ///
-    /// Blocks (dispatcher block id in parens):
-    ///  - Card-e save data (13) — e-Reader payload
-    ///  - Tool / battle-entry (14) — hdr + 4 registered battle teams
-    ///    (`toolentryTaisen`, 0x1660 each, party 6×CK3 at entry +0x5C) +
-    ///    tool misc / Pokécoupon mirror
-    ///  - Shadow monitor (15) — 97 shadow-Pokémon purification records
-    ///  - Flag bit-banks (4/5/6) — FlagLevel0/1/2; raw, decode via the
-    ///    future flag op (see [[gs-flag-system]])
-    ///  - ExRibbon (16) — bonus-disc ribbons (11 bytes)
+    /// that StrategyMemo is correctly 0x1774.) Fully decomposed from the
+    /// game's save-block dispatcher (`zz_trainer_get_data_pointer`): each
+    /// block gets a named field — typed where the layout is known
+    /// (registered battle teams, shadow monitor), raw byte arrays where
+    /// the block is identified but its internals aren't decoded (card-e
+    /// payload, tool misc, flag banks, reserved). The flag banks stay
+    /// raw — a future flag op decodes them via the executable's
+    /// descriptor table (see [[gs-flag-system]]). Sub-block sizes total
+    /// 0x145DC; all offsets are absolute slot offsets.
     static let saveTailStruct = StructMap(
         name: "ColoSaveTail",
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
-            .padding(length: 0x49CC),           // 0x9A24..0xE3F0  Card-e save data (block 13)
-            .padding(length: 0xCC2C),           // 0xE3F0..0x1B01C Tool/battle-entry (block 14): hdr 0x24 + 4×0x1660 registered teams @0xE414 + tool misc
-            .padding(length: 0xDA8),            // 0x1B01C..0x1BDC4 Shadow monitor (block 15): 97 records
-            .array(name: "flagLevel0", count: 0x20, of: .uint8),   // 0x1BDC4 (block 4)
-            .array(name: "flagLevel1", count: 0x80, of: .uint8),   // 0x1BDE4 (block 5)
-            .array(name: "flagLevel2", count: 0x600, of: .uint8),  // 0x1BE64 (block 6) — JP bonus-disc flags near 0x1C120
-            .array(name: "exRibbon", count: 0xB, of: .uint8),      // 0x1C464 (block 16) bonus-disc ribbons
-            .padding(length: 0x1B91),           // 0x1C46F..0x1E000 reserved/unknown + cipher trailer (last 0x20)
+            .array(name: "cardESaveData", count: 0x49CC, of: .uint8),   // 0x9A24 block 13 (e-Reader payload)
+            .array(name: "toolHeader", count: 0x24, of: .uint8),        // 0xE3F0 block 14 header
+            .array(name: "registeredTeams", count: 4, of: .subStruct(name: "ColoBattleEntry")),  // 0xE414 4×0x1660
+            .array(name: "toolMisc", count: 0x7288, of: .uint8),        // 0x13D94 tool misc / Pokécoupon mirror (TBD)
+            .subStruct(name: "shadowMonitor", typeName: "ColoShadowMonitor"),  // 0x1B01C block 15
+            .array(name: "flagLevel0", count: 0x20, of: .uint8),        // 0x1BDC4 block 4
+            .array(name: "flagLevel1", count: 0x80, of: .uint8),        // 0x1BDE4 block 5
+            .array(name: "flagLevel2", count: 0x600, of: .uint8),       // 0x1BE64 block 6 — JP bonus-disc flags near 0x1C120
+            .array(name: "exRibbon", count: 0xB, of: .uint8),           // 0x1C464 block 16 bonus-disc ribbons
+            .array(name: "reserved", count: 0x1B91, of: .uint8),        // 0x1C46F reserved/unknown + cipher trailer (last 0x20)
         ]
     )
 }
