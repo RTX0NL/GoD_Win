@@ -12,6 +12,8 @@ public extension XDEngine {
 
         static public var allItems: [Enum] {
             [
+                XDSaveEnumDefaults.gender,
+                XDSaveEnumDefaults.language,
             ]
         }
     }

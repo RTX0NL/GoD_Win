@@ -69,14 +69,14 @@ public extension ColosseumStructDefaults {
             .uint8(name: "version"),                    // +0x08 origin version
             .uint8(name: "currentRegion"),              // +0x09
             .uint8(name: "originalRegion"),             // +0x0A
-            .uint8(name: "language"),                   // +0x0B
+            .abstraction(name: "language", typeName: "Language"),  // +0x0B
             .uint16(name: "metLocation"),               // +0x0C
             .uint8(name: "metLevel"),                   // +0x0E
             .uint8(name: "ball"),                       // +0x0F
-            .uint8(name: "otGender"),                   // +0x10
+            .abstraction(name: "otGender", typeName: "Gender"),    // +0x10
             .array(name: "unknown2", count: 3, of: .uint8),  // +0x11..0x14 undocumented
-            .uint16(name: "SID16"),                     // +0x14
-            .uint16(name: "TID16"),                     // +0x16
+            .uint16(name: "sid16"),                     // +0x14
+            .uint16(name: "tid16"),                     // +0x16
             .string(name: "otName", format: .gsColo, length: 11),          // +0x18..0x2E (22)
             .string(name: "nicknameDisplay", format: .gsColo, length: 11), // +0x2E..0x44 (22)
             .string(name: "nickname", format: .gsColo, length: 11),        // +0x44..0x5A (22)
@@ -152,7 +152,7 @@ public extension ColosseumStructDefaults {
             .uint8(name: "gcGameIndex"),
             .uint8(name: "currentRegion"),
             .uint8(name: "originalRegion"),
-            .uint8(name: "gcLanguage"),
+            .abstraction(name: "gcLanguage", typeName: "Language"),
             .array(name: "unknown1", count: 0x1C, of: .uint8),  // +0x04..0x20 Gamedata header (TBD)
             .losslessFloat(name: "playTimeSeconds"),    // +0x20  (f32 BE)
             .array(name: "unknown2", count: 0x4C, of: .uint8),  // +0x24..0x70 Gamedata (TBD)
@@ -179,11 +179,11 @@ public extension ColosseumStructDefaults {
         alignmentStyle: .none,
         properties: [
             // 10 chars × 2 bytes (UTF-16 BE), zero-padded.
-            .string(name: "OT",      format: .gsColo, length: 10),  // +0x000  (20 bytes)
-            .string(name: "OT2",     format: .gsColo, length: 10),  // +0x014  (20 bytes)
+            .string(name: "playerName",    format: .gsColo, length: 10),  // +0x000  (20 bytes)
+            .string(name: "playerNameAlt", format: .gsColo, length: 10),  // +0x014  (20 bytes)
             .array(name: "unknown1", count: 4, of: .uint8),         // +0x028..0x02C undocumented
-            .uint16(name: "SID16"),                                 // +0x02C
-            .uint16(name: "TID16"),                                 // +0x02E
+            .uint16(name: "sid16"),                                 // +0x02C
+            .uint16(name: "tid16"),                                 // +0x02E
             .array(name: "party", count: 6, of: .subStruct(name: "ColoPokemon")),   // +0x030..0x780
             // Bag pockets — stride-4 ColoItem {itemId,count}. Offsets from
             // the Hero dispatcher (`zz_trainer_get_value_with_index` idx 4–9);

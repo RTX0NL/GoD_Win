@@ -60,7 +60,7 @@ public extension XDStructDefaults {
             .uint16(name: "para1Amari"),            // +0x0C
             .uint8(name: "catchLevel"),             // +0x0E
             .uint8(name: "catchBallId"),            // +0x0F
-            .uint8(name: "catchTrainerSex"),        // +0x10 OT gender
+            .abstraction(name: "catchTrainerSex", typeName: "Gender"),  // +0x10 OT gender
             .uint8(name: "level"),                  // +0x11
             .uint8(name: "fur"),                    // +0x12
             .uint8(name: "pokerus"),                // +0x13
@@ -131,7 +131,7 @@ public extension XDStructDefaults {
             .uint8(name: "gcGameIndex"),
             .uint8(name: "currentRegion"),
             .uint8(name: "originalRegion"),
-            .uint8(name: "gcLanguage"),
+            .abstraction(name: "gcLanguage", typeName: "Language"),
             .array(name: "unknown1", count: 0x1C, of: .uint8),   // +0x04..0x20 Gamedata (memcard ID / save counter / floor IDs — TBD)
             .losslessFloat(name: "playTimeJP"),          // +0x20  (f32 BE, JP saves)
             .array(name: "unknown2", count: 0x0C, of: .uint8),   // +0x24..0x30 Gamedata (options / PAR checksum — TBD)
@@ -153,8 +153,8 @@ public extension XDStructDefaults {
         properties: [
             .string(name: "playerName", format: .gsXD, length: 11),        // +0x000 (22)
             .string(name: "playerNameAlt", format: .gsXD, length: 11),     // +0x016 (22) mirror/alt
-            .uint16(name: "SID16"),                                        // +0x02C rnd hi (secret ID)
-            .uint16(name: "TID16"),                                        // +0x02E rnd lo (trainer ID)
+            .uint16(name: "sid16"),                                        // +0x02C rnd hi (secret ID)
+            .uint16(name: "tid16"),                                        // +0x02E rnd lo (trainer ID)
             .array(name: "party", count: 6, of: .subStruct(name: "XDPokemon")),      // +0x030..0x4C8
             .array(name: "itemsNormal", count: 30, of: .subStruct(name: "XDItem")),  // +0x4C8..0x540
             .array(name: "itemsKey", count: 43, of: .subStruct(name: "XDItem")),     // +0x540..0x5EC
@@ -163,7 +163,7 @@ public extension XDStructDefaults {
             .array(name: "itemsBerry", count: 46, of: .subStruct(name: "XDItem")),   // +0x72C..0x7E4
             .array(name: "itemsCologne", count: 3, of: .subStruct(name: "XDItem")),  // +0x7E4..0x7F0
             .array(name: "itemsBattleCD", count: 60, of: .subStruct(name: "XDItem")),// +0x7F0..0x8E0
-            .uint8(name: "gender"),                                        // +0x8E0 sexDataId
+            .abstraction(name: "gender", typeName: "Gender"),             // +0x8E0 sexDataId
             .uint8(name: "homePlace"),                                     // +0x8E1
             .array(name: "unknown1", count: 2, of: .uint8),                // +0x8E2..0x8E4 undocumented (non-zero leftover)
             .uint32(name: "money"),                                        // +0x8E4 pokedoru

@@ -19,6 +19,7 @@ public extension ColosseumEngine {
                 ColoScriptEnumDefaults.yesNoIndex,
                 ColoScriptEnumDefaults.groupID,
                 ColoScriptEnumDefaults.characterRID,
+                ColoSaveEnumDefaults.gender,
             ]
         }
     }
