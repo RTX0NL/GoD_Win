@@ -18,14 +18,14 @@ public enum ColoSaveEnumDefaults {
     )
 
     /// Build region (`currentRegion` / `originalRegion`). **TENTATIVE**
-    /// jp/us/pal = 0/1/2 — per-build region id, confirm via disassembly
+    /// jp/us/pal = 1/3/2 — per-build region id, confirm via disassembly
     /// of all three regional builds; override in engine data if needed.
     public static let region = Enum(
         name: "Region",
         allowUnknownCases: true,
         values: [
-            .init(name: "japan", rawValue: 0),
-            .init(name: "us",    rawValue: 1),
+            .init(name: "japan", rawValue: 1),
+            .init(name: "us",    rawValue: 3),
             .init(name: "pal",   rawValue: 2),
         ],
         propertyType: .uint8
