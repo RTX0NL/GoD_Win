@@ -45,8 +45,11 @@ import GoDFoundation
 public struct XDSaveSlot: Equatable {
     public static let slotSize: Int = 0x28000
 
-    /// Plaintext slot magic at +0x00..0x02 — `01 01 01`.
-    public static let magic: [UInt8] = [0x01, 0x01, 0x01]
+    /// Plaintext slot magic at +0x00..0x01 — `01 01`. Byte +0x02 varies
+    /// by region/version (`01` on US/PAL builds, `00` on JP) so it is NOT
+    /// part of the validated magic — it round-trips via the captured
+    /// header region regardless.
+    public static let magic: [UInt8] = [0x01, 0x01]
 
     /// Number of sub-block entries — fixed at 16 across all observed
     /// XD saves (PKHeX hardcodes this).
@@ -152,9 +155,9 @@ public struct XDSaveSlot: Equatable {
         raw.setByteOrder(.big)
 
         let bytes = raw.rawBytes
-        let magic = [bytes[0x00], bytes[0x01], bytes[0x02]]
+        let magic = [bytes[0x00], bytes[0x01]]
         guard magic == XDSaveSlot.magic else {
-            throw XDSaveSlotError.badMagic(found: magic)
+            throw XDSaveSlotError.badMagic(found: [bytes[0x00], bytes[0x01], bytes[0x02]])
         }
 
         let reserved = bytes[0x03]
