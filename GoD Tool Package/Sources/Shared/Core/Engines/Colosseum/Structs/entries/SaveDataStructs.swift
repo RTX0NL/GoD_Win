@@ -10,22 +10,23 @@ import GoDFoundation
 /// Colo section to have a struct binding, even when its internal
 /// layout isn't fully known yet.
 ///
-/// Sections that aren't yet broken down internally use placeholder
-/// padding for the unknown remainder. As reverse-engineering
-/// progresses, those padding regions get replaced with named fields
-/// in place; the section's total byte length stays the same so
-/// existing dumps round-trip.
+/// Undocumented regions are named `unknown<n>` byte arrays (visible +
+/// editable); `.padding` is reserved for genuine unused data — field
+/// alignment gaps and disasm-confirmed reserved bytes. As reverse-
+/// engineering progresses, `unknown<n>` fields get replaced with real
+/// named fields in place; the section's total byte length stays the
+/// same so existing dumps round-trip.
 ///
 /// Layout summary (slot-relative):
 ///
-///     +0x0000   slot header   — 8 bytes (slot magic + counter)
-///     +0x0008   Config         — 0x70 bytes
-///     +0x0078   Trainer1       — 0xB18
+///     +0x0000   slot header    — 8 bytes (slot magic + counter)
+///     +0x0008   Config         — 0x70
+///     +0x0078   Trainer        — 0xB18
 ///     +0x0B90   PCBox          — 0x6DEC (3 boxes × 0x24A4)
-///     +0x797C   BattleData     — 0x7F4   (unknown region)
+///     +0x797C   PCItemsAndMail — 0x7F4  (PC items + PDA mailbox)
 ///     +0x8170   Daycare        — 0x140
-///     +0x82B0   StrategyMemo   — 0xB10
-///     +0x8DC0   Tail           — 0x15240
+///     +0x82B0   StrategyMemo   — 0x1774 (500 entries)
+///     +0x9A24   Tail           — 0x145DC (decomposed)
 ///
 public extension ColosseumStructDefaults {
 
@@ -50,15 +51,15 @@ public extension ColosseumStructDefaults {
     /// reserves three separate 22-byte name buffers (OT + a display
     /// nickname + the stored nickname) and stores stats/IVs/EVs as
     /// 16-bit each. All multi-byte fields are big-endian. Undocumented
-    /// gaps (incl. the 0xE0.. shadow/battle tail) are padding so rows
-    /// round-trip byte-for-byte regardless of field naming.
+    /// gaps (incl. the 0xE0.. shadow/battle tail) are `unknown<n>` byte
+    /// arrays; only field-alignment gaps stay `padding`.
     static let savePokemonStruct = StructMap(
         name: "ColoPokemon",
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
             .uint16(name: "species"),                   // +0x00 internal species index
-            .padding(length: 2),                        // +0x02..0x04
+            .padding(length: 2),                        // +0x02..0x04 alignment before pid
             .uint32(name: "pid"),                       // +0x04 personality value
             .uint8(name: "version"),                    // +0x08 origin version
             .uint8(name: "currentRegion"),              // +0x09
@@ -68,16 +69,16 @@ public extension ColosseumStructDefaults {
             .uint8(name: "metLevel"),                   // +0x0E
             .uint8(name: "ball"),                       // +0x0F
             .uint8(name: "otGender"),                   // +0x10
-            .padding(length: 3),                        // +0x11..0x14
+            .array(name: "unknown1", count: 3, of: .uint8),  // +0x11..0x14 undocumented
             .uint16(name: "SID16"),                     // +0x14
             .uint16(name: "TID16"),                     // +0x16
             .string(name: "otName", format: .gsColo, length: 11),          // +0x18..0x2E (22)
             .string(name: "nicknameDisplay", format: .gsColo, length: 11), // +0x2E..0x44 (22)
             .string(name: "nickname", format: .gsColo, length: 11),        // +0x44..0x5A (22)
-            .padding(length: 2),                        // +0x5A..0x5C
+            .padding(length: 2),                        // +0x5A..0x5C alignment before exp
             .uint32(name: "exp"),                       // +0x5C total EXP
             .uint8(name: "level"),                      // +0x60
-            .padding(length: 0x17),                     // +0x61..0x78
+            .array(name: "unknown2", count: 0x17, of: .uint8),  // +0x61..0x78 status-condition block (undocumented)
             .array(name: "moves", count: 4, of: .subStruct(name: "ColoWaza")),  // +0x78..0x88
             .uint16(name: "heldItem"),                  // +0x88 itemDataId
             .uint16(name: "currentHp"),                 // +0x8A
@@ -112,20 +113,20 @@ public extension ColosseumStructDefaults {
             .uint8(name: "contestRankTough"),           // +0xBB
             .uint8(name: "contestLuster"),              // +0xBC contest sheen ("luster")
             .array(name: "ribbons", count: 12, of: .uint8),  // +0xBD..0xC9 ribbon flags
-            .padding(length: 1),                        // +0xC9 unused / fateful (JP)
+            .array(name: "unknown3", count: 1, of: .uint8),  // +0xC9 fateful-encounter flag (JP) — undocumented
             .uint8(name: "pokerusStrain"),              // +0xCA
             .uint8(name: "isEgg"),                      // +0xCB
             .uint8(name: "abilityBit"),                 // +0xCC 0/1 → ability slot
             .uint8(name: "validFlag"),                  // +0xCD
-            .padding(length: 1),                        // +0xCE
+            .array(name: "unknown4", count: 1, of: .uint8),  // +0xCE undocumented
             .uint8(name: "marking"),                    // +0xCF
             .uint8(name: "pokerusDays"),                // +0xD0
-            .padding(length: 6),                        // +0xD1..0xD7
+            .array(name: "unknown5", count: 6, of: .uint8),  // +0xD1..0xD7 undocumented
             .uint8(name: "partySlot"),                  // +0xD7
             .uint16(name: "shadowId"),                  // +0xD8 shadow-Pokémon id (0 ⇒ not Shadow)
-            .padding(length: 2),                        // +0xDA..0xDC
+            .padding(length: 2),                        // +0xDA..0xDC alignment before purification
             .uint32(name: "purification"),              // +0xDC purification / heart progress
-            .padding(length: 0x58),                     // +0xE0..0x138 shadow/battle tail (undocumented)
+            .array(name: "unknown6", count: 0x58, of: .uint8),  // +0xE0..0x138 shadow/battle tail (undocumented)
         ]
     )
 
@@ -147,9 +148,9 @@ public extension ColosseumStructDefaults {
             .uint8(name: "currentRegion"),
             .uint8(name: "originalRegion"),
             .uint8(name: "gcLanguage"),
-            .padding(length: 0x1C),                     // +0x04..0x20
+            .array(name: "unknown1", count: 0x1C, of: .uint8),  // +0x04..0x20 Gamedata header (TBD)
             .losslessFloat(name: "playTimeSeconds"),    // +0x20  (f32 BE)
-            .padding(length: 0x4C),                     // +0x24..0x70
+            .array(name: "unknown2", count: 0x4C, of: .uint8),  // +0x24..0x70 Gamedata (TBD)
         ]
     )
 
@@ -175,7 +176,7 @@ public extension ColosseumStructDefaults {
             // 10 chars × 2 bytes (UTF-16 BE), zero-padded.
             .string(name: "OT",      format: .gsColo, length: 10),  // +0x000  (20 bytes)
             .string(name: "OT2",     format: .gsColo, length: 10),  // +0x014  (20 bytes)
-            .padding(length: 4),                                    // +0x028..0x02C
+            .array(name: "unknown1", count: 4, of: .uint8),         // +0x028..0x02C undocumented
             .uint16(name: "SID16"),                                 // +0x02C
             .uint16(name: "TID16"),                                 // +0x02E
             .array(name: "party", count: 6, of: .subStruct(name: "ColoPokemon")),   // +0x030..0x780
@@ -188,9 +189,9 @@ public extension ColosseumStructDefaults {
             .array(name: "itemsTM",      count: 64, of: .subStruct(name: "ColoItem")),  // +0x8BC..0x9BC
             .array(name: "itemsBerry",   count: 46, of: .subStruct(name: "ColoItem")),  // +0x9BC..0xA74
             .array(name: "itemsCologne", count: 3,  of: .subStruct(name: "ColoItem")),  // +0xA74..0xA80
-            .uint8(name: "unknownA"),                               // +0xA80 (dispatcher idx 0xB)
-            .uint8(name: "unknownB"),                               // +0xA81 (dispatcher idx 0x19)
-            .padding(length: 2),                                    // +0xA82..0xA84 alignment
+            .uint8(name: "unknown2"),                               // +0xA80 undocumented (dispatcher idx 0xB)
+            .uint8(name: "unknown3"),                               // +0xA81 undocumented (dispatcher idx 0x19)
+            .padding(length: 2),                                    // +0xA82..0xA84 alignment before money
             .uint32(name: "money"),                                 // +0xA84 pokedoru (heroAddPokedoru)
             .uint32(name: "coupons"),                               // +0xA88 pokecoupon
             .uint32(name: "couponsLifetime"),                       // +0xA8C pokecoupon total
@@ -198,10 +199,10 @@ public extension ColosseumStructDefaults {
             // three are consumed as damage-modifier bools. Colosseum has no
             // player gender or badges, so there are no such fields here.
             .array(name: "storyFlags", count: 9, of: .uint8),      // +0xA90..0xA99
-            .padding(length: 1),                                   // +0xA99..0xA9A alignment
-            .array(name: "unknownEntries", count: 10, of: .uint32),// +0xA9A..0xAC2 (dispatcher idx 0xA; semantics TBD)
+            .padding(length: 1),                                   // +0xA99..0xA9A alignment before unknown4
+            .array(name: "unknown4", count: 10, of: .uint32),      // +0xA9A..0xAC2 undocumented (dispatcher idx 0xA)
             .string(name: "ruiName", format: .gsColo, length: 11), // +0xAC2..0xAD8 (22 bytes) RUI's name
-            .padding(length: 0x40),                                // +0xAD8..0xB18 unmapped tail
+            .array(name: "unknown5", count: 0x40, of: .uint8),     // +0xAD8..0xB18 undocumented tail
         ]
     )
 
@@ -216,7 +217,7 @@ public extension ColosseumStructDefaults {
         alignmentStyle: .none,
         properties: [
             .string(name: "name", format: .gsColo, length: 8),       // +0x00..0x10
-            .padding(length: 4),                                      // +0x10..0x14
+            .array(name: "unknown1", count: 4, of: .uint8),          // +0x10..0x14 undocumented
             .array(name: "pokemon", count: 30, of: .subStruct(name: "ColoPokemon")),
         ]
     )
@@ -295,7 +296,7 @@ public extension ColosseumStructDefaults {
         properties: [
             .uint8(name: "occupied"),
             .uint8(name: "depositLevel"),
-            .padding(length: 2),
+            .padding(length: 2),                // alignment before depositedEXP
             .uint32(name: "depositedEXP"),
             .subStruct(name: "pokemon", typeName: "ColoPokemon"),
         ]
@@ -345,16 +346,16 @@ public extension ColosseumStructDefaults {
     /// One registered Battle-Mode team — **0x1660 bytes** (`toolentry-
     /// Taisen`, `zz_006b09c_`: block14 + 0x24 + idx*0x1660). Holds the
     /// trainer id, a 6-mon party at entry +0x5C, and per-entry battle
-    /// config (semantics TBD → padding).
+    /// config (semantics TBD → `unknown<n>`).
     static let saveBattleEntryStruct = StructMap(
         name: "ColoBattleEntry",
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
             .uint16(name: "trainerDataID"),     // +0x00
-            .padding(length: 0x5A),             // +0x02..0x5C order/config words (semantics TBD)
+            .array(name: "unknown1", count: 0x5A, of: .uint8),  // +0x02..0x5C order/config words (semantics TBD)
             .array(name: "party", count: 6, of: .subStruct(name: "ColoPokemon")),  // +0x5C..0x7AC
-            .padding(length: 0xEB4),            // +0x7AC..0x1660 per-entry battle data (TBD)
+            .array(name: "unknown2", count: 0xEB4, of: .uint8), // +0x7AC..0x1660 per-entry battle data (TBD)
         ]
     )
 
@@ -399,7 +400,7 @@ public extension ColosseumStructDefaults {
             .array(name: "flagLevel1", count: 0x80, of: .uint8),        // 0x1BDE4 block 5
             .array(name: "flagLevel2", count: 0x600, of: .uint8),       // 0x1BE64 block 6 — JP bonus-disc flags near 0x1C120
             .array(name: "exRibbon", count: 0xB, of: .uint8),           // 0x1C464 block 16 bonus-disc ribbons
-            .array(name: "reserved", count: 0x1B91, of: .uint8),        // 0x1C46F reserved/unknown + cipher trailer (last 0x20)
+            .array(name: "unknown1", count: 0x1B91, of: .uint8),        // 0x1C46F undocumented + cipher trailer (last 0x20, recomputed on build)
         ]
     )
 }
