@@ -3,10 +3,16 @@ import GoDFoundation
 
 /// Struct definitions for XD save-slot sections. Field offsets cross-
 /// referenced against PKHeX's `SAV3XD.cs` and the legacy GoD tool's
-/// `XGSaveManager.swift` constants. XD's section sizes are read from
-/// the slot's own size table at runtime, so these structs only need
-/// to cover the *known* prefix of each section — trailing bytes are
-/// preserved through the build path's pad-from-raw-slot logic.
+/// `XGSaveManager.swift` constants.
+///
+/// Convention: undocumented regions are `unknown<n>` byte arrays.
+/// Inter-field "gaps" are NOT zero alignment padding — the game
+/// serialises these structs from a reused I/O buffer without memset, so
+/// the gaps carry non-zero leftover that must round-trip byte-for-byte.
+/// Hence `.none` alignment + explicit `unknown<n>` fields (the auto-
+/// aligning `.cStyle` mode would zero the gaps and break round-trip).
+/// `.padding` is only for genuinely dead space the game memset-zeroes
+/// and never writes (e.g. the BattleMode section's trailing bytes).
 public extension XDStructDefaults {
 
     // MARK: - Pokemon sub-structs
@@ -67,7 +73,7 @@ public extension XDStructDefaults {
             .uint8(name: "flagAmari"),              // +0x1A
             .array(name: "unknown1", count: 2, of: .uint8),  // +0x1B..0x1D undocumented
             .uint8(name: "packedFlags"),            // +0x1D fusei(0x20)/tamago-egg(0x80)/…
-            .padding(length: 2),                    // +0x1E..0x20 alignment before exp
+            .array(name: "unknown2", count: 2, of: .uint8),  // +0x1E..0x20 undocumented (non-zero leftover)
             .uint32(name: "exp"),                   // +0x20
             .uint32(name: "catchTrainerRnd"),       // +0x24
             .uint32(name: "pid"),                   // +0x28 rnd (personality value)
@@ -97,10 +103,10 @@ public extension XDStructDefaults {
             .uint8(name: "spAtkIV"),                // +0xAB
             .uint8(name: "spDefIV"),                // +0xAC
             .uint8(name: "speedIV"),                // +0xAD
-            .array(name: "unknown2", count: 10, of: .uint8),  // +0xAE..0xB8 ExpandStatus (undocumented)
+            .array(name: "unknown3", count: 10, of: .uint8),  // +0xAE..0xB8 ExpandStatus (undocumented)
             .uint16(name: "fightTrainerPokemonDataId"),  // +0xB8
             .uint16(name: "shadowId"),              // +0xBA darkpokemonDataId (0 ⇒ not Shadow)
-            .array(name: "unknown3", count: 8, of: .uint8),  // +0xBC..0xC4 unmapped tail
+            .array(name: "unknown4", count: 8, of: .uint8),  // +0xBC..0xC4 unmapped tail
         ]
     )
 
@@ -159,17 +165,17 @@ public extension XDStructDefaults {
             .array(name: "itemsBattleCD", count: 60, of: .subStruct(name: "XDItem")),// +0x7F0..0x8E0
             .uint8(name: "gender"),                                        // +0x8E0 sexDataId
             .uint8(name: "homePlace"),                                     // +0x8E1
-            .padding(length: 2),                                           // +0x8E2..0x8E4 alignment before money
+            .array(name: "unknown1", count: 2, of: .uint8),                // +0x8E2..0x8E4 undocumented (non-zero leftover)
             .uint32(name: "money"),                                        // +0x8E4 pokedoru
             .uint32(name: "coupons"),                                      // +0x8E8 pokecoupon
             .uint32(name: "couponsLifetime"),                             // +0x8EC pokecouponAll
             .array(name: "badges", count: 8, of: .uint8),                  // +0x8F0..0x8F8
             .uint8(name: "joviFlag"),                                      // +0x8F8 hizukiFlag
-            .padding(length: 1),                                           // +0x8F9 alignment before joviItems
+            .array(name: "unknown2", count: 1, of: .uint8),                // +0x8F9 undocumented
             .array(name: "joviItems", count: 10, of: .subStruct(name: "XDItem")),    // +0x8FA..0x922
             .string(name: "joviName", format: .gsXD, length: 11),          // +0x922 (22) hizukiName
             .uint8(name: "meetShadowCount"),                               // +0x938 meetDarkPokemonCount
-            .array(name: "unknown1", count: 0x3F, of: .uint8),             // +0x939..0x978 undocumented tail
+            .array(name: "unknown3", count: 0x3F, of: .uint8),             // +0x939..0x978 undocumented tail
         ]
     )
 
@@ -222,7 +228,8 @@ public extension XDStructDefaults {
     /// Reverse ("Hyper") Mode state. Bytes 0x00/0x01 are dense
     /// bitfields (kept as raw `u8` — the sub-bit accessors don't
     /// decompose into byte fields); undocumented gaps are `unknown<n>`
-    /// byte arrays (alignment-only gaps stay `padding`).
+    /// byte arrays — the gaps carry non-zero leftover, not zero
+    /// alignment, so they can't be dropped or `.cStyle`-auto-aligned.
     static let saveShadowPokemonStruct = StructMap(
         name: "ShadowPokemonStatus",
         wordSize: 1,
@@ -230,23 +237,23 @@ public extension XDStructDefaults {
         properties: [
             .uint8(name: "statusFlags"),        // +0x00 packed: status(3b)/snatchFromWho(2b)/where
             .uint8(name: "packedFlags"),        // +0x01 reverseMode(0x20)/isUpdate(0x10)/isInformation(0x80)/isWazaNew
-            .padding(length: 2),                // +0x02..0x04 alignment before poolExp
+            .array(name: "unknown1", count: 2, of: .uint8),  // +0x02..0x04 undocumented (non-zero leftover)
             .uint32(name: "poolExp"),           // +0x04 pooled EXP awaiting purification
-            .array(name: "unknown1", count: 3, of: .uint8),  // +0x08..0x0B undocumented
+            .array(name: "unknown2", count: 3, of: .uint8),  // +0x08..0x0B undocumented
             .uint8(name: "statusRnd"),          // +0x0B per-status random salt
-            .array(name: "unknown2", count: 7, of: .uint8),  // +0x0C..0x13 undocumented
+            .array(name: "unknown3", count: 7, of: .uint8),  // +0x0C..0x13 undocumented
             .uint8(name: "snatchIndex"),        // +0x13
             .uint16(name: "orgTrainer"),        // +0x14 original-trainer ID
             .uint16(name: "catchFloorId"),      // +0x16
             .uint16(name: "poolFriendLevel"),   // +0x18
             .uint16(name: "statusID"),          // +0x1A this record's own table ID
             .uint32(name: "rnd"),               // +0x1C the shadow record's own PID
-            .array(name: "unknown3", count: 4, of: .uint8),  // +0x20..0x24 undocumented
+            .array(name: "unknown4", count: 4, of: .uint8),  // +0x20..0x24 undocumented
             .uint32(name: "heartGauge"),        // +0x24 heart gauge (raw i32, counts down)
             .string(name: "trainerName", format: .gsXD, length: 11),  // +0x28..0x3E (22)
             .uint16(name: "shadowPokemonID"),   // +0x3E index into the shadow-Pokémon deck set (species-in-set)
             .uint8(name: "reversePattern"),     // +0x40
-            .padding(length: 3),                // +0x41..0x44 alignment before walkCount
+            .array(name: "unknown5", count: 3, of: .uint8),  // +0x41..0x44 undocumented (non-zero leftover)
             .uint32(name: "walkCount"),         // +0x44 step accumulator toward next heart-gauge drop
         ]
     )
@@ -266,7 +273,7 @@ public extension XDStructDefaults {
         properties: [
             .uint8(name: "occupied"),
             .uint8(name: "depositLevel"),
-            .padding(length: 2),                // alignment before depositedEXP
+            .array(name: "unknown1", count: 2, of: .uint8),  // +0x02..0x04 undocumented
             .uint32(name: "depositedEXP"),
             .subStruct(name: "pokemon", typeName: "XDPokemon"),
         ]
@@ -283,7 +290,7 @@ public extension XDStructDefaults {
         alignmentStyle: .none,
         properties: [
             .uint16(name: "speciesAndFlags"),   // +0x0 species (low 14 bits) | 0x8000 "new/unviewed"
-            .padding(length: 2),                // +0x2 reserved (never read/written)
+            .array(name: "unknown1", count: 2, of: .uint8),  // +0x2 undocumented (holds non-zero leftover, not alignment)
             .uint32(name: "catchTrainerRnd"),   // +0x4 OT identity (catch-trainer rnd)
             .uint32(name: "pid"),               // +0x8 the logged Pokémon's rnd / PID
         ]
@@ -300,7 +307,7 @@ public extension XDStructDefaults {
         alignmentStyle: .none,
         properties: [
             .uint16(name: "count"),             // +0x000 number of populated entries
-            .padding(length: 2),                // +0x002 reserved (only the count halfword is read)
+            .array(name: "unknown1", count: 2, of: .uint8),  // +0x002 undocumented (only count is read, but not zeroed)
             .array(name: "entries", count: 500, of: .subStruct(name: "XDMemoEntry")),  // +0x004..0x1774
         ]
     )

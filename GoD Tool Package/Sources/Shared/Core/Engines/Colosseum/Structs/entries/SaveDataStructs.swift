@@ -11,11 +11,16 @@ import GoDFoundation
 /// layout isn't fully known yet.
 ///
 /// Undocumented regions are named `unknown<n>` byte arrays (visible +
-/// editable); `.padding` is reserved for genuine unused data — field
-/// alignment gaps and disasm-confirmed reserved bytes. As reverse-
-/// engineering progresses, `unknown<n>` fields get replaced with real
-/// named fields in place; the section's total byte length stays the
-/// same so existing dumps round-trip.
+/// editable). NOTE: what look like inter-field "alignment" gaps here
+/// are NOT zero padding — the game serialises these structs out of a
+/// reused I/O buffer without memset, so the gaps carry non-zero
+/// leftover/undocumented bytes that must be preserved byte-for-byte.
+/// They are therefore `unknown<n>` fields, not `.padding` (and the
+/// struct-alignment `.cStyle` mode can't be used, since it would zero
+/// them). `.padding` is reserved for genuinely dead space that the game
+/// memset-zeroes and never writes. As reverse-engineering progresses,
+/// `unknown<n>` fields get replaced with real named fields in place;
+/// the section's total byte length stays the same so dumps round-trip.
 ///
 /// Layout summary (slot-relative):
 ///
@@ -52,14 +57,14 @@ public extension ColosseumStructDefaults {
     /// nickname + the stored nickname) and stores stats/IVs/EVs as
     /// 16-bit each. All multi-byte fields are big-endian. Undocumented
     /// gaps (incl. the 0xE0.. shadow/battle tail) are `unknown<n>` byte
-    /// arrays; only field-alignment gaps stay `padding`.
+    /// arrays — they carry non-zero leftover, not zero alignment.
     static let savePokemonStruct = StructMap(
         name: "ColoPokemon",
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
             .uint16(name: "species"),                   // +0x00 internal species index
-            .padding(length: 2),                        // +0x02..0x04 alignment before pid
+            .array(name: "unknown1", count: 2, of: .uint8),  // +0x02..0x04 undocumented (non-zero leftover, not alignment)
             .uint32(name: "pid"),                       // +0x04 personality value
             .uint8(name: "version"),                    // +0x08 origin version
             .uint8(name: "currentRegion"),              // +0x09
@@ -69,16 +74,16 @@ public extension ColosseumStructDefaults {
             .uint8(name: "metLevel"),                   // +0x0E
             .uint8(name: "ball"),                       // +0x0F
             .uint8(name: "otGender"),                   // +0x10
-            .array(name: "unknown1", count: 3, of: .uint8),  // +0x11..0x14 undocumented
+            .array(name: "unknown2", count: 3, of: .uint8),  // +0x11..0x14 undocumented
             .uint16(name: "SID16"),                     // +0x14
             .uint16(name: "TID16"),                     // +0x16
             .string(name: "otName", format: .gsColo, length: 11),          // +0x18..0x2E (22)
             .string(name: "nicknameDisplay", format: .gsColo, length: 11), // +0x2E..0x44 (22)
             .string(name: "nickname", format: .gsColo, length: 11),        // +0x44..0x5A (22)
-            .padding(length: 2),                        // +0x5A..0x5C alignment before exp
+            .array(name: "unknown3", count: 2, of: .uint8),  // +0x5A..0x5C undocumented (non-zero leftover)
             .uint32(name: "exp"),                       // +0x5C total EXP
             .uint8(name: "level"),                      // +0x60
-            .array(name: "unknown2", count: 0x17, of: .uint8),  // +0x61..0x78 status-condition block (undocumented)
+            .array(name: "unknown4", count: 0x17, of: .uint8),  // +0x61..0x78 status-condition block (undocumented)
             .array(name: "moves", count: 4, of: .subStruct(name: "ColoWaza")),  // +0x78..0x88
             .uint16(name: "heldItem"),                  // +0x88 itemDataId
             .uint16(name: "currentHp"),                 // +0x8A
@@ -113,20 +118,20 @@ public extension ColosseumStructDefaults {
             .uint8(name: "contestRankTough"),           // +0xBB
             .uint8(name: "contestLuster"),              // +0xBC contest sheen ("luster")
             .array(name: "ribbons", count: 12, of: .uint8),  // +0xBD..0xC9 ribbon flags
-            .array(name: "unknown3", count: 1, of: .uint8),  // +0xC9 fateful-encounter flag (JP) — undocumented
+            .array(name: "unknown5", count: 1, of: .uint8),  // +0xC9 fateful-encounter flag (JP) — undocumented
             .uint8(name: "pokerusStrain"),              // +0xCA
             .uint8(name: "isEgg"),                      // +0xCB
             .uint8(name: "abilityBit"),                 // +0xCC 0/1 → ability slot
             .uint8(name: "validFlag"),                  // +0xCD
-            .array(name: "unknown4", count: 1, of: .uint8),  // +0xCE undocumented
+            .array(name: "unknown6", count: 1, of: .uint8),  // +0xCE undocumented
             .uint8(name: "marking"),                    // +0xCF
             .uint8(name: "pokerusDays"),                // +0xD0
-            .array(name: "unknown5", count: 6, of: .uint8),  // +0xD1..0xD7 undocumented
+            .array(name: "unknown7", count: 6, of: .uint8),  // +0xD1..0xD7 undocumented
             .uint8(name: "partySlot"),                  // +0xD7
             .uint16(name: "shadowId"),                  // +0xD8 shadow-Pokémon id (0 ⇒ not Shadow)
-            .padding(length: 2),                        // +0xDA..0xDC alignment before purification
+            .array(name: "unknown8", count: 2, of: .uint8),  // +0xDA..0xDC undocumented (non-zero leftover)
             .uint32(name: "purification"),              // +0xDC purification / heart progress
-            .array(name: "unknown6", count: 0x58, of: .uint8),  // +0xE0..0x138 shadow/battle tail (undocumented)
+            .array(name: "unknown9", count: 0x58, of: .uint8),  // +0xE0..0x138 shadow/battle tail (undocumented)
         ]
     )
 
@@ -191,7 +196,7 @@ public extension ColosseumStructDefaults {
             .array(name: "itemsCologne", count: 3,  of: .subStruct(name: "ColoItem")),  // +0xA74..0xA80
             .uint8(name: "unknown2"),                               // +0xA80 undocumented (dispatcher idx 0xB)
             .uint8(name: "unknown3"),                               // +0xA81 undocumented (dispatcher idx 0x19)
-            .padding(length: 2),                                    // +0xA82..0xA84 alignment before money
+            .array(name: "unknown4", count: 2, of: .uint8),         // +0xA82..0xA84 undocumented (non-zero leftover)
             .uint32(name: "money"),                                 // +0xA84 pokedoru (heroAddPokedoru)
             .uint32(name: "coupons"),                               // +0xA88 pokecoupon
             .uint32(name: "couponsLifetime"),                       // +0xA8C pokecoupon total
@@ -199,10 +204,10 @@ public extension ColosseumStructDefaults {
             // three are consumed as damage-modifier bools. Colosseum has no
             // player gender or badges, so there are no such fields here.
             .array(name: "storyFlags", count: 9, of: .uint8),      // +0xA90..0xA99
-            .padding(length: 1),                                   // +0xA99..0xA9A alignment before unknown4
-            .array(name: "unknown4", count: 10, of: .uint32),      // +0xA9A..0xAC2 undocumented (dispatcher idx 0xA)
+            .array(name: "unknown5", count: 1, of: .uint8),        // +0xA99..0xA9A undocumented
+            .array(name: "unknown6", count: 10, of: .uint32),      // +0xA9A..0xAC2 undocumented (dispatcher idx 0xA)
             .string(name: "ruiName", format: .gsColo, length: 11), // +0xAC2..0xAD8 (22 bytes) RUI's name
-            .array(name: "unknown5", count: 0x40, of: .uint8),     // +0xAD8..0xB18 undocumented tail
+            .array(name: "unknown7", count: 0x40, of: .uint8),     // +0xAD8..0xB18 undocumented tail
         ]
     )
 
@@ -296,7 +301,7 @@ public extension ColosseumStructDefaults {
         properties: [
             .uint8(name: "occupied"),
             .uint8(name: "depositLevel"),
-            .padding(length: 2),                // alignment before depositedEXP
+            .array(name: "unknown1", count: 2, of: .uint8),  // +0x02..0x04 undocumented
             .uint32(name: "depositedEXP"),
             .subStruct(name: "pokemon", typeName: "ColoPokemon"),
         ]
@@ -316,7 +321,7 @@ public extension ColosseumStructDefaults {
         alignmentStyle: .none,
         properties: [
             .uint16(name: "speciesAndFlags"),   // +0x0 species (low 14 bits) | 0x8000 "new/unviewed"
-            .padding(length: 2),                // +0x2 reserved (never read/written)
+            .array(name: "unknown1", count: 2, of: .uint8),  // +0x2 undocumented (non-zero leftover)
             .uint32(name: "catchTrainerRnd"),   // +0x4 OT identity (catch-trainer rnd)
             .uint32(name: "pid"),               // +0x8 the logged Pokémon's rnd / PID
         ]
@@ -336,7 +341,7 @@ public extension ColosseumStructDefaults {
         alignmentStyle: .none,
         properties: [
             .uint16(name: "count"),             // +0x000 number of populated entries
-            .padding(length: 2),                // +0x002 reserved (only the count halfword is read)
+            .array(name: "unknown1", count: 2, of: .uint8),  // +0x002 undocumented (not zeroed)
             .array(name: "entries", count: 500, of: .subStruct(name: "ColoMemoEntry")),  // +0x004..0x1774
         ]
     )
