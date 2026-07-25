@@ -66,9 +66,9 @@ public extension ColosseumStructDefaults {
             .uint16(name: "species"),                   // +0x00 internal species index
             .array(name: "unknown1", count: 2, of: .uint8),  // +0x02..0x04 undocumented (non-zero leftover, not alignment)
             .uint32(name: "pid"),                       // +0x04 personality value
-            .uint8(name: "version"),                    // +0x08 origin version
-            .uint8(name: "currentRegion"),              // +0x09
-            .uint8(name: "originalRegion"),             // +0x0A
+            .abstraction(name: "version", typeName: "GameVersion"),  // +0x08 origin version
+            .abstraction(name: "currentRegion", typeName: "Region"),  // +0x09
+            .abstraction(name: "originalRegion", typeName: "Region"), // +0x0A
             .abstraction(name: "language", typeName: "Language"),  // +0x0B
             .uint16(name: "metLocation"),               // +0x0C
             .uint8(name: "metLevel"),                   // +0x0E
@@ -121,7 +121,7 @@ public extension ColosseumStructDefaults {
             .array(name: "unknown5", count: 1, of: .uint8),  // +0xC9 fateful-encounter flag (JP) — undocumented
             .uint8(name: "pokerusStrain"),              // +0xCA
             .uint8(name: "isEgg"),                      // +0xCB
-            .uint8(name: "abilityBit"),                 // +0xCC 0/1 → ability slot
+            .abstraction(name: "abilityBit", typeName: "AbilitySlot"),  // +0xCC ability1/ability2
             .uint8(name: "validFlag"),                  // +0xCD
             .array(name: "unknown6", count: 1, of: .uint8),  // +0xCE undocumented
             .uint8(name: "marking"),                    // +0xCF
@@ -149,9 +149,9 @@ public extension ColosseumStructDefaults {
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "gcGameIndex"),
-            .uint8(name: "currentRegion"),
-            .uint8(name: "originalRegion"),
+            .abstraction(name: "gcGameIndex", typeName: "GameVersion"),
+            .abstraction(name: "currentRegion", typeName: "Region"),
+            .abstraction(name: "originalRegion", typeName: "Region"),
             .abstraction(name: "gcLanguage", typeName: "Language"),
             .array(name: "unknown1", count: 0x1C, of: .uint8),  // +0x04..0x20 Gamedata header (TBD)
             .losslessFloat(name: "playTimeSeconds"),    // +0x20  (f32 BE)

@@ -66,7 +66,7 @@ public extension XDStructDefaults {
             .uint8(name: "pokerus"),                // +0x13
             .uint8(name: "pcboxMark"),              // +0x14
             .uint8(name: "mailId"),                 // +0x15
-            .uint8(name: "condition"),              // +0x16 status condition
+            .abstraction(name: "condition", typeName: "StatusCondition"),  // +0x16 status condition
             .uint8(name: "conditionCount"),         // +0x17
             .uint8(name: "conditionTurn"),          // +0x18
             .uint8(name: "conditionTurnNow"),       // +0x19
@@ -128,9 +128,9 @@ public extension XDStructDefaults {
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "gcGameIndex"),
-            .uint8(name: "currentRegion"),
-            .uint8(name: "originalRegion"),
+            .abstraction(name: "gcGameIndex", typeName: "GameVersion"),
+            .abstraction(name: "currentRegion", typeName: "Region"),
+            .abstraction(name: "originalRegion", typeName: "Region"),
             .abstraction(name: "gcLanguage", typeName: "Language"),
             .array(name: "unknown1", count: 0x1C, of: .uint8),   // +0x04..0x20 Gamedata (memcard ID / save counter / floor IDs — TBD)
             .losslessFloat(name: "playTimeJP"),          // +0x20  (f32 BE, JP saves)

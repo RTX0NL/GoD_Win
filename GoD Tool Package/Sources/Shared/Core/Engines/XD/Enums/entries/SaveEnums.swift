@@ -36,4 +36,56 @@ public enum XDSaveEnumDefaults {
         ],
         propertyType: .uint8
     )
+
+    /// Build region (`currentRegion` / `originalRegion`). **TENTATIVE**:
+    /// the region id is a per-build hardcoded constant returned by a
+    /// region function in the DOL; confirming the exact mapping needs all
+    /// three regional builds disassembled. jp/us/pal = 0/1/2 is the
+    /// working hypothesis — override in engine data once confirmed.
+    /// (Unknown values round-trip as `Region_<n>`.)
+    public static let region = Enum(
+        name: "Region",
+        allowUnknownCases: true,
+        values: [
+            .init(name: "japan",  rawValue: 0),
+            .init(name: "us",     rawValue: 1),
+            .init(name: "pal",    rawValue: 2),
+        ],
+        propertyType: .uint8
+    )
+
+    /// Origin game / game index (`gcGameIndex`). Values from the legacy
+    /// tool's `GenIIIGames` — the GC games mark 11 (colosseumXD); GBA
+    /// migrations carry their own value.
+    public static let gameVersion = Enum(
+        name: "GameVersion",
+        allowUnknownCases: true,
+        values: [
+            .init(name: "none",        rawValue: 0),
+            .init(name: "fireRed",     rawValue: 1),
+            .init(name: "leafGreen",   rawValue: 2),
+            .init(name: "sapphire",    rawValue: 8),
+            .init(name: "ruby",        rawValue: 9),
+            .init(name: "emerald",     rawValue: 10),
+            .init(name: "colosseumXD", rawValue: 11),
+        ],
+        propertyType: .uint8
+    )
+
+    /// Non-volatile status condition (`condition`). Values from the
+    /// legacy tool's `XGNonVolatileStatusEffects`.
+    public static let statusCondition = Enum(
+        name: "StatusCondition",
+        allowUnknownCases: true,
+        values: [
+            .init(name: "none",       rawValue: 0),
+            .init(name: "poison",     rawValue: 3),
+            .init(name: "badPoison",  rawValue: 4),
+            .init(name: "paralysis",  rawValue: 5),
+            .init(name: "burn",       rawValue: 6),
+            .init(name: "freeze",     rawValue: 7),
+            .init(name: "sleep",      rawValue: 8),
+        ],
+        propertyType: .uint8
+    )
 }

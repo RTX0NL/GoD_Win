@@ -14,6 +14,9 @@ public extension XDEngine {
             [
                 XDSaveEnumDefaults.gender,
                 XDSaveEnumDefaults.language,
+                XDSaveEnumDefaults.region,
+                XDSaveEnumDefaults.gameVersion,
+                XDSaveEnumDefaults.statusCondition,
             ]
         }
     }

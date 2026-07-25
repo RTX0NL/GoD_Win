@@ -20,6 +20,9 @@ public extension ColosseumEngine {
                 ColoScriptEnumDefaults.groupID,
                 ColoScriptEnumDefaults.characterRID,
                 ColoSaveEnumDefaults.gender,
+                ColoSaveEnumDefaults.region,
+                ColoSaveEnumDefaults.gameVersion,
+                ColoSaveEnumDefaults.abilitySlot,
             ]
         }
     }
