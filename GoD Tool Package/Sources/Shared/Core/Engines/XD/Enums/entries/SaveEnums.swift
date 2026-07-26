@@ -25,9 +25,10 @@ public enum XDSaveEnumDefaults {
     /// games; slot 1 is Japanese, so there is no separate `englishUK`).
     /// European ids follow the legacy order at their legacy values:
     /// german=3, french=4, italian=5, spanish=6. Used for the Config
-    /// `gcLanguage` byte (which holds a real language on single-language
-    /// builds; PAL's Config byte is a `langAreaId`=8 grouping → dumps as
-    /// `Language_8`) and the Pokémon `language` byte.
+    /// `langAreaId` byte (+0x03 area/language grouping: US=2/JP=1/PAL=8→
+    /// `Language_8`), the Config `playerLanguage` byte (+0x2B — the actual
+    /// player-selected language, set via gamedatasave status index 11), and
+    /// the Pokémon `language` byte.
     public static let language = Enum(
         name: "Language",
         allowUnknownCases: true,

@@ -142,7 +142,7 @@ public extension ColosseumStructDefaults {
     ///   - `gcGameIndex`     @ +0x00 (u8)
     ///   - `currentRegion`   @ +0x01 (u8)
     ///   - `originalRegion`  @ +0x02 (u8)
-    ///   - `gcLanguage`      @ +0x03 (u8)
+    ///   - `gcLanguage`      @ +0x03 (u8) — we name it `langAreaId`
     ///   - `playTimeSeconds` @ +0x20 (f32 BE — TimeSpan from seconds)
     static let saveConfigStruct = StructMap(
         name: "ColoSaveConfig",
@@ -152,7 +152,11 @@ public extension ColosseumStructDefaults {
             .abstraction(name: "gcGameIndex", typeName: "GameVersion"),
             .uint8(name: "genId"),                        // fixed build marker (always 3), NOT a region
             .abstraction(name: "region", typeName: "Region"),    // areaId — actual build region (jp=1/us=2/pal=3)
-            .abstraction(name: "gcLanguage", typeName: "Language"),
+            // +0x03 GamedataAttest area/language grouping. Colosseum has NO separate
+            // player-language save field (its gamedatasave setStatus maxes at index 10,
+            // no index-11 language slot like XD), so this byte is the effective language
+            // selector: US=englishUS(2), JP=japanese(1), PAL=8→Language_8.
+            .abstraction(name: "langAreaId", typeName: "Language"),
             .array(name: "unknown1", count: 0x1C, of: .uint8),  // +0x04..0x20 Gamedata header (TBD)
             .losslessFloat(name: "playTimeSeconds"),    // +0x20  (f32 BE)
             .array(name: "unknown2", count: 0x4C, of: .uint8),  // +0x24..0x70 Gamedata (TBD)

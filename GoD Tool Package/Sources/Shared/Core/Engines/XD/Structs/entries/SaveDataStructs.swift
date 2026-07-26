@@ -116,7 +116,8 @@ public extension XDStructDefaults {
     ///   - `gcGameIndex`     @ +0x00
     ///   - `currentRegion`   @ +0x01
     ///   - `originalRegion`  @ +0x02
-    ///   - `gcLanguage`      @ +0x03
+    ///   - `gcLanguage`      @ +0x03 — we name it `langAreaId` (the actual
+    ///     player-selected language is our `playerLanguage` @ +0x2B)
     ///   - `playTimeJP`      @ +0x20 (f32 BE, Japanese saves)
     ///   - `playTimeIntl`    @ +0x30 (f64 BE, US/PAL saves)
     /// `playTimeJP` and `playTimeIntl` cover the same logical "time
@@ -131,10 +132,16 @@ public extension XDStructDefaults {
             .abstraction(name: "gcGameIndex", typeName: "GameVersion"),
             .uint8(name: "genId"),                              // fixed build marker (always 3), NOT a region
             .abstraction(name: "region", typeName: "Region"),   // areaId — the actual build region (jp=1/us=2/pal=3)
-            .abstraction(name: "gcLanguage", typeName: "Language"),
+            .abstraction(name: "langAreaId", typeName: "Language"),   // +0x03 GamedataAttest area/language grouping (US=2/JP=1/PAL=8→Language_8). The player's *selected* language is `playerLanguage` below.
             .array(name: "unknown1", count: 0x1C, of: .uint8),   // +0x04..0x20 Gamedata (memcard ID / save counter / floor IDs — TBD)
             .losslessFloat(name: "playTimeJP"),          // +0x20  (f32 BE, JP saves)
-            .array(name: "unknown2", count: 0x0C, of: .uint8),   // +0x24..0x30 Gamedata (options / PAR checksum — TBD)
+            // +0x24..0x30 GamedataSave tail (base = section start; GamedataSave = base+0x08, so these are GamedataSave+0x1C..0x28).
+            .uint32(name: "prevFloorId"),                       // +0x24  GamedataSave+0x1C
+            .uint8(name: "floorPosIndex"),                      // +0x28  GamedataSave+0x20
+            .uint8(name: "optionNoVibration"),                 // +0x29  GamedataSave+0x21
+            .uint8(name: "optionAudio"),                       // +0x2A  GamedataSave+0x22
+            .abstraction(name: "playerLanguage", typeName: "Language"), // +0x2B  GamedataSave+0x23 — the player-selected in-game language (getStatus/setStatus index 11; "ParChecksum" symbol is a misnomer). US default = englishUS(2).
+            .array(name: "unknown2", count: 0x04, of: .uint8),   // +0x2C..0x30 Gamedata (TBD)
             .losslessDouble(name: "playTimeIntl"),       // +0x30  (f64 BE, US/PAL)
             .array(name: "unknown3", count: 0x50, of: .uint8),   // +0x38..0x88 Gamedata (sys-header checksum / Pokédex playdata — TBD)
         ]
