@@ -49,12 +49,14 @@ public enum ColoScriptEnumDefaults {
         propertyType: .uint16
     )
 
+    // In-game language id — disasm-confirmed japanese=1, englishUS=2
+    // (NOT the legacy XGLanguages japanese=0; slot 1 is Japanese, so no
+    // separate englishUK). European ids keep their legacy order/values.
     public static let language = Enum(
         name: "Language",
         allowUnknownCases: true,
         values: [
-            .init(name: "japanese", rawValue: 0),
-            .init(name: "englishUK", rawValue: 1),
+            .init(name: "japanese", rawValue: 1),
             .init(name: "englishUS", rawValue: 2),
             .init(name: "german", rawValue: 3),
             .init(name: "french", rawValue: 4),

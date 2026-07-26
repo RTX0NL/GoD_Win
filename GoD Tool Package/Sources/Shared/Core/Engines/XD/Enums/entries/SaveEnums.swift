@@ -20,14 +20,19 @@ public enum XDSaveEnumDefaults {
         propertyType: .uint8
     )
 
-    /// GameCube system language (`gcLanguage`). Values from the legacy
-    /// tool's `XGLanguages`.
+    /// In-game language id. Disasm-confirmed: `japanese=1`, `englishUS=2`
+    /// (the legacy `XGLanguages` had `japanese=0` — WRONG for these
+    /// games; slot 1 is Japanese, so there is no separate `englishUK`).
+    /// European ids follow the legacy order at their legacy values:
+    /// german=3, french=4, italian=5, spanish=6. Used for the Config
+    /// `gcLanguage` byte (which holds a real language on single-language
+    /// builds; PAL's Config byte is a `langAreaId`=8 grouping → dumps as
+    /// `Language_8`) and the Pokémon `language` byte.
     public static let language = Enum(
         name: "Language",
         allowUnknownCases: true,
         values: [
-            .init(name: "japanese",  rawValue: 0),
-            .init(name: "englishUK", rawValue: 1),
+            .init(name: "japanese",  rawValue: 1),
             .init(name: "englishUS", rawValue: 2),
             .init(name: "german",    rawValue: 3),
             .init(name: "french",    rawValue: 4),
