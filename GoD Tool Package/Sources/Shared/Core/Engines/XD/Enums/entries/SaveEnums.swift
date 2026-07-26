@@ -39,18 +39,20 @@ public enum XDSaveEnumDefaults {
 
     /// Build region (`currentRegion` / `originalRegion`). **TENTATIVE**:
     /// the region id is a per-build hardcoded constant returned by a
-    /// region function in the DOL; confirming the exact mapping needs all
-    /// three regional builds disassembled. jp/us/pal = 1/3/2 is the
-    /// working assumption (a real US save's currentRegion reads 3, i.e.
-    /// us=3) — override in engine data once confirmed. (Unknown values
-    /// round-trip as `Region_<n>`.)
+    /// build's `AreaId` (the Config/GamedataAttest byte the disasm names
+    /// `areaId`, PKHeX calls `originalRegion`). Confirmed from the
+    /// new-game routine's country-code switch (`gamedataAttestCreate`
+    /// branches): **jp=1, us=2, pal=3** — matches real saves (US=2,
+    /// JP=1). NOTE: the *other* region byte (`genId`, PKHeX
+    /// `currentRegion`) is a hardcoded constant 3 on every build and is
+    /// NOT a region. (Unknown values round-trip as `Region_<n>`.)
     public static let region = Enum(
         name: "Region",
         allowUnknownCases: true,
         values: [
             .init(name: "japan",  rawValue: 1),
-            .init(name: "us",     rawValue: 3),
-            .init(name: "pal",    rawValue: 2),
+            .init(name: "us",     rawValue: 2),
+            .init(name: "pal",    rawValue: 3),
         ],
         propertyType: .uint8
     )

@@ -129,8 +129,8 @@ public extension XDStructDefaults {
         alignmentStyle: .none,
         properties: [
             .abstraction(name: "gcGameIndex", typeName: "GameVersion"),
-            .abstraction(name: "currentRegion", typeName: "Region"),
-            .abstraction(name: "originalRegion", typeName: "Region"),
+            .uint8(name: "genId"),                              // fixed build marker (always 3), NOT a region
+            .abstraction(name: "region", typeName: "Region"),   // areaId — the actual build region (jp=1/us=2/pal=3)
             .abstraction(name: "gcLanguage", typeName: "Language"),
             .array(name: "unknown1", count: 0x1C, of: .uint8),   // +0x04..0x20 Gamedata (memcard ID / save counter / floor IDs — TBD)
             .losslessFloat(name: "playTimeJP"),          // +0x20  (f32 BE, JP saves)

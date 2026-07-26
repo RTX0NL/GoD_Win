@@ -17,16 +17,17 @@ public enum ColoSaveEnumDefaults {
         propertyType: .uint8
     )
 
-    /// Build region (`currentRegion` / `originalRegion`). **TENTATIVE**
-    /// jp/us/pal = 1/3/2 — per-build region id, confirm via disassembly
-    /// of all three regional builds; override in engine data if needed.
+    /// Build region — the Config `areaId` byte (PKHeX `originalRegion`).
+    /// Confirmed from the new-game country-code switch: **jp=1, us=2,
+    /// pal=3** (matches real saves). The other byte `genId` (PKHeX
+    /// `currentRegion`) is a hardcoded constant 3, NOT a region.
     public static let region = Enum(
         name: "Region",
         allowUnknownCases: true,
         values: [
             .init(name: "japan", rawValue: 1),
-            .init(name: "us",    rawValue: 3),
-            .init(name: "pal",   rawValue: 2),
+            .init(name: "us",    rawValue: 2),
+            .init(name: "pal",   rawValue: 3),
         ],
         propertyType: .uint8
     )

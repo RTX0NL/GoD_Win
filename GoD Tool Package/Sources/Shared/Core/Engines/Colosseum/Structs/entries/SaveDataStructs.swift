@@ -67,8 +67,8 @@ public extension ColosseumStructDefaults {
             .array(name: "unknown1", count: 2, of: .uint8),  // +0x02..0x04 undocumented (non-zero leftover, not alignment)
             .uint32(name: "pid"),                       // +0x04 personality value
             .abstraction(name: "version", typeName: "GameVersion"),  // +0x08 origin version
-            .abstraction(name: "currentRegion", typeName: "Region"),  // +0x09
-            .abstraction(name: "originalRegion", typeName: "Region"), // +0x0A
+            .uint8(name: "genId"),                        // +0x09 fixed build marker (always 3), NOT a region
+            .abstraction(name: "region", typeName: "Region"),    // +0x0A areaId — actual build region (jp=1/us=2/pal=3)
             .abstraction(name: "language", typeName: "Language"),  // +0x0B
             .uint16(name: "metLocation"),               // +0x0C
             .uint8(name: "metLevel"),                   // +0x0E
@@ -150,8 +150,8 @@ public extension ColosseumStructDefaults {
         alignmentStyle: .none,
         properties: [
             .abstraction(name: "gcGameIndex", typeName: "GameVersion"),
-            .abstraction(name: "currentRegion", typeName: "Region"),
-            .abstraction(name: "originalRegion", typeName: "Region"),
+            .uint8(name: "genId"),                        // fixed build marker (always 3), NOT a region
+            .abstraction(name: "region", typeName: "Region"),    // areaId — actual build region (jp=1/us=2/pal=3)
             .abstraction(name: "gcLanguage", typeName: "Language"),
             .array(name: "unknown1", count: 0x1C, of: .uint8),  // +0x04..0x20 Gamedata header (TBD)
             .losslessFloat(name: "playTimeSeconds"),    // +0x20  (f32 BE)
