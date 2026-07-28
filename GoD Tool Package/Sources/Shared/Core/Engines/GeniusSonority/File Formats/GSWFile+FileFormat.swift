@@ -106,6 +106,26 @@ extension GSWFile {
             ]
 
             let refs = stamped.allTextureRefs
+
+            // PNG filenames are derived from the ref id, so two refs sharing
+            // one would write to the same file: the dump would keep whichever
+            // was written last and the build would load it for both, quietly
+            // corrupting the menu. Every real GSW surveyed (73 files, ids
+            // 1...43, up to 21 refs each) has unique ids, so this is a
+            // hand-authored-input guard rather than something the games do —
+            // but it must fail loudly rather than silently drop a texture.
+            let duplicateIDs = Dictionary(grouping: refs.map(\.id), by: { $0 })
+                .filter { $0.value.count > 1 }
+                .keys
+                .sorted()
+            guard duplicateIDs.isEmpty else {
+                throw FileFormatErrors.failedToEncode(
+                    format: GSWFile.formatName,
+                    target: "duplicate texture ref ids (\(duplicateIDs.map(String.init).joined(separator: ", "))) "
+                        + "— ids must be unique because they name the PNG artifacts"
+                )
+            }
+
             guard refs.count == stamped.images.count else {
                 throw FileFormatErrors.failedToEncode(
                     format: GSWFile.formatName,

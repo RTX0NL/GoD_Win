@@ -36,13 +36,15 @@ extension WiiOps {
                 logger?.log(.warning("Wii ISO encryption complete"))
 
             case let .fillISO(isoPath, size):
-                guard let isoData = fileSystem.readFile(at: isoPath) else {
+                // See the GameCube equivalent: constant-memory resize where
+                // the tree supports it. This matters most here — a Wii disc
+                // pads to 4.7 GB.
+                guard let current = fileSystem.fileSize(at: isoPath) else {
                     throw FSTErrors.fileNotFound(isoPath, .init())
                 }
-                if isoData.length < size {
-                    logger?.log(.info("Padding ISO to \(size) bytes"))
-                    isoData.pad(by: size - isoData.length)
-                    try fileSystem.writeFile(isoData, at: isoPath, overwrite: true)
+                if current < size {
+                    logger?.log(.info("Padding ISO from \(current) to \(size) bytes"))
+                    try fileSystem.padFile(at: isoPath, toAtLeast: size)
                 }
             }
         }

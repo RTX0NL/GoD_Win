@@ -473,7 +473,11 @@ extension ColoXD {
             let registryPath = sourceFolder.file(entry.file.path)
             let registry: FSYSRegistry = try fileSystem.decodeJSON(from: registryPath)
             // Registry filename is e.g. "D1_out.fsys.json" → FSYS name is "D1_out"
-            // Only include archives with a valid groupID (non-zero) in the TOC
+            //
+            // Group ID 0 means "not a TOC member", not "unknown": the games
+            // ship archives that deliberately have no GSfsys.toc entry, and
+            // re-adding them would produce a TOC the game doesn't expect.
+            // Skipping them is correct — don't "fix" this into a lookup.
             guard registry.groupID != 0 else { continue }
             let fsysName = registryPath.fileName.withoutExtensions
             fsysIDsByFilename[fsysName] = registry.groupID

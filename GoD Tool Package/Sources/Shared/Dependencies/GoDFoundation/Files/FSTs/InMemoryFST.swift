@@ -224,3 +224,60 @@ public class InMemoryFST: FileSystemTree {
         }
     }
 }
+
+// MARK: - Random access
+//
+// Held in memory already, so these are slices and in-place edits rather than
+// real IO. Conforming keeps the fast paths uniform: a caller can ask any tree
+// for a byte range without branching on which kind it has.
+
+extension InMemoryFST: RandomAccessFileSystemTree {
+
+    public func fileSize(at path: File) -> Int? {
+        readFile(at: path)?.length
+    }
+
+    public func readFile(at path: File, range: Range<Int>) -> GoDData? {
+        guard let data = readFile(at: path) else { return nil }
+        let clamped = range.clamped(to: 0..<data.length)
+        guard !clamped.isEmpty else { return GoDData(byteOrder: data.byteOrder) }
+        return data.read(atAddress: clamped.lowerBound, length: clamped.count)
+    }
+
+    public func appendToFile(_ data: GoDData, at path: File) throws {
+        guard let existing = readFile(at: path) else {
+            try writeFile(data, at: path, overwrite: false)
+            return
+        }
+        existing.append(data)
+    }
+
+    public func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
+        guard offset >= 0 else {
+            throw FSTErrors.invalidPath(path.path, .init())
+        }
+        guard let existing = readFile(at: path) else {
+            let padded = GoDData(length: offset, byteOrder: .big)
+            padded.append(data)
+            try writeFile(padded, at: path, overwrite: false)
+            return
+        }
+        // `GoDData.write` grows the buffer when the write runs past the end.
+        existing.write(data, atAddress: UInt(offset))
+    }
+
+    public func resizeFile(at path: File, to length: Int) throws {
+        guard length >= 0 else {
+            throw FSTErrors.invalidPath(path.path, .init())
+        }
+        guard let existing = readFile(at: path) else {
+            try writeFile(GoDData(length: length, byteOrder: .big), at: path, overwrite: false)
+            return
+        }
+        if existing.length < length {
+            existing.pad(by: length - existing.length)
+        } else if existing.length > length {
+            existing.delete(start: length, count: existing.length - length)
+        }
+    }
+}

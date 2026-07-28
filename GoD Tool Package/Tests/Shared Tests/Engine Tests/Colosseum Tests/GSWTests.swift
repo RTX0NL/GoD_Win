@@ -173,4 +173,28 @@ final class GSWTests: XCTestCase {
         let tagStreamBytes = file.tags.reduce(0) { $0 + 8 + $1.payload.count }
         XCTAssertEqual(GSWParser.headerSize + tagStreamBytes, bytes.count)
     }
+    /// PNG artifact names come from the ref id, so duplicate ids would make
+    /// two textures share a file — the dump keeping only the last and the
+    /// build loading it for both. No real GSW does this (73 files surveyed,
+    /// all unique), so it can only arrive from hand-authored input, and it
+    /// has to fail rather than silently drop a texture.
+    func testDuplicateTextureRefIDsAreRejected() throws {
+        // Two texture tags with distinct ids, then forced to collide.
+        // Same shape as `testSkipsMissingTextureIds`, which is the fixture
+        // known to yield two refs.
+        var stream = [UInt8]()
+        stream.append(contentsOf: encodeTag(code: 0x16, payload: makeTexturePayload(id: 1)))
+        stream.append(contentsOf: encodeTag(code: 0x16, payload: makeTexturePayload(id: 3)))
+        let raw = makeHeader(streamSize: stream.count, spriteDepth: 5, chars: 5) + stream
+
+        var gsw = try GSWFile(binary: GoDData(byteStream: raw, byteOrder: .big), name: "sample")
+        XCTAssertEqual(gsw.allTextureRefs.map(\.id), [1, 3])
+        XCTAssertNoThrow(try gsw.outputs, "distinct ids must be fine")
+
+        gsw.tags[1].textures[0].id = gsw.tags[0].textures[0].id
+        XCTAssertThrowsError(try gsw.outputs) { error in
+            XCTAssertTrue("\(error)".contains("duplicate texture ref ids"), "\(error)")
+        }
+    }
+
 }

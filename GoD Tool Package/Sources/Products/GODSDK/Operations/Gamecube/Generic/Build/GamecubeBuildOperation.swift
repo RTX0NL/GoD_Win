@@ -37,18 +37,17 @@ extension Gamecube {
                 isoPath,
                 size
             ):
-                // Use the injected tree, not `FileSystem.shared`: reaching for
-                // the singleton made this the one build step that couldn't run
-                // against an `InMemoryFST`, so it was untestable and ignored
-                // the caller's choice of file system. Mirrors `WiiOps.fillISO`.
-                guard let iso = fileSystem.readFile(at: isoPath) else {
+                // `padFile` resizes in place on a tree that supports random
+                // access, and falls back to read-append-write on one that
+                // doesn't. Padding a disc image to capacity used to read the
+                // whole thing into memory and write it all back — gigabytes of
+                // traffic to append zeros.
+                guard let current = fileSystem.fileSize(at: isoPath) else {
                     throw FSTErrors.fileNotFound(isoPath, .init())
                 }
-                let remaining = size - iso.length
-                if remaining > 0 {
-                    logger?.log(.info("Padding \(isoPath.fileName) to \(size) bytes"))
-                    iso.append(GoDData(length: remaining, byteOrder: .big))
-                    try fileSystem.writeFile(iso, at: isoPath, overwrite: true)
+                if current < size {
+                    logger?.log(.info("Padding \(isoPath.fileName) from \(current) to \(size) bytes"))
+                    try fileSystem.padFile(at: isoPath, toAtLeast: size)
                 }
             }
         }
