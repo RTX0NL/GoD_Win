@@ -19,13 +19,11 @@ extension ColoXD {
                 let dolphinEngine = try DolphinEngine(from: dolphinPath, in: fileSystem)
                 let gsEngine = try GeniusSonorityEngine(from: gsEnginePath, in: fileSystem)
 
-                try buildColosseumXD(
-                    fileSystem: fileSystem,
+                try gsEngine.packProject(
                     fstRegistryFile: fstRegistry,
                     outputFolder: outputFolder,
                     overwrite: overwrite,
-                    dolphinEngine: dolphinEngine,
-                    gsEngine: gsEngine,
+                    fileSystem: fileSystem,
                     logger: logger
                 )
 
@@ -33,13 +31,11 @@ extension ColoXD {
                 let dolphinEngine = try DolphinEngine(from: dolphinPath, in: fileSystem)
                 let gsEngine = try GeniusSonorityEngine(from: gsEnginePath, in: fileSystem)
 
-                try buildColosseumXD(
-                    fileSystem: fileSystem,
+                try gsEngine.packProject(
                     fstRegistryFile: fstRegistry,
                     outputFolder: outputFolder,
                     overwrite: overwrite,
-                    dolphinEngine: dolphinEngine,
-                    gsEngine: gsEngine,
+                    fileSystem: fileSystem,
                     logger: logger
                 )
 
@@ -51,10 +47,9 @@ extension ColoXD {
                 }
 
                 logger?.log(.info("Building GSfsys.toc from FSTRegistry"))
-                let tocData = try buildGSfsysTOC(
+                let tocData = try gsEngine.buildGSfsysTOC(
                     fstRegistryFile: fstRegistryFile,
                     sourceFolder: sourceFolder,
-                    gsEngine: gsEngine,
                     fileSystem: fileSystem
                 )
 
@@ -80,10 +75,9 @@ extension ColoXD {
 
                 logger?.log(.info("Packing FSYS archive from \(registryFile.fileName) entries)"))
 
-                let archiveData = try packFSYSFromRegistry(
+                let archiveData = try gsEngine.packFSYSFromRegistry(
                     registryFile: registryFile,
                     sourceFolder: sourceFolder,
-                    gsEngine: gsEngine,
                     fileSystem: fileSystem
                 )
 
@@ -248,38 +242,6 @@ extension ColoXD {
 
     // MARK: - GSfsys.toc building
 
-    /// Builds GSfsys.toc from the FSYS entries in an FSTRegistry.
-    /// Reads each FSYSRegistry JSON to get the groupID, then serializes a FsysTOC.
-    private static func buildGSfsysTOC(
-        fstRegistryFile: File,
-        sourceFolder: Folder,
-        gsEngine: GeniusSonorityEngine,
-        fileSystem: FileSystemTree
-    ) throws -> GoDData {
-        let fstRegistry: FSTRegistry = try fileSystem.decodeJSON(from: fstRegistryFile)
-        var fsysIDsByFilename = [String: Int]()
-
-        for entry in fstRegistry.entries where entry.type == .fsys {
-            let registryPath = sourceFolder.file(entry.file.path)
-            let registry: FSYSRegistry = try fileSystem.decodeJSON(from: registryPath)
-            // Registry filename is e.g. "D1_out.fsys.json" → FSYS name is "D1_out"
-            //
-            // Group ID 0 means "not a TOC member", not "unknown": the games
-            // ship archives that deliberately have no GSfsys.toc entry, and
-            // re-adding them would produce a TOC the game doesn't expect.
-            // Skipping them is correct — don't "fix" this into a lookup.
-            guard registry.groupID != 0 else { continue }
-            let fsysName = registryPath.fileName.withoutExtensions
-            fsysIDsByFilename[fsysName] = registry.groupID
-        }
-
-        let toc = FsysTOC(fsysIDsByFilename: fsysIDsByFilename, unknown: gsEngine.data.toc.unknown)
-        toc.padding = gsEngine.data.toc.padding
-        toc.junk1 = gsEngine.data.toc.junk1
-        toc.junk2 = gsEngine.data.toc.junk2
-        toc.junk3 = gsEngine.data.toc.junk3
-        return try toc.tocData(with: gsEngine)
-    }
 
     // MARK: - Flash menu (GSW) building
 
@@ -380,215 +342,8 @@ extension ColoXD {
 
     // MARK: - Core FSYS packing
 
-    /// Resolves one `FSYSRegistry.Entry` to the list of archive entries
-    /// it expands to. Most registry entries map 1:1 to an archive entry;
-    /// THP-pair entries expand into the two THH + THD entries the
-    /// archive originally held.
-    private static func resolveArchiveEntries(
-        registryEntry: FSYSRegistry.Entry,
-        sourceFolder: Folder,
-        fileSystem: FileSystemTree
-    ) throws -> [FSYSArchive.Entry] {
-        let filePath = sourceFolder.file(registryEntry.file.path)
-        guard let data = fileSystem.readFile(at: filePath) else {
-            throw FSTErrors.fileNotFound(filePath, .init())
-        }
 
-        // THP pair: split the combined `.thp` back into THH + THD and
-        // emit two FSYS entries with the preserved metadata pair.
-        if let thdMetadata = registryEntry.thdMetadata {
-            let thp = try THPFile(outputs: [
-                FileData(file: registryEntry.file, data: data)
-            ])
-            let (thh, thd) = try thp.splitCombined()
-            return [
-                FSYSArchive.Entry(
-                    metadata: registryEntry.metadata,
-                    filename: registryEntry.metadata.name + "." + registryEntry.metadata.fileType,
-                    data: thh
-                ),
-                FSYSArchive.Entry(
-                    metadata: thdMetadata,
-                    filename: thdMetadata.name + "." + thdMetadata.fileType,
-                    data: thd
-                )
-            ]
-        }
-
-        // Re-encode PNG back to GTX/ATX if texture metadata is present.
-        var entryData = data
-        if filePath.fileType == "png" {
-            let decoder = GXTextureDecoder()
-            if let atxMeta = registryEntry.atxMetadata {
-                if let image = GoDImage.fromPNG(data),
-                   let atxData = decoder.encodeATX(image: image, metadata: atxMeta) {
-                    entryData = atxData
-                }
-            } else if let texMeta = registryEntry.textureMetadata {
-                if let image = GoDImage.fromPNG(data),
-                   let gtxData = decoder.encode(image: image, metadata: texMeta) {
-                    entryData = gtxData
-                }
-            }
-        }
-        let filename = registryEntry.metadata.name + "." + registryEntry.metadata.fileType
-        return [
-            FSYSArchive.Entry(
-                metadata: registryEntry.metadata,
-                filename: filename,
-                data: entryData
-            )
-        ]
-    }
-
-    /// Reads a registry JSON and its entry files from the filesystem,
-    /// packs into an FSYS archive. Pure function safe for concurrent use.
-    private static func packFSYSFromRegistry(
-        registryFile: File,
-        sourceFolder: Folder,
-        discPath: String? = nil,
-        gsEngine: GeniusSonorityEngine,
-        fileSystem: FileSystemTree
-    ) throws -> FileData {
-        let registry: FSYSRegistry = try fileSystem.decodeJSON(from: registryFile)
-
-        var archiveEntries: [FSYSArchive.Entry] = []
-        for registryEntry in registry.entries {
-            archiveEntries.append(contentsOf: try resolveArchiveEntries(
-                registryEntry: registryEntry,
-                sourceFolder: sourceFolder,
-                fileSystem: fileSystem
-            ))
-        }
-
-        let archive = FSYSArchive(metadata: registry.metaData, entries: archiveEntries)
-        // `discPath` is the archive's original location relative to `files/`;
-        // fall back to the registry-derived filename for callers (and older
-        // registries) that don't carry one.
-        let outputPath = discPath ?? registryFile.fileName.withoutExtension
-        return FileData(
-            file: File(outputPath),
-            data: try archive.data(groupID: registry.groupID, engine: gsEngine)
-        )
-    }
 
     // MARK: - Build all FSYS archives from an unpacked project
 
-    private static func buildColosseumXD(
-        fileSystem: FileSystemTree,
-        fstRegistryFile: File,
-        outputFolder: Folder,
-        overwrite: Bool,
-        dolphinEngine: DolphinEngine,
-        gsEngine: GeniusSonorityEngine,
-        logger: Logger? = nil
-    ) throws {
-        guard let sourceFolder = fstRegistryFile.parentFolder else {
-            throw FSTErrors.fileNotFound(fstRegistryFile, .init())
-        }
-        let fstRegistry: FSTRegistry = try fileSystem.decodeJSON(from: fstRegistryFile)
-
-        logger?.log(.info("Building Colosseum/XD File System"))
-        logger?.log(.taskStatus(taskName: "Build Colosseum/XD File System", status: .started))
-
-        let fsysEntries = fstRegistry.entries.filter { $0.type == .fsys }
-        let binaryEntries = fstRegistry.entries.filter { $0.type == .binary }
-        let totalCount = fsysEntries.count + binaryEntries.count
-
-        // Phase 1: Copy non-FSYS binary files to output
-        for (i, entry) in binaryEntries.enumerated() {
-            let sourcePath = sourceFolder.file(entry.file.path)
-            guard let data = fileSystem.readFile(at: sourcePath) else {
-                throw FSTErrors.fileNotFound(sourcePath, .init())
-            }
-            // `rebuildPath` is the file's original location relative to
-            // `files/`, so subdirectories on the disc are reproduced rather
-            // than flattened into one folder (which also collided whenever
-            // two directories held the same filename).
-            let outputFile = outputFolder.folder("files").file(entry.rebuildPath)
-            if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
-                try fileSystem.writeFile(data, at: outputFile, overwrite: overwrite)
-            }
-
-            let percent = Int(Double(i + 1) / Double(totalCount) * 100)
-            if percent > 0 {
-                logger?.log(.taskStatus(taskName: "Build Colosseum/XD File System", status: .progress(Percentage(Double(percent)))))
-            }
-        }
-
-        // Phase 2: Pack FSYS archives concurrently.
-        //
-        // Results go through an unsafe buffer pointer, not `array[i] = …`:
-        // subscripting an Array from several threads races even with one
-        // distinct index per thread, because the setter first runs
-        // `_makeMutableAndUnique()` on the shared array struct. See the
-        // matching note in `ColoXDDumpOperation`.
-        //
-        // Every worker only *reads* `fileSystem` here; `FileSystemTree` is
-        // documented as safe for concurrent reads but not for any write, so
-        // nothing in this loop may mutate the tree.
-        var fsysResults = [Result<FileData, Error>?](repeating: nil, count: fsysEntries.count)
-        let progressLock = NSLock()
-        var fsysProcessed = 0
-        var lastReportedPercent = Int(Double(binaryEntries.count) / Double(totalCount) * 100)
-
-        fsysResults.withUnsafeMutableBufferPointer { results in
-            DispatchQueue.concurrentPerform(iterations: fsysEntries.count) { i in
-                let entry = fsysEntries[i]
-                let registryFile = sourceFolder.file(entry.file.path)
-
-                do {
-                    results[i] = .success(try packFSYSFromRegistry(
-                        registryFile: registryFile,
-                        sourceFolder: sourceFolder,
-                        discPath: entry.rebuildPath,
-                        gsEngine: gsEngine,
-                        fileSystem: fileSystem
-                    ))
-                } catch {
-                    results[i] = .failure(error)
-                }
-
-                if let logger {
-                    progressLock.lock()
-                    fsysProcessed += 1
-                    let processed = binaryEntries.count + fsysProcessed
-                    let percent = Int(min(Double(processed) / Double(totalCount) * 100, 100))
-                    if percent > lastReportedPercent {
-                        lastReportedPercent = percent
-                        logger.log(.taskStatus(taskName: "Build Colosseum/XD File System", status: .progress(Percentage(Double(percent)))))
-                    }
-                    progressLock.unlock()
-                }
-            }
-        }
-
-        // Write packed archives to output
-        for result in fsysResults {
-            guard let result else { continue }
-            switch result {
-            case .success(let packed):
-                let outputFile = outputFolder.folder("files").file(packed.file.path)
-                if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
-                    try fileSystem.writeFile(packed.data, at: outputFile, overwrite: overwrite)
-                }
-            case .failure(let error):
-                throw error
-            }
-        }
-
-        // Phase 3: Rebuild GSfsys.toc from FSYS registries
-        logger?.log(.info("Rebuilding GSfsys.toc"))
-        let tocData = try buildGSfsysTOC(
-            fstRegistryFile: fstRegistryFile,
-            sourceFolder: sourceFolder,
-            gsEngine: gsEngine,
-            fileSystem: fileSystem
-        )
-        let tocOutputFile = outputFolder.file("files/" + gsEngine.data.fsys.GSfsysFile.fileName)
-        try fileSystem.writeFile(tocData, at: tocOutputFile, overwrite: true)
-        logger?.log(.info("Wrote \(tocOutputFile.fileName) (\(tocData.length) bytes)"))
-
-        logger?.log(.taskStatus(taskName: "Build Colosseum/XD File System", status: .completed(true)))
-    }
 }
