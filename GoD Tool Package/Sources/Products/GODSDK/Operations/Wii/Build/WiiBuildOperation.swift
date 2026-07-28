@@ -31,7 +31,7 @@ extension WiiOps {
                 let isoData = try iso.encryptedData(commonKey: commonKey, logger: logger)
 
                 if overwrite || fileSystem.inspectFile(at: isoPath) == nil {
-                    fileSystem.writeFile(isoData, at: isoPath, overwrite: overwrite)
+                    try fileSystem.writeFile(isoData, at: isoPath, overwrite: overwrite)
                 }
                 logger?.log(.warning("Wii ISO encryption complete"))
 
@@ -42,7 +42,7 @@ extension WiiOps {
                 if isoData.length < size {
                     logger?.log(.info("Padding ISO to \(size) bytes"))
                     isoData.pad(by: size - isoData.length)
-                    fileSystem.writeFile(isoData, at: isoPath, overwrite: true)
+                    try fileSystem.writeFile(isoData, at: isoPath, overwrite: true)
                 }
             }
         }

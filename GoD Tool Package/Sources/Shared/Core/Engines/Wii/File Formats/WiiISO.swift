@@ -17,6 +17,14 @@ public final class WiiISO: FileSystemTree {
 
     private static let partitionTypeNames = ["DATA", "UPDATE", "CHANNEL"]
 
+    /// The second magic word every Wii disc carries at 0x4FFFC, outside both the
+    /// disc header and any partition. A format invariant like WiiCrypto's cluster
+    /// geometry, so it lives in code rather than in the engine's disc constants
+    /// (those are serialized per project, and an added field would stop older
+    /// engine folders from decoding).
+    private static let discMagicWord2: UInt32 = 0xC3F81A8E
+    private static let discMagicWord2Offset = 0x4FFFC
+
     private static func partitionName(for type: Int, index: Int, total: Int) -> String {
         if type < partitionTypeNames.count {
             let baseName = partitionTypeNames[type]
@@ -51,20 +59,25 @@ public final class WiiISO: FileSystemTree {
         return nil
     }
 
-    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) -> Bool {
-        if let (_, relativePath) = resolvePartition(for: path.path) {
-            return partitionForPath(path.path)?.partition.writeFile(file, at: File(relativePath), overwrite: overwrite) ?? false
+    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) throws {
+        guard let (_, relativePath) = resolvePartition(for: path.path),
+              let partition = partitionForPath(path.path)?.partition else {
+            throw FSTErrors.invalidPath(path.path, .init())
         }
-        return false
+        try partition.writeFile(file, at: File(relativePath), overwrite: overwrite)
     }
 
-    public func moveFile(at path: File, to newPath: File, overwrite: Bool) -> Bool { false }
+    /// Moving files across partition boundaries isn't modelled.
+    public func moveFile(at path: File, to newPath: File, overwrite: Bool) throws {
+        throw FSTErrors.failedToMoveFile(path, newPath, .init())
+    }
 
-    public func deleteFile(at path: File) -> Bool {
-        if let (_, relativePath) = resolvePartition(for: path.path) {
-            return partitionForPath(path.path)?.partition.deleteFile(at: File(relativePath)) ?? false
+    public func deleteFile(at path: File) throws {
+        guard let (_, relativePath) = resolvePartition(for: path.path),
+              let partition = partitionForPath(path.path)?.partition else {
+            throw FSTErrors.invalidPath(path.path, .init())
         }
-        return false
+        try partition.deleteFile(at: File(relativePath))
     }
 
     public func inspectFolder(at path: Folder) -> FolderMetaData? {
@@ -89,27 +102,39 @@ public final class WiiISO: FileSystemTree {
         return nil
     }
 
-    public func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) -> Bool { false }
-
-    public func createFolder(at path: Folder, overwrite: Bool) -> Bool {
-        if let (_, relativePath) = resolvePartition(for: path.path) {
-            return partitionForPath(path.path)?.partition.createFolder(at: Folder(relativePath), overwrite: overwrite) ?? false
-        }
-        return false
+    /// Moving folders across partition boundaries isn't modelled.
+    public func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) throws {
+        throw FSTErrors.failedToMoveFolder(path, newPath, .init())
     }
 
-    public func deleteFolder(at path: Folder) -> Bool {
-        if let (_, relativePath) = resolvePartition(for: path.path) {
-            return partitionForPath(path.path)?.partition.deleteFolder(at: Folder(relativePath)) ?? false
+    public func createFolder(at path: Folder, overwrite: Bool) throws {
+        guard let (_, relativePath) = resolvePartition(for: path.path),
+              let partition = partitionForPath(path.path)?.partition else {
+            throw FSTErrors.invalidPath(path.path, .init())
         }
-        return false
+        try partition.createFolder(at: Folder(relativePath), overwrite: overwrite)
+    }
+
+    public func deleteFolder(at path: Folder) throws {
+        guard let (_, relativePath) = resolvePartition(for: path.path),
+              let partition = partitionForPath(path.path)?.partition else {
+            throw FSTErrors.invalidPath(path.path, .init())
+        }
+        try partition.deleteFolder(at: Folder(relativePath))
     }
 
     private func setupTopLevelFST() {
-        topLevelFST.writeFile(discHeader, at: File("/disc_header.bin"), overwrite: true)
-        topLevelFST.writeFile(regionSettings, at: File("/region_settings.bin"), overwrite: true)
+        // Disc-level copies at the tree root are the source of truth for the
+        // rebuild path (see the reader in `init(fileSystem:...)`).
+        try? topLevelFST.writeFile(discHeader, at: File("/disc_header.bin"), overwrite: true)
+        try? topLevelFST.writeFile(regionSettings, at: File("/region_settings.bin"), overwrite: true)
         for (name, _) in partitions {
-            topLevelFST.createFolder(at: Folder("/\(name)"), overwrite: true)
+            try? topLevelFST.createFolder(at: Folder("/\(name)"), overwrite: true)
+            // Dolphin's DirectoryBlob reads the disc header/region from inside
+            // each partition folder (e.g. DATA/disc/header.bin), so mirror them
+            // there too. These route into the partition's own tree via writeFile.
+            try? writeFile(discHeader, at: File("/\(name)/disc/header.bin"), overwrite: true)
+            try? writeFile(regionSettings, at: File("/\(name)/disc/region.bin"), overwrite: true)
         }
     }
 
@@ -249,6 +274,11 @@ public final class WiiISO: FileSystemTree {
         // Write region settings
         isoData.write(regionSettings, atAddress: 0x4E000)
 
+        // Restore the second magic word. It sits in the unencrypted region
+        // rather than in any file we dump, so a rebuild has to re-emit it —
+        // wit and the drive firmware use it to recognise a Wii disc.
+        isoData.write(Self.discMagicWord2, atAddress: Self.discMagicWord2Offset)
+
         // Build partition table and write partitions
         let partTableOffset = wiiEngine.data.disc.partitionTableOffset
 
@@ -279,13 +309,9 @@ public final class WiiISO: FileSystemTree {
             currentOffset += encryptedPartition.length
         }
 
-        // Pad to disc capacity
-        let maxSize = wiiEngine.data.disc.maxDiscCapacity
-        if isoData.length < maxSize {
-            logger?.log(.info("Padding ISO to disc capacity (\(maxSize) bytes)"))
-            isoData.pad(by: maxSize - isoData.length)
-        }
-
+        // Not padded to disc capacity here: that is the separate fillISO
+        // operation's job, and doing it unconditionally would make every
+        // rebuild — including a test-sized one — a 4.7 GB allocation.
         logger?.log(.taskStatus(taskName: taskName, status: .completed(true)))
         return isoData
     }

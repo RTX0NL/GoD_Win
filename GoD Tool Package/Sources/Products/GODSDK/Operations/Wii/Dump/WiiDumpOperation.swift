@@ -33,7 +33,7 @@ extension WiiOps {
                     dolphinEngine: dolphinEngine,
                     logger: logger
                 )
-                fileSystem.importFST(iso, from: Folder("/"), to: outputFolder, overwrite: overwrite, logger: logger)
+                try fileSystem.importFST(iso, from: Folder("/"), to: outputFolder, overwrite: overwrite, logger: logger)
                 logger?.log(.warning("Wii ISO decryption complete"))
             }
         }

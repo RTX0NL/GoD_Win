@@ -4,10 +4,14 @@ extension WiiEngine.Data {
     public struct PartitionFiles: Codable {
         public private(set) var systemFolder = Folder("/sys")
         public private(set) var filesFolder = Folder("/files")
-        public private(set) var ticketFile = File("/sys/ticket.bin")
-        public private(set) var tmdFile = File("/sys/tmd.bin")
-        public private(set) var certFile = File("/sys/cert.bin")
-        public private(set) var h3File = File("/sys/h3.bin")
+        // ticket/tmd/cert/h3 sit at the partition root (not under /sys) so the
+        // extracted tree matches Dolphin's DirectoryBlob layout and can be
+        // booted directly as a folder. Dolphin finds the title key in the
+        // partition-root ticket.bin; under /sys it can't and won't boot.
+        public private(set) var ticketFile = File("/ticket.bin")
+        public private(set) var tmdFile = File("/tmd.bin")
+        public private(set) var certFile = File("/cert.bin")
+        public private(set) var h3File = File("/h3.bin")
         public private(set) var bootFile = File("/sys/boot.bin")
         public private(set) var bi2File = File("/sys/bi2.bin")
         public private(set) var apploaderFile = File("/sys/apploader.img")

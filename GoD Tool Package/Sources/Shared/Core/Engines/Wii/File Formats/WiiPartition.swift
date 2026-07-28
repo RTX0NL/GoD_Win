@@ -24,20 +24,26 @@ public final class WiiPartition: FileSystemTree {
         type < Self.partitionTypeNames.count ? Self.partitionTypeNames[type] : "PARTITION_\(type)"
     }
 
+    /// Where a non-DATA partition's opaque decrypted payload is kept. UPDATE and
+    /// CHANNEL partitions hold IOS/WAD data with no game filesystem, so they are
+    /// dumped and rebuilt as one blob. This is our own dump layout rather than a
+    /// game constant, so it lives here and not in the engine's partition files.
+    private static let partitionDataFile = File("/sys/partition_data.bin")
+
     // MARK: - FileSystemTree delegation
 
     public func inspectFile(at path: File) -> FileMetaData? { fst.inspectFile(at: path) }
     public func readFile(at path: File) -> GoDData? { fst.readFile(at: path) }
-    public func moveFile(at path: File, to newPath: File, overwrite: Bool) -> Bool { fst.moveFile(at: path, to: newPath, overwrite: overwrite) }
-    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) -> Bool {
+    public func moveFile(at path: File, to newPath: File, overwrite: Bool) throws { try fst.moveFile(at: path, to: newPath, overwrite: overwrite) }
+    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) throws {
         file.setByteOrder(.big)
-        return fst.writeFile(file, at: path, overwrite: overwrite)
+        try fst.writeFile(file, at: path, overwrite: overwrite)
     }
-    public func deleteFile(at path: File) -> Bool { fst.deleteFile(at: path) }
+    public func deleteFile(at path: File) throws { try fst.deleteFile(at: path) }
     public func inspectFolder(at path: Folder) -> FolderMetaData? { fst.inspectFolder(at: path) }
-    public func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) -> Bool { fst.moveFolder(at: path, to: newPath, overwrite: overwrite) }
-    public func createFolder(at path: Folder, overwrite: Bool) -> Bool { fst.createFolder(at: path, overwrite: overwrite) }
-    public func deleteFolder(at path: Folder) -> Bool { fst.deleteFolder(at: path) }
+    public func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) throws { try fst.moveFolder(at: path, to: newPath, overwrite: overwrite) }
+    public func createFolder(at path: Folder, overwrite: Bool) throws { try fst.createFolder(at: path, overwrite: overwrite) }
+    public func deleteFolder(at path: Folder) throws { try fst.deleteFolder(at: path) }
 
     // MARK: - Decrypt from ISO data
 
@@ -132,13 +138,13 @@ public final class WiiPartition: FileSystemTree {
         logger?.log(.info("  Decrypted view length: \(decryptedView.length) bytes"))
 
         // Create folder structure
-        fst.createFolder(at: partFiles.systemFolder, overwrite: true)
+        try fst.createFolder(at: partFiles.systemFolder, overwrite: true)
 
         // Write partition metadata as files
-        fst.writeFile(ticketData, at: partFiles.ticketFile, overwrite: true)
-        fst.writeFile(tmdData, at: partFiles.tmdFile, overwrite: true)
-        fst.writeFile(certData, at: partFiles.certFile, overwrite: true)
-        fst.writeFile(h3Data, at: partFiles.h3File, overwrite: true)
+        try fst.writeFile(ticketData, at: partFiles.ticketFile, overwrite: true)
+        try fst.writeFile(tmdData, at: partFiles.tmdFile, overwrite: true)
+        try fst.writeFile(certData, at: partFiles.certFile, overwrite: true)
+        try fst.writeFile(h3Data, at: partFiles.h3File, overwrite: true)
 
         // Only DATA partitions (type 0) have a game filesystem (boot.bin, DOL, FST, user files).
         // UPDATE and CHANNEL partitions contain IOS/WAD data — store as raw decrypted blob.
@@ -146,7 +152,7 @@ public final class WiiPartition: FileSystemTree {
             let taskName = "Decrypt \(partTypeName) partition"
             logger?.log(.taskStatus(taskName: taskName, status: .started))
 
-            fst.createFolder(at: partFiles.filesFolder, overwrite: true)
+            try fst.createFolder(at: partFiles.filesFolder, overwrite: true)
 
             // Parse boot.bin
             let bootDataStruct = dolphinEngine.bootDataStruct
@@ -155,7 +161,7 @@ public final class WiiPartition: FileSystemTree {
                 logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
                 throw FileFormatErrors.invalid(format: Self.formatName)
             }
-            fst.writeFile(bootData.data, at: partFiles.bootFile, overwrite: true)
+            try fst.writeFile(bootData.data, at: partFiles.bootFile, overwrite: true)
             logger?.log(.info("  Parsed boot.bin (\(bootData.length) bytes)"))
 
             // Parse bi2.bin
@@ -166,7 +172,7 @@ public final class WiiPartition: FileSystemTree {
                 logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
                 throw FileFormatErrors.invalid(format: Self.formatName)
             }
-            fst.writeFile(bi2Data.data, at: partFiles.bi2File, overwrite: true)
+            try fst.writeFile(bi2Data.data, at: partFiles.bi2File, overwrite: true)
             logger?.log(.info("  Parsed bi2.bin (\(bi2Data.length) bytes)"))
 
             // Parse apploader
@@ -178,28 +184,28 @@ public final class WiiPartition: FileSystemTree {
                 throw FileFormatErrors.invalid(format: Self.formatName)
             }
             let appSize: Int = try apploaderHeader.size
-            let trailerSize: Int = try apploaderHeader.trailerSize
+            let trailerSize: Int = try apploaderHeader.trailer_size
             let totalApploaderSize = apploaderHeader.length + appSize + trailerSize
             guard let apploaderData = decryptedView.read(atAddress: apploaderOffset, length: totalApploaderSize) else {
                 logger?.log(.error("Failed to read apploader data from decrypted \(partTypeName) partition"))
                 logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
                 throw FileFormatErrors.invalid(format: Self.formatName)
             }
-            fst.writeFile(apploaderData, at: partFiles.apploaderFile, overwrite: true)
+            try fst.writeFile(apploaderData, at: partFiles.apploaderFile, overwrite: true)
             logger?.log(.info("  Parsed apploader (\(totalApploaderSize) bytes)"))
 
             // Parse main.dol
             // Wii partition offsets in boot.bin are stored >> 2 (divided by fstOffsetMultiplier)
             let offsetMultiplier = wiiEngine.data.disc.fstOffsetMultiplier
-            let dolOffset: Int = try bootData.mainExecutableOffset * offsetMultiplier
+            let dolOffset: Int = try bootData.main_executable_offset * offsetMultiplier
             let dolHeaderStruct = dolphinEngine.dolHeaderStruct
             guard let dolHeader = decryptedView.read(struct: dolHeaderStruct, atAddress: dolOffset) else {
                 logger?.log(.error("Failed to parse DOL header from decrypted \(partTypeName) partition at offset 0x\(String(dolOffset, radix: 16))"))
                 logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
                 throw FileFormatErrors.invalid(format: Self.formatName)
             }
-            let textSizes: [UInt32] = try dolHeader.textSectionsSizes
-            let dataSizes: [UInt32] = try dolHeader.dataSectionsSizes
+            let textSizes: [UInt32] = try dolHeader.text_sections_sizes
+            let dataSizes: [UInt32] = try dolHeader.data_sections_sizes
             let dolSize = dolHeader.length + textSizes.map(\.asInt).reduce(0, +) + dataSizes.map(\.asInt).reduce(0, +)
             logger?.log(.info("  DOL: offset=0x\(String(dolOffset, radix: 16)) header=\(dolHeader.length) text=\(textSizes.map(\.asInt)) data=\(dataSizes.map(\.asInt)) total=\(dolSize) viewLen=\(decryptedView.length)"))
             guard let dolData = decryptedView.read(atAddress: dolOffset, length: dolSize) else {
@@ -207,26 +213,33 @@ public final class WiiPartition: FileSystemTree {
                 logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
                 throw FileFormatErrors.invalid(format: Self.formatName)
             }
-            fst.writeFile(dolData, at: partFiles.executableFile, overwrite: true)
+            try fst.writeFile(dolData, at: partFiles.executableFile, overwrite: true)
             logger?.log(.info("  Parsed main.dol (\(dolSize) bytes) at offset 0x\(String(dolOffset, radix: 16))"))
 
             // Parse FST (offsets in Wii boot.bin are stored >> 2)
-            let fstOffset: Int = try bootData.fstOffset * offsetMultiplier
-            let fstSize: Int = try bootData.fstSize * offsetMultiplier
+            let fstOffset: Int = try bootData.fst_offset * offsetMultiplier
+            let fstSize: Int = try bootData.fst_size * offsetMultiplier
             guard let fstData = decryptedView.read(atAddress: fstOffset, length: fstSize) else {
                 logger?.log(.error("Failed to read FST from decrypted \(partTypeName) partition at offset 0x\(String(fstOffset, radix: 16))"))
                 logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
                 throw FileFormatErrors.invalid(format: Self.formatName)
             }
-            fst.writeFile(fstData, at: partFiles.fstFile, overwrite: true)
+            try fst.writeFile(fstData, at: partFiles.fstFile, overwrite: true)
             logger?.log(.info("  Parsed fst.bin (\(fstSize) bytes) at offset 0x\(String(fstOffset, radix: 16))"))
 
-            // Parse user files from FST
-            let userSectionOffset: Int = try bootData.userDataOffset * offsetMultiplier
-            let fstManifest = try DolphinFST(tocData: fstData, userSectionOffset: userSectionOffset, dolphinEngine: dolphinEngine)
+            // Parse user files from FST. A Wii FST stores each entry's file
+            // offset >> 2 as well, so the Wii multiplier has to be passed in —
+            // the Dolphin engine's own value is 1.
+            let userSectionOffset: Int = try bootData.user_data_offset * offsetMultiplier
+            let fstManifest = try DolphinFST(
+                tocData: fstData,
+                userSectionOffset: userSectionOffset,
+                dolphinEngine: dolphinEngine,
+                offsetMultiplier: offsetMultiplier
+            )
 
-            fstManifest.folders.sorted().forEach { folder in
-                fst.createFolder(at: folder, overwrite: true)
+            try fstManifest.folders.sorted().forEach { folder in
+                try fst.createFolder(at: folder, overwrite: true)
             }
 
             let sortedFiles = fstManifest.files.keys.sorted()
@@ -236,7 +249,7 @@ public final class WiiPartition: FileSystemTree {
             for (index, file) in sortedFiles.enumerated() {
                 guard let (offset, size) = fstManifest.files[file],
                       let fileData = decryptedView.read(atAddress: offset + userSectionOffset, length: size) else { continue }
-                fst.writeFile(fileData, at: file, overwrite: true)
+                try fst.writeFile(fileData, at: file, overwrite: true)
 
                 if totalFiles > 0, (index + 1) % max(totalFiles / 20, 1) == 0 || index == totalFiles - 1 {
                     let percentage = Percentage(Double(index + 1) / Double(totalFiles) * 100)
@@ -251,7 +264,7 @@ public final class WiiPartition: FileSystemTree {
             logger?.log(.taskStatus(taskName: taskName, status: .started))
             // Non-DATA partition: store raw decrypted data as a blob
             if let rawData = decryptedView.read(atAddress: 0, length: decryptedView.length) {
-                fst.writeFile(rawData, at: File("/sys/partition_data.bin"), overwrite: true)
+                try fst.writeFile(rawData, at: Self.partitionDataFile, overwrite: true)
                 logger?.log(.info("  Stored \(partTypeName) partition data (\(decryptedView.length) bytes)"))
             }
             logger?.log(.taskStatus(taskName: taskName, status: .completed(true)))
@@ -277,10 +290,78 @@ public final class WiiPartition: FileSystemTree {
         self.tmd = tmd
         self.certChain = certChain
         self.h3Table = h3Table
-        importFST(source, from: rootFolder, to: Folder("/"), overwrite: true)
+        try? importFST(source, from: rootFolder, to: Folder("/"), overwrite: true)
     }
 
     // MARK: - Encrypt to binary
+
+    /// Lay the DATA partition's game filesystem back out into a decrypted
+    /// payload — bi2, apploader, DOL, FST, user files — with boot.bin updated to
+    /// match. Every offset boot.bin and the FST record is stored >> 2 on a Wii
+    /// disc, which is what the read path multiplies back up.
+    private func rebuiltGameFilesystem(taskName: String, logger: Logger?) throws -> GoDData {
+        let partFiles = wiiEngine.data.partitionFiles
+        let systemFiles = dolphinEngine.data.systemFiles
+        let offsetMultiplier = max(wiiEngine.data.disc.fstOffsetMultiplier, 1)
+
+        func encodingFailure() -> Error {
+            logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
+            return FileFormatErrors.failedToEncode(format: Self.formatName, target: "Wii partition")
+        }
+
+        let decryptedData = GoDData(length: 0, byteOrder: .big)
+
+        guard let bootFileData = readFile(at: partFiles.bootFile),
+              let bootStruct = bootFileData.read(struct: dolphinEngine.bootDataStruct, atAddress: 0) else {
+            logger?.log(.error("Failed to read boot.bin for \(typeName) partition encryption"))
+            throw encodingFailure()
+        }
+
+        guard let bi2Data = readFile(at: partFiles.bi2File) else { throw encodingFailure() }
+        decryptedData.write(bi2Data, atAddress: systemFiles.bi2DataOffset)
+
+        guard let apploaderData = readFile(at: partFiles.apploaderFile) else { throw encodingFailure() }
+        let apploaderOffset = systemFiles.apploaderOffset
+        decryptedData.write(apploaderData, atAddress: apploaderOffset)
+
+        guard let dolData = readFile(at: partFiles.executableFile) else { throw encodingFailure() }
+        let dolAlignment = max(systemFiles.dolOffsetAlignment, 1)
+        let dolOffset = (apploaderOffset + apploaderData.length).aligned(to: dolAlignment)
+        decryptedData.write(dolData, atAddress: dolOffset)
+
+        let fstManifest = DolphinFST(fileSystem: self, root: partFiles.filesFolder)
+        // boot.bin stores the FST size >> 2 as well, so reserve whole words.
+        let fstSize = fstManifest.tocDataLength.aligned(to: offsetMultiplier)
+        let fstOffset = (dolOffset + dolData.length).aligned(to: offsetMultiplier)
+
+        let userAlignment = max(dolphinEngine.data.userFiles.userOffsetAlignment, 1)
+        let userOffset = (fstOffset + fstSize).aligned(to: userAlignment)
+
+        let fstData = try fstManifest.tocData(
+            userOffset: userOffset,
+            dolphinEngine: dolphinEngine,
+            offsetMultiplier: offsetMultiplier
+        )
+        decryptedData.write(fstData, atAddress: fstOffset)
+
+        bootStruct.main_executable_offset = dolOffset / offsetMultiplier
+        bootStruct.fst_offset = fstOffset / offsetMultiplier
+        bootStruct.fst_size = fstSize / offsetMultiplier
+        bootStruct.max_fst_size = fstSize / offsetMultiplier
+        bootStruct.user_data_offset = userOffset / offsetMultiplier
+
+        logger?.log(.info("  Layout: DOL @ 0x\(String(dolOffset, radix: 16)), FST @ 0x\(String(fstOffset, radix: 16)), user @ 0x\(String(userOffset, radix: 16))"))
+
+        let sortedFiles = fstManifest.files.sorted(by: { $0.value.offsetInUserSection < $1.value.offsetInUserSection })
+        for (file, value) in sortedFiles {
+            guard let fileData = fst.readFile(at: file) else { throw encodingFailure() }
+            decryptedData.write(fileData, atAddress: userOffset + value.offsetInUserSection)
+        }
+
+        // boot.bin last, now that every offset it records is known.
+        decryptedData.write(struct: bootStruct, atAddress: systemFiles.bootDataOffset)
+        return decryptedData
+    }
 
     /// Rebuild the partition into encrypted binary data.
     public func encrypt(commonKey: [UInt8], logger: Logger? = nil) throws -> GoDData {
@@ -288,77 +369,20 @@ public final class WiiPartition: FileSystemTree {
         let taskName = "Encrypt \(typeName) partition"
         logger?.log(.taskStatus(taskName: taskName, status: .started))
 
-        // Reconstruct the decrypted partition data from the file system
-        let decryptedData = GoDData(length: 0, byteOrder: .big)
-
-        // Read boot.bin
-        let bootDataStruct = dolphinEngine.bootDataStruct
-        guard let bootFileData = readFile(at: partFiles.bootFile),
-              let bootStruct = bootFileData.read(struct: bootDataStruct, atAddress: 0) else {
-            logger?.log(.error("Failed to read boot.bin for \(typeName) partition encryption"))
-            logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
-            throw FileFormatErrors.failedToEncode(format: Self.formatName, target: "Wii partition")
-        }
-
-        // Write bi2.bin
-        guard let bi2Data = readFile(at: partFiles.bi2File) else {
-            logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
-            throw FileFormatErrors.failedToEncode(format: Self.formatName, target: "Wii partition")
-        }
-        let bi2Offset = dolphinEngine.data.systemFiles.bi2DataOffset
-        decryptedData.write(bi2Data, atAddress: bi2Offset)
-
-        // Write apploader
-        guard let apploaderData = readFile(at: partFiles.apploaderFile) else {
-            logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
-            throw FileFormatErrors.failedToEncode(format: Self.formatName, target: "Wii partition")
-        }
-        let apploaderOffset = dolphinEngine.data.systemFiles.apploaderOffset
-        decryptedData.write(apploaderData, atAddress: apploaderOffset)
-
-        // Write DOL
-        let dolAlignment = max(dolphinEngine.data.systemFiles.dolOffsetAlignment, 1)
-        let dolOffset = (apploaderOffset + apploaderData.length).aligned(to: dolAlignment)
-        bootStruct.mainExecutableOffset = dolOffset
-
-        guard let dolData = readFile(at: partFiles.executableFile) else {
-            logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
-            throw FileFormatErrors.failedToEncode(format: Self.formatName, target: "Wii partition")
-        }
-        decryptedData.write(dolData, atAddress: dolOffset)
-
-        // Write FST
-        let filesFolder = partFiles.filesFolder
-        let fstManifest = DolphinFST(fileSystem: self, root: filesFolder)
-        let fstSize = fstManifest.tocDataLength
-
-        let fstOffset = (dolOffset + dolData.length).aligned(to: wiiEngine.data.disc.fstOffsetMultiplier)
-        bootStruct.fstOffset = fstOffset
-        bootStruct.fstSize = fstSize
-        bootStruct.maxFstSize = fstSize
-
-        let userAlignment = dolphinEngine.data.userFiles.userOffsetAlignment
-        let userOffset = (fstOffset + fstSize).aligned(to: userAlignment)
-        bootStruct.userDataOffset = userOffset
-
-        let fstData = try fstManifest.tocData(userOffset: userOffset, dolphinEngine: dolphinEngine)
-        decryptedData.write(fstData, atAddress: fstOffset)
-
-        logger?.log(.info("  Layout: DOL @ 0x\(String(dolOffset, radix: 16)), FST @ 0x\(String(fstOffset, radix: 16)), user @ 0x\(String(userOffset, radix: 16))"))
-
-        // Write user files
-        let sortedFiles = fstManifest.files.sorted(by: { $0.value.offsetInUserSection < $1.value.offsetInUserSection })
-        for (file, value) in sortedFiles {
-            guard let fileData = self.fst.readFile(at: file) else {
+        // Only DATA partitions carry a game filesystem to lay out again. UPDATE
+        // and CHANNEL partitions were dumped as one opaque decrypted blob, so
+        // that blob *is* their payload — asking them for a boot.bin would fail.
+        let decryptedData: GoDData
+        if type == 0 {
+            decryptedData = try rebuiltGameFilesystem(taskName: taskName, logger: logger)
+        } else {
+            guard let blob = readFile(at: Self.partitionDataFile) else {
+                logger?.log(.error("Failed to read \(Self.partitionDataFile.path) for \(typeName) partition encryption"))
                 logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
                 throw FileFormatErrors.failedToEncode(format: Self.formatName, target: "Wii partition")
             }
-            decryptedData.write(fileData, atAddress: userOffset + value.offsetInUserSection)
+            decryptedData = blob
         }
-
-        // Write boot.bin last (after offsets are updated)
-        let bootDataOffset = dolphinEngine.data.systemFiles.bootDataOffset
-        decryptedData.write(struct: bootStruct, atAddress: bootDataOffset)
 
         // Read ticket for title key
         guard let ticketData = readFile(at: partFiles.ticketFile) else {
@@ -377,22 +401,22 @@ public final class WiiPartition: FileSystemTree {
             decryptedUserData: decryptedData.rawBytes,
             titleKey: titleKey
         )
-        let encryptedData = GoDData(byteStream: encryptedBytes.map(Int.init), byteOrder: .big)
-        let h3TableData = GoDData(byteStream: h3TableBytes.map(Int.init), byteOrder: .big)
+        let encryptedData = GoDData(byteStream: encryptedBytes, byteOrder: .big)
+        let h3TableData = GoDData(byteStream: h3TableBytes, byteOrder: .big)
         logger?.log(.info("  Encrypted \(encryptedBytes.count / 0x8000) clusters (\(encryptedBytes.count) bytes); rebuilt H3 table"))
 
         // Persist the rebuilt H3 table into the /sys h3 file image.
-        fst.writeFile(h3TableData, at: partFiles.h3File, overwrite: true)
+        try fst.writeFile(h3TableData, at: partFiles.h3File, overwrite: true)
 
         // Link + fakesign the TMD:
         //   - content 0's SHA-1 (TMD offset 0x1F4, 20 bytes) = SHA1(rebuilt H3 table)
         //   - then fakesign so the (now-invalid) RSA signature passes signature-strip loaders.
         // The ticket is written verbatim (its original signature covers only the title key, which we did not change).
-        let tmdCopy = GoDData(byteStream: tmd.rawBytes.map(Int.init), byteOrder: .big)
+        let tmdCopy = GoDData(byteStream: tmd.rawBytes, byteOrder: .big)
         let h3Hash = SHA1.hash(h3TableBytes)
-        tmdCopy.write(GoDData(byteStream: h3Hash.map(Int.init), byteOrder: .big), atAddress: 0x1F4)
+        tmdCopy.write(GoDData(byteStream: h3Hash, byteOrder: .big), atAddress: 0x1F4)
         let fakesignedTMD = WiiCrypto.fakesignTMD(tmdCopy)
-        fst.writeFile(fakesignedTMD, at: partFiles.tmdFile, overwrite: true)
+        try fst.writeFile(fakesignedTMD, at: partFiles.tmdFile, overwrite: true)
 
         // Build partition: ticket + header area + TMD + cert + H3 + encrypted data
         let result = GoDData(byteOrder: .big)

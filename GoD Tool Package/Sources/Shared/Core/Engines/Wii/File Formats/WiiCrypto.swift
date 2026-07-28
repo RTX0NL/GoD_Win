@@ -121,7 +121,7 @@ public struct WiiCrypto {
             h2Hashes: h2Hashes,
             titleKey: titleKey
         )
-        return GoDData(byteStream: clusterBytes.map(Int.init), byteOrder: .big)
+        return GoDData(byteStream: clusterBytes, byteOrder: .big)
     }
 
     /// Build and encrypt one 0x8000-byte cluster from its user data and hash tables.
@@ -310,7 +310,7 @@ public struct WiiCrypto {
     /// - Parameter ticketData: Mutable ticket data
     /// - Returns: Fakesigned ticket data
     public static func fakesignTicket(_ ticketData: GoDData) -> GoDData {
-        let result = GoDData(byteStream: ticketData.rawBytes.map(Int.init), byteOrder: ticketData.byteOrder)
+        let result = GoDData(byteStream: ticketData.rawBytes, byteOrder: ticketData.byteOrder)
         // Zero out the RSA signature (offset 0x04, length 0x100)
         result.null(start: 0x04, length: 0x100)
 
@@ -330,7 +330,7 @@ public struct WiiCrypto {
 
     /// Fakesign a TMD using the same approach as ticket fakesigning.
     public static func fakesignTMD(_ tmdData: GoDData) -> GoDData {
-        let result = GoDData(byteStream: tmdData.rawBytes.map(Int.init), byteOrder: tmdData.byteOrder)
+        let result = GoDData(byteStream: tmdData.rawBytes, byteOrder: tmdData.byteOrder)
         result.null(start: 0x04, length: 0x100)
 
         for attempt in 0..<65536 {
