@@ -33,9 +33,9 @@ final class GamecubeISOTests: XCTestCase {
         let apploaderStruct = dolphinEngine.apploaderHeaderStruct
         let apploader = StructData(definition: apploaderStruct, byteOrder: .big)
         apploader.date = "2024/01/01".data(format: .ascii_big)
-        apploader.entryPoint = UInt32(0x81200000)
+        apploader.entry_point = UInt32(0x81200000)
         apploader.size = 64
-        apploader.trailerSize = 0
+        apploader.trailer_size = 0
         isoData.write(struct: apploader, atAddress: 0x2440)
         // Write apploader code (64 bytes of zeros is fine)
 
@@ -43,15 +43,15 @@ final class GamecubeISOTests: XCTestCase {
         let dolOffset = 0x2500
         let dolStruct = dolphinEngine.dolHeaderStruct
         let dolHeader = StructData(definition: dolStruct, byteOrder: .big)
-        dolHeader.entryPoint = UInt32(0x80003100)
-        dolHeader.bssSize = UInt32(0)
-        dolHeader.bssRAMAddress = UInt32(0)
-        dolHeader.textSectionsOffsets = [UInt32](repeating: 0, count: 7)
-        dolHeader.textSectionsSizes = [UInt32](repeating: 0, count: 7)
-        dolHeader.textSectionsRAMAddresses = [UInt32](repeating: 0, count: 7)
-        dolHeader.dataSectionsOffsets = [UInt32](repeating: 0, count: 11)
-        dolHeader.dataSectionsSizes = [UInt32](repeating: 0, count: 11)
-        dolHeader.dataSectionsRAMAddresses = [UInt32](repeating: 0, count: 11)
+        dolHeader.entry_point = UInt32(0x80003100)
+        dolHeader.BSS_size = UInt32(0)
+        dolHeader.BSS_RAM_address = UInt32(0)
+        dolHeader.text_sections_offsets = [UInt32](repeating: 0, count: 7)
+        dolHeader.text_sections_sizes = [UInt32](repeating: 0, count: 7)
+        dolHeader.text_sections_RAM_addresses = [UInt32](repeating: 0, count: 7)
+        dolHeader.data_sections_offsets = [UInt32](repeating: 0, count: 11)
+        dolHeader.data_sections_sizes = [UInt32](repeating: 0, count: 11)
+        dolHeader.data_sections_RAM_addresses = [UInt32](repeating: 0, count: 11)
         isoData.write(struct: dolHeader, atAddress: dolOffset)
 
         // FST at offset 0x2600 (right after DOL header, which is 0x100 bytes)
@@ -62,14 +62,14 @@ final class GamecubeISOTests: XCTestCase {
         let fstFileStruct = dolphinEngine.fstFileEntryStruct
 
         let rootEntry = StructData(definition: fstRootStruct, byteOrder: .big)
-        rootEntry.isDirectory = true
-        rootEntry.entryCount = 2
+        rootEntry.is_directory = true
+        rootEntry.entry_count = 2
 
         let fileEntry = StructData(definition: fstFileStruct, byteOrder: .big)
-        fileEntry.isDirectory = false
-        fileEntry.nameOffset = 0  // "test.bin" at string offset 0
-        fileEntry.fileOffset = UInt32(0x8000)  // file at user offset 0x8000
-        fileEntry.fileSize = UInt32(64)
+        fileEntry.is_directory = false
+        fileEntry.name_offset = 0  // "test.bin" at string offset 0
+        fileEntry.file_offset = UInt32(0x8000)  // file at user offset 0x8000
+        fileEntry.file_size = UInt32(64)
 
         isoData.write(struct: rootEntry, atAddress: fstOffset)
         isoData.write(struct: fileEntry, atAddress: fstOffset + 12)
@@ -88,12 +88,12 @@ final class GamecubeISOTests: XCTestCase {
         isoData.write(testFileData, atAddress: userOffset)
 
         // Update boot.bin
-        boot.mainExecutableOffset = dolOffset
-        boot.fstOffset = fstOffset
-        boot.fstSize = fstSize
-        boot.maxFstSize = fstSize
-        boot.userDataOffset = userOffset
-        boot.userDataLength = 64
+        boot.main_executable_offset = dolOffset
+        boot.fst_offset = fstOffset
+        boot.fst_size = fstSize
+        boot.max_fst_size = fstSize
+        boot.user_data_offset = userOffset
+        boot.user_data_length = 64
         isoData.write(struct: boot, atAddress: 0)
 
         return isoData
@@ -154,7 +154,7 @@ final class GamecubeISOTests: XCTestCase {
         let iso = try GamecubeISO(data: isoData, dolphinEngine: dolphinEngine, gamecubeEngine: gamecubeEngine)
 
         let newData = GoDData(byteStream: [UInt8(1), UInt8(2), UInt8(3), UInt8(4)], byteOrder: .big)
-        iso.writeFile(newData, at: File("/files/new.bin"), overwrite: true)
+        try iso.writeFile(newData, at: File("/files/new.bin"), overwrite: true)
 
         let readBack = iso.readFile(at: File("/files/new.bin"))
         XCTAssertEqual(readBack?.rawBytes, newData.rawBytes)

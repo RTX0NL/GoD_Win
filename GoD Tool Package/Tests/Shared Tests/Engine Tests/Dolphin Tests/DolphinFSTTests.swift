@@ -20,22 +20,22 @@ final class DolphinFSTTests: XCTestCase {
             let offset = i * entrySize
             if i == 0 {
                 let root = StructData(definition: engine.fstRootEntryStruct, byteOrder: .big)
-                root.isDirectory = true
-                root.entryCount = Int(entry.field2)
+                root.is_directory = true
+                root.entry_count = Int(entry.field2)
                 data.write(struct: root, atAddress: offset)
             } else if entry.isDir {
                 let dir = StructData(definition: engine.fstDirectoryEntryStruct, byteOrder: .big)
-                dir.isDirectory = true
-                dir.nameOffset = entry.nameOffset
-                dir.parentEntry = Int(entry.field1)
-                dir.nextEntry = Int(entry.field2)
+                dir.is_directory = true
+                dir.name_offset = entry.nameOffset
+                dir.parent_entry = Int(entry.field1)
+                dir.next_entry = Int(entry.field2)
                 data.write(struct: dir, atAddress: offset)
             } else {
                 let file = StructData(definition: engine.fstFileEntryStruct, byteOrder: .big)
-                file.isDirectory = false
-                file.nameOffset = entry.nameOffset
-                file.fileOffset = entry.field1
-                file.fileSize = entry.field2
+                file.is_directory = false
+                file.name_offset = entry.nameOffset
+                file.file_offset = entry.field1
+                file.file_size = entry.field2
                 data.write(struct: file, atAddress: offset)
             }
         }
@@ -145,9 +145,9 @@ final class DolphinFSTTests: XCTestCase {
         // Build FST from a file system (the other init path)
         let fst = InMemoryFST()
         let root = Folder("/files")
-        fst.createFolder(at: root, overwrite: true)
-        fst.writeFile(GoDData(length: 100, byteOrder: .big), at: File("/files/a.bin"), overwrite: true)
-        fst.writeFile(GoDData(length: 200, byteOrder: .big), at: File("/files/b.bin"), overwrite: true)
+        try fst.createFolder(at: root, overwrite: true)
+        try fst.writeFile(GoDData(length: 100, byteOrder: .big), at: File("/files/a.bin"), overwrite: true)
+        try fst.writeFile(GoDData(length: 200, byteOrder: .big), at: File("/files/b.bin"), overwrite: true)
 
         let manifest = DolphinFST(fileSystem: fst, root: root)
         XCTAssertEqual(manifest.files.count, 2)

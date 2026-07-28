@@ -44,20 +44,20 @@ public final class Dol {
         guard let dolHeader = data.read(struct: dolHeaderStruct, atAddress: 0) else {
             throw FileFormatErrors.invalid(format: Self.formatName)
         }
-        let entryPoint: UInt32 = try dolHeader.entryPoint
-        let bssSize: UInt32 = try dolHeader.bssSize
-        let bssRAMAddress: UInt32 = try dolHeader.bssRAMAddress
+        let entryPoint: UInt32 = try dolHeader.entry_point
+        let bssSize: UInt32 = try dolHeader.BSS_size
+        let bssRAMAddress: UInt32 = try dolHeader.BSS_RAM_address
         
         self.bssSize = bssSize
         self.bssRAMAddress = bssRAMAddress
         self.entryPoint = entryPoint
         
-        let textSectionsOffsets: [UInt32] = try dolHeader.textSectionsOffsets
-        let textSectionsSizes: [UInt32] = try dolHeader.textSectionsSizes
-        let textSectionsRAMAddresses: [UInt32] = try dolHeader.textSectionsRAMAddresses
-        let dataSectionsOffsets: [UInt32] = try dolHeader.dataSectionsOffsets
-        let dataSectionsSizes: [UInt32] = try dolHeader.dataSectionsSizes
-        let dataSectionsRAMAddresses: [UInt32] = try dolHeader.dataSectionsRAMAddresses
+        let textSectionsOffsets: [UInt32] = try dolHeader.text_sections_offsets
+        let textSectionsSizes: [UInt32] = try dolHeader.text_sections_sizes
+        let textSectionsRAMAddresses: [UInt32] = try dolHeader.text_sections_RAM_addresses
+        let dataSectionsOffsets: [UInt32] = try dolHeader.data_sections_offsets
+        let dataSectionsSizes: [UInt32] = try dolHeader.data_sections_sizes
+        let dataSectionsRAMAddresses: [UInt32] = try dolHeader.data_sections_RAM_addresses
         
         var textSections = [TextSection]()
         for (offset, size, RAMAddress) in zip3(textSectionsOffsets, textSectionsSizes, textSectionsRAMAddresses) {
@@ -85,9 +85,9 @@ public final class Dol {
             let dolHeaderStruct = dolphinEngine.dolHeaderStruct
             let header = StructData(definition: dolHeaderStruct, byteOrder: .big)
             
-            header.bssSize = bssSize
-            header.bssRAMAddress = bssRAMAddress
-            header.entryPoint = entryPoint
+            header.BSS_size = bssSize
+            header.BSS_RAM_address = bssRAMAddress
+            header.entry_point = entryPoint
             
             var textSectionOffsets = [UInt32]()
             var textSectionRAMAddresses = [UInt32]()
@@ -126,12 +126,12 @@ public final class Dol {
                 }
             }
             
-            header.textSectionsOffsets = textSectionOffsets
-            header.textSectionsRAMAddresses = textSectionRAMAddresses
-            header.textSectionsSizes = textSectionSizes
-            header.dataSectionsOffsets = dataSectionOffsets
-            header.dataSectionsRAMAddresses = dataSectionRAMAddresses
-            header.dataSectionsSizes = dataSectionSizes
+            header.text_sections_offsets = textSectionOffsets
+            header.text_sections_RAM_addresses = textSectionRAMAddresses
+            header.text_sections_sizes = textSectionSizes
+            header.data_sections_offsets = dataSectionOffsets
+            header.data_sections_RAM_addresses = dataSectionRAMAddresses
+            header.data_sections_sizes = dataSectionSizes
             
             let result = header.data
             textSections.forEach {

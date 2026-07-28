@@ -26,9 +26,9 @@ public final class Apploader {
             throw FileFormatErrors.invalid(format: Self.formatName)
         }
         let date: GoDData = try apploaderHeader.date
-        let entryPoint: UInt32 = try apploaderHeader.entryPoint
+        let entryPoint: UInt32 = try apploaderHeader.entry_point
         let appSize: Int = try apploaderHeader.size
-        let trailerSize: Int = try apploaderHeader.trailerSize
+        let trailerSize: Int = try apploaderHeader.trailer_size
         
         self.date = date.string(format: .ascii_big)
         self.entryPoint = entryPoint
@@ -42,9 +42,9 @@ public final class Apploader {
             let header = StructData(definition: apploaderHeaderStruct, data: GoDData(length: apploaderHeaderStruct.length, byteOrder: .big))
             
             header.date = date.data(format: .ascii_big)
-            header.entryPoint = entryPoint
+            header.entry_point = entryPoint
             header.size = appCode.length
-            header.trailerSize = trailerCode.length
+            header.trailer_size = trailerCode.length
             
             let result = header.data
             result.append(appCode)

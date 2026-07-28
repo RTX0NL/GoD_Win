@@ -31,8 +31,8 @@ public final class FsysTOC {
         tocData.setByteOrder(.big)
         let headerStruct = engine.fsysTOCHeaderStruct
         guard let header = tocData.read(struct: headerStruct, atAddress: 0),
-              let entryCount: Int = header.entryCount,
-              let entryTableAddress: Int = header.entryTableAddress else {
+              let entryCount: Int = header.entry_count,
+              let entryTableAddress: Int = header.entry_table_address else {
             throw FileFormatErrors.invalid(format: Self.formatName)
         }
         
@@ -47,8 +47,8 @@ public final class FsysTOC {
         }
         
         try entries.forEach { entry in
-            guard let groupID: Int = entry.groupID,
-                  let filenameAddress: Int = entry.filenameAddress,
+            guard let groupID: Int = entry.group_id,
+                  let filenameAddress: Int = entry.filename_address,
                   let filename = tocData.readString(atAddress: filenameAddress, format: .utf8) else {
                 throw FileFormatErrors.invalid(format: Self.formatName)
             }
@@ -83,13 +83,13 @@ public final class FsysTOC {
             e1.value < e2.value
         }
         
-        header.magicBytes = engine.data.toc.magicBytes
+        header.magic_bytes = engine.data.toc.magicBytes
         header.unknown = self.unknown
         header.junk1 = self.junk1
         header.junk2 = self.junk2
         header.junk3 = self.junk3
-        header.stringTableAddress = headerStruct.length
-        header.entryCount = entries.count
+        header.string_table_address = headerStruct.length
+        header.entry_count = entries.count
         
         let tocData = GoDData(length: header.length, byteOrder: .big)
         let entryTable = GoDData(length: 0, byteOrder: .big)
@@ -99,13 +99,13 @@ public final class FsysTOC {
             tocData.appendString(filename, format: .utf8, includeTerminator: true)
             
             let entry = StructData(definition: entryStruct, byteOrder: .big)
-            entry.filenameAddress = filenameAddress
-            entry.groupID = groupID
+            entry.filename_address = filenameAddress
+            entry.group_id = groupID
             entryTable.append(entry.data)
         }
         
         tocData.align(to: 0x20)
-        header.entryTableAddress = tocData.length
+        header.entry_table_address = tocData.length
         tocData.write(struct: header, atAddress: 0)
         
         entryTable.append(.init(length: entryStruct.length, byteOrder: .big))
