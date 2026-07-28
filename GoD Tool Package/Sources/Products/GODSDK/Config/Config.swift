@@ -34,6 +34,7 @@ struct GoddessConfig: Codable {
         case xdSaveBuild(config: XDSaveOps.BuildConfig)
         case coloSaveDump(config: ColoSaveOps.DumpConfig)
         case coloSaveBuild(config: ColoSaveOps.BuildConfig)
+        case convert(config: Convert.Config)
     }
     
     let name: String

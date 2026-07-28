@@ -1,0 +1,257 @@
+//
+//  ConvertOperationTests.swift
+//  GODOpsTests
+//
+//  Exercises the standalone Convert operations against an InMemoryFST:
+//  file-format decode/encode (via GTX) and struct / struct-table decode/
+//  encode round trips (via a synthetic GenericEngine struct).
+//
+
+import XCTest
+import GoDFoundation
+import GoDEngine
+import Structs
+import GeniusSonority
+import FixtureCatalog
+import TestSupport
+@testable import GODOps
+
+final class ConvertOperationTests: XCTestCase {
+
+    // MARK: - Fixtures
+
+    /// An 8-byte record: two uint32 fields. Tiles cleanly so tables of it
+    /// are unambiguous.
+    private func recordStructMap() -> StructMap {
+        StructMap(
+            name: "TestRecord",
+            wordSize: 4,
+            alignmentStyle: .cStyle,
+            properties: [
+                .uint32(name: "first"),
+                .uint32(name: "second"),
+            ]
+        )
+    }
+
+    /// A GenericEngine carrying just `TestRecord`, serialized onto the tree.
+    /// Returns the installed engine folder.
+    private func installRecordEngine(in fst: InMemoryFST) throws -> Folder {
+        let engine = try GenericEngine(
+            data: .init(),
+            enums: .init(unchecked: []),
+            structs: .init(unchecked: [recordStructMap()])
+        )
+        return installEngine(engine, under: Folder("/project/Engines"), in: fst)
+    }
+
+    private func run(_ operation: Convert.Config.Operations, in fst: InMemoryFST) throws {
+        let config = Convert.Config(operations: [OperationConfig(operation: operation, enabled: .yes)])
+        try Convert.run(config: config, settings: .default, fileSystem: fst, logger: SilentLogger())
+    }
+
+    // MARK: - File format (GTX)
+
+    func testDecodeFileWritesGTXArtifacts() throws {
+        let fst = InMemoryFST()
+        let gsFolder = installEngine(FSYSFixtures.engine(), under: Folder("/project/Engines"), in: fst)
+        let gtxBinary = try GTXFixtures.model().binaryData
+        try fst.writeFile(gtxBinary, at: File("/project/in/tex.gtx"), overwrite: true)
+
+        try run(.decodeFile(
+            inputFile: File("/project/in/tex.gtx"),
+            outputFolder: Folder("/project/out"),
+            overwrite: true,
+            format: .gtx(geniusSonorityEngine: gsFolder)
+        ), in: fst)
+
+        XCTAssertNotNil(fst.inspectFile(at: File("/project/out/tex.gtx.json")), "expected GTX JSON manifest")
+        XCTAssertNotNil(fst.inspectFile(at: File("/project/out/tex.gtx.png")), "expected GTX PNG companion")
+    }
+
+    func testDecodeThenEncodeFileRoundTripsGTX() throws {
+        let fst = InMemoryFST()
+        let gsFolder = installEngine(FSYSFixtures.engine(), under: Folder("/project/Engines"), in: fst)
+        let gtxBinary = try GTXFixtures.model().binaryData
+        try fst.writeFile(gtxBinary, at: File("/project/in/tex.gtx"), overwrite: true)
+
+        try run(.decodeFile(
+            inputFile: File("/project/in/tex.gtx"),
+            outputFolder: Folder("/project/out"),
+            overwrite: true,
+            format: .gtx(geniusSonorityEngine: gsFolder)
+        ), in: fst)
+
+        try run(.encodeFile(
+            inputFolder: Folder("/project/out"),
+            outputFolder: Folder("/project/rebuilt"),
+            overwrite: true,
+            format: .gtx(geniusSonorityEngine: gsFolder)
+        ), in: fst)
+
+        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt/tex.gtx")), "expected rebuilt GTX binary")
+        assertBytesEqual(rebuilt, gtxBinary, "GTX round trip")
+    }
+
+    func testDecodeThenEncodeFileRoundTripsGSW() throws {
+        let fst = InMemoryFST()
+        let gsFolder = installEngine(FSYSFixtures.engine(), under: Folder("/project/Engines"), in: fst)
+        let gswBinary = try GSWFixtures.model().binaryData
+        try fst.writeFile(gswBinary, at: File("/project/in/menu.gsw"), overwrite: true)
+
+        try run(.decodeFile(
+            inputFile: File("/project/in/menu.gsw"),
+            outputFolder: Folder("/project/out"),
+            overwrite: true,
+            format: .gsw(geniusSonorityEngine: gsFolder)
+        ), in: fst)
+        XCTAssertNotNil(fst.inspectFile(at: File("/project/out/menu.gsw.json")), "expected GSW JSON manifest")
+
+        try run(.encodeFile(
+            inputFolder: Folder("/project/out"),
+            outputFolder: Folder("/project/rebuilt"),
+            overwrite: true,
+            format: .gsw(geniusSonorityEngine: gsFolder)
+        ), in: fst)
+        XCTAssertNotNil(fst.readFile(at: File("/project/rebuilt/menu.gsw")), "expected rebuilt GSW binary")
+    }
+
+    func testDecodeThenEncodePairedISF() throws {
+        let fst = InMemoryFST()
+        let gsFolder = installEngine(FSYSFixtures.engine(), under: Folder("/project/Engines"), in: fst)
+        // Write both halves adjacent, same stem — the decode derives `.isd`
+        // from the `.ish` input.
+        let binaries = try ISFFixtures.model().binaries
+        for binary in binaries {
+            try fst.writeFile(binary.data, at: File("/project/in/\(binary.file.fileName)"), overwrite: true)
+        }
+
+        try run(.decodeFile(
+            inputFile: File("/project/in/\(ISFFixtures.name).ish"),
+            outputFolder: Folder("/project/out"),
+            overwrite: true,
+            format: .ish(geniusSonorityEngine: gsFolder)
+        ), in: fst)
+        XCTAssertNotNil(fst.inspectFile(at: File("/project/out/\(ISFFixtures.name).isf.json")), "expected ISF JSON manifest")
+        XCTAssertNotNil(fst.inspectFile(at: File("/project/out/\(ISFFixtures.name).wav")), "expected WAV companion")
+
+        try run(.encodeFile(
+            inputFolder: Folder("/project/out"),
+            outputFolder: Folder("/project/rebuilt"),
+            overwrite: true,
+            format: .ish(geniusSonorityEngine: gsFolder)
+        ), in: fst)
+        // Paired encode restores both halves (ISF is a lossy codec, so we
+        // assert the pair is produced, not byte-equality).
+        XCTAssertNotNil(fst.readFile(at: File("/project/rebuilt/\(ISFFixtures.name).ish")), "expected rebuilt ISH")
+        XCTAssertNotNil(fst.readFile(at: File("/project/rebuilt/\(ISFFixtures.name).isd")), "expected rebuilt ISD")
+    }
+
+    func testDecodePairedISFFailsWhenCompanionMissing() throws {
+        let fst = InMemoryFST()
+        let gsFolder = installEngine(FSYSFixtures.engine(), under: Folder("/project/Engines"), in: fst)
+        // Only the header half present — the `.isd` is missing.
+        let ish = try XCTUnwrap(ISFFixtures.model().binaries.first { $0.file.fileName.hasSuffix(".ish") })
+        try fst.writeFile(ish.data, at: File("/project/in/\(ISFFixtures.name).ish"), overwrite: true)
+
+        XCTAssertThrowsError(try run(.decodeFile(
+            inputFile: File("/project/in/\(ISFFixtures.name).ish"),
+            outputFolder: Folder("/project/out"),
+            overwrite: true,
+            format: .ish(geniusSonorityEngine: gsFolder)
+        ), in: fst))
+    }
+
+    // MARK: - Struct
+
+    func testDecodeStructWritesJSONThenEncodesBackToBinary() throws {
+        let fst = InMemoryFST()
+        let engineFolder = try installRecordEngine(in: fst)
+        let original = GoDData(byteStream: [0x00, 0x00, 0x00, 0x2A, 0xDE, 0xAD, 0xBE, 0xEF], byteOrder: .big)
+        try fst.writeFile(original, at: File("/project/in/record.bin"), overwrite: true)
+
+        try run(.decodeStruct(
+            inputFile: File("/project/in/record.bin"),
+            outputFolder: Folder("/project/json"),
+            overwrite: true,
+            structName: "TestRecord",
+            engine: engineFolder
+        ), in: fst)
+
+        XCTAssertNotNil(fst.inspectFile(at: File("/project/json/record.json")), "expected struct JSON")
+
+        try run(.encodeStruct(
+            inputFile: File("/project/json/record.json"),
+            outputFolder: Folder("/project/bin"),
+            overwrite: true,
+            structName: "TestRecord",
+            engine: engineFolder
+        ), in: fst)
+
+        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/bin/record.bin")), "expected rebuilt binary")
+        assertBytesEqual(rebuilt, original, "struct round trip")
+    }
+
+    func testDecodeStructFailsWhenSizeMismatch() throws {
+        let fst = InMemoryFST()
+        let engineFolder = try installRecordEngine(in: fst)
+        // 6 bytes, but TestRecord is 8.
+        try fst.writeFile(GoDData(byteStream: [1, 2, 3, 4, 5, 6], byteOrder: .big),
+                      at: File("/project/in/bad.bin"), overwrite: true)
+
+        XCTAssertThrowsError(try run(.decodeStruct(
+            inputFile: File("/project/in/bad.bin"),
+            outputFolder: Folder("/project/json"),
+            overwrite: true,
+            structName: "TestRecord",
+            engine: engineFolder
+        ), in: fst))
+    }
+
+    // MARK: - Struct table
+
+    func testDecodeStructTableWritesArrayThenEncodesBack() throws {
+        let fst = InMemoryFST()
+        let engineFolder = try installRecordEngine(in: fst)
+        // Three 8-byte records = 24 bytes.
+        let original = GoDData(byteStream: (0..<24).map { UInt8($0) }, byteOrder: .big)
+        try fst.writeFile(original, at: File("/project/in/table.bin"), overwrite: true)
+
+        try run(.decodeStructTable(
+            inputFile: File("/project/in/table.bin"),
+            outputFolder: Folder("/project/json"),
+            overwrite: true,
+            structName: "TestRecord",
+            engine: engineFolder
+        ), in: fst)
+
+        XCTAssertNotNil(fst.inspectFile(at: File("/project/json/table.json")), "expected table JSON")
+
+        try run(.encodeStructTable(
+            inputFile: File("/project/json/table.json"),
+            outputFolder: Folder("/project/bin"),
+            overwrite: true,
+            structName: "TestRecord",
+            engine: engineFolder
+        ), in: fst)
+
+        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/bin/table.bin")), "expected rebuilt table binary")
+        assertBytesEqual(rebuilt, original, "struct table round trip")
+    }
+
+    func testDecodeStructTableFailsWhenStructDoesNotTile() throws {
+        let fst = InMemoryFST()
+        let engineFolder = try installRecordEngine(in: fst)
+        // 20 bytes is not a multiple of 8.
+        try fst.writeFile(GoDData(byteStream: (0..<20).map { UInt8($0) }, byteOrder: .big),
+                      at: File("/project/in/ragged.bin"), overwrite: true)
+
+        XCTAssertThrowsError(try run(.decodeStructTable(
+            inputFile: File("/project/in/ragged.bin"),
+            outputFolder: Folder("/project/json"),
+            overwrite: true,
+            structName: "TestRecord",
+            engine: engineFolder
+        ), in: fst))
+    }
+}
