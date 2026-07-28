@@ -88,7 +88,7 @@ final class ColoDecompilerTests: XCTestCase {
     // MARK: - Real Script Test
 
     func testDecompileRealScript() throws {
-        let path = "/Users/stars/Documents/Projects/GoD-Tool/scripts/output/Colo US project/Source/Assets/Scripts/M1_out.scd"
+        let path = "/Users/stars/Documents/Projects/GoD-Tool/scripts/Colo US project/Build/Unpacked/Assets/Scripts/M1_out.scd"
         guard let rawData = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             print("Skipping real script test — file not found")
             return

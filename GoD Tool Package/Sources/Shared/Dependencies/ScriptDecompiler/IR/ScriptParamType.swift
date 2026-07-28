@@ -7,6 +7,9 @@ public enum ScriptParamType: Codable, Equatable {
     case integer
     case float
     case bool
+    /// String value (stored as a load-time-relocated pointer to a
+    /// NUL-terminated string in the script file)
+    case string
 
     /// Reference to an engine enum by name.
     /// The formatter resolves raw values against the enum's cases.
@@ -21,6 +24,7 @@ public enum ScriptParamType: Codable, Equatable {
         case "integer": self = .integer
         case "float": self = .float
         case "bool": self = .bool
+        case "string": self = .string
         default:
             // "enum:FlagName" or just "FlagName" for backwards compat
             if str.hasPrefix("enum:") {
@@ -37,6 +41,7 @@ public enum ScriptParamType: Codable, Equatable {
         case .integer: try container.encode("integer")
         case .float: try container.encode("float")
         case .bool: try container.encode("bool")
+        case .string: try container.encode("string")
         case .enumRef(let name): try container.encode(name)
         }
     }

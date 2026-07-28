@@ -7,14 +7,24 @@ import Structs
 /// Colosseum-specific expression tree that supports the VM's variable wrapping model.
 /// In the Colosseum VM, `pushVar` consumes a stack value (the index) and creates a
 /// typed variable reference. Binary ops carry type annotations on their operands.
+/// Which opcode produced a variable read. `.wrap` marks consumer-owned
+/// wraps (binary op / setVar operands) whose mask is encoded in the consumer
+/// instruction rather than by a push of its own.
+public enum ColoVarPushForm: Equatable {
+    case wrap                // no push — mask carried by the consumer instruction
+    case single              // pushVar (opcode 15)
+    case single2             // pushVar2 (opcode 19)
+    case multi(UInt16)       // pushMultiVar (opcode 16)
+}
+
 public indirect enum ColoExpr {
     case constant(ColoConstant)
-    case variable(ColoScriptVar, ColoExpr)          // typed variable reference wrapping an index
+    case variable(ColoScriptVar, ColoExpr, ColoVarPushForm)  // typed variable reference wrapping an index
     case variableAssignment(ColoExpr, ColoExpr)     // target = value
     case structAssignment(ColoExpr, ColoExpr, Int)   // memcpy(dst, src, len)
     case operation(ColoOperator, [ColoExpr])          // unary or binary op
-    case call(Int, [ColoExpr])                        // script function call
-    case callBuiltIn(Int, [ColoExpr])                 // engine built-in call
+    case call(Int, returnCount: Int, [ColoExpr])      // script function call
+    case callBuiltIn(ColoExpr, [ColoExpr])            // engine built-in call (ID is usually a constant, but can be computed)
     case printf(String, [ColoExpr])                   // formatted print
     case yield(ColoExpr)                              // yield for N frames
     case returnVoid                                   // plain return
@@ -75,6 +85,21 @@ public enum ColoOperator: String {
     public var symbol: String {
         self == .negate ? "-" : rawValue
     }
+
+    /// Binding strength for text output/parsing (higher binds tighter).
+    /// All binary operators are left-associative.
+    public var precedence: Int {
+        switch self {
+        case .not, .negate: return 7
+        case .multiply, .divide, .mod: return 6
+        case .add, .subtract: return 5
+        case .lessThan, .lessThanEqual, .greaterThan, .greaterThanEqual: return 4
+        case .equal, .notEqual: return 3
+        case .and, .or: return 2
+        case .logicalAnd: return 1
+        case .logicalOr: return 0
+        }
+    }
 }
 
 // MARK: - Pass 1: Stack Simulation → Flat Expression List
@@ -107,19 +132,26 @@ public struct ColoExpressionBuilder {
             case .nop:
                 break
             case .exit:
-                break
+                flushStatements(&stack, into: &expressions)
+                expressions.append(.exit)
             case .pushMinus1:
                 stack.append(.constant(.integer(-1)))
             case .pop:
                 // No-op for the expression stack (legacy tool ignores pop)
                 break
 
-            case .call(let funcID, _, let argc):
+            case .call(let funcID, let returnCount, let argc):
                 var args = [ColoExpr]()
                 for _ in 0..<argc {
                     args.append(safePop(&stack))
                 }
-                stack.append(.call(Int(funcID), args.reversed()))
+                // A value-returning call is preceded by a return-slot push
+                // (`local0`) below its arguments — consume it. Leaving it on
+                // the stack silently corrupts every later expression.
+                if returnCount == 1, !stack.isEmpty {
+                    _ = safePop(&stack)
+                }
+                stack.append(.call(Int(funcID), returnCount: Int(returnCount), args.reversed()))
 
             case .returnOp:
                 // Peek: if top is `variableAssignment(variable(local, const(0)), value)`, convert to returnResult.
@@ -130,7 +162,7 @@ public struct ColoExpressionBuilder {
                 // a `return` followed by the whole function body).
                 var returnExpr: ColoExpr = .returnVoid
                 if let top = stack.last, case .variableAssignment(let target, let value) = top,
-                   case .variable(let v, .constant(.integer(0))) = target, v.isLocal {
+                   case .variable(let v, .constant(.integer(0)), _) = target, v.isLocal {
                     stack.removeLast()
                     returnExpr = .returnResult(value)
                 }
@@ -157,7 +189,7 @@ public struct ColoExpressionBuilder {
                 }
 
             case .pushVar(let v):
-                handlePushVar(v, stack: &stack, argCount: &argCount)
+                handlePushVar(v, form: .single, stack: &stack, argCount: &argCount)
             case .pushMultiVar(let v, let count):
                 // The VM resolves the variable once (consuming one index from
                 // the stack) then pushes the result `count` times. Duplicate
@@ -166,19 +198,19 @@ public struct ColoExpressionBuilder {
                 // count > 1 unhandled ("Unhandled push multi var with
                 // count > 1"), silently corrupting every later expression in
                 // the function. Real data: M2_enter_1F.scd uses count=3 twice.
-                handlePushVar(v, stack: &stack, argCount: &argCount)
+                handlePushVar(v, form: .multi(count), stack: &stack, argCount: &argCount)
                 if count > 1, let top = stack.last {
                     for _ in 1..<count { stack.append(top) }
                 }
             case .pushVar2(let v):
-                handlePushVar(v, stack: &stack, argCount: &argCount)
+                handlePushVar(v, form: .single2, stack: &stack, argCount: &argCount)
 
             case .not(let v):
                 let arg = safePop(&stack)
-                stack.append(.operation(.not, [ColoExpr.variable(v, arg)]))
+                stack.append(.operation(.not, [ColoExpr.variable(v, arg, .wrap)]))
             case .negate(let v):
                 let arg = safePop(&stack)
-                stack.append(.operation(.negate, [ColoExpr.variable(v, arg)]))
+                stack.append(.operation(.negate, [ColoExpr.variable(v, arg, .wrap)]))
 
             case .bitwiseAnd(let v1, let v2): handleBinaryOp(.and, v1: v1, v2: v2, stack: &stack)
             case .bitwiseOr(let v1, let v2): handleBinaryOp(.or, v1: v1, v2: v2, stack: &stack)
@@ -200,16 +232,16 @@ public struct ColoExpressionBuilder {
                 let value = safePop(&stack)
                 let targetExpr = safePop(&stack)
                 stack.append(.variableAssignment(
-                    ColoExpr.variable(target, targetExpr),
-                    ColoExpr.variable(source, value)
+                    ColoExpr.variable(target, targetExpr, .wrap),
+                    ColoExpr.variable(source, value, .wrap)
                 ))
 
             case .copyStruct(let source, let dest, let length):
                 let arg2 = safePop(&stack)
                 let arg1 = safePop(&stack)
                 stack.append(.structAssignment(
-                    ColoExpr.variable(source, arg1),
-                    ColoExpr.variable(dest, arg2),
+                    ColoExpr.variable(source, arg1, .wrap),
+                    ColoExpr.variable(dest, arg2, .wrap),
                     Int(length)
                 ))
 
@@ -242,14 +274,10 @@ public struct ColoExpressionBuilder {
                 for _ in 0..<max(0, Int(argc) - 1) {
                     args.append(safePop(&stack))
                 }
-                // Pop function ID (search for integer constant)
-                var functionID: Int = 0
-                while !stack.isEmpty && functionID == 0 {
-                    let expr = safePop(&stack)
-                    if case .constant(.integer(let id)) = expr {
-                        functionID = Int(id)
-                    }
-                }
+                // The function ID sits directly below the arguments. It is
+                // usually a pushImmediate constant but can be any expression
+                // (D4_tower_1F_2 computes it via a script call).
+                let functionID = safePop(&stack)
                 // Pop object reference (local var 0, always precedes builtin calls)
                 if !stack.isEmpty {
                     _ = safePop(&stack)
@@ -282,7 +310,7 @@ public struct ColoExpressionBuilder {
         stack.isEmpty ? .constant(.void(0)) : stack.removeLast()
     }
 
-    private func handlePushVar(_ v: ColoScriptVar, stack: inout [ColoExpr], argCount: inout Int) {
+    private func handlePushVar(_ v: ColoScriptVar, form: ColoVarPushForm, stack: inout [ColoExpr], argCount: inout Int) {
         let indexExpr = safePop(&stack)
         if v.isLocal {
             if case .constant(.integer(let idx)) = indexExpr {
@@ -292,7 +320,7 @@ public struct ColoExpressionBuilder {
         if v.isLiteral {
             stack.append(indexExpr)
         } else {
-            stack.append(.variable(v, indexExpr))
+            stack.append(.variable(v, indexExpr, form))
         }
     }
 
@@ -301,7 +329,7 @@ public struct ColoExpressionBuilder {
         let arg2 = safePop(&stack)  // LHS
         // Legacy: operation(op, [variable(var1, arg1_rhs), variable(var2, arg2_lhs)])
         // Text rendering: exprs[1] op exprs[0] = var2(LHS) op var1(RHS)
-        stack.append(.operation(op, [ColoExpr.variable(v1, arg1), ColoExpr.variable(v2, arg2)]))
+        stack.append(.operation(op, [ColoExpr.variable(v1, arg1, .wrap), ColoExpr.variable(v2, arg2, .wrap)]))
     }
 
     private func flushStatements(_ stack: inout [ColoExpr], into expressions: inout [ColoExpr]) {
@@ -329,6 +357,11 @@ public struct ColoExpressionCompound {
     }
 
     /// Convert jumpFalse(cond, targetOffset) → exprs → location(targetOffset) into ifStatement
+    ///
+    /// The location marker is *kept* in the output (it is zero-size and the
+    /// formatter ignores it): the same offset can simultaneously be an
+    /// if-statement end and another jump's target — most importantly the top
+    /// of a `while` loop, which the while pass detects via the marker.
     private func compoundIfStatements(_ exprs: [ColoExpr]) -> [ColoExpr] {
         var result = [ColoExpr]()
         var i = 0
@@ -347,6 +380,10 @@ public struct ColoExpressionCompound {
                 // Recursively compound the body
                 let compoundedBody = compoundIfStatements(body)
                 result.append(.ifStatement([(condition, compoundedBody)]))
+                // Keep the end marker: `i` currently points at it (or past the
+                // end), and the `i += 1` below advances over it after it is
+                // appended by the fall-through on the next loop iteration.
+                continue
             } else {
                 result.append(exprs[i])
             }
@@ -364,10 +401,12 @@ public struct ColoExpressionCompound {
                 // Check if there's a jumpFalse right after this location followed by a body ending with jump(locOffset)
                 if i + 1 < exprs.count, case .ifStatement(let branches) = exprs[i + 1] {
                     if let lastInBody = branches.first?.1.last, case .jump(let jumpTarget) = lastInBody, jumpTarget == locOffset {
-                        // While loop detected
+                        // While loop detected. Keep the top-of-loop marker —
+                        // other jumps may also target it.
                         let condition = branches[0].0
                         var body = Array(branches[0].1.dropLast()) // remove the back-jump
                         body = compoundWhileLoops(body) // recurse
+                        result.append(exprs[i])
                         result.append(.whileLoop(condition, body))
                         i += 2
                         continue
@@ -413,7 +452,9 @@ public struct ColoExpressionCompound {
                         // Add else as a branch with "true" condition (always taken)
                         branches.append((.constant(.integer(1)), elseBody))
                         result.append(.ifStatement(branches))
-                        i = j + 1
+                        // Keep the end-of-else location marker (processed on
+                        // the next iteration) — other jumps may target it.
+                        i = j
                         continue
                     }
                 }
@@ -439,47 +480,88 @@ public struct ColoExprFormatter {
     /// Engine enums keyed by name, used to resolve integer constants to enum case names
     public let enums: [String: Enum]
     public let indent: String
+    /// Resolves a relocated string-pointer file offset to the actual string
+    /// (e.g. `ColoScript.cString(at:)`); printf formats fall back to
+    /// `string@<offset>` tokens when unresolved
+    public let stringResolver: ((Int) -> String?)?
+    /// Local-slot index of the first argument. 0 for void functions; 1 for
+    /// value-returning functions, whose local 0 is the return slot.
+    public var localArgBase: Int = 0
+    /// Byte offsets targeted by unstructured (goto) jumps left over after
+    /// compounding — locations at these offsets emit as labels
+    public var gotoTargets: Set<Int> = []
+    /// Output syntax flavor (block style, logical operators, bool literals)
+    public var flavor: ColoScriptSourceHeader.Syntax = .swift
 
     public init(
         builtInFunctions: [Int: ScriptFunctionDef] = [:],
         enums: [String: Enum] = [:],
-        indent: String = "    "
+        indent: String = "    ",
+        stringResolver: ((Int) -> String?)? = nil
     ) {
         self.builtInFunctions = builtInFunctions
         self.enums = enums
         self.indent = indent
+        self.stringResolver = stringResolver
     }
 
-    public func formatFunction(index: Int, name: String, argCount: Int, body: [ColoExpr]) -> String {
-        let args = (0..<argCount).map { "arg\($0)" }.joined(separator: ", ")
+    public func formatFunction(index: Int, name: String, argCount: Int, returnsValue: Bool = false, argTypes: [ColoValueType] = [], body: [ColoExpr]) -> String {
+        let floatName = flavor == .python ? "float" : "Float"
+        let args = (0..<argCount).map { i -> String in
+            let type = i < argTypes.count ? argTypes[i] : .integer
+            return type == .float ? "arg\(i): \(floatName)" : "arg\(i)"
+        }.joined(separator: ", ")
+        let returnSuffix = returnsValue ? (flavor == .python ? " -> int" : " -> Int") : ""
 
-        // Cosmetic: the Genius Sonority script compiler appends an implicit
-        // terminating `returnOp` to every function (see ColoScript's format
-        // notes). When a real return already precedes it, that trailing
-        // `.returnVoid` is *unreachable* dead code — e.g. `return 1; return`.
-        // Drop it in that case only. We deliberately do NOT strip a trailing
-        // return that is reachable (e.g. the fall-through `return` after an
-        // `if { return … }`), since that one is meaningful, not redundant.
-        //
-        // RECOMPILER NOTE: the terminating return is NOT optional in the
-        // binary — every function must end with a `returnOp`. When the
-        // compiler side is built it must re-emit this trailing return for
-        // every function regardless of whether the decompiled source shows
-        // one; don't infer from a missing final `return` that none is needed.
+        // Every function's bytecode ends with an implicit terminating
+        // `returnOp` (verified: all 2057 code runs in the US corpus end with
+        // returnOp, or returnOp followed by exit). The terminator is dropped
+        // from the text unconditionally and the compiler re-appends it, so an
+        // explicit trailing `return` in source is always a *second*, explicit
+        // return in the bytecode.
         var body = body
-        if body.count >= 2, case .returnVoid = body[body.count - 1] {
-            let redundant: Bool
-            switch body[body.count - 2] {
-            case .returnVoid, .returnResult: redundant = true   // preceding return makes this one unreachable
-            default: redundant = false
+        if case .exit = body.last {
+            if body.count >= 2, case .returnVoid = body[body.count - 2] {
+                body.remove(at: body.count - 2)
             }
-            if redundant { body.removeLast() }
+        } else if case .returnVoid = body.last {
+            body.removeLast()
         }
 
-        var lines = ["func \(name)(\(args)) {"]
-        lines += formatExprs(body, depth: 1)
-        lines.append("}")
+        // Unstructured jumps that survived compounding become goto/label
+        // pairs — dropping them would change control flow (GS emits early
+        // exits to the shared return tail this way)
+        var formatter = self
+        formatter.gotoTargets = Self.leftoverJumpTargets(body)
+
+        var lines: [String]
+        if flavor == .python {
+            lines = ["def \(name)(\(args))\(returnSuffix):"]
+            let bodyLines = formatter.formatExprs(body, depth: 1)
+            lines += bodyLines.isEmpty ? ["    pass"] : bodyLines
+        } else {
+            lines = ["func \(name)(\(args))\(returnSuffix) {"]
+            lines += formatter.formatExprs(body, depth: 1)
+            lines.append("}")
+        }
         return lines.joined(separator: "\n")
+    }
+
+    /// Targets of `.jump` expressions remaining after compounding (recursive)
+    private static func leftoverJumpTargets(_ body: [ColoExpr]) -> Set<Int> {
+        var targets = Set<Int>()
+        func walk(_ exprs: [ColoExpr]) {
+            for expr in exprs {
+                switch expr {
+                case .jump(let target): targets.insert(target)
+                case .ifStatement(let branches): branches.forEach { walk($0.1) }
+                case .whileLoop(_, let loopBody): walk(loopBody)
+                default: break
+                }
+            }
+        }
+        walk(body)
+        return targets
     }
 
     public func formatExprs(_ exprs: [ColoExpr], depth: Int) -> [String] {
@@ -492,17 +574,17 @@ public struct ColoExprFormatter {
                 lines.append("\(prefix)\(formatExpr(target)) = \(formatExpr(value))")
             case .structAssignment(let dst, let src, let len):
                 lines.append("\(prefix)\(formatExpr(dst))[0:\(len)] = \(formatExpr(src))[0:\(len)]")
-            case .call(let funcID, let args):
+            case .call(let funcID, _, let args):
                 let argStr = args.map { formatExpr($0) }.joined(separator: ", ")
                 lines.append("\(prefix)function_\(funcID)(\(argStr))")
             case .callBuiltIn(let funcID, let args):
-                let funcDef = builtInFunctions[funcID]
-                let name = funcDef?.name ?? "builtin_\(funcID)"
-                let argStr = formatCallArgs(args, paramDefs: funcDef?.parameters ?? [])
-                lines.append("\(prefix)\(name)(\(argStr))")
+                lines.append("\(prefix)\(formatBuiltInCall(funcID, args: args))")
             case .printf(let fmt, let args):
-                let argStr = args.map { formatExpr($0) }.joined(separator: ", ")
-                lines.append("\(prefix)printf(\"\(fmt)\", \(argStr))")
+                var line = "\(prefix)printf(\"\(resolveFormat(fmt))\""
+                if !args.isEmpty {
+                    line += ", " + args.map { formatExpr($0) }.joined(separator: ", ")
+                }
+                lines.append(line + ")")
             case .yield(let frames):
                 lines.append("\(prefix)yield(\(formatExpr(frames)))")
             case .returnVoid:
@@ -511,26 +593,46 @@ public struct ColoExprFormatter {
                 lines.append("\(prefix)return \(formatExpr(value))")
             case .ifStatement(let branches):
                 for (bi, branch) in branches.enumerated() {
-                    if bi == 0 {
-                        lines.append("\(prefix)if \(formatExpr(branch.0)) {")
-                    } else if case .constant(.integer(1)) = branch.0 {
-                        lines.append("\(prefix)} else {")
+                    if flavor == .python {
+                        if bi == 0 {
+                            lines.append("\(prefix)if \(formatExpr(branch.0)):")
+                        } else if case .constant(.integer(1)) = branch.0 {
+                            lines.append("\(prefix)else:")
+                        } else {
+                            lines.append("\(prefix)elif \(formatExpr(branch.0)):")
+                        }
+                        let branchLines = formatExprs(branch.1, depth: depth + 1)
+                        lines += branchLines.isEmpty ? ["\(prefix)    pass"] : branchLines
                     } else {
-                        lines.append("\(prefix)} else if \(formatExpr(branch.0)) {")
+                        if bi == 0 {
+                            lines.append("\(prefix)if \(formatExpr(branch.0)) {")
+                        } else if case .constant(.integer(1)) = branch.0 {
+                            lines.append("\(prefix)} else {")
+                        } else {
+                            lines.append("\(prefix)} else if \(formatExpr(branch.0)) {")
+                        }
+                        lines += formatExprs(branch.1, depth: depth + 1)
                     }
-                    lines += formatExprs(branch.1, depth: depth + 1)
                 }
-                lines.append("\(prefix)}")
+                if flavor == .swift { lines.append("\(prefix)}") }
             case .whileLoop(let condition, let body):
-                lines.append("\(prefix)while \(formatExpr(condition)) {")
-                lines += formatExprs(body, depth: depth + 1)
-                lines.append("\(prefix)}")
-            case .location:
-                break  // Consumed by compounding
-            case .jump:
-                break  // Consumed by compounding (or leftover = goto)
+                if flavor == .python {
+                    lines.append("\(prefix)while \(formatExpr(condition)):")
+                    let bodyLines = formatExprs(body, depth: depth + 1)
+                    lines += bodyLines.isEmpty ? ["\(prefix)    pass"] : bodyLines
+                } else {
+                    lines.append("\(prefix)while \(formatExpr(condition)) {")
+                    lines += formatExprs(body, depth: depth + 1)
+                    lines.append("\(prefix)}")
+                }
+            case .location(let target):
+                if gotoTargets.contains(target) {
+                    lines.append("\(prefix)L_\(String(format: "%04X", target)):")
+                }
+            case .jump(let target):
+                lines.append("\(prefix)goto L_\(String(format: "%04X", target))")
             case .exit:
-                break
+                lines.append("\(prefix)exit()")
             case .nop:
                 break
             default:
@@ -546,30 +648,53 @@ public struct ColoExprFormatter {
         switch expr {
         case .constant(let c):
             return c.text
-        case .variable(let v, let indexExpr):
+        case .variable(let v, let indexExpr, let form):
+            // Literal masks (including combined ones like 0xC2) render as
+            // their inner expression — the mask lives on the consumer
+            if v.isLiteral {
+                return formatExpr(indexExpr)
+            }
+            // `&` marks the rare pushVar (single) read form; plain reads are
+            // pushMultiVar. The distinction is not derivable from types.
+            let sigil = form == .single ? "&" : ""
             if v.isGlobal {
-                return "gvar\(formatExpr(indexExpr))"
+                if case .constant(.integer(let idx)) = indexExpr {
+                    return "\(sigil)gvar\(idx)"
+                }
+                // Computed index: raw arena subscript, accessor name spells
+                // the access mask's primitive type
+                let accessor: String
+                switch v.valueType {
+                case .float: accessor = "globalsF"
+                case .void: accessor = "globalsO"
+                default: accessor = "globals"
+                }
+                return "\(sigil)\(accessor)[\(formatExpr(indexExpr))]"
             } else if v.isLocal {
-                return "arg\(formatExpr(indexExpr))"
+                if case .constant(.integer(let idx)) = indexExpr {
+                    let argIndex = Int(idx) - localArgBase
+                    return argIndex >= 0 ? "\(sigil)arg\(argIndex)" : "__returnSlot"
+                }
+                // Computed index: raw (unshifted) local-slot subscript
+                return "\(sigil)locals[\(formatExpr(indexExpr))]"
             } else { // literal
                 return formatExpr(indexExpr)
             }
         case .operation(let op, let operands):
             if operands.count == 1 {
-                return "\(op.symbol)\(formatExpr(operands[0]))"
+                return "\(operatorSymbol(op))\(parenthesized(operands[0], asOperandOf: op, rightSide: false, unary: true))"
             } else if operands.count == 2 {
                 // Legacy order: exprs[1] op exprs[0] = LHS op RHS
-                return "\(formatExpr(operands[1])) \(op.symbol) \(formatExpr(operands[0]))"
+                let lhs = parenthesized(operands[1], asOperandOf: op, rightSide: false)
+                let rhs = parenthesized(operands[0], asOperandOf: op, rightSide: true)
+                return "\(lhs) \(operatorSymbol(op)) \(rhs)"
             }
             return "op(\(operands.map { formatExpr($0) }.joined(separator: ", ")))"
-        case .call(let funcID, let args):
+        case .call(let funcID, _, let args):
             let argStr = args.map { formatExpr($0) }.joined(separator: ", ")
             return "function_\(funcID)(\(argStr))"
         case .callBuiltIn(let funcID, let args):
-            let funcDef = builtInFunctions[funcID]
-            let name = funcDef?.name ?? "builtin_\(funcID)"
-            let argStr = formatCallArgs(args, paramDefs: funcDef?.parameters ?? [])
-            return "\(name)(\(argStr))"
+            return formatBuiltInCall(funcID, args: args)
         case .yield(let frames):
             return "yield(\(formatExpr(frames)))"
         case .variableAssignment(let target, let value):
@@ -579,12 +704,118 @@ public struct ColoExprFormatter {
         }
     }
 
-    /// Format function call arguments, applying macro resolution based on parameter type definitions
+    /// Flavor-aware operator spelling (`&&`/`and`, `||`/`or`, `!`/`not `)
+    private func operatorSymbol(_ op: ColoOperator) -> String {
+        guard flavor == .python else { return op.symbol }
+        switch op {
+        case .logicalAnd: return "and"
+        case .logicalOr: return "or"
+        case .not: return "not "
+        default: return op.symbol
+        }
+    }
+
+    /// The operator an expression renders as, looking through literal-mask
+    /// wraps (which print as their inner expression) and inline assignments.
+    private func renderedOperator(_ expr: ColoExpr) -> ColoOperator? {
+        switch expr {
+        case .operation(let op, _): return op
+        case .variable(let v, let inner, _) where v.isLiteral: return renderedOperator(inner)
+        default: return nil
+        }
+    }
+
+    /// A pushed-value operand wrap whose inner expression is a bare variable
+    /// read (the read was materialized on the stack rather than bound to the
+    /// operator's operand mask)
+    private func isPushedBareRead(_ expr: ColoExpr) -> Bool {
+        if case .variable(let v, let inner, .wrap) = expr, v.isLiteral,
+           case .variable(let innerVar, _, let form) = inner, !innerVar.isLiteral, form != .wrap {
+            return true
+        }
+        return false
+    }
+
+    /// Whether an expression renders as an inline assignment (`a = b`),
+    /// which always needs parentheses in operand position
+    private func rendersAsAssignment(_ expr: ColoExpr) -> Bool {
+        switch expr {
+        case .variableAssignment: return true
+        case .variable(let v, let inner, _) where v.isLiteral: return rendersAsAssignment(inner)
+        default: return false
+        }
+    }
+
+    /// Parenthesize an operand when required for an unambiguous reparse:
+    /// lower-precedence sub-operations always; equal precedence on the right
+    /// side of a left-associative operator; any operation under a unary.
+    private func parenthesized(_ operand: ColoExpr, asOperandOf parent: ColoOperator, rightSide: Bool, unary: Bool = false) -> String {
+        let text = formatExpr(operand)
+        if rendersAsAssignment(operand) { return "(\(text))" }
+        // A materialized (pushed) bare variable read in operand position is
+        // parenthesized to distinguish it from the direct-mask form — parens
+        // around a lone variable have no other meaning in the dialect
+        if isPushedBareRead(operand) { return "(\(text))" }
+        guard let childOperator = renderedOperator(operand) else { return text }
+        if unary { return "(\(text))" }
+        if childOperator.precedence < parent.precedence { return "(\(text))" }
+        if childOperator.precedence == parent.precedence && rightSide { return "(\(text))" }
+        return text
+    }
+
+    /// Resolve a builder `string@<offset>` printf token to the actual string
+    /// when a resolver is available, escaping it for a quoted literal
+    private func resolveFormat(_ token: String) -> String {
+        guard token.hasPrefix("string@"),
+              let offset = Int(token.dropFirst(7)),
+              let resolved = stringResolver?(offset) else {
+            return token
+        }
+        return resolved
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\t", with: "\\t")
+    }
+
+    /// Format a built-in call. The function ID is usually a constant that
+    /// resolves to a named definition; a computed ID renders as an indexed
+    /// dynamic call.
+    private func formatBuiltInCall(_ idExpr: ColoExpr, args: [ColoExpr]) -> String {
+        if case .constant(.integer(let id)) = idExpr {
+            let funcDef = builtInFunctions[Int(id)]
+            let name = funcDef?.name ?? "builtin_\(id)"
+            let argStr = formatCallArgs(args, paramDefs: funcDef?.parameters ?? [])
+            return "\(name)(\(argStr))"
+        }
+        let argStr = args.map { formatExpr($0) }.joined(separator: ", ")
+        return "builtin[\(formatExpr(idExpr))](\(argStr))"
+    }
+
+    /// Format function call arguments, applying macro resolution based on parameter type definitions.
+    /// A pushMultiVar with count > 1 duplicates one read across several
+    /// argument slots — collapse the run into `dup(expr, n)`.
     private func formatCallArgs(_ args: [ColoExpr], paramDefs: [ScriptFunctionDef.ParameterDef]) -> String {
-        args.enumerated().map { (i, arg) in
+        var parts = [String]()
+        var i = 0
+        while i < args.count {
+            if case .variable(_, _, .multi(let count)) = args[i], count > 1 {
+                var repeats = 1
+                while i + repeats < args.count, repeats < Int(count),
+                      "\(args[i + repeats])" == "\(args[i])" {
+                    repeats += 1
+                }
+                if repeats > 1 {
+                    parts.append("dup(\(formatExpr(args[i])), \(repeats))")
+                    i += repeats
+                    continue
+                }
+            }
             let paramType = i < paramDefs.count ? paramDefs[i].type : nil
-            return formatArgWithType(arg, type: paramType)
-        }.joined(separator: ", ")
+            parts.append(formatArgWithType(args[i], type: paramType))
+            i += 1
+        }
+        return parts.joined(separator: ", ")
     }
 
     /// Format a single argument, resolving to an enum case name if the parameter type is an enum ref
@@ -593,16 +824,21 @@ public struct ColoExprFormatter {
 
         switch type {
         case .bool:
-            // Resolve bools directly
-            if case .constant(.integer(let v)) = expr { return v != 0 ? "true" : "false" }
-            if case .variable(let vr, .constant(.integer(let v))) = expr, vr.isLiteral { return v != 0 ? "true" : "false" }
+            // Resolve bools — but only for actual 0/1 values (some "bool"
+            // parameters receive other ints; those must survive verbatim)
+            let boolText: (Int32) -> String = { value in
+                if self.flavor == .python { return value != 0 ? "True" : "False" }
+                return value != 0 ? "true" : "false"
+            }
+            if case .constant(.integer(let v)) = expr, v == 0 || v == 1 { return boolText(v) }
+            if case .variable(let vr, .constant(.integer(let v)), _) = expr, vr.isLiteral, v == 0 || v == 1 { return boolText(v) }
         case .enumRef(let enumName):
             // Look up the enum and find a DEFINED case matching the raw value
             if let enumDef = enums[enumName] {
                 let rawValue: Int?
                 switch expr {
                 case .constant(.integer(let v)): rawValue = Int(v)
-                case .variable(let vr, .constant(.integer(let v))) where vr.isLiteral: rawValue = Int(v)
+                case .variable(let vr, .constant(.integer(let v)), _) where vr.isLiteral: rawValue = Int(v)
                 default: rawValue = nil
                 }
                 // Only use enum case if it's explicitly defined (not auto-generated)
