@@ -264,17 +264,10 @@ extension Project {
         try fileSystem.createFolder(at: projectFolder, overwrite: false)
         try fileSystem.importFST(projectFileSystem, from: Folder("/"), to: projectFolder, overwrite: false)
 
-        if let executablePath = Bundle.main.executablePath {
-            try [dumpConfigFile, buildConfigFile].forEach { config in
-                let script =
-                """
-                #!/bin/zsh
-                \(executablePath.replacingOccurrences(of: " ", with: "\\ ")) \(Folder("..").file(config.path).path.replacingOccurrences(of: " ", with: "\\ "))
-                """
-                let file = projectFolder.folder("Scripts").file(config.fileName.replacingOccurrences(of: "-Config.json", with: ".sh"))
-                try fileSystem.writeFile(script.data(format: .utf8), at: file, overwrite: false)
-                fileSystem.setExecutable(file: file)
-            }
-        }
+        try LauncherScript.write(
+            for: [dumpConfigFile, buildConfigFile],
+            in: projectFolder,
+            fileSystem: fileSystem
+        )
     }
 }

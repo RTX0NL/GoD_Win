@@ -8,7 +8,12 @@ public struct ColosseumEngine: Engine {
     public typealias EnumsType = ColosseumEngine.Enums
     public typealias StructsType = ColosseumEngine.Structs
 
-    public let name = "Colosseum Engine"
+    /// The folder an engine serializes to is named after it, so callers
+    /// that need the path before building an instance (project setup,
+    /// generated configs) can read it from the type instead of repeating
+    /// the literal and letting the two drift apart.
+    public static let defaultName = "Colosseum Engine"
+    public let name = Self.defaultName
     public private(set) var data = ColosseumEngine.Data()
     public private(set) var enums = ColosseumEngine.Enums()
     public private(set) var structs = ColosseumEngine.Structs()

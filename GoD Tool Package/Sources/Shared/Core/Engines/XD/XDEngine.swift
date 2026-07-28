@@ -8,7 +8,12 @@ public struct XDEngine: Engine {
     public typealias EnumsType = XDEngine.Enums
     public typealias StructsType = XDEngine.Structs
 
-    public let name = "XD Engine"
+    /// The folder an engine serializes to is named after it, so callers
+    /// that need the path before building an instance (project setup,
+    /// generated configs) can read it from the type instead of repeating
+    /// the literal and letting the two drift apart.
+    public static let defaultName = "XD Engine"
+    public let name = Self.defaultName
     public private(set) var data = XDEngine.Data()
     public private(set) var enums = XDEngine.Enums()
     public private(set) var structs = XDEngine.Structs()

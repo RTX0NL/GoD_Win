@@ -10,25 +10,6 @@ import XD
 import Pokemon
 
 enum Project {
-    /// Resolves the on-disk DOL symbol map path for the active game,
-    /// reading the single `dolSymbolMap` field from the game engine's
-    /// `Data.Resources`. Returns nil when neither XD nor Colosseum is
-    /// active — the op consumer should treat a missing path as "no
-    /// symbol resolution available" rather than failing.
-    static func dolSymbolMapFile(
-        isXD: Bool,
-        isColosseum: Bool,
-        enginesFolder: Folder
-    ) -> File? {
-        if isXD, let engine = try? XDEngine.defaults() {
-            return enginesFolder.folder(engine.name).file(engine.data.resources.dolSymbolMap.path).prefixed(".")
-        }
-        if isColosseum, let engine = try? ColosseumEngine.defaults() {
-            return enginesFolder.folder(engine.name).file(engine.data.resources.dolSymbolMap.path).prefixed(".")
-        }
-        return nil
-    }
-
     static func setup(iso isoInputFile: File) throws {
         try setup(iso: isoInputFile, fileSystem: FileSystem.shared)
     }
@@ -84,10 +65,13 @@ enum Project {
         let wiiMagic: UInt32 = isoData.readSafely(atAddress: 0x18)
         let isWii = wiiMagic == 0x5D1C9EA3
 
-        let isColosseum = PokemonColosseum.gameIDs.contains(gameID)
-        let isXD = PokemonXD.gameIDs.contains(gameID)
+        // Everything that varies per game lives in its profile; setup only
+        // asks whether there is one. `gsGame` is separate because PBR is a
+        // Genius Sonority title without a GameCube-side profile.
+        let profile = GameProfile.profile(forGameID: gameID)
         let isPBR = PokemonBattleRevolution.gameIDs.contains(gameID)
-        let isGeniusSonority = isColosseum || isXD || isPBR
+        let gsGame: GSGame? = profile?.gsGame ?? (isPBR ? .battleRevolution : nil)
+        let isGeniusSonority = gsGame != nil
 
         // Folders are created on-demand when files are written into them,
         // so we don't precreate empty directories here. Operations and
@@ -117,16 +101,6 @@ enum Project {
 
         var engines: [any Engine] = [dolphinEngine]
 
-        // Game-specific engine setup
-        var gsGame: GSGame?
-        if isColosseum {
-            gsGame = .colosseum
-        } else if isXD {
-            gsGame = .galeOfDarkness
-        } else if isPBR {
-            gsGame = .battleRevolution
-        }
-
         if isWii {
             let wiiEngine = try WiiEngine.defaults()
             engines.append(wiiEngine)
@@ -154,10 +128,8 @@ enum Project {
         }
 
         // Game-specific struct engine
-        if isXD {
-            engines.append(try XDEngine.defaults())
-        } else if isColosseum {
-            engines.append(try ColosseumEngine.defaults())
+        if let profile {
+            engines.append(try profile.makeEngine())
         }
 
         // The Pokémon engine ships canonical species/move/item/ability/
@@ -171,37 +143,15 @@ enum Project {
             try engine.write(to: projectFileSystem, in: enginesFolder, overwrite: false)
         }
 
-        // Write the region-matched DOL symbol map into the engine's
-        // declared `dolSymbolMap` slot. The engine itself carries only
-        // the region-neutral path; the bytes that land there are chosen
-        // here based on the ROM's game ID.
-        if isXD,
-           let regionalMap = PokemonXD.symbolMapData(for: gameID),
-           let xdEngine = try? XDEngine.defaults() {
-            let mapPath = enginesFolder.folder(xdEngine.name)
-                .file(xdEngine.data.resources.dolSymbolMap.path)
-            try projectFileSystem.writeFile(regionalMap, at: mapPath, overwrite: true)
-        }
-        if isColosseum,
-           let regionalMap = PokemonColosseum.symbolMapData(for: gameID),
-           let coloEngine = try? ColosseumEngine.defaults() {
-            let mapPath = enginesFolder.folder(coloEngine.name)
-                .file(coloEngine.data.resources.dolSymbolMap.path)
-            try projectFileSystem.writeFile(regionalMap, at: mapPath, overwrite: true)
-        }
-
-        // common.rel pointer-index → label name varies by region for
-        // Colosseum (StringTable*/Script live at different indices per
-        // build). The bundle ships one map per region; pick the matching
-        // one and write it to the engine's region-neutral path. XD's
-        // common.rel layout is region-stable so it stays bundled by
-        // `XDEngine.bundledResources()`.
-        if isColosseum,
-           let regionalSymbols = PokemonColosseum.commonRelSymbolMapData(for: gameID),
-           let coloEngine = try? ColosseumEngine.defaults() {
-            let symbolPath = enginesFolder.folder(coloEngine.name)
-                .file(coloEngine.data.resources.commonRelSymbolMap.path)
-            try projectFileSystem.writeFile(regionalSymbols, at: symbolPath, overwrite: true)
+        // Engines carry region-neutral resource paths; which bytes land in
+        // them depends on the disc's region, so the profile resolves that.
+        if let profile {
+            let engineFolder = enginesFolder.folder(profile.engineName)
+            for resource in profile.regionalResources(gameID) {
+                try projectFileSystem.writeFile(
+                    resource.data, at: engineFolder.file(resource.path.path), overwrite: true
+                )
+            }
         }
 
         // Build config generation
@@ -209,7 +159,8 @@ enum Project {
         let dumpConfig: GoddessConfig
 
         if isWii {
-            let wiiEngineName = "Wii Engine"
+            let wiiEngine = try WiiEngine.defaults()
+            let wiiEngineName = wiiEngine.name
 
             buildConfig = GoddessConfig(
                 name: "Build ISO",
@@ -234,7 +185,7 @@ enum Project {
                                     OperationConfig(
                                         operation: .fillISO(
                                             isoPath: isoOutputFile.prefixed("."),
-                                            size: 0x118240000
+                                            size: wiiEngine.data.disc.maxDiscCapacity
                                         ),
                                         enabled: .yes
                                     )
@@ -351,19 +302,27 @@ enum Project {
             // Map .rel files all sit under the relocatable-modules folder.
             // Map disassembly source lands under /Source/Code/maps/.
             let relocatableModulesFolder = unpackedFolder.folder("Data").folder("Relocatable Modules")
-            let mapsSourceFolder = sourceFolder.folder("Code").folder("maps")
-            // Colosseum splits maps into Type 1 / Type 2 layouts; XD
-            // routes "unused" leftover-Colo maps to a separate folder.
-            let mapsSourceFolderType1 = sourceFolder.folder("Code").folder("maps_type1")
-            let mapsSourceFolderType2 = sourceFolder.folder("Code").folder("maps_type2")
-            let unusedMapsSourceFolder = sourceFolder.folder("Code").folder("maps_unused")
+            // Each game splits its maps differently — Colosseum by Type 1 /
+            // Type 2 layout, XD by regular vs leftover-Colosseum — so the
+            // subfolder names come from the profile's map plans.
+            let mapsSourceRoot = sourceFolder.folder("Code")
+            // Where the game engine serialized to. Named by the engine type
+            // itself rather than a literal, so the two can't drift apart.
+            let gameEngineFolder = enginesFolder.folder(profile?.engineName ?? "")
 
-            if isColosseum, let game = gsGame {
+            // One chain for every Genius Sonority GameCube game. The two
+            // blocks this replaces were identical apart from the FSYS
+            // operation case and which map-rel source folders they used,
+            // both of which the profile supplies.
+            if let profile, let game = gsGame {
                 let gsEngine = GeniusSonorityEngine.defaultEngine(for: game)
-                // Rebuild common.rel from /Source/Code/common_rel back to
-                // its Unpacked location *before* the FSYS pack, so the
-                // packed archive picks up edits. Disabled by default
-                // until the typed-chunk reassembly path lands.
+                let dolphinEngineFolder = enginesFolder.folder(dolphinEngine.name).prefixed(".")
+                let gsEngineFolder = enginesFolder.folder(gsEngine.name).prefixed(".")
+
+                // Rebuild common.rel from /Source/Code/common_rel back to its
+                // Unpacked location *before* the FSYS pack, so the packed
+                // archive picks up edits. Disabled until the typed-chunk
+                // reassembly path lands for REL.
                 buildOperations.append(
                     OperationConfig(
                         operation: .commonRelBuild(
@@ -377,180 +336,87 @@ enum Project {
                         enabled: .no
                     )
                 )
-                // Rebuild Colosseum maps from both type folders, writing
-                // each rebuilt `.rel` back into the shared relocatable-
-                // modules folder where the FSYS packer expects them.
-                buildOperations.append(
-                    OperationConfig(
-                        operation: .mapRelsBuild(
-                            config: MapRelBuild.BatchConfig(
-                                inputFolder: mapsSourceFolderType1.prefixed("."),
-                                outputFolder: relocatableModulesFolder.prefixed("."),
-                                overwrite: true
-                            )
-                        ),
-                        enabled: .no
-                    )
-                )
-                buildOperations.append(
-                    OperationConfig(
-                        operation: .mapRelsBuild(
-                            config: MapRelBuild.BatchConfig(
-                                inputFolder: mapsSourceFolderType2.prefixed("."),
-                                outputFolder: relocatableModulesFolder.prefixed("."),
-                                overwrite: true
-                            )
-                        ),
-                        enabled: .no
-                    )
-                )
-                buildOperations.append(
-                    OperationConfig(operation: .coloXDBuild(
-                        config: ColoXD.BuildConfig(
-                            operations: [
-                                OperationConfig(
-                                    operation: .buildFlashMenus(
-                                        projectsFolder: flashMenusSourceFolder.prefixed("."),
-                                        outputFolder: flashMenusFolder.prefixed("."),
-                                        overwrite: true
-                                    ),
-                                    enabled: .no
-                                ),
-                                OperationConfig(
-                                    operation: .buildFonts(
-                                        fontsFolder: fontsSourceFolder.prefixed("."),
-                                        outputFolder: fontsFolder.prefixed("."),
-                                        overwrite: true
-                                    ),
-                                    enabled: .no
-                                ),
-                                OperationConfig(
-                                    operation: .buildMessages(
-                                        jsonFolder: messagesSourceFolder.prefixed("."),
-                                        outputFolder: messagesFolder.prefixed("."),
-                                        overwrite: true
-                                    ),
-                                    enabled: .no
-                                ),
-                                OperationConfig(
-                                    operation: .buildATXs(
-                                        jsonFolder: atxSourceFolder.prefixed("."),
-                                        outputFolder: atxFolder.prefixed("."),
-                                        overwrite: true
-                                    ),
-                                    enabled: .no
-                                ),
-                                OperationConfig(
-                                    operation: .buildColosseum(
-                                        fstRegistry: unpackedFolder.file("FST.json").prefixed("."),
-                                        outputFolder: contentsFolder.prefixed("."),
-                                        overwrite: true,
-                                        dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
-                                        geniusSonorityEngine: enginesFolder.folder(gsEngine.name).prefixed(".")
-                                    ),
-                                    enabled: .yes
-                                )
-                            ]
-                        )
-                    ),
-                    enabled: .yes
-                    )
-                )
-            }
 
-            if isXD, let game = gsGame {
-                let gsEngine = GeniusSonorityEngine.defaultEngine(for: game)
-                buildOperations.append(
-                    OperationConfig(
-                        operation: .commonRelBuild(
-                            config: CommonRelBuild.Config(
-                                inputFolder: commonRelSourceFolder.prefixed("."),
-                                relName: "common",
-                                outputPath: commonRelFile.prefixed("."),
-                                overwrite: true
-                            )
-                        ),
-                        enabled: .no
-                    )
-                )
-                // Rebuild XD maps from both the regular and the
-                // unused-Colo folders. Both feed into the shared
-                // relocatable-modules folder; the FSYS packer pulls
-                // from there during the FSYS rebuild step.
-                buildOperations.append(
-                    OperationConfig(
-                        operation: .mapRelsBuild(
-                            config: MapRelBuild.BatchConfig(
-                                inputFolder: mapsSourceFolder.prefixed("."),
-                                outputFolder: relocatableModulesFolder.prefixed("."),
-                                overwrite: true
-                            )
-                        ),
-                        enabled: .no
-                    )
-                )
-                buildOperations.append(
-                    OperationConfig(
-                        operation: .mapRelsBuild(
-                            config: MapRelBuild.BatchConfig(
-                                inputFolder: unusedMapsSourceFolder.prefixed("."),
-                                outputFolder: relocatableModulesFolder.prefixed("."),
-                                overwrite: true
-                            )
-                        ),
-                        enabled: .no
-                    )
-                )
-                buildOperations.append(
-                    OperationConfig(operation: .coloXDBuild(
-                        config: ColoXD.BuildConfig(
-                            operations: [
-                                OperationConfig(
-                                    operation: .buildFlashMenus(
-                                        projectsFolder: flashMenusSourceFolder.prefixed("."),
-                                        outputFolder: flashMenusFolder.prefixed("."),
-                                        overwrite: true
-                                    ),
-                                    enabled: .no
-                                ),
-                                OperationConfig(
-                                    operation: .buildFonts(
-                                        fontsFolder: fontsSourceFolder.prefixed("."),
-                                        outputFolder: fontsFolder.prefixed("."),
-                                        overwrite: true
-                                    ),
-                                    enabled: .no
-                                ),
-                                OperationConfig(
-                                    operation: .buildMessages(
-                                        jsonFolder: messagesSourceFolder.prefixed("."),
-                                        outputFolder: messagesFolder.prefixed("."),
-                                        overwrite: true
-                                    ),
-                                    enabled: .no
-                                ),
-                                OperationConfig(
-                                    operation: .buildATXs(
-                                        jsonFolder: atxSourceFolder.prefixed("."),
-                                        outputFolder: atxFolder.prefixed("."),
-                                        overwrite: true
-                                    ),
-                                    enabled: .no
-                                ),
-                                OperationConfig(
-                                    operation: .buildXD(
-                                        fstRegistry: unpackedFolder.file("FST.json").prefixed("."),
-                                        outputFolder: contentsFolder.prefixed("."),
-                                        overwrite: true,
-                                        dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
-                                        geniusSonorityEngine: enginesFolder.folder(gsEngine.name).prefixed(".")
-                                    ),
-                                    enabled: .yes
+                // Each map plan rebuilds from its own source folder into the
+                // shared relocatable-modules folder, where the FSYS packer
+                // picks the `.rel`s up.
+                for plan in profile.mapPlans {
+                    buildOperations.append(
+                        OperationConfig(
+                            operation: .mapRelsBuild(
+                                config: MapRelBuild.BatchConfig(
+                                    inputFolder: mapsSourceRoot.folder(plan.sourceFolderName).prefixed("."),
+                                    outputFolder: relocatableModulesFolder.prefixed("."),
+                                    overwrite: true
                                 )
-                            ]
+                            ),
+                            enabled: .no
                         )
-                    ),
-                    enabled: .yes
+                    )
+                }
+
+                let fsysBuild: ColoXD.BuildConfig.Operations
+                switch profile.family {
+                case .colosseum:
+                    fsysBuild = .buildColosseum(
+                        fstRegistry: unpackedFolder.file("FST.json").prefixed("."),
+                        outputFolder: contentsFolder.prefixed("."),
+                        overwrite: true,
+                        dolphinEngine: dolphinEngineFolder,
+                        geniusSonorityEngine: gsEngineFolder
+                    )
+                case .galeOfDarkness:
+                    fsysBuild = .buildXD(
+                        fstRegistry: unpackedFolder.file("FST.json").prefixed("."),
+                        outputFolder: contentsFolder.prefixed("."),
+                        overwrite: true,
+                        dolphinEngine: dolphinEngineFolder,
+                        geniusSonorityEngine: gsEngineFolder
+                    )
+                }
+
+                buildOperations.append(
+                    OperationConfig(
+                        operation: .coloXDBuild(
+                            config: ColoXD.BuildConfig(
+                                operations: [
+                                    OperationConfig(
+                                        operation: .buildFlashMenus(
+                                            projectsFolder: flashMenusSourceFolder.prefixed("."),
+                                            outputFolder: flashMenusFolder.prefixed("."),
+                                            overwrite: true
+                                        ),
+                                        enabled: .no
+                                    ),
+                                    OperationConfig(
+                                        operation: .buildFonts(
+                                            fontsFolder: fontsSourceFolder.prefixed("."),
+                                            outputFolder: fontsFolder.prefixed("."),
+                                            overwrite: true
+                                        ),
+                                        enabled: .no
+                                    ),
+                                    OperationConfig(
+                                        operation: .buildMessages(
+                                            jsonFolder: messagesSourceFolder.prefixed("."),
+                                            outputFolder: messagesFolder.prefixed("."),
+                                            overwrite: true
+                                        ),
+                                        enabled: .no
+                                    ),
+                                    OperationConfig(
+                                        operation: .buildATXs(
+                                            jsonFolder: atxSourceFolder.prefixed("."),
+                                            outputFolder: atxFolder.prefixed("."),
+                                            overwrite: true
+                                        ),
+                                        enabled: .no
+                                    ),
+                                    OperationConfig(operation: fsysBuild, enabled: .yes)
+                                ]
+                            )
+                        ),
+                        enabled: .yes
                     )
                 )
             }
@@ -618,21 +484,36 @@ enum Project {
                     )
                 ]
                 .conditionalAppend(
-                        isColosseum,
-                        contents: [
-                            OperationConfig(operation: .coloXDDump(
+                    profile != nil,
+                    // One FSYS dump chain for every Genius Sonority GameCube
+                    // game. The blocks this replaces differed only in the
+                    // operation case and the message variant.
+                    contents: profile.map { profile in
+                        let gsEngineName = GeniusSonorityEngine.defaultEngine(for: profile.gsGame).name
+                        let fsysDump: ColoXD.DumpConfig.Operations
+                        switch profile.family {
+                        case .colosseum:
+                            fsysDump = .dumpColosseum(
+                                fstFolder: contentsFolder.prefixed("."),
+                                outputFolder: unpackedFolder.prefixed("."),
+                                overwrite: false,
+                                dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
+                                geniusSonorityEngine: enginesFolder.folder(gsEngineName).prefixed(".")
+                            )
+                        case .galeOfDarkness:
+                            fsysDump = .dumpXD(
+                                fstFolder: contentsFolder.prefixed("."),
+                                outputFolder: unpackedFolder.prefixed("."),
+                                overwrite: false,
+                                dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
+                                geniusSonorityEngine: enginesFolder.folder(gsEngineName).prefixed(".")
+                            )
+                        }
+                        return [OperationConfig(
+                            operation: .coloXDDump(
                                 config: ColoXD.DumpConfig(
                                     operations: [
-                                        OperationConfig(
-                                            operation: .dumpColosseum(
-                                                fstFolder: contentsFolder.prefixed("."),
-                                                outputFolder: unpackedFolder.prefixed("."),
-                                                overwrite: false,
-                                                dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
-                                                geniusSonorityEngine: enginesFolder.folder(GeniusSonorityEngine.defaultEngine(for: .colosseum).name).prefixed(".")
-                                            ),
-                                            enabled: .yes
-                                        ),
+                                        OperationConfig(operation: fsysDump, enabled: .yes),
                                         OperationConfig(
                                             operation: .dumpFlashMenus(
                                                 flashMenusFolder: flashMenusFolder.prefixed("."),
@@ -654,7 +535,7 @@ enum Project {
                                                 messagesFolder: messagesFolder.prefixed("."),
                                                 outputFolder: messagesSourceFolder.prefixed("."),
                                                 overwrite: false,
-                                                variant: "colo"
+                                                variant: profile.msgVariant
                                             ),
                                             enabled: .no
                                         ),
@@ -670,171 +551,51 @@ enum Project {
                                 )
                             ),
                             enabled: .yes
-                            )
-                        ]
-                    )
+                        )]
+                    } ?? []
+                )
                 .conditionalAppend(
-                        isXD,
-                        contents: [
-                            OperationConfig(operation: .coloXDDump(
-                                config: ColoXD.DumpConfig(
-                                    operations: [
-                                        OperationConfig(
-                                            operation: .dumpXD(
-                                                fstFolder: contentsFolder.prefixed("."),
-                                                outputFolder: unpackedFolder.prefixed("."),
-                                                overwrite: false,
-                                                dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
-                                                geniusSonorityEngine: enginesFolder.folder(GeniusSonorityEngine.defaultEngine(for: .galeOfDarkness).name).prefixed(".")
-                                            ),
-                                            enabled: .yes
-                                        ),
-                                        OperationConfig(
-                                            operation: .dumpFlashMenus(
-                                                flashMenusFolder: flashMenusFolder.prefixed("."),
-                                                outputFolder: flashMenusSourceFolder.prefixed("."),
-                                                overwrite: false
-                                            ),
-                                            enabled: .no
-                                        ),
-                                        OperationConfig(
-                                            operation: .dumpFonts(
-                                                fontsFolder: fontsFolder.prefixed("."),
-                                                outputFolder: fontsSourceFolder.prefixed("."),
-                                                overwrite: false
-                                            ),
-                                            enabled: .no
-                                        ),
-                                        OperationConfig(
-                                            operation: .dumpMessages(
-                                                messagesFolder: messagesFolder.prefixed("."),
-                                                outputFolder: messagesSourceFolder.prefixed("."),
-                                                overwrite: false,
-                                                variant: "xd"
-                                            ),
-                                            enabled: .no
-                                        ),
-                                        OperationConfig(
-                                            operation: .dumpATXs(
-                                                atxFolder: atxFolder.prefixed("."),
-                                                outputFolder: atxSourceFolder.prefixed("."),
-                                                overwrite: false
-                                            ),
-                                            enabled: .no
-                                        )
-                                    ]
-                                )
-                            ),
-                            enabled: .yes
-                            )
-                        ]
-                    )
-                .conditionalAppend(
-                    isColosseum || isXD,
-                    contents: [
-                        OperationConfig(
+                    profile != nil,
+                    contents: profile.map { profile in
+                        [OperationConfig(
                             operation: .commonRelDump(
                                 config: CommonRelDump.Config(
                                     relPath: commonRelFile.prefixed("."),
                                     outputFolder: commonRelSourceFolder.prefixed("."),
                                     overwrite: false,
                                     dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
-                                    // Engine names are stable instance
-                                    // properties (see XDEngine/ColosseumEngine).
-                                    // Hardcode here to avoid triggering
-                                    // engine-default initialization (some
-                                    // sub-tables construct Folders that
-                                    // depend on inputs we don't have here).
-                                    gameEngine: enginesFolder
-                                        .folder(isXD ? "XD Engine" : "Colosseum Engine")
-                                        .prefixed(".")
+                                    gameEngine: enginesFolder.folder(profile.engineName).prefixed(".")
                                 )
                             ),
                             enabled: .yes
-                        )
-                    ]
+                        )]
+                    } ?? []
                 )
                 .conditionalAppend(
-                    isColosseum,
-                    contents: [
-                        // Colosseum maps come in two layouts. The legacy
-                        // parser detects them at runtime via an angle
-                        // sentinel; until that runtime-classifier is
-                        // ported, project setup ships both ops disabled
-                        // and the user opts in once the per-game prefix
-                        // list is known. Output folders are split so
-                        // both ops can run independently.
+                    profile != nil,
+                    // One dump op per map plan. Colosseum's two layouts and
+                    // XD's regular/leftover split are the same shape, so the
+                    // plan supplies the output folder, typemap and filter.
+                    //
+                    // All of these ship disabled: Colosseum's runtime
+                    // Type 1 / Type 2 classifier isn't ported yet, and XD's
+                    // map disassembly is opt-in.
+                    contents: (profile?.mapPlans ?? []).map { plan in
                         OperationConfig(
                             operation: .mapRelsDump(
                                 config: MapRelDump.BatchConfig(
                                     relsFolder: relocatableModulesFolder.prefixed("."),
-                                    outputFolder: mapsSourceFolderType1.prefixed("."),
+                                    outputFolder: mapsSourceRoot.folder(plan.sourceFolderName).prefixed("."),
                                     overwrite: false,
-                                    typeMapPath: enginesFolder.folder("Colosseum Engine").file("Resources/map_rel_typemap_type1.json").prefixed("."),
+                                    typeMapPath: gameEngineFolder.file(plan.typeMapResource.path).prefixed("."),
                                     dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
-                                    gameEngine: enginesFolder.folder("Colosseum Engine").prefixed("."),
-                                    filter: .coloType1
-                                )
-                            ),
-                            enabled: .no
-                        ),
-                        OperationConfig(
-                            operation: .mapRelsDump(
-                                config: MapRelDump.BatchConfig(
-                                    relsFolder: relocatableModulesFolder.prefixed("."),
-                                    outputFolder: mapsSourceFolderType2.prefixed("."),
-                                    overwrite: false,
-                                    typeMapPath: enginesFolder.folder("Colosseum Engine").file("Resources/map_rel_typemap_type2.json").prefixed("."),
-                                    dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
-                                    gameEngine: enginesFolder.folder("Colosseum Engine").prefixed("."),
-                                    filter: .coloType2
+                                    gameEngine: gameEngineFolder.prefixed("."),
+                                    filter: plan.filter
                                 )
                             ),
                             enabled: .no
                         )
-                    ]
-                )
-                .conditionalAppend(
-                    isXD,
-                    contents: [
-                        // XD: dump the regular maps (excluding the
-                        // leftover Colo-format ones), then dump the
-                        // unused-prefix maps to a separate folder with
-                        // no typemap. Disabled by default until users
-                        // opt into map disassembly.
-                        OperationConfig(
-                            operation: .mapRelsDump(
-                                config: MapRelDump.BatchConfig(
-                                    relsFolder: relocatableModulesFolder.prefixed("."),
-                                    outputFolder: mapsSourceFolder.prefixed("."),
-                                    overwrite: false,
-                                    typeMapPath: enginesFolder.folder("XD Engine").file("Resources/map_rel_typemap.json").prefixed("."),
-                                    dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
-                                    gameEngine: enginesFolder.folder("XD Engine").prefixed("."),
-                                    // Default unused-Colo prefixes from
-                                    // XDEngine.Data.unusedColosseumMapPrefixes;
-                                    // hardcoded here for the same reason
-                                    // as the engine-name string above.
-                                    filter: .excludePrefixes(["B1_", "M1_"])
-                                )
-                            ),
-                            enabled: .no
-                        ),
-                        OperationConfig(
-                            operation: .mapRelsDump(
-                                config: MapRelDump.BatchConfig(
-                                    relsFolder: relocatableModulesFolder.prefixed("."),
-                                    outputFolder: unusedMapsSourceFolder.prefixed("."),
-                                    overwrite: false,
-                                    typeMapPath: enginesFolder.folder("XD Engine").file("Resources/map_rel_typemap.json").prefixed("."),
-                                    dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
-                                    gameEngine: enginesFolder.folder("XD Engine").prefixed("."),
-                                    filter: .onlyPrefixes(["B1_", "M1_"])
-                                )
-                            ),
-                            enabled: .no
-                        )
-                    ]
+                    }
                 )
                 + [
                     OperationConfig(
@@ -842,28 +603,22 @@ enum Project {
                             config: DolDisassembly.Config(
                                 dolPath: contentsFolder.folder("sys").file("main.dol").prefixed("."),
                                 outputFolder: sourceFolder.folder("Code").prefixed("."),
-                                // DOL symbol maps now live under the game
-                                // engine's Resources folder (copied there
-                                // by `Engine.write`/`bundledResources()`).
-                                // Resolve the path for this game ID via
-                                // the game engine's `Data.Resources`.
-                                symbolMapPath: dolSymbolMapFile(
-                                    isXD: isXD,
-                                    isColosseum: isColosseum,
-                                    enginesFolder: enginesFolder
-                                ),
+                                // Symbol and type maps live in the game
+                                // engine's Resources folder, at paths the
+                                // engine declares. A game without a profile
+                                // has neither, and disassembles as raw hex.
+                                symbolMapPath: profile.map { profile in
+                                    gameEngineFolder.file(profile.dolSymbolMapResource.path).prefixed(".")
+                                },
                                 dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
-                                // XD ships a default main.dol type map (struct
-                                // tables + embedded MSG files). Colosseum has
-                                // none yet, so it stays untyped raw hex.
-                                typeMapPath: isXD
-                                    ? enginesFolder.folder("XD Engine").file("Resources/dol_typemap.json").prefixed(".")
-                                    : nil,
-                                // The DOL type map's chunk types resolve against
-                                // the XD engine's struct definitions.
-                                engines: isXD
-                                    ? [enginesFolder.folder("XD Engine").prefixed(".")]
-                                    : nil
+                                typeMapPath: profile?.dolTypeMapResource.map { resource in
+                                    gameEngineFolder.file(resource.path).prefixed(".")
+                                },
+                                // A type map's chunk types resolve against the
+                                // game engine's struct definitions.
+                                engines: profile?.dolTypeMapResource == nil
+                                    ? nil
+                                    : [gameEngineFolder.prefixed(".")]
                             )
                         ),
                         enabled: .yes
@@ -889,19 +644,10 @@ enum Project {
         try fileSystem.createFolder(at: projectFolder, overwrite: false)
         try fileSystem.importFST(projectFileSystem, from: Folder("/"), to: projectFolder, overwrite: false)
 
-        if let executablePath = Bundle.main.executablePath {
-            try [buildConfigFile, dumpConfigFile].forEach { config in
-                let script =
-                """
-                #!/bin/zsh
-                \(executablePath.replacingOccurrences(of: " ", with: "\\ ")) \(Folder("..").file(config.path).path.replacingOccurrences(of: " ", with: "\\ "))
-                """
-                let file = projectFolder.folder("Scripts").file(config.fileName.replacingOccurrences(of: "-Config.json", with: ".sh"))
-                try fileSystem.writeFile(script.data(format: .utf8), at: file, overwrite: false)
-                // Only the on-disk file system has POSIX permissions.
-                (fileSystem as? FileSystem)?.setExecutable(file: file)
-            }
-
-        }
+        try LauncherScript.write(
+            for: [buildConfigFile, dumpConfigFile],
+            in: projectFolder,
+            fileSystem: fileSystem
+        )
     }
 }

@@ -7,7 +7,10 @@ public struct WiiEngine: Engine {
     public typealias EnumsType = WiiEngine.Enums
     public typealias StructsType = WiiEngine.Structs
 
-    public let name = "Wii Engine"
+    /// See `XDEngine.defaultName` — callers that need the engine's folder
+    /// name before building an instance read it from the type.
+    public static let defaultName = "Wii Engine"
+    public let name = Self.defaultName
     public private(set) var data = WiiEngine.Data()
     public private(set) var enums = WiiEngine.Enums()
     public private(set) var structs = WiiEngine.Structs()
