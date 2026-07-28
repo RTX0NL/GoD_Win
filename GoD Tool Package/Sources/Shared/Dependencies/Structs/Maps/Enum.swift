@@ -85,10 +85,19 @@ public struct Enum: Codable, Equatable, Nameable {
     }
     
     public func get(_ caseName: String) throws -> Case {
-        guard let value = values.first(where: { $0.name.lowercased() == caseName.lowercased() }) else {
-            throw Errors.InvalidEnumCase(caseName: caseName, enumeration: self, .init())
+        if let value = values.first(where: { $0.name.lowercased() == caseName.lowercased() }) {
+            return value
         }
-        return value
+        // `allowUnknownCases` enums render unnamed raw values as
+        // `<Enum_Name>_<raw>` (see `unknown(_:)`). Parse that shape back so a
+        // synthesized name survives a name → raw → name round trip; without
+        // it, anything the enum doesn't name could be read but never written.
+        if allowUnknownCases,
+           caseName.hasPrefix(unknownCasePrefix),
+           let raw = Int(caseName.dropFirst(unknownCasePrefix.count)) {
+            return unknown(raw)
+        }
+        throw Errors.InvalidEnumCase(caseName: caseName, enumeration: self, .init())
     }
 
     public func get(_ index: Int) throws -> Case {
@@ -101,7 +110,13 @@ public struct Enum: Codable, Equatable, Nameable {
         return value
     }
     
+    /// Prefix of the synthesized name given to a raw value the enum doesn't
+    /// name, e.g. `FileTypes_22` for raw 22 of `FileTypes`.
+    public var unknownCasePrefix: String {
+        name.replacingOccurrences(of: " ", with: "_") + "_"
+    }
+
     private func unknown(_ index: Int) -> Case {
-        .init(name: "\(name.replacingOccurrences(of: " ", with: "_"))_\(index)", rawValue: index)
+        .init(name: "\(unknownCasePrefix)\(index)", rawValue: index)
     }
 }

@@ -50,13 +50,69 @@ final class StructDefinitionCoverageTests: XCTestCase {
         XCTAssertEqual(def.property(for: "sub.x"), .uint8)
     }
 
-    func testKeyMatchingIgnoresSpacesUnderscoresAndCase() {
+    /// Lookup is exact: a property is addressed by the name it was declared
+    /// with, and nothing else. Folding underscores and case used to make
+    /// `MaxHP`, `max_hp` and `maxhp` the same field, so a definition holding
+    /// two of them silently wrote to whichever came first.
+    func testKeyMatchingIsExact() {
         let def = StructDefinition(name: "T", wordSize: 1, alignmentStyle: .none,
                                    properties: [.uint8(name: "MaxHP")])
-        // Property.init strips spaces from the stored name; lookup then
-        // normalises underscores + case.
-        XCTAssertEqual(def.offset(for: "max_hp"), 0)
-        XCTAssertEqual(def.offset(for: "MAXHP"), 0)
+        XCTAssertEqual(def.offset(for: "MaxHP"), 0)
+        XCTAssertNil(def.offset(for: "max_hp"))
+        XCTAssertNil(def.offset(for: "MAXHP"))
+        XCTAssertNil(def.offset(for: "maxhp"))
+    }
+
+    /// Near misses carry a suggestion so an exact-match failure is
+    /// diagnosable rather than just "field absent".
+    func testClosestPropertyNameSuggestsTheDeclaredSpelling() {
+        let def = StructDefinition(name: "T", wordSize: 1, alignmentStyle: .none,
+                                   properties: [.uint8(name: "file_data_pointer")])
+        XCTAssertEqual(def.closestPropertyName(to: "fileDataPointer"), "file_data_pointer")
+        XCTAssertEqual(def.closestPropertyName(to: "FILE_DATA_POINTER"), "file_data_pointer")
+        // An exact hit isn't a near miss, and an unrelated name has no match.
+        XCTAssertNil(def.closestPropertyName(to: "file_data_pointer"))
+        XCTAssertNil(def.closestPropertyName(to: "somethingElse"))
+    }
+
+    // MARK: - Name validation
+
+    func testValidPropertyNames() {
+        for name in ["a", "_", "_leading", "file_data_pointer", "MaxHP", "x1", "BSS_RAM_address"] {
+            XCTAssertTrue(StructDefinition.isValidPropertyName(name), "\(name) should be valid")
+        }
+    }
+
+    func testInvalidPropertyNames() {
+        for name in ["", "1leading", "has space", "has-dash", "has.dot", "has$sign", "a b"] {
+            XCTAssertFalse(StructDefinition.isValidPropertyName(name), "\(name) should be invalid")
+        }
+    }
+
+    func testInvalidPropertyNamesAreReported() {
+        let def = StructDefinition(name: "T", wordSize: 1, alignmentStyle: .none,
+                                   properties: [.uint8(name: "ok"),
+                                                .uint8(name: "not ok"),
+                                                .uint8(name: "9bad")])
+        XCTAssertEqual(def.invalidPropertyNames, ["9bad", "not ok"])
+    }
+
+    func testDuplicatePropertyNamesAreReported() {
+        let def = StructDefinition(name: "T", wordSize: 1, alignmentStyle: .none,
+                                   properties: [.uint8(name: "a"),
+                                                .uint8(name: "b"),
+                                                .uint8(name: "a")])
+        XCTAssertEqual(def.duplicatePropertyNames, ["a"])
+    }
+
+    /// Padding is named `padding` for every run by design and is addressed
+    /// positionally, so repeats of it aren't duplicates.
+    func testRepeatedPaddingIsNotADuplicate() {
+        let def = StructDefinition(name: "T", wordSize: 1, alignmentStyle: .none,
+                                   properties: [.padding(length: 2),
+                                                .uint8(name: "a"),
+                                                .padding(length: 4)])
+        XCTAssertEqual(def.duplicatePropertyNames, [])
     }
 
     // MARK: - longestAlignment
@@ -102,14 +158,19 @@ final class StructDefinitionCoverageTests: XCTestCase {
 
     // MARK: - Property init
 
-    func testPropertyInitStripsSpaces() {
+    /// Names are stored verbatim. Silently stripping spaces rewrote the
+    /// caller's name instead of rejecting it, so the stored schema no longer
+    /// matched what the author wrote; invalid names are reported by
+    /// `invalidPropertyNames` and rejected when the engine loads.
+    func testPropertyInitKeepsTheNameVerbatim() {
         let p = StructDefinition.Property(name: "some name", type: .uint8)
-        XCTAssertEqual(p.name, "somename")
+        XCTAssertEqual(p.name, "some name")
+        XCTAssertFalse(StructDefinition.isValidPropertyName(p.name))
     }
 
-    func testDefinitionInitStripsSpacesFromName() {
+    func testDefinitionInitKeepsTheNameVerbatim() {
         let def = StructDefinition(name: "My Struct", wordSize: 1, alignmentStyle: .none, properties: [])
-        XCTAssertEqual(def.name, "MyStruct")
+        XCTAssertEqual(def.name, "My Struct")
     }
 
     // MARK: - uint32SubstitutedDefinition

@@ -1,3 +1,4 @@
+import Foundation
 import GoDFoundation
 
 @dynamicMemberLookup
@@ -169,9 +170,27 @@ public class StructData {
 
     // MARK: - Data accessors
 
+    /// Warns, in debug builds, when a lookup missed only because of spelling.
+    ///
+    /// Property names are matched exactly, and the optional accessors return
+    /// nil rather than throwing, so `header.fileDataPointer` against a
+    /// declared `file_data_pointer` would otherwise read as "field absent"
+    /// and write nothing. The throwing accessors carry the same hint in
+    /// `StructError.MissingKey`.
+    private func warnIfNearMiss(_ keypath: String) {
+        #if DEBUG
+        if let suggestion = definition.closestPropertyName(to: keypath) {
+            FileHandle.standardError.write(Data(
+                "WARNING: struct '\(definition.name)' has no property '\(keypath)' — did you mean '\(suggestion)'?\n".utf8
+            ))
+        }
+        #endif
+    }
+
     public func get(_ keypath: String) -> GoDData? {
         guard let offset = definition.offset(for: keypath),
               let length = definition.property(for: keypath)?.length else {
+            warnIfNearMiss(keypath)
             return nil
         }
 
@@ -242,6 +261,7 @@ public class StructData {
     public func set(_ keypath: String, to value: GoDData?) {
         guard let offset = definition.offset(for: keypath),
               let length = definition.property(for: keypath)?.length else {
+            warnIfNearMiss(keypath)
             return
         }
         let newValue = value?.copy ?? GoDData(length: length, byteOrder: self.byteOrder)
@@ -283,6 +303,25 @@ public class StructData {
     
     public func set(_ keypath: String, to value: Enum.Case?) {
         set(keypath, to: value?.rawValue)
+    }
+
+    /// Writes an enum-typed field by case name, throwing if the field isn't
+    /// an enum or the enum doesn't define that case.
+    ///
+    /// Prefer this over the `String?` dynamic-member setter for anything
+    /// that writes real game data: a subscript setter can't throw, so that
+    /// path can only skip an unrecognised case silently, leaving the field
+    /// at whatever it already held (zero, for a fresh struct). A file type
+    /// the engine's enum doesn't list would then be written as type 0.
+    public func setEnumCase(_ keypath: String, named caseName: String) throws {
+        guard let type = definition.property(for: keypath) else {
+            throw StructError.MissingKey(key: keypath, struct: self, .init())
+        }
+        guard case .enumeration(let enumeration) = type else {
+            throw StructError.TypeMismatch(key: keypath, propertyType: type, type: Enum.Case.self, struct: self, .init())
+        }
+        let enumCase = try enumeration.get(caseName)
+        set(keypath, to: enumCase.rawValue)
     }
 }
 
@@ -357,10 +396,40 @@ extension StructData: Encodable {
             StructData.readInteger(from: data, width: subType.length, signed: subType.isSigned, byteOrder: data.byteOrder) ?? 0
         }
         
-        func readEnum(definition: Enum, from data: GoDData) throws -> String {
+        // Enum fields encode as the case name when the raw value has a
+        // named case, and as the raw integer otherwise — an unnamed
+        // value must not fail the whole struct's encode. The decoder
+        // accepts both forms symmetrically.
+        func encodeEnum(definition: Enum, from data: GoDData, into container: inout UnkeyedEncodingContainer) throws {
             let value = readInt(subType: definition.propertyType, from: data)
-            let enumCase = try definition.get(value)
-            return enumCase.name
+            if let enumCase = try? definition.get(value) {
+                try container.encode(enumCase.name)
+            } else {
+                try container.encode(value)
+            }
+        }
+
+        // A boolean field must hold exactly 0 or 1. Anything else means
+        // the definition and the data disagree — most often a field typed
+        // `boolean` that is really a small integer or a bitfield — and
+        // collapsing it to `true` would silently rewrite the byte as 1 on
+        // the way back out.
+        func readBool(from data: GoDData, key: CustomCodingKeys) throws -> Bool {
+            guard let raw = data[safe: 0] else {
+                throw encodeReadError(key, "Bool")
+            }
+            switch raw {
+            case 0: return false
+            case 1: return true
+            default:
+                throw EncodingError.invalidValue(
+                    raw,
+                    EncodingError.Context(
+                        codingPath: [key],
+                        debugDescription: "StructData: boolean field '\(key.stringValue)' holds 0x\(String(raw, radix: 16, uppercase: true)), which is neither 0 nor 1 — the field is probably not a boolean"
+                    )
+                )
+            }
         }
 
         // Raised when a single-value field's backing data is too short
@@ -387,7 +456,19 @@ extension StructData: Encodable {
             case .padding:
                 return
             case .label:
-                return
+                // Label elements carry no per-element name, so the raw
+                // pointer address is emitted as an auto label string.
+                // The decoder records these into `labelValues` under
+                // `name[i]` keys and the importer resolves them back
+                // to addresses at assembly time.
+                var offset = 0
+                for _ in 0 ..< count {
+                    if let element: GoDData = data.read(atAddress: offset, length: 4),
+                       let address = StructData.readInteger(from: element, width: 4, signed: false, byteOrder: data.byteOrder) {
+                        try container.encode("lbl_\(String(format: "%08X", UInt32(truncatingIfNeeded: address)))")
+                    }
+                    offset += 4
+                }
             case .primitive(let type):
                 switch type {
                 case .void:
@@ -435,9 +516,11 @@ extension StructData: Encodable {
                     }
                 case .boolean:
                     var offset = 0
-                    for _ in 0 ..< count {
-                        if let value: Bool = data.readPrimtive(atAddress: offset) {
-                            try container.encode(value)
+                    for index in 0 ..< count {
+                        if let element: GoDData = data.read(atAddress: offset, length: Bool.byteLength) {
+                            try container.encode(
+                                readBool(from: element, key: CustomCodingKeys("[\(index)]"))
+                            )
                         }
                         offset += Bool.byteLength
                     }
@@ -450,8 +533,7 @@ extension StructData: Encodable {
                 var offset = 0
                 for _ in 0 ..< count {
                     if let data: GoDData = data.read(atAddress: offset, length: definition.propertyType.length) {
-                        let value = try readEnum(definition: definition, from: data)
-                        try container.encode(value)
+                        try encodeEnum(definition: definition, from: data, into: &container)
                     }
                     offset += definition.propertyType.length
                 }
@@ -571,8 +653,7 @@ extension StructData: Encodable {
                     }
                     try container.encode(LosslessDouble(value), forKey: key)
                 case .boolean:
-                    let value: Bool = !data.isNull
-                    try container.encode(value, forKey: key)
+                    try container.encode(readBool(from: data, key: key), forKey: key)
                 case .character(let format):
                     guard let value: String = data.readString(atAddress: 0, format: format, maxCharacters: 1) else {
                         throw encodeReadError(key, "String")
@@ -580,8 +661,12 @@ extension StructData: Encodable {
                     try container.encode(value, forKey: key)
                 }
             case .enumeration(let definition):
-                let value = try readEnum(definition: definition, from: data)
-                try container.encode(value, forKey: key)
+                let raw = readInt(subType: definition.propertyType, from: data)
+                if let enumCase = try? definition.get(raw) {
+                    try container.encode(enumCase.name, forKey: key)
+                } else {
+                    try container.encode(raw, forKey: key)
+                }
             case .array(let subProperty, let count):
                 var container = container.nestedUnkeyedContainer(forKey: key)
                 try encode(data: data, type: subProperty, count: count, labels: labels, container: &container)
@@ -804,12 +889,26 @@ public extension StructData {
                 byteOrder: byteOrder
             )
         case .enumeration(let definition):
-            guard let name = value as? String else {
-                throw decodingError("expected String for enum '\(definition.name)' at '\(propertyName)'", offset)
+            // Case name preferred; raw integer accepted for values the
+            // enum doesn't name (the encoder emits those as integers)
+            // or hand-edited numeric values. `allowUnknownCases` enums
+            // synthesize `<Enum_Name>_<raw>` names on encode — parse
+            // the raw value back out of that shape too.
+            let rawValue: Int
+            let unknownCasePrefix = definition.name.replacingOccurrences(of: " ", with: "_") + "_"
+            if let name = value as? String, let resolved = try? definition.get(name) {
+                rawValue = resolved.rawValue
+            } else if let name = value as? String,
+                      name.hasPrefix(unknownCasePrefix),
+                      let synthesized = Int(name.dropFirst(unknownCasePrefix.count)) {
+                rawValue = synthesized
+            } else if let intValue = coerceToInt(value) {
+                rawValue = intValue
+            } else {
+                throw decodingError("expected case name or raw value for enum '\(definition.name)' at '\(propertyName)'", offset)
             }
-            let resolved = try definition.get(name)
             try writeInteger(
-                resolved.rawValue,
+                rawValue,
                 width: definition.propertyType.length,
                 signed: definition.propertyType.isSigned,
                 into: data,
@@ -854,6 +953,13 @@ public extension StructData {
         labelValues: inout [String: String],
         byteOrder: ByteOrder
     ) throws {
+        // Older dumps omitted label arrays entirely (the encoder used
+        // to skip label elements) — tolerate a missing value and leave
+        // the pointer slots zero.
+        if case .label = element, value == nil {
+            return
+        }
+
         // Special case: an array of characters. The encoder uses a
         // nested unkeyed container with a single `readString(
         // maxCharacters: count)` element, so the JSON shape is an

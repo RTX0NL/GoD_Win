@@ -54,8 +54,12 @@ extension StructMap: Encodable {
         try container.encode(wordSize, forKey: .wordSize)
         try container.encode(alignmentStyle, forKey: .alignmentStyle)
         
+        // Names round-trip verbatim. `snakeCased` used to lowercase them
+        // here, so `fileDataPointer` came back as `filedatapointer` — which
+        // only worked because lookup folded case away. Lookup is exact now,
+        // so a serialized engine must reload with the names it was given.
         let propertyList = properties.map { property in
-            return "\(property.type) \(property.name.snakeCased)"
+            return "\(property.type) \(property.name)"
         }
         try container.encode(propertyList, forKey: .properties)
     }

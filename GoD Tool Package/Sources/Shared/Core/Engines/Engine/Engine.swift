@@ -46,6 +46,26 @@ public extension Engine {
         }
         return result
     }
+
+    /// Property names are the addressable schema — they're what lookup
+    /// matches (exactly), what dumped JSON keys are, and what
+    /// `@dynamicMemberLookup` reads. Reject a bad one where the engine loads
+    /// rather than letting it silently resolve to nothing, or letting a
+    /// duplicate resolve to whichever copy happens to come first.
+    private func validatePropertyNames(of definition: StructDefinition) throws {
+        let invalid = definition.invalidPropertyNames
+        guard invalid.isEmpty else {
+            throw EngineDecodingError.invalidStructPropertyNames(
+                structName: definition.name, names: invalid, .init()
+            )
+        }
+        let duplicates = definition.duplicatePropertyNames
+        guard duplicates.isEmpty else {
+            throw EngineDecodingError.duplicateStructPropertyNames(
+                structName: definition.name, names: duplicates, .init()
+            )
+        }
+    }
     
     private func getStruct(_ name: String, callerChain: [String]) throws -> StructDefinition? {
         guard let map: StructMap = getStruct(name) else { return nil }
@@ -83,39 +103,34 @@ public extension Engine {
             return .init(name: fieldName, type: type, description: description)
         }
         
-        return .init(
+        let definition = StructDefinition(
             name: map.name,
             wordSize: map.wordSize,
             alignmentStyle: map.alignmentStyle,
             properties: try map.properties.map(mapToDefinition)
         )
+        try validatePropertyNames(of: definition)
+        return definition
     }
     
-    @discardableResult
-    func write(to fst: FileSystemTree, in folder: Folder, overwrite: Bool) -> Bool {
+    func write(to fst: FileSystemTree, in folder: Folder, overwrite: Bool) throws {
         let engineFolder = folder.folder(name)
-        _ = fst.createFolder(at: engineFolder, overwrite: overwrite)
+        try fst.createFolder(at: engineFolder, overwrite: overwrite)
         let dataFile = engineFolder.file(name + ".json")
-        guard fst.writeFile(data, at: dataFile, overwrite: overwrite) else {
-            return false
-        }
-        
+        try fst.writeFile(data, at: dataFile, overwrite: overwrite)
+
         let enumsFolder = engineFolder.folder("Enumerations")
-        fst.createFolder(at: enumsFolder, overwrite: overwrite)
+        try fst.createFolder(at: enumsFolder, overwrite: overwrite)
         for enumData in enums.entries {
             let enumFile = enumsFolder.file(enumData.name + ".json")
-            guard fst.writeFile(enumData, at: enumFile, overwrite: overwrite) else {
-                return false
-            }
+            try fst.writeFile(enumData, at: enumFile, overwrite: overwrite)
         }
-        
+
         let structsFolder = engineFolder.folder("Structs")
-        fst.createFolder(at: structsFolder, overwrite: overwrite)
+        try fst.createFolder(at: structsFolder, overwrite: overwrite)
         for structMap in structs.entries {
             let structFile = structsFolder.file(structMap.name + ".json")
-            guard fst.writeFile(structMap, at: structFile, overwrite: overwrite) else {
-                return false
-            }
+            try fst.writeFile(structMap, at: structFile, overwrite: overwrite)
         }
 
         // Copy bundled reference resources (REL typemap, symbol indexes,
@@ -124,12 +139,8 @@ public extension Engine {
         // `File` paths declared on the engine's Data.
         for (relativeFile, data) in bundledResources() {
             let target = engineFolder.file(relativeFile.path)
-            guard fst.writeFile(data, at: target, overwrite: overwrite) else {
-                return false
-            }
+            try fst.writeFile(data, at: target, overwrite: overwrite)
         }
-
-        return true
     }
     
     init(from folder: Folder, in fst: FileSystemTree) throws {

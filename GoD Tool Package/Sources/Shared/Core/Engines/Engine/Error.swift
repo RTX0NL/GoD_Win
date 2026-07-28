@@ -14,6 +14,8 @@ public enum EngineDecodingError: Error, CustomStringConvertible {
     case missingStructProperty(structName: String, property: String, substructName: String, ErrorTrace)
     case missingStructs([String], ErrorTrace)
     case cyclicDependency(String, String, ErrorTrace)
+    case invalidStructPropertyNames(structName: String, names: [String], ErrorTrace)
+    case duplicateStructPropertyNames(structName: String, names: [String], ErrorTrace)
     case generic(ErrorTrace)
     
     public var description: String {
@@ -44,6 +46,12 @@ public enum EngineDecodingError: Error, CustomStringConvertible {
             return "Error: Couldn't find entries for structs:\n\(names.joined(separator: ", "))\n\(errorTrace)"
         case let .cyclicDependency(first, second, errorTrace):
             return "Error: Definitions for structs of type `\(first)` and `\(second)` have a cyclic reference to each other.\n\(errorTrace)"
+        case let .invalidStructPropertyNames(structName, names, errorTrace):
+            return "Error: Struct '\(structName)' has invalid property names: \(names.joined(separator: ", ")). "
+                + "A property name must start with a letter or '_' and contain only letters, digits and '_'.\n\(errorTrace)"
+        case let .duplicateStructPropertyNames(structName, names, errorTrace):
+            return "Error: Struct '\(structName)' declares these property names more than once: \(names.joined(separator: ", ")). "
+                + "Property names are matched exactly, so a duplicate makes the field ambiguous.\n\(errorTrace)"
         case let .generic(errorTrace):
             return "Error: Something went wrong\n\(errorTrace)"
         }

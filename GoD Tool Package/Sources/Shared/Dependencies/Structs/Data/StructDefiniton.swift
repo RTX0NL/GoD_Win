@@ -5,6 +5,7 @@
 //  Created by Stars Momodu on 12/06/2022.
 //
 
+import Foundation
 import GoDFoundation
 
 public enum StructAlignmentStyles: String, Equatable, Codable {
@@ -20,7 +21,7 @@ public struct StructDefinition: Equatable, Nameable {
         public let type: StructProperty
 
         public init(name: String, type: StructProperty, description: String? = nil) {
-            self.name = name.replacingOccurrences(of: " ", with: "")
+            self.name = name
             self.description = description
             self.type = type
         }
@@ -112,22 +113,81 @@ public struct StructDefinition: Equatable, Nameable {
         properties: [Property],
         description: String? = nil
     ) {
-        self.name = name.replacingOccurrences(of: " ", with: "")
+        self.name = name
         self.wordSize = wordSize
         self.alignmentStyle = alignmentStyle
         self.properties = properties
         self.description = description
     }
 
+    /// Index of the property a keypath segment names, or nil if it names none.
+    ///
+    /// Matching is **exact**. Property names are the schema — they're what
+    /// engine JSON declares, what dumped struct JSON keys are, and what
+    /// `@dynamicMemberLookup` reads — so `file_data_pointer` is addressed as
+    /// `file_data_pointer` and nothing else. An earlier version folded away
+    /// underscores, spaces and case, which quietly made `maxHP`, `max_hp` and
+    /// `maxhp` the same field and let a write land on the wrong offset.
+    private func indexOfProperty(named key: String) -> Int? {
+        properties.firstIndex(where: { $0.name == key })
+    }
+
+    /// Properties declared more than once. Non-empty means the definition
+    /// can't be addressed unambiguously.
+    ///
+    /// Padding is exempt: `.padding(length:)` names every run `"padding"` by
+    /// design, and padding is only ever addressed positionally (the
+    /// encoder/decoder index it as `padding_<i>`), never by name.
+    public var duplicatePropertyNames: [String] {
+        let addressable = properties.map(\.name).filter { $0 != Self.paddingPropertyName }
+        return Dictionary(grouping: addressable, by: { $0 })
+            .filter { $0.value.count > 1 }
+            .keys
+            .sorted()
+    }
+
+    /// Property names that aren't valid identifiers. A name must start with a
+    /// letter or `_` and contain only letters, digits and `_` — the same
+    /// shape Swift's `@dynamicMemberLookup` and JSON keys can both express.
+    public var invalidPropertyNames: [String] {
+        properties.map(\.name).filter { !Self.isValidPropertyName($0) }.sorted()
+    }
+
+    /// Whether `name` is usable as a property name (see `invalidPropertyNames`).
+    public static func isValidPropertyName(_ name: String) -> Bool {
+        guard let first = name.unicodeScalars.first else { return false }
+        guard first == "_" || CharacterSet.letters.contains(first) else { return false }
+        return name.unicodeScalars.allSatisfy {
+            $0 == "_" || CharacterSet.alphanumerics.contains($0)
+        }
+    }
+
+    /// The reserved name `.padding(length:)` assigns to every padding run.
+    public static let paddingPropertyName = "padding"
+
+    /// A declared property that `keypath`'s first segment probably meant, for
+    /// "did you mean" diagnostics. Matching is exact, so a near miss —
+    /// `fileDataPointer` for `file_data_pointer` — otherwise just resolves to
+    /// nothing with no hint as to why.
+    public func closestPropertyName(to keypath: String) -> String? {
+        guard let key = keypath.split(separator: ".").first.map(String.init),
+              indexOfProperty(named: key) == nil else { return nil }
+        func folded(_ s: String) -> String {
+            s.replacingOccurrences(of: "_", with: "").replacingOccurrences(of: " ", with: "").lowercased()
+        }
+        let target = folded(key)
+        return properties.first { folded($0.name) == target }?.name
+    }
+
     public func offset(for keypath: String) -> Int? {
-        let keypathParts = keypath
-            .split(separator: ".")
-            .map { Self.keyFor(String($0)) }
+        let keypathParts = keypath.split(separator: ".").map(String.init)
         guard let currentKey = keypathParts.first else { return nil }
         let remainingKeyPath = keypathParts.count == 1 ? nil : keypathParts[1...].joined(separator: ".")
 
+        guard let targetIndex = indexOfProperty(named: currentKey) else { return nil }
+
         var offset: Int = 0
-        for property in properties {
+        for (index, property) in properties.enumerated() {
             switch alignmentStyle {
             case .none: break
             case .cStyle:
@@ -137,16 +197,13 @@ public struct StructDefinition: Equatable, Nameable {
                 }
             }
 
-            if Self.keyFor(property.name) == currentKey {
+            if index == targetIndex {
                 if let keypath = remainingKeyPath {
-                    if case .subStruct(let substruct) = property.type {
-                        if let subOffset = substruct.offset(for: keypath) {
-                            return offset + subOffset
-                        }
-                        return nil
-                    } else {
+                    guard case .subStruct(let substruct) = property.type,
+                          let subOffset = substruct.offset(for: keypath) else {
                         return nil
                     }
+                    return offset + subOffset
                 }
                 return offset
             }
@@ -157,34 +214,19 @@ public struct StructDefinition: Equatable, Nameable {
     }
 
     public func property(for keypath: String) -> StructProperty? {
-        let keypathParts = keypath
-            .split(separator: ".")
-            .map { Self.keyFor(String($0)) }
-        guard let currentKey = keypathParts.first else { return nil }
+        let keypathParts = keypath.split(separator: ".").map(String.init)
+        guard let currentKey = keypathParts.first,
+              let index = indexOfProperty(named: currentKey) else { return nil }
         let remainingKeyPath = keypathParts.count == 1 ? nil : keypathParts[1...].joined(separator: ".")
 
-        for property in properties {
-            if Self.keyFor(property.name) == currentKey {
-                if let keypath = remainingKeyPath {
-                    if case .subStruct(let substruct) = property.type {
-                        return substruct.property(for: keypath)
-                    } else {
-                        return nil
-                    }
-                }
-                return property.type
-            }
+        let property = properties[index]
+        if let keypath = remainingKeyPath {
+            guard case .subStruct(let substruct) = property.type else { return nil }
+            return substruct.property(for: keypath)
         }
+        return property.type
+    }
 
-        return nil
-    }
-    
-    private static func keyFor(_ propertyName: String) -> String {
-        propertyName
-            .replacingOccurrences(of: " ", with: "")
-            .replacingOccurrences(of: "_", with: "")
-            .lowercased()
-    }
 }
 
 public extension StructDefinition.Property {
@@ -281,7 +323,7 @@ public extension StructDefinition.Property {
     }
 
     static func padding(length: Int) -> StructDefinition.Property {
-        StructDefinition.Property(name: "padding", type: .array(.uint8, count: length))
+        StructDefinition.Property(name: StructDefinition.paddingPropertyName, type: .array(.uint8, count: length))
     }
 }
 
