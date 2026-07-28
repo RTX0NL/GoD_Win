@@ -84,7 +84,10 @@ extension MapRelDump {
             dolphinEngine: dolphinEngine,
             symbolIndexPath: fileSystem.inspectFile(at: symbolPath) != nil ? symbolPath : nil,
             dolSymbolMapPath: fileSystem.inspectFile(at: dolSymbolPath) != nil ? dolSymbolPath : nil,
-            typeMapPath: fileSystem.inspectFile(at: typeMapPath) != nil ? typeMapPath : nil
+            typeMapPath: fileSystem.inspectFile(at: typeMapPath) != nil ? typeMapPath : nil,
+            // The map.rel type map's chunk types resolve against the game
+            // engine's own struct definitions.
+            engines: [gameEngine]
         )
         try RelDisassembly.disassemble(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
     }

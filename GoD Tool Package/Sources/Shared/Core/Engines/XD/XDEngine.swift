@@ -46,6 +46,7 @@ public struct XDEngine: Engine {
         add(data.resources.mapRelSymbolMap, named: "map_rel_symbols.json")
         add(data.resources.mapRelTypeMap, named: "map_rel_typemap.json")
         add(data.resources.pocketMenuSymbolMap, named: "pocket_menu_symbols.json")
+        add(data.resources.dolTypeMap, named: "dol_typemap.json")
         // DOL symbol map is region-specific — written by `ProjectSetup`
         // once the ROM's game ID is known, not bundled at engine-write
         // time.

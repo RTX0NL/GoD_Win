@@ -50,11 +50,38 @@ public struct SymbolMapParser {
 
         // dtk format: "name = section:0xADDRESS; // type:function size:0xSIZE"
         if firstContentLine.contains("=") && firstContentLine.contains(":0x") {
-            return parseDtkFormat(lines)
+            return uniquified(parseDtkFormat(lines))
         }
 
         // Dolphin format: "80003100 000000e4 80003100  0 __start"
-        return parseDolphinFormat(lines)
+        return uniquified(parseDolphinFormat(lines))
+    }
+
+    /// CodeWarrior maps repeat local-literal names (`@3097`) at many
+    /// different addresses. Duplicate names collide as label definitions
+    /// and as chunk file names (later chunks silently overwrite earlier
+    /// ones), so every repeat at a new address gets an address suffix.
+    /// Comparison is case-INSENSITIVE: symbol names differing only in case
+    /// (`GetDarkPokemonID` / `GetDarkpokemonID`) map to per-function files
+    /// that overwrite each other on case-insensitive filesystems (macOS).
+    private func uniquified(_ symbols: [PPCSymbol]) -> [PPCSymbol] {
+        var firstAddressForName = [String: UInt32]()
+        var result = [PPCSymbol]()
+        result.reserveCapacity(symbols.count)
+        for sym in symbols {
+            let key = sym.name.lowercased()
+            if let owner = firstAddressForName[key], owner != sym.address {
+                let unique = "\(sym.name)_\(String(format: "%08X", sym.address))"
+                result.append(PPCSymbol(
+                    name: unique, address: sym.address, size: sym.size,
+                    section: sym.section, sourceFile: sym.sourceFile
+                ))
+            } else {
+                firstAddressForName[key] = sym.address
+                result.append(sym)
+            }
+        }
+        return result
     }
 
     /// Build a lookup table from address → symbol name
@@ -64,6 +91,28 @@ public struct SymbolMapParser {
             lookup[symbol.address] = symbol.name
         }
         return lookup
+    }
+
+    /// Make a symbol name assembly-safe. Demangled C++ names can carry
+    /// template syntax (`Replayable<0,9SaveFrame>`) whose commas, angle
+    /// brackets, and spaces break operand splitting and label parsing on
+    /// reassembly. Anything outside [A-Za-z0-9_$.] becomes '_', and a
+    /// leading digit gets a '_' prefix so the name can't parse as a number.
+    static func sanitizeName(_ name: String) -> String {
+        var out = String.UnicodeScalarView()
+        for scalar in name.unicodeScalars {
+            switch scalar {
+            case "a"..."z", "A"..."Z", "0"..."9", "_", "$", ".":
+                out.append(scalar)
+            default:
+                out.append("_")
+            }
+        }
+        var result = String(out)
+        if let first = result.first, first.isNumber {
+            result = "_" + result
+        }
+        return result
     }
 }
 
@@ -103,7 +152,7 @@ private extension SymbolMapParser {
             }
 
             // parts[2] is vaddr (usually same as address), parts[3] is section index
-            let name = String(parts[4])
+            let name = SymbolMapParser.sanitizeName(String(parts[4]))
             symbols.append(PPCSymbol(name: name, address: address, size: size, section: currentSection, sourceFile: sourceFile))
         }
         return symbols
@@ -128,7 +177,7 @@ private extension SymbolMapParser {
             let mainParts = trimmed.split(separator: "=", maxSplits: 1)
             guard mainParts.count == 2 else { continue }
 
-            let name = String(mainParts[0]).trimmingCharacters(in: .whitespaces)
+            let name = SymbolMapParser.sanitizeName(String(mainParts[0]).trimmingCharacters(in: .whitespaces))
 
             // Parse "section:0xADDRESS; // metadata"
             let valuePart = String(mainParts[1]).trimmingCharacters(in: .whitespaces)

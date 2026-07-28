@@ -3,16 +3,17 @@ import GoDFoundation
 /// A user-authored file that describes typed regions within data sections.
 /// Contains a single ordered list of chunks that the disassembler uses
 /// to produce typed output (struct JSON, embedded files, etc.) instead of raw hex.
+///
+/// The engine folders whose struct/enum definitions resolve these chunks'
+/// type names are supplied by the disassembly/assembly operation config
+/// (`engines`), not by the map itself — the same map applies regardless of
+/// where its engine lives on disk.
 public struct TypeMap: Codable, Equatable {
-
-    /// Paths to engine folders for resolving struct/enum type names
-    public let engines: [String]
 
     /// Ordered list of typed data chunks
     public let chunks: [Chunk]
 
-    public init(engines: [String] = [], chunks: [Chunk] = []) {
-        self.engines = engines
+    public init(chunks: [Chunk] = []) {
         self.chunks = chunks
     }
 

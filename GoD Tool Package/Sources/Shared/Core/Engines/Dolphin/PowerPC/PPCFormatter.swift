@@ -49,6 +49,11 @@ public struct PPCFormatter {
             if ops.count == 2, case .gpr(let rd) = ops[0] {
                 return "\(decoded.mnemonic) r\(rd), \(symbolName)@ha"
             }
+        case .h:
+            // lis rD, symbol@h — raw high half for unsigned (ori) pairs
+            if ops.count == 2, case .gpr(let rd) = ops[0] {
+                return "\(decoded.mnemonic) r\(rd), \(symbolName)@h"
+            }
         case .lo:
             // addi rD, rA, symbol@l
             if decoded.mnemonic == "addi", ops.count == 3,
@@ -67,6 +72,12 @@ public struct PPCFormatter {
                 else if case .fpr(let fd) = ops[0] { regStr = "f\(fd)" }
                 else { regStr = formatOperand(ops[0]) }
                 return "\(decoded.mnemonic) \(regStr), \(symbolName)@l(r\(base))"
+            }
+            // psq_l fD, symbol@l(rA), W, GQR
+            if ops.count == 4, case .fpr(let fd) = ops[0],
+               case .memory(_, let base) = ops[1],
+               case .wBit(let w) = ops[2], case .gqr(let g) = ops[3] {
+                return "\(decoded.mnemonic) f\(fd), \(symbolName)@l(r\(base)), \(w), \(g)"
             }
         }
 
@@ -100,11 +111,15 @@ public struct PPCFormatter {
 
     /// Format a text section as clean assembly with auto-generated labels for branch targets.
     /// Symbols from a symbol map take precedence over auto-generated labels.
+    /// `extraLabels` carries names for addresses outside this section (e.g.
+    /// cross-section branch targets) so they render symbolically, and for
+    /// addresses inside it so externally-referenced spots get definitions.
     public func formatAssembly(
         _ instructions: [PPCInstruction],
         symbols: [UInt32: String] = [:],
         relocations: [UInt32: PPCRelocation] = [:],
-        sectionName: String
+        sectionName: String,
+        extraLabels: [UInt32: String] = [:]
     ) -> String {
         // Build combined label map: symbols + auto-generated branch target labels
         let branchTargets = collectBranchTargets(instructions)
@@ -122,6 +137,10 @@ public struct PPCFormatter {
             if labels[reloc.targetAddress] == nil, let name = reloc.symbolName {
                 labels[reloc.targetAddress] = name
             }
+        }
+
+        for (addr, name) in extraLabels where labels[addr] == nil {
+            labels[addr] = name
         }
 
         var lines = [String]()
@@ -149,17 +168,23 @@ public struct PPCFormatter {
 
     /// Split instructions into per-function chunks based on symbols.
     /// Returns array of (functionName, assemblyText) pairs.
+    /// `extraLabels` — see `formatAssembly`.
     public func splitByFunction(
         _ instructions: [PPCInstruction],
         symbols: [PPCSymbol],
         relocations: [UInt32: PPCRelocation] = [:],
-        sectionName: String
+        sectionName: String,
+        extraLabels: [UInt32: String] = [:]
     ) -> [(name: String, text: String)] {
         guard !symbols.isEmpty else { return [] }
 
-        // Sort symbols by address
-        let sortedSymbols = symbols.sorted(by: { $0.address < $1.address })
-        let symbolLookup = Dictionary(uniqueKeysWithValues: symbols.map { ($0.address, $0.name) })
+        // Sort symbols by address, keeping one per address — duplicate
+        // addresses would emit the same range twice.
+        var seenAddresses = Set<UInt32>()
+        let sortedSymbols = symbols
+            .sorted(by: { $0.address < $1.address })
+            .filter { seenAddresses.insert($0.address).inserted }
+        let symbolLookup = Dictionary(sortedSymbols.map { ($0.address, $0.name) }, uniquingKeysWith: { first, _ in first })
 
         // Build full label map (symbols + branch targets + relocation targets)
         let branchTargets = collectBranchTargets(instructions)
@@ -175,18 +200,41 @@ public struct PPCFormatter {
                 labels[reloc.targetAddress] = name
             }
         }
+        for (addr, name) in extraLabels where labels[addr] == nil {
+            labels[addr] = name
+        }
 
         // Build instruction lookup by address
         let instructionsByAddress = Dictionary(uniqueKeysWithValues: instructions.map { ($0.address, $0) })
 
         var results = [(name: String, text: String)]()
 
+        // Instructions before the first symbol still need a home, or the
+        // reassembled section comes out short.
+        if let firstInst = instructions.first, firstInst.address < sortedSymbols[0].address {
+            let preName = "lbl_\(hex(firstInst.address, width: 8))"
+            var lines = [String]()
+            lines.append(".section \(sectionName)")
+            lines.append("")
+            lines.append(".global \(preName)")
+            lines.append("\(preName):")
+            for inst in instructions where inst.address < sortedSymbols[0].address {
+                if inst.address != firstInst.address, let label = labels[inst.address] {
+                    lines.append("\(label):")
+                }
+                lines.append("    \(format(inst, labels: labels, relocations: relocations))")
+            }
+            results.append((name: preName, text: lines.joined(separator: "\n")))
+        }
+
         for (i, symbol) in sortedSymbols.enumerated() {
             let startAddr = symbol.address
+            // Map sizes are unreliable: auto-generated maps nest labels
+            // inside functions, so trusting `size` duplicates the overlap
+            // into both files (and gaps drop bytes). The next symbol's
+            // start is the only end that tiles the section exactly.
             let endAddr: UInt32
-            if symbol.size > 0 {
-                endAddr = startAddr + symbol.size
-            } else if i + 1 < sortedSymbols.count {
+            if i + 1 < sortedSymbols.count {
                 endAddr = sortedSymbols[i + 1].address
             } else {
                 endAddr = instructions.last.map { $0.address + 4 } ?? startAddr

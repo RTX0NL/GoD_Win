@@ -1,5 +1,4 @@
 {
-  "engines": [],
   "chunks": [],
   "_source": "XD map REL typed regions. All XD-format maps share this layout (entry-point pointers at indices 6/7, character pointers at indices 0/1, group data at index 9; see legacy XDRelIndexes.swift:10-19). Maps whose filename starts with one of `XDEngine.Data.unusedColosseumMapPrefixes` are leftover Colosseum-format files and skip this typemap entirely. Chunks empty until map structs are ported."
 }

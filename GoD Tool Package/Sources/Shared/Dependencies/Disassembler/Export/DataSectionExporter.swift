@@ -42,7 +42,7 @@ public struct DataSectionExporter {
                 )
 
                 if let json: GoDData = try? JSONEncoder.pokemon.encode(structData) {
-                    fileSystem.writeFile(json, at: outputFolder.file(fileName), overwrite: true)
+                    try? fileSystem.writeFile(json, at: outputFolder.file(fileName), overwrite: true)
                 }
 
                 manifest.chunks.append(.init(
@@ -75,7 +75,7 @@ public struct DataSectionExporter {
                     entries: entries
                 )
                 if let json: GoDData = try? JSONEncoder.pokemon.encode(tableJSON) {
-                    fileSystem.writeFile(json, at: outputFolder.file(fileName), overwrite: true)
+                    try? fileSystem.writeFile(json, at: outputFolder.file(fileName), overwrite: true)
                 }
 
                 manifest.chunks.append(.init(
@@ -99,7 +99,7 @@ public struct DataSectionExporter {
                     sectionName: ".\(sectionName)"
                 )
                 let textData = GoDData(string: text, format: .utf8)
-                fileSystem.writeFile(textData, at: outputFolder.file(fileName), overwrite: true)
+                try? fileSystem.writeFile(textData, at: outputFolder.file(fileName), overwrite: true)
 
                 manifest.chunks.append(.init(
                     label: chunk.label,
@@ -110,7 +110,7 @@ public struct DataSectionExporter {
             case .binary:
                 let fileName = "\(chunk.label).bin"
                 let binData = GoDData(byteStream: chunk.data, byteOrder: byteOrder)
-                fileSystem.writeFile(binData, at: outputFolder.file(fileName), overwrite: true)
+                try? fileSystem.writeFile(binData, at: outputFolder.file(fileName), overwrite: true)
 
                 manifest.chunks.append(.init(
                     label: chunk.label,
@@ -123,7 +123,7 @@ public struct DataSectionExporter {
 
         // Write manifest
         if let manifestJSON: GoDData = try? JSONEncoder.pokemon.encode(manifest) {
-            fileSystem.writeFile(manifestJSON, at: outputFolder.file("manifest.json"), overwrite: true)
+            try? fileSystem.writeFile(manifestJSON, at: outputFolder.file("manifest.json"), overwrite: true)
         }
 
         return manifest

@@ -14,7 +14,6 @@ final class TypeMapCodableTests: XCTestCase {
     /// including a count-by-value table and a count-by-label table.
     private func expectedTypeMap() -> TypeMap {
         TypeMap(
-            engines: ["Reference/Engines/XD"],
             chunks: [
                 .table(.init(name: "Trainers", start: "trainer_table",
                              entryType: "Trainer", count: 3)),
@@ -42,7 +41,7 @@ final class TypeMapCodableTests: XCTestCase {
 
     /// An unknown chunk key must fail decoding rather than silently drop.
     func testTypeMap_unknownChunkKind_throws() {
-        let bad = #"{"engines":[],"chunks":[{"mystery":{"label":"x"}}]}"#.data(using: .utf8)!
+        let bad = #"{"chunks":[{"mystery":{"label":"x"}}]}"#.data(using: .utf8)!
         XCTAssertThrowsError(try JSONDecoder().decode(TypeMap.self, from: bad))
     }
 }

@@ -44,7 +44,10 @@ public struct PPCEncoder {
 
         // MARK: - Trap immediate
         case "twi":
-            guard let to = uimm(operands, 0), let ra = gpr(operands, 1), let imm = simm(operands, 2) else { return nil }
+            guard let to = uimm(operands, 0), let ra = gpr(operands, 1) else { return nil }
+            // The parser classifies twi immediates as unsigned; the trap
+            // value is a signed field, so accept either representation.
+            guard let imm = simm(operands, 2) ?? uimm(operands, 2).map({ Int32(bitPattern: $0) }) else { return nil }
             return dForm(3, to, ra, imm)
 
         // MARK: - Simplified branch mnemonics
@@ -890,6 +893,10 @@ private extension PPCEncoder {
 
     func encodePsq(_ opcode: UInt32, _ ops: [PPCInstruction.Operand]) -> UInt32? {
         guard let fd = fpr(ops, 0), let (offset, base) = mem(ops, 1) else { return nil }
+        // The displacement field is only 12 bits — refuse offsets that
+        // don't fit rather than silently truncating (a shifted @l reloc
+        // that overflows must surface as an encoding error).
+        guard offset >= -0x800 && offset <= 0x7FF else { return nil }
         var w: UInt32 = 0
         var i: UInt32 = 0
         if ops.count > 2, case .wBit(let wVal) = ops[2] { w = UInt32(wVal) }

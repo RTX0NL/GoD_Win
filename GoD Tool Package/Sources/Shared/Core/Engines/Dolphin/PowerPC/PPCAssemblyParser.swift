@@ -26,6 +26,7 @@ public enum PPCParsedOperand {
     case label(String)                                      // branch target label
     case memory(offset: Int32, base: UInt8)
     case haReloc(String)                                    // symbol@ha
+    case hReloc(String)                                     // symbol@h (raw high, no carry)
     case loReloc(String)                                    // symbol@l
     case loRelocMemory(symbol: String, base: UInt8)         // symbol@l(rN)
     case crField(UInt8)
@@ -249,6 +250,11 @@ public struct PPCAssemblyParser {
         // @ha relocation: symbol@ha
         if s.hasSuffix("@ha") {
             return .haReloc(String(s.dropLast(3)))
+        }
+
+        // @h relocation: symbol@h — raw high half, no carry adjustment
+        if s.hasSuffix("@h") {
+            return .hReloc(String(s.dropLast(2)))
         }
 
         // @l relocation with memory: symbol@l(rN)

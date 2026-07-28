@@ -1,16 +1,17 @@
 import Foundation
 
-/// Relocation info for an instruction that references a symbol via @ha/@l
+/// Relocation info for an instruction that references a symbol via @ha/@h/@l
 public struct PPCRelocation {
     /// The full 32-bit address being referenced
     public let targetAddress: UInt32
     /// The symbol name at that address (if known)
     public let symbolName: String?
-    /// Whether this is the @ha (upper) or @l (lower) half
+    /// Whether this is the upper or lower half
     public let halfType: HalfType
 
     public enum HalfType {
-        case ha  // lis instruction — upper half adjusted
+        case ha  // lis paired with signed lo consumers — upper half carries the sign adjustment
+        case h   // lis paired with an unsigned lo consumer (ori) — raw upper half, no adjustment
         case lo  // consumer instruction — lower half (signed or unsigned)
     }
 }
@@ -44,10 +45,18 @@ public struct PPCRelocAnalyzer {
                 continue
             }
 
-            // Check if this instruction consumes a pending lis register
+            // Check if this instruction consumes a pending lis register.
+            // One lis can serve several consumers (a single high half shared
+            // across globals in the same 64KB window is standard compiler
+            // output), so consuming does NOT end the tracking — only
+            // overwriting the register does.
             if let (lisReg, consumer) = findLisConsumer(decoded, pendingLis: pendingLis) {
                 let lis = pendingLis[lisReg]!
-                let fullAddress = computeAddress(upper: lis.upperImm, lower: consumer.lowerImm)
+                let fullAddress = computeAddress(
+                    upper: lis.upperImm,
+                    lower: consumer.lowerImm,
+                    unsignedLower: consumer.isUnsigned
+                )
 
                 // Only create relocations for addresses within known sections
                 // or that resolve to known symbols
@@ -56,25 +65,29 @@ public struct PPCRelocAnalyzer {
 
                 if symbolName != nil || inSection {
                     let name = symbolName ?? "lbl_\(String(format: "%08X", fullAddress))"
-                    relocations[lis.address] = PPCRelocation(
-                        targetAddress: fullAddress,
-                        symbolName: name,
-                        halfType: .ha
-                    )
                     relocations[inst.address] = PPCRelocation(
                         targetAddress: fullAddress,
                         symbolName: name,
                         halfType: .lo
                     )
+                    // The first symbolized consumer claims the lis. An
+                    // unsigned (ori) pair needs the raw high half — the
+                    // @ha carry adjustment would be off by 0x10000 for
+                    // lower halves >= 0x8000.
+                    if relocations[lis.address] == nil {
+                        relocations[lis.address] = PPCRelocation(
+                            targetAddress: fullAddress,
+                            symbolName: name,
+                            halfType: consumer.isUnsigned ? .h : .ha
+                        )
+                    }
                 }
-
-                pendingLis.removeValue(forKey: lisReg)
-                continue
             }
 
-            // Check if this instruction overwrites a tracked register (kills the lis)
-            if let writtenReg = getWrittenGPR(decoded) {
-                pendingLis.removeValue(forKey: writtenReg)
+            // Kill tracking for every GPR this instruction overwrites,
+            // including update-form base writeback and lmw's rD..r31 range.
+            for reg in writtenGPRs(decoded) {
+                pendingLis.removeValue(forKey: reg)
             }
 
             // Clear pending state on function exits and indirect branches.
@@ -94,7 +107,20 @@ public struct PPCRelocAnalyzer {
 private extension PPCRelocAnalyzer {
     struct ConsumerInfo {
         let lowerImm: Int32
+        /// True when the consumer combines with the high half unsigned (ori)
+        let isUnsigned: Bool
     }
+
+    /// Load/store mnemonics whose displacement forms a lower half when their
+    /// base register holds a lis result. psq displacement is only 12 bits —
+    /// the compiler only pairs it with lis when the offset fits.
+    static let memoryConsumers: Set<String> = [
+        "lwz", "lwzu", "lbz", "lbzu", "lhz", "lhzu", "lha", "lhau",
+        "stw", "stwu", "stb", "stbu", "sth", "sthu",
+        "lfs", "lfsu", "lfd", "lfdu", "stfs", "stfsu", "stfd", "stfdu",
+        "lmw", "stmw",
+        "psq_l", "psq_lu", "psq_st", "psq_stu",
+    ]
 
     /// Check if an instruction consumes a pending lis register.
     /// Returns (lis register, consumer info) if found.
@@ -111,65 +137,96 @@ private extension PPCRelocAnalyzer {
            case .gpr(let ra) = ops[1],
            case .simm(let imm) = ops[2],
            pendingLis[ra] != nil {
-            return (ra, ConsumerInfo(lowerImm: imm))
+            return (ra, ConsumerInfo(lowerImm: imm, isUnsigned: false))
         }
 
-        // ori rA, rS, UIMM — rS is the lis register (unsigned lower)
+        // ori rA, rS, UIMM — rS is the lis register. The CPU zero-extends,
+        // so the lower half is unsigned.
         if mnemonic == "ori", ops.count == 3,
            case .gpr(let rs) = ops[1],
            case .uimm(let imm) = ops[2],
            pendingLis[rs] != nil {
-            return (rs, ConsumerInfo(lowerImm: Int32(Int16(bitPattern: UInt16(imm & 0xFFFF)))))
+            return (rs, ConsumerInfo(lowerImm: Int32(imm & 0xFFFF), isUnsigned: true))
         }
 
-        // Load/store with displacement: lwz rD, offset(rA) — rA is the lis register
-        let memoryConsumers = [
-            "lwz", "lwzu", "lbz", "lbzu", "lhz", "lhzu", "lha", "lhau",
-            "stw", "stwu", "stb", "stbu", "sth", "sthu",
-            "lfs", "lfsu", "lfd", "lfdu", "stfs", "stfsu", "stfd", "stfdu",
-        ]
-        if memoryConsumers.contains(mnemonic), ops.count == 2,
-           case .memory(let offset, let base) = ops[1],
-           pendingLis[base] != nil {
-            return (base, ConsumerInfo(lowerImm: Int32(offset)))
+        // Load/store with displacement: lwz rD, offset(rA) — rA is the lis
+        // register. Scan operands for the memory form so 4-operand shapes
+        // (psq_l fD, offset(rA), W, GQR) are covered too.
+        if Self.memoryConsumers.contains(mnemonic) {
+            for op in ops {
+                if case .memory(let offset, let base) = op, pendingLis[base] != nil {
+                    return (base, ConsumerInfo(lowerImm: Int32(offset), isUnsigned: false))
+                }
+            }
         }
 
         return nil
     }
 
     /// Compute full 32-bit address from lis upper and consumer lower values.
-    /// lis loads `upper << 16`, consumer adds sign-extended lower.
-    func computeAddress(upper: Int32, lower: Int32) -> UInt32 {
-        let full = (Int(upper) << 16) &+ Int(lower)
+    /// lis loads `upper << 16`; a signed consumer (addi/displacement) adds a
+    /// sign-extended lower, an unsigned consumer (ori) ORs a zero-extended one.
+    func computeAddress(upper: Int32, lower: Int32, unsignedLower: Bool) -> UInt32 {
+        let lo = unsignedLower ? Int(lower & 0xFFFF) : Int(lower)
+        let full = (Int(upper) << 16) &+ lo
         return UInt32(truncatingIfNeeded: full)
     }
 
-    /// Get the GPR that this instruction writes to (if any), to detect lis kills
-    func getWrittenGPR(_ decoded: PPCInstruction.Decoded) -> UInt8? {
-        guard let firstOp = decoded.operands.first else { return nil }
-        // Most ALU instructions write to the first operand
-        let writers = [
-            "li", "addi", "addis", "addic", "addic.", "subfic", "mulli",
-            "add", "addc", "adde", "addme", "addze",
-            "subf", "subfc", "subfe", "subfme", "subfze",
-            "mullw", "mulhw", "mulhwu", "divw", "divwu", "neg",
-            "and", "or", "xor", "nand", "nor", "eqv", "andc", "orc",
-            "ori", "oris", "xori", "xoris", "andi.", "andis.",
-            "slw", "srw", "sraw", "srawi",
-            "rlwinm", "rlwimi", "rlwnm", "slwi", "srwi", "clrlwi",
-            "extsb", "extsh", "cntlzw", "mr",
-            "lwz", "lwzu", "lbz", "lbzu", "lhz", "lhzu", "lha", "lhau",
-            "mflr", "mfctr", "mfxer", "mfcr", "mfspr",
-        ]
-        // Strip trailing . for Rc variants
+    /// Mnemonics whose first operand is a GPR they write to
+    static let gprWriters: Set<String> = [
+        "li", "addi", "addis", "addic", "subfic", "mulli",
+        "add", "addc", "adde", "addme", "addze",
+        "subf", "subfc", "subfe", "subfme", "subfze",
+        "mullw", "mulhw", "mulhwu", "divw", "divwu", "neg",
+        "and", "or", "xor", "nand", "nor", "eqv", "andc", "orc",
+        "ori", "oris", "xori", "xoris", "andi", "andis",
+        "slw", "srw", "sraw", "srawi",
+        "rlwinm", "rlwimi", "rlwnm", "slwi", "srwi", "clrlwi",
+        "extsb", "extsh", "cntlzw", "mr",
+        "lwz", "lwzu", "lbz", "lbzu", "lhz", "lhzu", "lha", "lhau",
+        "lwzx", "lwzux", "lbzx", "lbzux", "lhzx", "lhzux", "lhax", "lhaux",
+        "lwbrx", "lhbrx", "lswi", "lswx",
+        "mflr", "mfctr", "mfxer", "mfcr", "mfspr",
+    ]
+
+    /// Update-form loads/stores write the effective address back into the
+    /// base register, ending its life as a tracked high half.
+    static let updateForms: Set<String> = [
+        "lwzu", "lbzu", "lhzu", "lhau", "lfsu", "lfdu",
+        "stwu", "stbu", "sthu", "stfsu", "stfdu",
+        "psq_lu", "psq_stu",
+        "lwzux", "lbzux", "lhzux", "lhaux",
+        "stwux", "stbux", "sthux", "stfsux", "stfdux",
+        "psq_lux", "psq_stux",
+    ]
+
+    /// All GPRs this instruction writes, for lis-kill tracking.
+    func writtenGPRs(_ decoded: PPCInstruction.Decoded) -> [UInt8] {
         let base = decoded.mnemonic.hasSuffix(".") ?
             String(decoded.mnemonic.dropLast()) : decoded.mnemonic
-        if writers.contains(base) || writers.contains(decoded.mnemonic) {
-            if case .gpr(let reg) = firstOp {
-                return reg
+
+        // lmw loads rD through r31
+        if base == "lmw", case .gpr(let rd) = decoded.operands.first {
+            return Array(rd...31)
+        }
+
+        var written = [UInt8]()
+        if Self.gprWriters.contains(base), case .gpr(let reg) = decoded.operands.first {
+            written.append(reg)
+        }
+
+        if Self.updateForms.contains(base) {
+            // D-form update: base lives in the memory operand
+            for op in decoded.operands {
+                if case .memory(_, let b) = op { written.append(b) }
+            }
+            // Indexed update (rD, rA, rB): base is the second operand
+            if base.hasSuffix("ux"), decoded.operands.count >= 2,
+               case .gpr(let b) = decoded.operands[1] {
+                written.append(b)
             }
         }
-        return nil
+        return written
     }
 
     func isReturnOrIndirectBranch(_ decoded: PPCInstruction.Decoded) -> Bool {

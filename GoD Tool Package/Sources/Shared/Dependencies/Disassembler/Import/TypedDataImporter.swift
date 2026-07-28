@@ -35,6 +35,17 @@ public struct TypedDataImporter {
                     let value: Int = Int(address)
                     output.set(property.name, to: value)
                 }
+            case .array(.label, let count):
+                // Label arrays: the JSON decoder records per-element
+                // names under `name[i]` keys in labelValues. Resolve
+                // each to an address and write the pointer slots.
+                guard let baseOffset = uint32Def.offset(for: property.name) else { break }
+                for i in 0..<count {
+                    if let labelName = structData.labelValues["\(property.name)[\(i)]"],
+                       let address = labelTable.resolve(labelName) {
+                        output.data.write(UInt32(address).rawData(byteOrder: byteOrder), atAddress: baseOffset + i * 4)
+                    }
+                }
             case .padding:
                 break
             default:

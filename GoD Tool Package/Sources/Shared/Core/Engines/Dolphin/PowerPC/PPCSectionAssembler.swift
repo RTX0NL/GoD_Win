@@ -198,6 +198,14 @@ public struct PPCSectionAssembler {
                 }
                 return .simm(computeHa(addr))
 
+            case .hReloc(let symbol):
+                guard let addr = resolveSymbol(symbol, labels: labels) else {
+                    throw AssemblyError.unresolvedLabel(symbol, file: file)
+                }
+                // Raw high half — no carry adjustment. Pairs with an
+                // unsigned lower half (ori).
+                return .simm(Int32(Int16(bitPattern: UInt16((addr >> 16) & 0xFFFF))))
+
             case .loReloc(let symbol):
                 guard let addr = resolveSymbol(symbol, labels: labels) else {
                     throw AssemblyError.unresolvedLabel(symbol, file: file)

@@ -27,7 +27,10 @@ extension CommonRelDump {
             dolphinEngine: config.dolphinEngine,
             symbolIndexPath: fileSystem.inspectFile(at: symbolIndexPath) != nil ? symbolIndexPath : nil,
             dolSymbolMapPath: fileSystem.inspectFile(at: dolSymbolMapPath) != nil ? dolSymbolMapPath : nil,
-            typeMapPath: fileSystem.inspectFile(at: typeMapPath) != nil ? typeMapPath : nil
+            typeMapPath: fileSystem.inspectFile(at: typeMapPath) != nil ? typeMapPath : nil,
+            // The common.rel type map's chunk types resolve against the game
+            // engine's own struct definitions.
+            engines: [config.gameEngine]
         )
 
         logger?.log(.info("Dumping common.rel from \(config.relPath.path)"))

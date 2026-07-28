@@ -13,6 +13,10 @@ extension RelDisassembly {
         logger: Logger? = nil,
         registry: FileFormatRegistry = .all()
     ) throws {
+        guard RelOperationsGate.enabled else {
+            throw RelOperationsGate.DisabledError(operation: "relDisassembly", trace: .init())
+        }
+
         let dolphinEngine = try DolphinEngine(from: config.dolphinEngine, in: fileSystem)
         _ = dolphinEngine  // reserved for future (e.g. SDA base → name resolution)
 
@@ -56,8 +60,8 @@ extension RelDisassembly {
                 logger?.log(.info("Loaded type map with \(tm.chunks.count) chunks"))
                 resolvedStructs = resolveStructTypes(
                     from: tm,
+                    engineFolders: config.engines ?? [],
                     fileSystem: fileSystem,
-                    typeMapFolder: typeMapPath.parentFolder,
                     logger: logger
                 )
             }
@@ -261,7 +265,7 @@ extension RelDisassembly {
             }
 
             let file = outputFolder.file("\(sectionName).s")
-            output.writeFile(GoDData(string: lines.joined(separator: "\n"), format: .utf8), at: file, overwrite: true)
+            try output.writeFile(GoDData(string: lines.joined(separator: "\n"), format: .utf8), at: file, overwrite: true)
 
             sectionsProcessed += 1
             if logger != nil {
@@ -356,7 +360,7 @@ extension RelDisassembly {
                             } catch {
                                 logger?.log(.warning("Registry dump failed for '\(embeddedFile.label)' (.\(ext)): \(error). Falling back to raw bytes."))
                                 let fileName = "\(embeddedFile.label).\(ext)"
-                                output.writeFile(fileData, at: sectionFolder.file(fileName), overwrite: true)
+                                try output.writeFile(fileData, at: sectionFolder.file(fileName), overwrite: true)
                                 manifest.chunks.append(.init(
                                     label: embeddedFile.label, type: .file, file: fileName,
                                     size: embeddedFile.size, fileExtension: ext
@@ -364,7 +368,7 @@ extension RelDisassembly {
                             }
                         } else {
                             let fileName = "\(embeddedFile.label).\(ext)"
-                            output.writeFile(fileData, at: sectionFolder.file(fileName), overwrite: true)
+                            try output.writeFile(fileData, at: sectionFolder.file(fileName), overwrite: true)
                             manifest.chunks.append(.init(
                                 label: embeddedFile.label, type: .file, file: fileName,
                                 size: embeddedFile.size, fileExtension: ext
@@ -397,9 +401,9 @@ extension RelDisassembly {
                             "entries": entries.map(sanitizeForJSON),
                         ]
                         if let jsonData = try? JSONSerialization.data(withJSONObject: tableJSON, options: [.prettyPrinted, .sortedKeys]) {
-                            output.writeFile(GoDData(data: jsonData, byteOrder: .big), at: sectionFolder.file(fileName), overwrite: true)
+                            try output.writeFile(GoDData(data: jsonData, byteOrder: .big), at: sectionFolder.file(fileName), overwrite: true)
                         }
-                        output.writeFile(
+                        try output.writeFile(
                             GoDData(byteStream: chunkBytes, byteOrder: .big),
                             at: sectionFolder.file("\(labelName).bin"),
                             overwrite: true
@@ -416,11 +420,11 @@ extension RelDisassembly {
                             addressToLabel: addressToLabel,
                             sectionName: ".\(sectionName)"
                         )
-                        output.writeFile(GoDData(string: text, format: .utf8), at: sectionFolder.file(fileName), overwrite: true)
+                        try output.writeFile(GoDData(string: text, format: .utf8), at: sectionFolder.file(fileName), overwrite: true)
                         manifest.chunks.append(.init(label: labelName, type: .assembly, file: fileName))
                     } else {
                         let fileName = "\(labelName).bin"
-                        output.writeFile(
+                        try output.writeFile(
                             GoDData(byteStream: chunkBytes, byteOrder: .big),
                             at: sectionFolder.file(fileName), overwrite: true
                         )
@@ -432,7 +436,7 @@ extension RelDisassembly {
                     let preBytes = Array(bytes[0..<first])
                     let preLabel = "\(sectionName)_start"
                     let fileName = "\(preLabel).bin"
-                    output.writeFile(
+                    try output.writeFile(
                         GoDData(byteStream: preBytes, byteOrder: .big),
                         at: sectionFolder.file(fileName), overwrite: true
                     )
@@ -440,7 +444,7 @@ extension RelDisassembly {
                 }
 
                 if let manifestJSON: GoDData = try? JSONEncoder().encode(manifest) {
-                    output.writeFile(manifestJSON, at: sectionFolder.file("manifest.json"), overwrite: true)
+                    try output.writeFile(manifestJSON, at: sectionFolder.file("manifest.json"), overwrite: true)
                 }
             } else {
                 // No named labels — emit the whole section as one assembly
@@ -454,7 +458,7 @@ extension RelDisassembly {
                     sectionName: ".\(sectionName)"
                 )
                 let file = outputFolder.file("\(sectionName).s")
-                output.writeFile(GoDData(string: text, format: .utf8), at: file, overwrite: true)
+                try output.writeFile(GoDData(string: text, format: .utf8), at: file, overwrite: true)
             }
 
             sectionsProcessed += 1
@@ -488,17 +492,17 @@ extension RelDisassembly {
             let off = sectionFileOffset[s.index] ?? 0
             summary.append("data\(s.index): offset 0x\(String(off, radix: 16, uppercase: true)) (\(s.size) bytes)")
         }
-        output.writeFile(GoDData(string: summary.joined(separator: "\n"), format: .utf8),
+        try output.writeFile(GoDData(string: summary.joined(separator: "\n"), format: .utf8),
                          at: outputFolder.file("sections.txt"), overwrite: true)
 
         // Also emit the canonical RELFile JSON. This is the lossless
         // machine representation the assembly op reads to reconstruct
         // bytes. The .s / chunk files are the human-editable view.
         for artifact in try rel.outputs {
-            output.writeFile(artifact.data, at: outputFolder.file(artifact.file.path), overwrite: true)
+            try output.writeFile(artifact.data, at: outputFolder.file(artifact.file.path), overwrite: true)
         }
 
-        fileSystem.importFST(output, from: outputFolder, to: config.outputFolder, overwrite: true)
+        try fileSystem.importFST(output, from: outputFolder, to: config.outputFolder, overwrite: true)
         logger?.log(.taskStatus(taskName: "Disassemble REL", status: .completed(true)))
     }
 }

@@ -52,7 +52,7 @@ final class PPCAssemblyRoundTripTests: XCTestCase {
             case .count(let c):  return .count(c)
             case .gqr(let g):    return .gqr(g)
             case .wBit(let w):   return .wBit(w)
-            case .haReloc, .loReloc, .loRelocMemory:
+            case .haReloc, .hReloc, .loReloc, .loRelocMemory:
                 return .simm(0)
             }
         }
@@ -76,6 +76,7 @@ final class PPCAssemblyRoundTripTests: XCTestCase {
     func testStw()         { formatRoundTrip(0x90010004) } // stw r0, 0x4(r1)
     func testStwu()        { formatRoundTrip(0x9421FFF8) } // stwu r1, -0x8(r1)
     func testBlr()         { formatRoundTrip(0x4E800020) } // blr
+    func testTwi()         { formatRoundTrip(0x0FE00000) } // twi 0x1F, r0, 0x0 (CW halt trap)
     func testMflr()        { formatRoundTrip(0x7C0802A6) } // mflr r0
     func testMtlr()        { formatRoundTrip(0x7C0803A6) } // mtlr r0
     func testNop()         { formatRoundTrip(0x60000000) } // nop

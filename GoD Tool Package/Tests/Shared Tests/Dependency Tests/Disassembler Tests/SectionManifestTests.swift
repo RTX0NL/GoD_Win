@@ -62,8 +62,8 @@ final class SectionManifestTests: XCTestCase {
     func testManifestReader_readsManifestJSONFromFolder() throws {
         let fs = InMemoryFST()
         let folder = Folder("/data0")
-        _ = fs.createFolder(at: folder, overwrite: true)
-        _ = fs.writeFile(try Fixtures.data("manifest_data_sample.json"),
+        try fs.createFolder(at: folder, overwrite: true)
+        try fs.writeFile(try Fixtures.data("manifest_data_sample.json"),
                          at: folder.file("manifest.json"), overwrite: true)
 
         let read = ManifestReader().readDataManifest(from: folder, fileSystem: fs)
@@ -73,7 +73,7 @@ final class SectionManifestTests: XCTestCase {
     func testManifestReader_missingManifestReturnsNil() {
         let fs = InMemoryFST()
         let folder = Folder("/empty")
-        _ = fs.createFolder(at: folder, overwrite: true)
+        try? fs.createFolder(at: folder, overwrite: true)
         XCTAssertNil(ManifestReader().readDataManifest(from: folder, fileSystem: fs))
         XCTAssertNil(ManifestReader().readTextManifest(from: folder, fileSystem: fs))
     }

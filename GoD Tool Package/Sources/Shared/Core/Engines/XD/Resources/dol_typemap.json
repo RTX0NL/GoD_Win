@@ -1,0 +1,130 @@
+{
+  "chunks": [
+    {
+      "table": {
+        "name": "MenuData",
+        "start": "lbl_802FC8F0",
+        "entryType": "MenuData",
+        "count": 288
+      }
+    },
+    {
+      "table": {
+        "name": "Textures",
+        "start": "lbl_803001A8",
+        "entryType": "Texture",
+        "count": 1019
+      }
+    },
+    {
+      "file": {
+        "label": "lbl_80377FC0",
+        "extension": "msg",
+        "size": 96444
+      }
+    },
+    {
+      "file": {
+        "label": "lbl_8038F87C",
+        "extension": "msg",
+        "size": 868
+      }
+    },
+    {
+      "file": {
+        "label": "lbl_8038FBE0",
+        "extension": "msg",
+        "size": 138932
+      }
+    },
+    {
+      "table": {
+        "name": "StatusEffects",
+        "start": "lbl_803FC3E0",
+        "entryType": "StatusEffect",
+        "count": 87
+      }
+    },
+    {
+      "table": {
+        "name": "Abilities",
+        "start": "lbl_803FFC50",
+        "entryType": "Ability",
+        "count": 123
+      }
+    },
+    {
+      "table": {
+        "name": "TMs",
+        "start": "lbl_804053A0",
+        "entryType": "TM",
+        "count": 58
+      }
+    },
+    {
+      "table": {
+        "name": "WZXMoveAnimations",
+        "start": "lbl_8040C5C8",
+        "entryType": "WZXMoveAnimation",
+        "count": 373
+      }
+    },
+    {
+      "table": {
+        "name": "PKXTrainerModels",
+        "start": "lbl_8040CE88",
+        "entryType": "PKXModel",
+        "count": 68
+      }
+    },
+    {
+      "table": {
+        "name": "PKXPokemonModels",
+        "start": "lbl_8040D0A8",
+        "entryType": "PKXModel",
+        "count": 419
+      }
+    },
+    {
+      "table": {
+        "name": "UnownPKXModels",
+        "start": "lbl_8040FD08",
+        "entryType": "PKXModel",
+        "count": 28
+      }
+    },
+    {
+      "table": {
+        "name": "ShinyPKXPokemonModels",
+        "start": "lbl_8040FDE8",
+        "entryType": "ShinyPKXModel",
+        "count": 35
+      }
+    },
+    {
+      "table": {
+        "name": "WZXAnimations",
+        "start": "lbl_804100F0",
+        "entryType": "WZXAnimation",
+        "count": 1399
+      }
+    },
+    {
+      "table": {
+        "name": "DeoxysPKXModels",
+        "start": "lbl_80412F60",
+        "entryType": "PKXModel",
+        "count": 4
+      }
+    },
+    {
+      "table": {
+        "name": "DeoxysShinyPKXModels",
+        "start": "lbl_80412F80",
+        "entryType": "PKXModel",
+        "count": 4
+      }
+    }
+  ],
+  "_source": "XD US main.dol data-section tables and embedded MSG files. Addresses are US lbl_ auto-labels; regenerate for other regions. Refine as more tables are identified."
+}

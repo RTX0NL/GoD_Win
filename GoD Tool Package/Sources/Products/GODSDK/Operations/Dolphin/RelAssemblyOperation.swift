@@ -13,6 +13,10 @@ extension RelAssembly {
         fileSystem: FileSystemTree,
         logger: Logger? = nil
     ) throws {
+        guard RelOperationsGate.enabled else {
+            throw RelOperationsGate.DisabledError(operation: "relAssembly", trace: .init())
+        }
+
         logger?.log(.taskStatus(taskName: "Assemble REL", status: .started))
 
         let jsonFile = config.inputFolder.file("\(config.relName).rel.json")
@@ -30,7 +34,7 @@ extension RelAssembly {
         }
 
         let bytes = try rel.binaryData
-        fileSystem.writeFile(bytes, at: config.outputPath, overwrite: config.overwrite)
+        try fileSystem.writeFile(bytes, at: config.outputPath, overwrite: config.overwrite)
 
         logger?.log(.info("Wrote \(bytes.length) bytes to \(config.outputPath.path)"))
         logger?.log(.taskStatus(taskName: "Assemble REL", status: .completed(true)))

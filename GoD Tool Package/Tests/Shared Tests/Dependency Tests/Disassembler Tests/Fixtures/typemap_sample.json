@@ -1,5 +1,4 @@
 {
-  "engines" : ["Reference/Engines/XD"],
   "chunks" : [
     { "table" : { "name" : "Trainers", "start" : "trainer_table", "entryType" : "Trainer", "count" : 3 } },
     { "table" : { "name" : "Items", "start" : "item_table", "entryType" : "Item", "countLabel" : "item_count" } },
