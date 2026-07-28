@@ -1,10 +1,14 @@
-// swift-tools-version:5.7
+// swift-tools-version:6.0
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
 
 let package = Package(
     name: "GoD Tool Package",
+    // The existing code predates Swift Concurrency's strict checking; keep the
+    // whole package in the Swift 5 language mode so the 6.0 toolchain bump
+    // (needed for the MCP SDK) doesn't force a repo-wide concurrency migration.
+    // New targets can opt into `.v6` individually via swiftSettings.
     platforms: [
         .macOS(.v13),
     ],
@@ -27,6 +31,10 @@ let package = Package(
             name: "Discord Plays Orre",
             targets: ["Discord Plays Orre"]
         ),
+        .executable(
+            name: "ColoScriptDecomp",
+            targets: ["ColoScriptDecomp"]
+        ),
         
         // MARK: - Base Library Products
         
@@ -38,12 +46,15 @@ let package = Package(
     dependencies: [
         // Dependencies declare other packages that this package depends on.
         .package(url: "https://github.com/tayloraswift/swift-png", from: "4.0.2"),
+        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.11.0"),
     ],
     targets: [
         // MARK: - Executable Targets
         
-        .executableTarget(
-            name: "GODDESS",
+        // Shared operations/config/dispatch library. Both the GODDESS CLI and
+        // the MCP server link this — one source of truth for how the tool runs.
+        .target(
+            name: "GODOps",
             dependencies: [
                 "GoDEngine",
                 "GameCube",
@@ -58,6 +69,15 @@ let package = Package(
                 "Disassembler"
             ],
             path: "Sources/Products/GODSDK"
+        ),
+        .executableTarget(
+            name: "GODDESS",
+            dependencies: [
+                "GODOps",
+                "GoDFoundation",
+                .product(name: "MCP", package: "swift-sdk")
+            ],
+            path: "Sources/Products/GODDESS"
         ),
         .executableTarget(
             name: "GoD Tool UI",
@@ -349,7 +369,7 @@ let package = Package(
             exclude: ["Fixtures"]),
         .testTarget(
             name: "WiiTests",
-            dependencies: ["Wii", "Dolphin", "GoDFoundation", "Structs"],
+            dependencies: ["Wii", "Dolphin", "GoDFoundation", "Structs", "FixtureCatalog"],
             path: "Tests/Shared Tests/Engine Tests/Wii Tests"),
         .testTarget(
             name: "GameCubeTests",
@@ -365,6 +385,24 @@ let package = Package(
             name: "XDTests",
             dependencies: ["XD", "GoDFoundation"],
             path: "Tests/Shared Tests/Engine Tests/XD Tests"),
-    ]
+        .testTarget(
+            name: "GODOpsTests",
+            dependencies: [
+                "GODOps",
+                "GoDFoundation",
+                "GoDEngine",
+                "Structs",
+                "GameCube",
+                "Dolphin",
+                "Wii",
+                "Colosseum",
+                "GeniusSonority",
+                "XD",
+                "TestSupport",
+                "FixtureCatalog"
+            ],
+            path: "Tests/Products Tests/GODOps Tests"),
+    ],
+    swiftLanguageModes: [.v5]
 )
 
