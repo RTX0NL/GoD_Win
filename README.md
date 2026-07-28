@@ -33,10 +33,11 @@ Multiple arguments are processed in order.
 GODDESS "Pokemon XD.iso"
 ```
 
-Accepts `.iso`, `.gcm`, and `.ciso` (CISO and NKit GameCube images are
-converted to raw ISO automatically; `.wia`/`.rvz` are recognised but not yet
-decodable — convert those to raw `.iso` first). The game is auto-detected and
-a project folder is created next to the input:
+Raw `.iso`/`.gcm` and `.ciso` are fully supported (CISO is converted to raw
+ISO automatically). NKit GameCube images are partially supported
+(trailing-truncated only); NKit Wii and `.wia`/`.rvz` are recognised but not
+yet decodable — convert those to a raw `.iso` first. The game is auto-detected
+and a project folder is created next to the input:
 
 ```
 Pokemon XD project/
@@ -128,28 +129,84 @@ is left untouched so the two can be diffed to validate the rebuild.
 
 ### Available operations
 
+These operations are fully implemented and round-trip end to end:
+
 | Group | Operations | Purpose |
 |---|---|---|
 | GameCube disc | `gamecubeDump`, `gamecubeBuild` | Unpack / rebuild a GameCube ISO (boot, FST, DOL, apploader, filesystem). |
-| Wii disc | `wiiDump`, `wiiBuild` | Decrypt / re-encrypt Wii partitions (AES-128-CBC, hash tree, fakesigning). |
-| Colo/XD assets | `coloXDDump`, `coloXDBuild` | FSYS archives ↔ organized asset folders: fonts, flash menus, messages, textures, audio. |
-| Battle Revolution | `pbrDump` | Extract PBR assets from a decrypted Wii disc. |
-| DOL executable | `dolDisassembly`, `dolAssembly` | `main.dol` ↔ PowerPC assembly + typed data sections. |
-| REL modules | `relDisassembly`, `relAssembly` | Relocatable modules ↔ assembly + lossless JSON. |
-| common.rel | `commonRelDump`, `commonRelBuild` | The shared game-data module, using engine-bundled type maps. |
-| Map RELs | `mapRelDump`, `mapRelsDump`, `mapRelBuild`, `mapRelsBuild` | Per-map modules, single or batch with name filters. |
+| Wii disc | `wiiDump`, `wiiBuild` | Decrypt / re-encrypt Wii partitions (AES-128-CBC, hash tree). Rebuild is functionally correct but fakesigned — valid for Dolphin/homebrew loaders, not retail-signed. |
 | CISO images | `cisoDump`, `cisoBuild` | Compressed disc image ↔ raw ISO. |
-| GCI saves | `gciDump`, `gciBuild` | Memory-card save ↔ header manifest + region binaries. |
-| XD saves | `xdSaveDump`, `xdSaveBuild` | Pokémon XD save slots ↔ per-slot folders. |
-| Colo saves | `coloSaveDump`, `coloSaveBuild` | Pokémon Colosseum save slots ↔ per-slot folders. |
+| Colo/XD assets | `coloXDDump`, `coloXDBuild` | FSYS archives ↔ organized asset folders: fonts, flash menus, messages (Colo/XD), textures, audio. Re-packs (re-compresses) on build. |
+| DOL executable | `dolDisassembly`, `dolAssembly` | `main.dol` ↔ PowerPC assembly. Instruction round-trip is byte-exact. |
+| GCI saves | `gciDump`, `gciBuild` | Memory-card save envelope ↔ header manifest + region binaries (byte-identical). |
 
 Every operation's JSON fields are documented in the
-[GODDESS Configuration Reference](Documentation/GODDESS%20Configuration%20Reference.md).
+[GODDESS Configuration Reference](Documentation/GODDESS%20Configuration%20Reference.md)
+(which catalogs the full config surface, including operations still in progress
+below).
+
+### Partial support
+
+These run but don't yet round-trip fully — dumping works, rebuilding is
+incomplete:
+
+- **Save editing** (`xdSaveDump`/`xdSaveBuild`, `coloSaveDump`/`coloSaveBuild`)
+  — decryption and per-slot dumps are solid. On rebuild, XD applies edits to
+  the four struct-backed sections (Config, Trainer, PC box, Daycare) via their
+  JSON sidecars but ignores `.bin` sub-block edits; Colosseum currently
+  re-encrypts the raw slot verbatim, so only whole-slot edits survive.
+- **Animated textures (ATX)** within `coloXDDump`/`coloXDBuild` — single-sprite
+  frames round-trip; frames with multiple sprites are skipped on dump and
+  rejected on build.
+
+### Not yet operational
+
+Recognised by the config/dispatch layer but not functional — listed for
+transparency:
+
+- **REL disassembly & reassembly** (`relDisassembly`/`relAssembly`,
+  `commonRelDump`/`commonRelBuild`, `mapRelDump`/`mapRelsDump`/`mapRelBuild`/`mapRelsBuild`)
+  — the underlying `RELFile` parse/serialize core is complete and tested, but
+  the operations are gated off pending the disassembly↔reassembly workflow.
+- **Battle Revolution** (`pbrDump`) — stub only; no PBR asset extraction or
+  rebuild yet.
+- **NKit Wii / WIA / RVZ disc images** — detected but not decodable (no
+  bzip2/lzma/zstd decompressor); convert to raw ISO first.
+
+### 5. Run as an MCP server
+
+GODDESS can expose its operations to any [Model Context Protocol](https://modelcontextprotocol.io)
+client (Claude Code, Claude Desktop, etc.) over stdio:
+
+```bash
+GODDESS mcp        # starts a stdio MCP server; blocks until the client disconnects
+```
+
+Register it with a client — for example, Claude Code:
+
+```bash
+claude mcp add goddess -- /path/to/GODDESS mcp
+```
+
+The server drives the exact same code paths as the CLI and exposes four tools:
+
+| Tool | Purpose |
+|---|---|
+| `setup_project` | Create an editing project from a disc image or `.gci` (mirrors mode 1 / 4). |
+| `unpack_fsys` | Unpack a standalone `.fsys` archive (mirrors mode 2). |
+| `run_config` | Run the enabled operations in a config file (mirrors mode 3). |
+| `run_operation` | Run a single operation from an inline JSON object, no config file needed. |
+
+Long operations stream progress to the client via MCP log notifications. The
+tool schemas reference the same [Configuration Reference](Documentation/GODDESS%20Configuration%20Reference.md)
+for the shape of `run_operation`'s `operation` object.
 
 ## How to build
 
-Requires Swift 5.7+ on macOS 13+ (Swift Package Manager only — no Xcode
-project needed).
+Requires Swift 6.0+ on macOS 13+ (Swift Package Manager only — no Xcode
+project needed). The package builds in the Swift 5 language mode; the MCP
+server is the only component that pulls in an external dependency (the
+[MCP Swift SDK](https://github.com/modelcontextprotocol/swift-sdk)).
 
 ```bash
 cd "GoD Tool Package"
@@ -168,8 +225,12 @@ swift run GODDESS path/to/game.iso
 
 The package lives in `GoD Tool Package/`:
 
-- `Sources/Products/GODSDK/` — the GODDESS executable: argument dispatch
-  (`main.swift`), config types, and one thin wrapper per operation.
+- `Sources/Products/GODOps/` (path `Sources/Products/GODSDK/`) — the shared
+  operations library: config types, one thin wrapper per operation, and the
+  public `GODOps` dispatch facade both front-ends call.
+- `Sources/Products/GODDESS/` — the thin `GODDESS` executable: argument
+  parsing (`main.swift`) and the stdio MCP server (`MCP/`), both driving
+  `GODOps`.
 - `Sources/Shared/Core/Engines/` — the engine modules (Dolphin, GameCube,
   Wii, GeniusSonority, Colosseum, XD, PBR, Pokemon). All domain logic —
   parsing, crypto, compression, serialization — lives here.
