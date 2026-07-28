@@ -22,12 +22,13 @@
 //  section's struct binding is a one-key edit on the engine, with
 //  no need to redeclare `SaveSectionSpec` instances.
 //
-//  Round-trip status: `.binary` and `.struct` sections have a working
-//  dump path (StructData → JSON for the latter). The reverse JSON →
-//  StructData → bytes step is shared with the DOL/REL pipeline and
-//  isn't wired up yet (same TODO as `DolAssemblyOperation`'s
-//  `case .struct, .table` block); for now both paths fall back to
-//  `raw-slot.bin` (save) / `<section>.bin` (DOL) for the build half.
+//  Round-trip status: all three section types round-trip. `.struct` and
+//  `.table` sections dump to JSON through `StructData` and rebuild from
+//  that same JSON via `StructData(definition:json:)` — the shared entry
+//  point the DOL/REL typed-chunk pipeline also uses. `.binary` sections
+//  dump and rebuild as raw bytes. Edits to a dumped `.json` land in the
+//  rebuilt save; `raw-slot.bin` is a diffing reference and is not read
+//  by the build.
 //
 
 import Foundation

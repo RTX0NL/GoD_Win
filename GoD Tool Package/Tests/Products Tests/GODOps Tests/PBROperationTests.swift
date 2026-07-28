@@ -2,9 +2,10 @@
 //  PBROperationTests.swift
 //  GODOpsTests
 //
-//  PBR dump is currently a logged placeholder: it emits a single info entry
-//  ("PBR dump not yet implemented") and must not touch the tree. These tests
-//  document that placeholder behavior and should be replaced with real output
+//  PBR dump is a placeholder. It must not touch the tree, and it must say so
+//  loudly: project setup wires it in *enabled* for a PBR disc, so a quiet
+//  info line plus a success status made a no-op look like a finished dump.
+//  These tests pin that reporting and should be replaced with real output
 //  assertions when PBR dump is implemented.
 //
 
@@ -44,13 +45,29 @@ final class PBROperationTests: XCTestCase {
         XCTAssertNil(fst.inspectFolder(at: Folder("/")), "placeholder must not write anything to the tree")
     }
 
-    func testPBRDumpLogsNotImplementedAtInfoLevel() throws {
+    /// The warning names the paths, so it's clear which input was skipped and
+    /// where the absent output would have gone.
+    func testPBRDumpWarnsThatItIsNotImplemented() throws {
         let logger = RecordingLogger()
         try PBROps.dump(config: dumpConfig(), settings: .default, fileSystem: InMemoryFST(), logger: logger)
-        let infos = logger.entries.compactMap { entry -> String? in
-            if case .info(let message) = entry { return message } else { return nil }
+
+        XCTAssertEqual(logger.warnings.count, 1, "expected exactly one warning; got \(logger.warnings)")
+        let warning = try XCTUnwrap(logger.warnings.first)
+        XCTAssertTrue(warning.contains("not implemented"), warning)
+        XCTAssertTrue(warning.contains("/project/Unpacked"), warning)
+        XCTAssertTrue(warning.contains("/project/Output"), warning)
+    }
+
+    /// Reported as a failed task, not a completed one — otherwise a run that
+    /// produced nothing still looked successful in the log.
+    func testPBRDumpReportsTheTaskAsFailed() throws {
+        let logger = RecordingLogger()
+        try PBROps.dump(config: dumpConfig(), settings: .default, fileSystem: InMemoryFST(), logger: logger)
+
+        let completions = logger.entries.compactMap { entry -> Bool? in
+            if case .taskStatus(_, .completed(let success)) = entry { return success }
+            return nil
         }
-        XCTAssertEqual(infos, ["PBR dump not yet implemented"])
-        XCTAssertTrue(logger.warnings.isEmpty)
+        XCTAssertEqual(completions, [false])
     }
 }

@@ -49,7 +49,7 @@ struct EngineOperationHandler: OperationHandler {
     }
 
     func gamecubeBuild(config: Gamecube.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
-        try Gamecube.build(config: config, settings: settings, fileSystem: fileSystem)
+        try Gamecube.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
     }
 
     func wiiDump(config: WiiOps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {

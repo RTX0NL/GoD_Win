@@ -3,15 +3,18 @@ import GoDFoundation
 extension XDSaveOps {
     struct BuildConfig: Codable {
         enum Operations: Codable {
-            /// Reassemble a Pokémon XD save from per-slot folders back
-            /// into `slot-a.bin` and `slot-b.bin` under `unpackedFolder`.
+            /// Reassemble a Pokémon XD save from the dumped slot folder
+            /// back into the latest slot under `unpackedFolder`.
             ///
-            /// Today this works by reading each slot's `raw-slot.bin`
-            /// verbatim — sub-block edits aren't applied yet because
-            /// the TOC repack + header-digest recompute path lands
-            /// alongside the stream cipher. When that arrives, this op
-            /// will pick up edited `.json` / `.bin` sub-block files
-            /// and patch them into the raw slot before re-encrypting.
+            /// The rebuild is from scratch: every sub-block comes from its
+            /// dumped artifact — the `.json` when the section is typed, the
+            /// `.bin` otherwise — and is size-checked against what the dump
+            /// recorded. `raw-slot.bin` is never read; it exists only as a
+            /// reference for diffing. The slot is reassembled at the offsets
+            /// its own header TOC declares, then re-encrypted.
+            ///
+            /// Only the latest slot is replaced. The other slot's original
+            /// encrypted bytes pass through the GCI rebuild untouched.
             case buildXDSave(
                 inputFolder: Folder,
                 unpackedFolder: Folder,
