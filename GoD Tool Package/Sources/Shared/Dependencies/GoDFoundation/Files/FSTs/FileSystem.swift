@@ -8,12 +8,19 @@
 import Foundation
 
 public class FileSystem: FileSystemTree {
-    
-    private(set) var currentDirectory = Folder("/")
+
+    /// Base for resolving `./`-and-`../`-prefixed paths (see `extendPath`).
+    /// Seeded from the process working directory so relative paths behave
+    /// the way a shell user expects; `changeDirectory` then re-points it at
+    /// the running config's `rootFolder`.
+    private(set) var currentDirectory: Folder
     private let fm = FileManager.default
-    
+
     public static let shared = FileSystem()
-    private init() {}
+    private init() {
+        let cwd = FileManager.default.currentDirectoryPath
+        currentDirectory = Folder(cwd.hasPrefix("/") ? cwd : "/")
+    }
     
     public func inspectFile(at path: File) -> FileMetaData? {
         let filePath = extendPath(path).path
@@ -43,48 +50,46 @@ public class FileSystem: FileSystemTree {
         return GoDData(data: data, byteOrder: Environment.byteOrder)
     }
     
-    @discardableResult
-    public func moveFile(at path: File, to newPath: File, overwrite: Bool) -> Bool {
+    public func moveFile(at path: File, to newPath: File, overwrite: Bool) throws {
         let fullPath = extendPath(path)
         let fullNewPath = extendPath(newPath)
         guard let parentFolder = fullNewPath.parentFolder else {
-            return false
+            throw FSTErrors.invalidPath(fullNewPath.path, .init())
+        }
+        if !itemExists(at: parentFolder) {
+            try createFolder(at: parentFolder, overwrite: overwrite)
         }
         do {
-            if !itemExists(at: parentFolder) {
-                createFolder(at: parentFolder, overwrite: overwrite)
-            }
             try fm.moveItem(atPath: fullPath.path, toPath: fullNewPath.path)
-            return true
         } catch {
-            return false
+            throw FSTErrors.failedToMoveFile(fullPath, fullNewPath, .init())
         }
     }
-    
-    @discardableResult
-    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) -> Bool {
+
+    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) throws {
         let fullPath = extendPath(path)
-        guard let parentFolder = fullPath.parentFolder else { return false }
-        if !itemExists(at: parentFolder) {
-            createFolder(at: parentFolder, overwrite: overwrite)
+        guard let parentFolder = fullPath.parentFolder else {
+            throw FSTErrors.invalidPath(fullPath.path, .init())
         }
-        guard !itemExists(at: fullPath) || overwrite else { return false }
+        if !itemExists(at: parentFolder) {
+            try createFolder(at: parentFolder, overwrite: overwrite)
+        }
+        guard !itemExists(at: fullPath) || overwrite else {
+            throw FSTErrors.itemExists(fullPath.path, .init())
+        }
         do {
             try file.data.write(to: fullPath.url)
-            return true
         } catch {
-            return false
+            throw FSTErrors.failedToWriteFile(fullPath, .init())
         }
     }
-    
-    @discardableResult
-    public func deleteFile(at path: File) -> Bool {
+
+    public func deleteFile(at path: File) throws {
         let fullPath = extendPath(path)
         do {
             try fm.removeItem(at: fullPath.url)
-            return true
         } catch {
-            return false
+            throw FSTErrors.failedToDeleteFile(fullPath, .init())
         }
     }
     
@@ -121,46 +126,44 @@ public class FileSystem: FileSystemTree {
         )
     }
     
-    @discardableResult
-    public func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) -> Bool {
+    public func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) throws {
         let fullPath = extendPath(path)
         let fullNewPath = extendPath(newPath)
         guard let parentFolder = fullNewPath.parentFolder else {
-            return false
+            throw FSTErrors.invalidPath(fullNewPath.path, .init())
+        }
+        if !itemExists(at: parentFolder) {
+            try createFolder(at: parentFolder, overwrite: overwrite)
+        }
+        guard !itemExists(at: fullPath) || overwrite else {
+            throw FSTErrors.itemExists(fullPath.path, .init())
         }
         do {
-            if !itemExists(at: parentFolder) {
-                createFolder(at: parentFolder, overwrite: overwrite)
-            }
-            guard !itemExists(at: fullPath) || overwrite else { return false }
             try fm.moveItem(atPath: fullPath.path, toPath: fullNewPath.path)
-            return true
         } catch {
-            return false
+            throw FSTErrors.failedToMoveFolder(fullPath, fullNewPath, .init())
         }
     }
-    
-    @discardableResult
-    public func createFolder(at path: Folder, overwrite: Bool) -> Bool {
+
+    /// Creating a folder that already exists is a no-op, not an error —
+    /// callers routinely ensure a folder exists before writing into it.
+    public func createFolder(at path: Folder, overwrite: Bool) throws {
         let fullPath = extendPath(path)
-        guard !itemExists(at: fullPath) || overwrite else { return false }
         do {
             try fm.createDirectory(atPath: fullPath.path, withIntermediateDirectories: true)
-            return true
         } catch {
-            return false
+            throw FSTErrors.failedToCreateFolder(fullPath, .init())
         }
     }
-    
-    @discardableResult
-    public func deleteFolder(at path: Folder) -> Bool {
+
+    /// Deleting a folder that isn't there is a no-op, not an error.
+    public func deleteFolder(at path: Folder) throws {
         let fullPath = extendPath(path)
-        guard itemExists(at: fullPath) else { return true }
+        guard itemExists(at: fullPath) else { return }
         do {
             try fm.removeItem(atPath: fullPath.path)
-            return true
         } catch {
-            return false
+            throw FSTErrors.failedToDeleteFolder(fullPath, .init())
         }
     }
     
@@ -223,6 +226,6 @@ public extension FileSystemTree {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data: GoDData = try encoder.encode(value)
-        _ = writeFile(data, at: file, overwrite: overwrite)
+        try writeFile(data, at: file, overwrite: overwrite)
     }
 }

@@ -62,34 +62,35 @@ public class InMemoryFST: FileSystemTree {
         return String(path[path.startIndex..<slashIndex])
     }
 
-    @discardableResult
-    public func moveFile(at path: File, to newPath: File, overwrite: Bool) -> Bool {
-        guard !itemExists(at: newPath) || overwrite else { return false }
-        guard let node = fst[path.path], case .file = node else { return false }
+    public func moveFile(at path: File, to newPath: File, overwrite: Bool) throws {
+        guard !itemExists(at: newPath) || overwrite else {
+            throw FSTErrors.itemExists(newPath.path, .init())
+        }
+        guard let node = fst[path.path], case .file = node else {
+            throw FSTErrors.fileNotFound(path, .init())
+        }
         fst[newPath.path] = node
         fst[path.path] = nil
         if let parent = parentPath(of: path.path) {
             children[parent]?.remove(path.path)
         }
         registerChild(path: newPath.path)
-        return true
     }
 
-    @discardableResult
-    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) -> Bool {
-        guard !itemExists(at: path) || overwrite else { return false }
+    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) throws {
+        guard !itemExists(at: path) || overwrite else {
+            throw FSTErrors.itemExists(path.path, .init())
+        }
         fst[path.path] = .file(file)
         registerChild(path: path.path)
-        return true
     }
 
-    @discardableResult
-    public func deleteFile(at path: File) -> Bool {
+    /// Deleting a file that isn't there is a no-op, not an error.
+    public func deleteFile(at path: File) throws {
         fst[path.path] = nil
         if let parent = parentPath(of: path.path) {
             children[parent]?.remove(path.path)
         }
-        return true
     }
 
     public func inspectFolder(at path: Folder) -> FolderMetaData? {
@@ -144,10 +145,13 @@ public class InMemoryFST: FileSystemTree {
         )
     }
 
-    @discardableResult
-    public func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) -> Bool {
-        guard !itemExists(at: newPath) || overwrite else { return false }
-        guard let node = fst[path.path], case .folder = node else { return false }
+    public func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) throws {
+        guard !itemExists(at: newPath) || overwrite else {
+            throw FSTErrors.itemExists(newPath.path, .init())
+        }
+        guard let node = fst[path.path], case .folder = node else {
+            throw FSTErrors.folderNotFound(path, .init())
+        }
 
         let oldPrefix = path.path
         let newPrefix = newPath.path
@@ -187,19 +191,22 @@ public class InMemoryFST: FileSystemTree {
 
         // Re-register the moved folder under its new parent.
         registerChild(path: newPrefix)
-        return true
     }
 
-    @discardableResult
-    public func createFolder(at path: Folder, overwrite: Bool) -> Bool {
-        guard !itemExists(at: path) || overwrite else { return false }
+    /// Creating a folder that already exists is a no-op, not an error —
+    /// callers routinely ensure a folder exists before writing into it.
+    /// A *file* already occupying the path is an error, not something to
+    /// silently replace.
+    public func createFolder(at path: Folder, overwrite: Bool) throws {
+        if case .file = fst[path.path] {
+            throw FSTErrors.itemExists(path.path, .init())
+        }
         fst[path.path] = .folder
         registerChild(path: path.path)
-        return true
     }
 
-    @discardableResult
-    public func deleteFolder(at path: Folder) -> Bool {
+    /// Deleting a folder that isn't there is a no-op, not an error.
+    public func deleteFolder(at path: Folder) throws {
         // Remove all descendants
         func removeRecursive(_ folderPath: String) {
             if let kids = children[folderPath] {
@@ -215,6 +222,5 @@ public class InMemoryFST: FileSystemTree {
         if let parent = parentPath(of: path.path) {
             children[parent]?.remove(path.path)
         }
-        return true
     }
 }

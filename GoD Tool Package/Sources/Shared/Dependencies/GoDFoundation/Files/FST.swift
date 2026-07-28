@@ -38,17 +38,33 @@ public struct FolderMetaData {
     }
 }
 
+/// A tree of files and folders — either on disk (`FileSystem`) or in memory
+/// (`InMemoryFST`, `GamecubeISO`).
+///
+/// **Reads** return optionals: a missing file is an ordinary, expected
+/// answer that callers routinely branch on.
+///
+/// **Writes throw.** A failed write means bytes the user asked for are not
+/// where they asked for them, which must never pass silently — an operation
+/// that reports success while having dropped output is worse than one that
+/// stops. Callers that genuinely don't care can opt out explicitly with
+/// `try?`.
+///
+/// **Thread safety:** implementations are *not* synchronised. Concurrent
+/// reads of an otherwise-idle tree are safe; any concurrent write — or a
+/// read racing a write — is undefined. Callers that fan out (e.g. the FSYS
+/// pack/unpack passes) must confine all mutation to a single thread.
 public protocol FileSystemTree {
     func inspectFile(at path: File) -> FileMetaData?
     func readFile(at path: File) -> GoDData?
-    @discardableResult func moveFile(at path: File, to newPath: File, overwrite: Bool) -> Bool
-    @discardableResult func writeFile(_ file: GoDData, at path: File, overwrite: Bool) -> Bool
-    @discardableResult func deleteFile(at path: File) -> Bool
-    
+    func moveFile(at path: File, to newPath: File, overwrite: Bool) throws
+    func writeFile(_ file: GoDData, at path: File, overwrite: Bool) throws
+    func deleteFile(at path: File) throws
+
     func inspectFolder(at path: Folder) -> FolderMetaData?
-    @discardableResult func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) -> Bool
-    @discardableResult func createFolder(at path: Folder, overwrite: Bool) -> Bool
-    @discardableResult func deleteFolder(at path: Folder) -> Bool
+    func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) throws
+    func createFolder(at path: Folder, overwrite: Bool) throws
+    func deleteFolder(at path: Folder) throws
 }
 
 public extension FileSystemTree {
@@ -62,27 +78,30 @@ public extension FileSystemTree {
         return false
     }
     
-    @discardableResult
-    func rename(file path: File, to newName: String, overwrite: Bool = false) -> Bool {
-        guard let newFile = path.parentFolder?.file(newName) else { return false }
-        return moveFile(at: path, to: newFile, overwrite: overwrite)
+    func rename(file path: File, to newName: String, overwrite: Bool = false) throws {
+        guard let newFile = path.parentFolder?.file(newName) else {
+            throw FSTErrors.invalidPath(path.path, .init())
+        }
+        try moveFile(at: path, to: newFile, overwrite: overwrite)
     }
-    
-    @discardableResult
-    func rename(folder path: Folder, to newName: String, overwrite: Bool = false) -> Bool {
-        guard let newFolder = path.parentFolder?.folder(newName) else { return false }
-        return moveFolder(at: path, to: newFolder, overwrite: overwrite)
+
+    func rename(folder path: Folder, to newName: String, overwrite: Bool = false) throws {
+        guard let newFolder = path.parentFolder?.folder(newName) else {
+            throw FSTErrors.invalidPath(path.path, .init())
+        }
+        try moveFolder(at: path, to: newFolder, overwrite: overwrite)
     }
-    
+
     func readFile<T: Decodable>(at path: File) -> T? {
         guard let data: GoDData = readFile(at: path) else { return nil }
         return T.decodeJSON(from: data)
     }
-    
-    @discardableResult
-    func writeFile(_ item: Encodable, at path: File, overwrite: Bool) -> Bool {
-        guard let data = item.encodeJSON() else { return false }
-        return writeFile(data, at: path, overwrite: overwrite)
+
+    func writeFile(_ item: Encodable, at path: File, overwrite: Bool) throws {
+        guard let data = item.encodeJSON() else {
+            throw FSTErrors.failedToWriteFile(path, .init())
+        }
+        try writeFile(data, at: path, overwrite: overwrite)
     }
     
     var root: FolderMetaData {
@@ -102,7 +121,7 @@ public extension FileSystemTree {
         to targetFolder: Folder,
         overwrite: Bool,
         logger: Logger? = nil
-    ) {
+    ) throws {
 
         guard let rootContents = fileSystem.inspectFolder(at: rootFolder) else {
             return
@@ -112,7 +131,7 @@ public extension FileSystemTree {
         var sizeProcessed = 0
         let shouldTrackProgress = totalSize > 0 && logger != nil
 
-        func add(_ files: [File]) {
+        func add(_ files: [File]) throws {
             for file in files {
                 guard let data = fileSystem.readFile(at: file) else { continue }
                 var newFile = file
@@ -120,7 +139,7 @@ public extension FileSystemTree {
                     let relativePath = file.path.substring(from: rootFolder.path.count)
                     newFile = targetFolder.file(relativePath)
                 }
-                writeFile(data, at: newFile, overwrite: overwrite)
+                try writeFile(data, at: newFile, overwrite: overwrite)
 
                 if shouldTrackProgress {
                     sizeProcessed += data.length
@@ -130,7 +149,7 @@ public extension FileSystemTree {
             }
         }
 
-        func add(_ folders: [Folder]) {
+        func add(_ folders: [Folder]) throws {
             for folder in folders {
                 guard let contents = fileSystem.inspectFolder(at: folder) else { continue }
                 var newFolder = folder
@@ -138,18 +157,18 @@ public extension FileSystemTree {
                     let relativePath = folder.path.substring(from: rootFolder.path.count)
                     newFolder = targetFolder.folder(relativePath)
                 }
-                createFolder(at: newFolder, overwrite: overwrite)
+                try createFolder(at: newFolder, overwrite: overwrite)
 
-                add(contents.files)
-                add(contents.subFolders)
+                try add(contents.files)
+                try add(contents.subFolders)
             }
         }
 
         logger?.log(.info("Importing \(rootFolder.path) to \(targetFolder.path)"))
         logger?.log(.taskStatus(taskName: "Import FST", status: .started))
 
-        add(rootContents.files)
-        add(rootContents.subFolders)
+        try add(rootContents.files)
+        try add(rootContents.subFolders)
 
         logger?.log(.taskStatus(taskName: "Import FST", status: .completed(true)))
     }

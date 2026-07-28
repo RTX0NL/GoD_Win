@@ -45,8 +45,16 @@ public struct Folder: PathRepresentable, Hashable, Equatable {
     }
 
     /// Get a folder by resolving a relative path string against this folder.
-    /// Supports `..` and `.` path components.
+    /// Supports leading `..` and `.` components on `relativePath`.
+    ///
+    /// `..` that walks past the top is handled rather than trapped: on an
+    /// absolute receiver it clamps at `/`, on a relative receiver it
+    /// accumulates as further `..` components (ordinary path semantics).
+    /// The result is never the empty string — a fully-consumed relative
+    /// path collapses to `.`.
     public func folder(_ relativePath: String) -> Folder {
+        let isAbsolute = self.path.startsWith("/")
+
         var first = self.path
         if first.last == "/" {
             first.removeLast()
@@ -59,16 +67,36 @@ public struct Folder: PathRepresentable, Hashable, Equatable {
         var firstComponents = first.split(separator: "/")
         var lastComponents = last.split(separator: "/")
 
-        while lastComponents.first == ".." || lastComponents.first == "." {
-            if lastComponents.first == ".." {
-                firstComponents.removeLast()
-            }
-            lastComponents.removeFirst()
+        // A leading `.` is only a "this is relative" marker, not a real
+        // component — drop it here and re-apply the prefix on the way out.
+        if firstComponents.first == "." {
+            firstComponents.removeFirst()
         }
 
-        let prefix = self.path.startsWith("/") ? "/" : ""
-        let path = prefix + (firstComponents + lastComponents).joined(separator: "/")
-        return Folder(path)
+        while let next = lastComponents.first, next == ".." || next == "." {
+            lastComponents.removeFirst()
+            guard next == ".." else { continue }
+
+            if let tail = firstComponents.last, tail != ".." {
+                // Ordinary parent step.
+                firstComponents.removeLast()
+            } else if !isAbsolute {
+                // Walked off the top of a relative path — keep the `..`.
+                firstComponents.append("..")
+            }
+            // Absolute path already at the root: `..` clamps to `/`.
+        }
+
+        let components = (firstComponents + lastComponents).joined(separator: "/")
+        if isAbsolute {
+            return Folder("/" + components)
+        }
+        if components.isEmpty {
+            return Folder(".")
+        }
+        // `../…` is already a legal relative form; anything else needs the
+        // explicit `./` prefix to satisfy `Folder.init`.
+        return Folder(components.startsWith("..") ? components : "./" + components)
     }
 }
 
