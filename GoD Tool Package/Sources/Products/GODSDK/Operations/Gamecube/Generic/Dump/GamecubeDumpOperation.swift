@@ -26,7 +26,7 @@ extension Gamecube {
                 let gamecubeEngine = try GamecubeEngine(from: gamecubeEnginePath, in: fileSystem)
                 let iso = try GamecubeISO(data: data, dolphinEngine: dolphinEngine, gamecubeEngine: gamecubeEngine)
                 
-                fileSystem.importFST(
+                try fileSystem.importFST(
                     iso,
                     from: "/",
                     to: fstFolder,

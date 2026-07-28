@@ -66,23 +66,23 @@ extension GCIOps {
         switch (prefix, bodySize) {
         case ("GXX", GSSaveCardFile.bodySize):
             let card = try GSSaveCardFile(body: parsed.body)
-            fileSystem.writeFile(card.banner, at: outputFolder.file(bannerFilename), overwrite: overwrite)
-            fileSystem.writeFile(card.header0, at: outputFolder.file(header0Filename), overwrite: overwrite)
-            fileSystem.writeFile(card.header1, at: outputFolder.file(header1Filename), overwrite: overwrite)
-            fileSystem.writeFile(card.slotA, at: outputFolder.file(slotAFilename), overwrite: overwrite)
-            fileSystem.writeFile(card.slotB, at: outputFolder.file(slotBFilename), overwrite: overwrite)
+            try fileSystem.writeFile(card.banner, at: outputFolder.file(bannerFilename), overwrite: overwrite)
+            try fileSystem.writeFile(card.header0, at: outputFolder.file(header0Filename), overwrite: overwrite)
+            try fileSystem.writeFile(card.header1, at: outputFolder.file(header1Filename), overwrite: overwrite)
+            try fileSystem.writeFile(card.slotA, at: outputFolder.file(slotAFilename), overwrite: overwrite)
+            try fileSystem.writeFile(card.slotB, at: outputFolder.file(slotBFilename), overwrite: overwrite)
             logger?.log(.info("Split XD GCI body (\(parsed.body.length) bytes) into banner + 2 hdrs + 2 slots"))
 
         case ("GC6", ColoSaveCardFile.bodySize):
             let card = try ColoSaveCardFile(body: parsed.body)
-            fileSystem.writeFile(card.preamble, at: outputFolder.file(preambleFilename), overwrite: overwrite)
+            try fileSystem.writeFile(card.preamble, at: outputFolder.file(preambleFilename), overwrite: overwrite)
             for (i, slot) in card.slots.enumerated() {
-                fileSystem.writeFile(slot, at: outputFolder.file(coloSlotFilename(i)), overwrite: overwrite)
+                try fileSystem.writeFile(slot, at: outputFolder.file(coloSlotFilename(i)), overwrite: overwrite)
             }
             logger?.log(.info("Split Colo GCI body (\(parsed.body.length) bytes) into preamble + 3 slots"))
 
         default:
-            fileSystem.writeFile(parsed.body, at: outputFolder.file(bodyFilename), overwrite: overwrite)
+            try fileSystem.writeFile(parsed.body, at: outputFolder.file(bodyFilename), overwrite: overwrite)
             logger?.log(.info("GCI gamecode '\(parsed.header.gamecode)' is not a known XD/Colo shape — dumped body unsplit"))
         }
 

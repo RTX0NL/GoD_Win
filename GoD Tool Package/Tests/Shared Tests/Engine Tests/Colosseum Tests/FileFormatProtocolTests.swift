@@ -53,7 +53,7 @@ final class FileFormatProtocolTests: XCTestCase {
     func testRegistryNoArtifactsFoundThrows() {
         let fs = InMemoryFST()
         let folder = Folder("/empty")
-        _ = fs.createFolder(at: folder, overwrite: true)
+        try? fs.createFolder(at: folder, overwrite: true)
         XCTAssertThrowsError(try FileFormatRegistry.builtins().build(
             extension: "msg", from: folder, fileSystem: fs
         ))

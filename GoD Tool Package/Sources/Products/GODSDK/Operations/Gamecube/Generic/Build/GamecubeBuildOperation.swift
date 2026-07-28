@@ -27,9 +27,7 @@ extension Gamecube {
                     gamecubeEngine: gamecubeEngine
                 )
                 let data = try iso.data
-                guard fileSystem.writeFile(data, at: isoPath, overwrite: overwrite) else {
-                    throw FSTErrors.failedToWriteFile(isoPath, .init())
-                }
+                try fileSystem.writeFile(data, at: isoPath, overwrite: overwrite)
             case let .fillISO(
                 isoPath,
                 size
@@ -40,7 +38,7 @@ extension Gamecube {
                 let remaining = size - iso.length
                 if remaining > 0 {
                     iso.append(GoDData(length: remaining, byteOrder: .big))
-                    FileSystem.shared.writeFile(iso, at: isoPath, overwrite: true)
+                    try FileSystem.shared.writeFile(iso, at: isoPath, overwrite: true)
                 }
                 
             }

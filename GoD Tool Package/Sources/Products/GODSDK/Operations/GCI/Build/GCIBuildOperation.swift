@@ -79,7 +79,7 @@ extension GCIOps {
         let gci = GCIFile(name: stem.isEmpty ? "save" : stem, header: header, body: body)
         let assembled = try gci.assembled()
 
-        fileSystem.writeFile(assembled, at: gciFile, overwrite: overwrite)
+        try fileSystem.writeFile(assembled, at: gciFile, overwrite: overwrite)
         logger?.log(.info("Wrote \(assembled.length) bytes to \(gciFile.path)"))
         logger?.log(.taskStatus(taskName: "Build GCI", status: .completed(true)))
     }

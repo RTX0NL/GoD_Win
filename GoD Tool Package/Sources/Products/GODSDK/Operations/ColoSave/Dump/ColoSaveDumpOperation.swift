@@ -171,7 +171,7 @@ extension ColoSaveOps {
     ) throws {
         // raw-slot.bin is a read-only reference/diff artifact. Build
         // never reads it — it reconstructs from header region + sections.
-        fileSystem.writeFile(
+        try fileSystem.writeFile(
             slot.raw,
             at: slotFolder.file(rawSlotFilename),
             overwrite: overwrite
@@ -233,7 +233,7 @@ extension ColoSaveOps {
             let binFilename: String?
             if jsonFilename == nil {
                 let filename = "\(stem).bin"
-                fileSystem.writeFile(
+                try fileSystem.writeFile(
                     bytes,
                     at: slotFolder.file(filename),
                     overwrite: overwrite

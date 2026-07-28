@@ -19,9 +19,9 @@ final class ApploaderTests: XCTestCase {
         let headerStruct = engine.apploaderHeaderStruct
         let header = StructData(definition: headerStruct, data: GoDData(length: headerStruct.length, byteOrder: .big))
         header.date = "2024/06/01".data(format: .ascii_big)
-        header.entryPoint = UInt32(0x81200000)
+        header.entry_point = UInt32(0x81200000)
         header.size = appCode.length
-        header.trailerSize = trailerCode.length
+        header.trailer_size = trailerCode.length
 
         let rawData = header.data
         rawData.append(appCode)
@@ -45,9 +45,9 @@ final class ApploaderTests: XCTestCase {
         let headerStruct = engine.apploaderHeaderStruct
         let header = StructData(definition: headerStruct, data: GoDData(length: headerStruct.length, byteOrder: .big))
         header.date = "2024/01/01".data(format: .ascii_big)
-        header.entryPoint = UInt32(0x81200000)
+        header.entry_point = UInt32(0x81200000)
         header.size = 64
-        header.trailerSize = 0
+        header.trailer_size = 0
 
         let appCode = GoDData(byteStream: [UInt8](repeating: 0xAA, count: 64), byteOrder: .big)
         let rawData = header.data

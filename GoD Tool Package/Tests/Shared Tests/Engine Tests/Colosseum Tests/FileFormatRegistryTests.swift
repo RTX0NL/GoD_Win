@@ -24,7 +24,7 @@ final class FileFormatRegistryTests: XCTestCase {
 
         let fs = InMemoryFST()
         let folder = Folder("/out")
-        _ = fs.createFolder(at: folder, overwrite: true)
+        try fs.createFolder(at: folder, overwrite: true)
 
         let written = try FileFormatRegistry.builtins().dump(
             bytes: GoDData(byteStream: raw, byteOrder: .big),
@@ -47,7 +47,7 @@ final class FileFormatRegistryTests: XCTestCase {
     func testRegistryBuild_readsFolderAndInvokesHandler() throws {
         let fs = InMemoryFST()
         let folder = Folder("/in")
-        _ = fs.createFolder(at: folder, overwrite: true)
+        try fs.createFolder(at: folder, overwrite: true)
 
         // Seed the folder with a known-good MSG artifact.
         let json = """
@@ -59,7 +59,7 @@ final class FileFormatRegistryTests: XCTestCase {
           "variant": "xd"
         }
         """.data(using: .utf8)!
-        _ = fs.writeFile(GoDData(data: json, byteOrder: .big),
+        try fs.writeFile(GoDData(data: json, byteOrder: .big),
                          at: folder.file("sample.msg.json"),
                          overwrite: true)
 
@@ -78,7 +78,7 @@ final class FileFormatRegistryTests: XCTestCase {
     func testRegistryDump_preservesFlatAndNestedKeys() throws {
         let fs = InMemoryFST()
         let folder = Folder("/out")
-        _ = fs.createFolder(at: folder, overwrite: true)
+        try fs.createFolder(at: folder, overwrite: true)
 
         // Any registered handler will do — MSG is simplest, it emits a
         // single flat key.
@@ -102,7 +102,7 @@ final class FileFormatRegistryTests: XCTestCase {
 
     func testRegistryDump_unregisteredExtensionThrows() throws {
         let fs = InMemoryFST()
-        _ = fs.createFolder(at: Folder("/x"), overwrite: true)
+        try fs.createFolder(at: Folder("/x"), overwrite: true)
         XCTAssertThrowsError(try FileFormatRegistry.builtins().dump(
             bytes: GoDData(byteStream: [0], byteOrder: .big),
             extension: "bogus",
@@ -113,7 +113,7 @@ final class FileFormatRegistryTests: XCTestCase {
 
     func testRegistryBuild_unregisteredExtensionThrows() throws {
         let fs = InMemoryFST()
-        _ = fs.createFolder(at: Folder("/x"), overwrite: true)
+        try fs.createFolder(at: Folder("/x"), overwrite: true)
         XCTAssertThrowsError(try FileFormatRegistry.builtins().build(
             extension: "bogus", from: Folder("/x"), fileSystem: fs
         ))
@@ -122,7 +122,7 @@ final class FileFormatRegistryTests: XCTestCase {
     func testRegistryBuild_emptyFolderThrowsNoArtifactsFound() throws {
         let fs = InMemoryFST()
         let folder = Folder("/empty")
-        _ = fs.createFolder(at: folder, overwrite: true)
+        try fs.createFolder(at: folder, overwrite: true)
         XCTAssertThrowsError(try FileFormatRegistry.builtins().build(
             extension: "msg", from: folder, fileSystem: fs
         )) { error in

@@ -90,7 +90,7 @@ extension ColoSaveOps {
         // Replace ONLY the latest slot. The other two slots' original
         // encrypted bytes remain in the unpacked GCI and pass through
         // to the GCI rebuild untouched.
-        fileSystem.writeFile(
+        try fileSystem.writeFile(
             slotBytes,
             at: unpackedFolder.file(GCIOps.coloSlotFilename(latestIndex)),
             overwrite: overwrite

@@ -16,13 +16,13 @@ final class DolTests: XCTestCase {
         let dolStruct = engine.dolHeaderStruct
 
         let header = StructData(definition: dolStruct, byteOrder: .big)
-        header.entryPoint = UInt32(0x80003100)
-        header.bssSize = UInt32(0x1000)
-        header.bssRAMAddress = UInt32(0x80500000)
+        header.entry_point = UInt32(0x80003100)
+        header.BSS_size = UInt32(0x1000)
+        header.BSS_RAM_address = UInt32(0x80500000)
 
-        let readEntry: UInt32 = try header.entryPoint
-        let readBSS: UInt32 = try header.bssSize
-        let readBSSAddr: UInt32 = try header.bssRAMAddress
+        let readEntry: UInt32 = try header.entry_point
+        let readBSS: UInt32 = try header.BSS_size
+        let readBSSAddr: UInt32 = try header.BSS_RAM_address
         XCTAssertEqual(readEntry, 0x80003100)
         XCTAssertEqual(readBSS, 0x1000)
         XCTAssertEqual(readBSSAddr, 0x80500000)

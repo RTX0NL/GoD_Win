@@ -87,7 +87,7 @@ extension XDSaveOps {
         let latestFilename = saveMeta.latestSlot == "B"
             ? GCIOps.slotBFilename
             : GCIOps.slotAFilename
-        fileSystem.writeFile(slotBytes, at: unpackedFolder.file(latestFilename), overwrite: overwrite)
+        try fileSystem.writeFile(slotBytes, at: unpackedFolder.file(latestFilename), overwrite: overwrite)
 
         logger?.log(.info("XD save build: rebuilt \(slotMeta.sections.count) sub-blocks from scratch (gaps zeroed); wrote latest slot \(saveMeta.latestSlot) → \(latestFilename) (other slot untouched)"))
         logger?.log(.taskStatus(taskName: "Build XD Save", status: .completed(true)))

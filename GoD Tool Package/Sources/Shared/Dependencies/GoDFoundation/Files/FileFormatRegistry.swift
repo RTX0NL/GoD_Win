@@ -95,9 +95,7 @@ public struct FileFormatRegistry {
         var written: [File] = []
         for artifact in artifacts {
             let outFile = resolve(artifact.file, in: folder)
-            if !fileSystem.writeFile(artifact.data, at: outFile, overwrite: overwrite) {
-                throw RegistryError.writeFailed(file: outFile)
-            }
+            try fileSystem.writeFile(artifact.data, at: outFile, overwrite: overwrite)
             written.append(outFile)
         }
         return written
@@ -181,15 +179,12 @@ public struct FileFormatRegistry {
 
     public enum RegistryError: Error, CustomStringConvertible {
         case unregistered(ext: String)
-        case writeFailed(file: File)
         case noArtifactsFound(folder: String)
 
         public var description: String {
             switch self {
             case .unregistered(let ext):
                 return "FileFormatRegistry: no handler registered for extension '\(ext)'"
-            case .writeFailed(let file):
-                return "FileFormatRegistry: failed to write artifact at \(file.path)"
             case .noArtifactsFound(let folder):
                 return "FileFormatRegistry: no artifacts found under '\(folder)'"
             }

@@ -179,7 +179,7 @@ extension XDSaveOps {
         // read-only reference/diff artifact. Build never reads it; it
         // rebuilds each sub-block from its artifact and carries only the
         // header region.
-        fileSystem.writeFile(
+        try fileSystem.writeFile(
             slot.raw,
             at: slotFolder.file(rawSlotFilename),
             overwrite: overwrite
@@ -231,7 +231,7 @@ extension XDSaveOps {
             let binFilename: String?
             if jsonFilename == nil {
                 let filename = "\(stem).bin"
-                fileSystem.writeFile(
+                try fileSystem.writeFile(
                     bytes,
                     at: slotFolder.file(filename),
                     overwrite: overwrite
