@@ -2,9 +2,35 @@ import GoDFoundation
 
 extension GeniusSonorityEngine.Data {
     public struct FSYS: Codable {
+        /// A constant byte run the game writes inside each entry-metadata
+        /// block, past the fields `FSYSFileMetaData` models. It carries no
+        /// data — it's the packer's filler — but reproducing it is what
+        /// makes a repacked archive byte-identical to the original.
+        public struct MetaDataFill: Codable, Equatable {
+            /// Offset of the run within the entry-metadata block.
+            public var offset: Int
+            /// Number of bytes in the run.
+            public var length: Int
+            /// The repeated byte value.
+            public var byte: Int
+
+            public init(offset: Int, length: Int, byte: Int) {
+                self.offset = offset
+                self.length = length
+                self.byte = byte
+            }
+        }
+
         public private(set) var magicBytes = "FSYS"
-        public internal(set) var fileMetaDataPadding = 0x40 // 0x20 in Colosseum but value is only aesthetic
-        
+        public internal(set) var fileMetaDataPadding = 0x40 // 0x20 in Colosseum
+
+        /// Filler the game's packer leaves in each entry-metadata block.
+        /// Colosseum writes 12 bytes of `0x11` at +0x34 (verified constant
+        /// across 1028 entries in 299 US archives); XD zeroes the whole
+        /// region, so it leaves this `nil`.
+        public internal(set) var fileMetaDataFill: MetaDataFill? = nil
+
+
         /// Suffixes to strip from extracted filenames and use as extension instead.
         /// e.g. `["pool", "proj", "sdir", "rel"]` will rename `common_rel` → `common.rel`
         public private(set) var fileExtensionSuffixes = [

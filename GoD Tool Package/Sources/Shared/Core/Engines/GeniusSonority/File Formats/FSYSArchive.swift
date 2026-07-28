@@ -2,6 +2,18 @@ import GoDFoundation
 import GoDEngine
 import Structs
 
+public enum FSYSArchiveError: GoDError {
+    case duplicateFilenames([String], ErrorTrace = .init())
+
+    public var description: String {
+        switch self {
+        case let .duplicateFilenames(names, errorTrace):
+            return "Error: FSYS archive has duplicate entry filenames: \(names.joined(separator: ", ")). "
+                + "Entry filenames must be unique within an archive.\n\(errorTrace)"
+        }
+    }
+}
+
 public final class FSYSArchive {
     public static let formatName = "fsys"
     
@@ -41,19 +53,29 @@ public final class FSYSArchive {
             public let identifier: Int
             public let compress: Bool
             public let includesFullFilename: Bool?
-            
+            /// The full filename exactly as the archive stores it, when the
+            /// entry carries one. The project-facing `Entry.filename` is a
+            /// *derived* pretty form (stripped `_col`/`_cam`/`_scd` suffixes,
+            /// mapped extensions), which is lossy — keeping the raw string
+            /// here lets the repack emit the original bytes. Nil when the
+            /// entry has no full filename, or (for archives dumped before
+            /// this field existed) when it wasn't captured.
+            public let fullFilename: String?
+
             public init(
                 name: String,
                 fileType: String,
                 identifier: Int,
                 compress: Bool,
-                includesFullFilename: Bool?
+                includesFullFilename: Bool?,
+                fullFilename: String? = nil
             ) {
                 self.name = name
                 self.fileType = fileType
                 self.identifier = identifier
                 self.compress = compress
                 self.includesFullFilename = includesFullFilename == true ? true : nil
+                self.fullFilename = fullFilename
             }
         }
         
@@ -91,15 +113,15 @@ public final class FSYSArchive {
             unknownFlag2: (flags & 0x40000000).boolean,
             debugFlag: (flags & 0x1).boolean,
             unknown1: try fsysHeader.unknown1,
-            unknown2: try fsysHeader.unknown2,
-            unknown3: try fsysHeader.unknown3,
-            unknown4: try fsysHeader.unknown4
+            unknown2: try fsysHeader.unknown_2,
+            unknown3: try fsysHeader.unknown_3,
+            unknown4: try fsysHeader.unknown_4
         )
-        self.groupID = try fsysHeader.groupID
+        self.groupID = try fsysHeader.group_id
         self.metaData = metaData
 
-        let entryCount: Int = try fsysHeader.entryCount
-        let filePointerListAddress: Int = try fsysHeader.fileMetadataList
+        let entryCount: Int = try fsysHeader.entry_count
+        let filePointerListAddress: Int = try fsysHeader.file_metadata_list
         
         guard let fileEntryAddresses: [Int32] = data.readValues(atAddress: filePointerListAddress, count: entryCount) else {
             throw FileFormatErrors.invalid(format: Self.formatName)
@@ -116,21 +138,26 @@ public final class FSYSArchive {
         self.entries = try fileMetaDataList.map { metaData in
             guard let metaData else { throw FileFormatErrors.invalid(format: Self.formatName) }
             
-            let fileType: Enum.Case? = metaData.fileType
+            let fileType: Enum.Case? = metaData.file_type
             let identifier: Int = try metaData.identifier
             
-            let fileNameOffset: Int = try metaData.filenamePointer
+            let fileNameOffset: Int = try metaData.filename_pointer
             guard let entryName = data.readString(atAddress: fileNameOffset, format: .utf8) else {
                 throw FileFormatErrors.invalid(format: Self.formatName)
             }
             
-            let fullFilenameOffset: Int = try metaData.fullFilenamePointer
+            let fullFilenameOffset: Int = try metaData.full_filename_pointer
             let fileName: String
+            // The archive's own full-filename string, kept verbatim so the
+            // repack can re-emit it; `fileName` below is the derived pretty
+            // form used for the project filesystem.
+            var rawFullFilename: String?
 
             if fullFilenameOffset != 0 {
                 guard var name = data.readString(atAddress: fullFilenameOffset, format: .utf8) else {
                     throw FileFormatErrors.invalid(format: Self.formatName)
                 }
+                rawFullFilename = name
                 // Strip configurable suffixes from the filename stem
                 // e.g. "B1_1_col.ccd" → "B1_1.ccd" when "_col" is in fileNameSuffixReplacements
                 if let ext = File(name).fileType {
@@ -165,8 +192,8 @@ public final class FSYSArchive {
             let flags: Int = try metaData.flags
             let isCompressed = (flags & 0x80000000).boolean
             
-            let fileAddress: Int = try metaData.dataAddress
-            let fileSize: Int = try metaData.fileSize
+            let fileAddress: Int = try metaData.data_address
+            let fileSize: Int = try metaData.file_size
             
             guard let rawEntryData = data.read(atAddress: fileAddress, length: fileSize) else {
                 throw FileFormatErrors.invalid(format: Self.formatName)
@@ -174,11 +201,11 @@ public final class FSYSArchive {
             var entryData = rawEntryData
             if isCompressed {
                 guard let lzssHeader = entryData.read(struct: lzssHeaderStruct, atAddress: 0),
-                      let compressedSize: Int = lzssHeader.compressedSize,
+                      let compressedSize: Int = lzssHeader.compressed_size,
                       let compressedData = entryData.read(atAddress: lzssHeader.length, length: compressedSize - lzssHeader.length) else {
                     throw FileFormatErrors.invalid(format: Self.formatName)
                 }
-                let uncompressedSize: Int? = lzssHeader.uncompressedSize
+                let uncompressedSize: Int? = lzssHeader.uncompressed_size
                 entryData = try compressor.decompress(compressedData, expectedSize: uncompressedSize)
             }
             
@@ -188,7 +215,8 @@ public final class FSYSArchive {
                     fileType: fileType?.name ?? "", // make sure to use actual unique file type, not the displayed file type
                     identifier: identifier,
                     compress: isCompressed,
-                    includesFullFilename: fullFilenameOffset != 0
+                    includesFullFilename: fullFilenameOffset != 0,
+                    fullFilename: rawFullFilename
                 ),
                 filename: fileName,
                 data: entryData
@@ -206,29 +234,43 @@ public final class FSYSArchive {
     public func data(groupID: Int, engine: GeniusSonorityEngine) throws -> GoDData {
         let headerStruct = engine.fsysHeaderStruct
         let header = StructData(definition: headerStruct, byteOrder: .big)
-        header.magicBytes = engine.data.fsys.magicBytes
+        header.magic_bytes = engine.data.fsys.magicBytes
         let unknownFlag1 = metaData.unknownFlag1 ? 0x80000000 : 0x0
         let unknownFlag2 = metaData.unknownFlag2 ? 0x40000000 : 0x0
         let debugFlag = metaData.debugFlag ? 0x1 : 0x0
         header.flags = unknownFlag1 | unknownFlag2 | debugFlag
         header.unknown1 = metaData.unknown1
-        header.unknown2 = metaData.unknown2
-        header.unknown3 = metaData.unknown3
-        header.unknown4 = metaData.unknown4
-        header.entryCount = entries.count
-        header.groupID = groupID
+        header.unknown_2 = metaData.unknown2
+        header.unknown_3 = metaData.unknown3
+        header.unknown_4 = metaData.unknown4
+        header.entry_count = entries.count
+        header.group_id = groupID
         
+        // Entries are addressed by filename in the registry that drives a
+        // repack, so a duplicate would make the mapping ambiguous and
+        // silently point two entries at one string. Reject it up front.
+        let duplicateFilenames = Dictionary(grouping: entries, by: \.filename)
+            .filter { $0.value.count > 1 }
+            .keys
+            .sorted()
+        guard duplicateFilenames.isEmpty else {
+            throw FSYSArchiveError.duplicateFilenames(duplicateFilenames)
+        }
+
         let result = GoDData(byteOrder: .big)
         result.pad(by: header.length)
-        
+
         let offsetTableAddress = result.length
-        header.fileMetadataList = offsetTableAddress
-        let offsetTableLength = (entries.count * 4).aligned(to: 0x10)
+        header.file_metadata_list = offsetTableAddress
+        // Both the offset table and the string table occupy at least one
+        // 0x10 unit even when empty — every zero-entry archive shipped by
+        // Colosseum and XD uses that layout.
+        let offsetTableLength = max(0x10, (entries.count * 4).aligned(to: 0x10))
         result.pad(by: offsetTableLength)
-        
+
         let stringTableAddress = result.length
-        header.fileNamesPointer = stringTableAddress
-        
+        header.file_names_pointer = stringTableAddress
+
         var nameOffsetsByEntryFilename = [String: Int]()
         entries.forEach { entry in
             nameOffsetsByEntryFilename[entry.filename] = result.length
@@ -241,10 +283,19 @@ public final class FSYSArchive {
                 return
             }
             fullnameOffsetsByEntryName[entry.filename] = result.length
-            result.appendString(entry.filename, format: .utf8, includeTerminator: true)
+            // Prefer the archive's own stored string; `entry.filename` is
+            // the derived pretty form and round-trips lossily.
+            result.appendString(
+                entry.metadata.fullFilename ?? entry.filename,
+                format: .utf8,
+                includeTerminator: true
+            )
+        }
+        if entries.isEmpty {
+            result.pad(by: 0x10)
         }
         result.align(to: 0x10)
-        
+
         let entryMetadataStruct = engine.fsysFileMetaDataStruct
         let entryMetadataSize = entryMetadataStruct.length + engine.data.fsys.fileMetaDataPadding
         let allEntriesLength = entryMetadataSize * entries.count
@@ -253,7 +304,7 @@ public final class FSYSArchive {
         
         result.align(to: 0x20)
         let firstEntryAddress = result.length
-        header.fileDataPointer = firstEntryAddress
+        header.file_data_pointer = firstEntryAddress
         
         let lzssHeaderStruct = engine.lzssHeaderStruct
         var currentPointerOffset = offsetTableAddress
@@ -262,45 +313,60 @@ public final class FSYSArchive {
         
         let fileTypesEnum = engine.fileTypesEnum
         
-        entries.forEach { entry in
+        for entry in entries {
             let currentEntryAddress = result.length
             let metaData = StructData(definition: entryMetadataStruct, byteOrder: .big)
             metaData.identifier = entry.metadata.identifier
-            metaData.fileType = entry.metadata.fileType
-            let fileTypeCase = try? fileTypesEnum.get(entry.metadata.fileType)
-            metaData.fileTypeIndex = (fileTypeCase?.rawValue ?? 0) / 2
-            metaData.dataAddress = currentEntryAddress
+            // Route the file type through the throwing setter: an entry whose
+            // type isn't in the engine's `FileTypes` enum used to be written
+            // as type 0 with no complaint, silently corrupting the repack.
+            try metaData.setEnumCase("file_type", named: entry.metadata.fileType)
+            let fileTypeCase = try fileTypesEnum.get(entry.metadata.fileType)
+            metaData.file_type_index = fileTypeCase.rawValue / 2
+            metaData.data_address = currentEntryAddress
             metaData.flags = entry.metadata.compress ? 0x80000000 : 0
-            metaData.fullFilenamePointer = fullnameOffsetsByEntryName[entry.filename] ?? 0
-            metaData.filenamePointer = nameOffsetsByEntryFilename[entry.filename] ?? 0
+            metaData.full_filename_pointer = fullnameOffsetsByEntryName[entry.filename] ?? 0
+            metaData.filename_pointer = nameOffsetsByEntryFilename[entry.filename] ?? 0
             
             if entry.metadata.compress {
                 let lzssHeader = StructData(definition: lzssHeaderStruct, byteOrder: .big)
-                lzssHeader.magicBytes = engine.data.lzss.magicBytes
+                lzssHeader.magic_bytes = engine.data.lzss.magicBytes
                 
                 let compressed = compressor.compress(entry.data)
                 
                 let compressedSize = compressed.length + lzssHeader.length
                 let uncompressedSize = entry.data.length
                 
-                lzssHeader.uncompressedSize = uncompressedSize
-                metaData.uncompressedSize = uncompressedSize
+                lzssHeader.uncompressed_size = uncompressedSize
+                metaData.uncompressed_size = uncompressedSize
                 
-                lzssHeader.compressedSize = compressedSize
-                metaData.fileSize = compressedSize
+                lzssHeader.compressed_size = compressedSize
+                metaData.file_size = compressedSize
                 
                 result.append(lzssHeader.data)
                 result.append(compressed)
                 
             } else {
                 let size = entry.data.length
-                metaData.uncompressedSize = size
-                metaData.fileSize = size
+                metaData.uncompressed_size = size
+                metaData.file_size = size
                 result.append(entry.data)
             }
             
             result.write(currentMetaDataOffset, AsType: UInt32.self, atAddress: currentPointerOffset)
             result.write(struct: metaData, atAddress: currentMetaDataOffset)
+
+            // Replay the packer's constant filler in the metadata padding
+            // region (Colosseum only — see `FSYS.fileMetaDataFill`). It
+            // carries no data, but writing it is what makes the repacked
+            // archive byte-identical to the original.
+            if let fill = engine.data.fsys.fileMetaDataFill, fill.length > 0 {
+                let bytes = [UInt8](repeating: UInt8(truncatingIfNeeded: fill.byte), count: fill.length)
+                result.write(
+                    GoDData(byteStream: bytes, byteOrder: .big),
+                    atAddress: UInt(currentMetaDataOffset + fill.offset)
+                )
+            }
             
             result.align(to: 0x20)
             
@@ -310,10 +376,10 @@ public final class FSYSArchive {
         
         let footerStruct = engine.fsysFooterStruct
         let footer = StructData(definition: footerStruct, byteOrder: .big)
-        footer.magicBytes = engine.data.fsys.magicBytes
+        footer.magic_bytes = engine.data.fsys.magicBytes
         result.append(footer.data)
         
-        header.fileSize = result.length
+        header.file_size = result.length
         result.write(struct: header, atAddress: 0)
         return result
     }

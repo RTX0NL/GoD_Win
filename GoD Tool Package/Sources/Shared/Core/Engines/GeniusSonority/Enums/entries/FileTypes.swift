@@ -2,9 +2,14 @@ import Foundation
 import Structs
 
 extension GeniusSonorityEngine.Enums.Defaults {
+    /// Raw values are even and sparse (0x02...0x34 with gaps at 0x16/0x1A),
+    /// and real archives in both games carry values this list doesn't name.
+    /// `allowUnknownCases` lets those round-trip as `FileTypes_<raw>` instead
+    /// of resolving to nothing and being written back as type 0 — add a named
+    /// case here once a value's meaning is identified.
     static let fileTypesColoXDEnum = Enum(
         name: "FileTypes",
-        allowUnknownCases: false,
+        allowUnknownCases: true,
         values: [
             .init(name: "mdat", rawValue: 0x02),
             .init(name: "dat", rawValue: 0x04),

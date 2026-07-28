@@ -59,6 +59,10 @@ public struct GeniusSonorityEngine: Engine {
         switch game {
         case .colosseum:
             data.fsys.fileMetaDataPadding = 0x20
+            // Colosseum's packer leaves 12 bytes of 0x11 in every entry's
+            // metadata padding. Verified constant across all 1028 entries
+            // of the 299 US archives surveyed; XD leaves the region zero.
+            data.fsys.fileMetaDataFill = .init(offset: 0x34, length: 12, byte: 0x11)
             data.toc.unknown = 0x104
             structsList.append(Structs.Defaults.fsysTOCEntryStructSmall)
             enumList.append(Enums.Defaults.fileTypesColoXDEnum)
