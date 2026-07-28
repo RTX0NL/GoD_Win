@@ -1,6 +1,7 @@
 @_exported import GoDEngine
 import GoDFoundation
 import Structs
+import ScriptDecompiler
 import Foundation
 
 public struct ColosseumEngine: Engine {
@@ -107,5 +108,22 @@ public enum PokemonColosseum {
         }
         guard let data = try? Foundation.Data(contentsOf: url) else { return nil }
         return GoDData(data: data, byteOrder: .big)
+    }
+}
+
+public extension ColosseumEngine {
+    /// Builtin signatures keyed by function id, the form the script emitter
+    /// and parser both want. The engine stores them keyed by the string form
+    /// the JSON uses, so every caller was re-deriving this.
+    var scriptBuiltInFunctionsByID: [Int: ScriptFunctionDef] {
+        data.scriptBuiltInFunctions.reduce(into: [:]) { result, pair in
+            if let id = Int(pair.key) { result[id] = pair.value }
+        }
+    }
+
+    /// Enum definitions keyed by name, for resolving enum-typed script
+    /// arguments back to case names.
+    var enumsByName: [String: Enum] {
+        Dictionary(enums.entries.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
     }
 }

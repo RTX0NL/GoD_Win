@@ -311,3 +311,15 @@ private func paddedBytes(_ bytes: [UInt8], to length: Int) -> [UInt8] {
     if bytes.count > length  { return Array(bytes.prefix(length)) }
     return bytes + [UInt8](repeating: 0, count: length - bytes.count)
 }
+
+public extension MSGFile.Variant {
+    /// Parses the `variant` string an operation config carries. Anything other
+    /// than a Colosseum spelling means XD, which is what the ad-hoc parser
+    /// this replaces did at each call site.
+    init(configValue: String) {
+        switch configValue.lowercased() {
+        case "colo", "colosseum": self = .colo
+        default:                  self = .xd
+        }
+    }
+}

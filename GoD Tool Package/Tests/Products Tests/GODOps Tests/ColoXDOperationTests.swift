@@ -201,8 +201,9 @@ final class ColoXDOperationTests: XCTestCase {
 
         let dumpConfig = ColoXD.DumpConfig(operations: [
             OperationConfig(
-                operation: .dumpATX(
-                    atxFile: atxFile,
+                operation: .dumpAssets(
+                    format: .texture,
+                    input: .file(atxFile),
                     outputFolder: Folder("/project/ATX"),
                     overwrite: true
                 ),
@@ -222,12 +223,14 @@ final class ColoXDOperationTests: XCTestCase {
             XCTAssertNotNil(fst.readFile(at: projectFolder.file(frame)), "Expected dumped frame \(frame)")
         }
 
-        let rebuiltFile = File("/project/rebuilt/atx_sample.atx")
+        let rebuiltFolder = Folder("/project/rebuilt")
+        let rebuiltFile = rebuiltFolder.file("atx_sample.atx")
         let buildConfig = ColoXD.BuildConfig(operations: [
             OperationConfig(
-                operation: .buildATX(
-                    metadataFile: manifest,
-                    outputFile: rebuiltFile,
+                operation: .buildAssets(
+                    format: .texture,
+                    input: .file(manifest),
+                    outputFolder: rebuiltFolder,
                     overwrite: true
                 ),
                 enabled: .yes

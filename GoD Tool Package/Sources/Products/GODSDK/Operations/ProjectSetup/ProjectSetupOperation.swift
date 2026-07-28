@@ -310,6 +310,42 @@ enum Project {
             // itself rather than a literal, so the two can't drift apart.
             let gameEngineFolder = enginesFolder.folder(profile?.engineName ?? "")
 
+            // The asset steps are the same list on both sides — one entry
+            // per format, all disabled until the user opts in. They used to be
+            // written out four times (once per game, per direction).
+            let assetSourceFolders: [(ColoXD.AssetFormat, source: Folder, binaries: Folder)] = [
+                (.flashMenu, flashMenusSourceFolder, flashMenusFolder),
+                (.font, fontsSourceFolder, fontsFolder),
+                (.message(variant: profile?.msgVariant ?? "xd"), messagesSourceFolder, messagesFolder),
+                (.texture, atxSourceFolder, atxFolder),
+            ]
+
+            let assetBuildSteps: [OperationConfig<ColoXD.BuildConfig.Operations>] =
+                assetSourceFolders.map { format, source, binaries in
+                    OperationConfig(
+                        operation: .buildAssets(
+                            format: format,
+                            input: .folder(source.prefixed(".")),
+                            outputFolder: binaries.prefixed("."),
+                            overwrite: true
+                        ),
+                        enabled: .no
+                    )
+                }
+
+            let assetDumpSteps: [OperationConfig<ColoXD.DumpConfig.Operations>] =
+                assetSourceFolders.map { format, source, binaries in
+                    OperationConfig(
+                        operation: .dumpAssets(
+                            format: format,
+                            input: .folder(binaries.prefixed(".")),
+                            outputFolder: source.prefixed("."),
+                            overwrite: false
+                        ),
+                        enabled: .no
+                    )
+                }
+
             // One chain for every Genius Sonority GameCube game. The two
             // blocks this replaces were identical apart from the FSYS
             // operation case and which map-rel source folders they used,
@@ -379,39 +415,7 @@ enum Project {
                     OperationConfig(
                         operation: .coloXDBuild(
                             config: ColoXD.BuildConfig(
-                                operations: [
-                                    OperationConfig(
-                                        operation: .buildFlashMenus(
-                                            projectsFolder: flashMenusSourceFolder.prefixed("."),
-                                            outputFolder: flashMenusFolder.prefixed("."),
-                                            overwrite: true
-                                        ),
-                                        enabled: .no
-                                    ),
-                                    OperationConfig(
-                                        operation: .buildFonts(
-                                            fontsFolder: fontsSourceFolder.prefixed("."),
-                                            outputFolder: fontsFolder.prefixed("."),
-                                            overwrite: true
-                                        ),
-                                        enabled: .no
-                                    ),
-                                    OperationConfig(
-                                        operation: .buildMessages(
-                                            jsonFolder: messagesSourceFolder.prefixed("."),
-                                            outputFolder: messagesFolder.prefixed("."),
-                                            overwrite: true
-                                        ),
-                                        enabled: .no
-                                    ),
-                                    OperationConfig(
-                                        operation: .buildATXs(
-                                            jsonFolder: atxSourceFolder.prefixed("."),
-                                            outputFolder: atxFolder.prefixed("."),
-                                            overwrite: true
-                                        ),
-                                        enabled: .no
-                                    ),
+                                operations: assetBuildSteps + [
                                     OperationConfig(operation: fsysBuild, enabled: .yes)
                                 ]
                             )
@@ -513,41 +517,8 @@ enum Project {
                             operation: .coloXDDump(
                                 config: ColoXD.DumpConfig(
                                     operations: [
-                                        OperationConfig(operation: fsysDump, enabled: .yes),
-                                        OperationConfig(
-                                            operation: .dumpFlashMenus(
-                                                flashMenusFolder: flashMenusFolder.prefixed("."),
-                                                outputFolder: flashMenusSourceFolder.prefixed("."),
-                                                overwrite: false
-                                            ),
-                                            enabled: .no
-                                        ),
-                                        OperationConfig(
-                                            operation: .dumpFonts(
-                                                fontsFolder: fontsFolder.prefixed("."),
-                                                outputFolder: fontsSourceFolder.prefixed("."),
-                                                overwrite: false
-                                            ),
-                                            enabled: .no
-                                        ),
-                                        OperationConfig(
-                                            operation: .dumpMessages(
-                                                messagesFolder: messagesFolder.prefixed("."),
-                                                outputFolder: messagesSourceFolder.prefixed("."),
-                                                overwrite: false,
-                                                variant: profile.msgVariant
-                                            ),
-                                            enabled: .no
-                                        ),
-                                        OperationConfig(
-                                            operation: .dumpATXs(
-                                                atxFolder: atxFolder.prefixed("."),
-                                                outputFolder: atxSourceFolder.prefixed("."),
-                                                overwrite: false
-                                            ),
-                                            enabled: .no
-                                        )
-                                    ]
+                                        OperationConfig(operation: fsysDump, enabled: .yes)
+                                    ] + assetDumpSteps
                                 )
                             ),
                             enabled: .yes
