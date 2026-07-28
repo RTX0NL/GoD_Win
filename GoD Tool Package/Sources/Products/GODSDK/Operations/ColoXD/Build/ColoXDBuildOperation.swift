@@ -3,6 +3,8 @@ import GoDEngine
 import Dolphin
 import GeniusSonority
 import GTX
+import Colosseum
+import ScriptDecompiler
 
 extension ColoXD {
     static func build(
@@ -57,7 +59,7 @@ extension ColoXD {
                 )
 
                 if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
-                    fileSystem.writeFile(tocData, at: outputFile, overwrite: overwrite)
+                    try fileSystem.writeFile(tocData, at: outputFile, overwrite: overwrite)
                     logger?.log(.info("Wrote \(outputFile.fileName) (\(tocData.length) bytes)"))
                 }
 
@@ -69,7 +71,7 @@ extension ColoXD {
                 let fstData = try fst.tocData(userOffset: 0, dolphinEngine: dolphinEngine)
 
                 if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
-                    fileSystem.writeFile(fstData, at: outputFile, overwrite: overwrite)
+                    try fileSystem.writeFile(fstData, at: outputFile, overwrite: overwrite)
                     logger?.log(.info("Wrote \(outputFile.fileName) (\(fstData.length) bytes, \(fst.files.count) files)"))
                 }
 
@@ -86,7 +88,7 @@ extension ColoXD {
                 )
 
                 if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
-                    fileSystem.writeFile(archiveData.data, at: outputFile, overwrite: overwrite)
+                    try fileSystem.writeFile(archiveData.data, at: outputFile, overwrite: overwrite)
                     logger?.log(.info("Wrote \(outputFile.fileName) (\(archiveData.data.length) bytes)"))
                 }
 
@@ -271,8 +273,74 @@ extension ColoXD {
                     logger: logger
                 )
 
+            case let .buildColoScripts(sourceFolder, outputFolder, overwrite, enginePath):
+                let engine = try ColosseumEngine(from: enginePath, in: fileSystem)
+                var sourceFiles = [(file: File, relativeFolder: Folder)]()
+                func collect(_ folder: Folder, _ relative: Folder) {
+                    guard let contents = fileSystem.inspectFolder(at: folder) else { return }
+                    for file in contents.files where file.fileType == "swift" || file.fileType == "py" {
+                        sourceFiles.append((file, relative))
+                    }
+                    for sub in contents.subFolders {
+                        collect(sub, relative.folder(sub.folderName))
+                    }
+                }
+                collect(sourceFolder, Folder("."))
+                logger?.log(.info("Found \(sourceFiles.count) Colosseum script source files"))
+
+                for (sourceFile, relative) in sourceFiles {
+                    let name = sourceFile.fileName.withoutExtensions
+                    try buildColoScript(
+                        sourceFile: sourceFile,
+                        outputFile: outputFolder.folder(relative.path).file("\(name).scd"),
+                        overwrite: overwrite,
+                        engine: engine,
+                        fileSystem: fileSystem,
+                        logger: logger
+                    )
+                }
+
+            case let .buildColoScript(sourceFile, outputFile, overwrite, enginePath):
+                let engine = try ColosseumEngine(from: enginePath, in: fileSystem)
+                try buildColoScript(
+                    sourceFile: sourceFile,
+                    outputFile: outputFile,
+                    overwrite: overwrite,
+                    engine: engine,
+                    fileSystem: fileSystem,
+                    logger: logger
+                )
+
             }
         }
+    }
+
+    /// Compiles a single decompiled script source file (`.swift` or `.py` —
+    /// the parser auto-detects the dialect) back to a `.scd` binary. Shared by
+    /// the batch (`buildColoScripts`) and single-file (`buildColoScript`) ops.
+    private static func buildColoScript(
+        sourceFile: File,
+        outputFile: File,
+        overwrite: Bool,
+        engine: ColosseumEngine,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws {
+        guard let data = fileSystem.readFile(at: sourceFile) else {
+            throw FSTErrors.fileNotFound(sourceFile, .init())
+        }
+        let source = data.string(format: .utf8)
+
+        let builtInFunctions = engine.data.scriptBuiltInFunctions.reduce(into: [Int: ScriptFunctionDef]()) { result, pair in
+            if let id = Int(pair.key) { result[id] = pair.value }
+        }
+
+        var parser = ColoScriptTextParser(builtInFunctions: builtInFunctions)
+        let parsed = try parser.parse(source)
+        let binary = try ColoScriptCompiler().compile(parsed)
+
+        try fileSystem.writeFile(binary, at: outputFile, overwrite: overwrite)
+        logger?.log(.info("Compiled \(sourceFile.fileName) -> \(outputFile.fileName)"))
     }
 
     private static func buildMessage(
@@ -291,7 +359,7 @@ extension ColoXD {
         let stem = jsonFile.fileName.withoutExtensions
         let file = try MSGFile(outputs: [FileData(file: File("\(stem).msg.json"), data: json)])
         let binary = try file.binaryData
-        fileSystem.writeFile(binary, at: outputFile, overwrite: overwrite)
+        try fileSystem.writeFile(binary, at: outputFile, overwrite: overwrite)
         logger?.log(.info("  \(jsonFile.fileName): \(file.entries.count) entries → \(outputFile.fileName)"))
     }
 
@@ -345,7 +413,7 @@ extension ColoXD {
 
         let atx = try ATXFile(outputs: outputs)
         let binary = try atx.binaryData
-        fileSystem.writeFile(binary, at: outputFile, overwrite: overwrite)
+        try fileSystem.writeFile(binary, at: outputFile, overwrite: overwrite)
         logger?.log(.info("  \(atx.name): \(atx.framePixels.count) frames → \(outputFile.fileName)"))
     }
 
@@ -380,10 +448,10 @@ extension ColoXD {
         let isf = try ISFFile(outputs: outputs)
         let (ish, isd) = try isf.ishISDBytes()
         if overwrite || fileSystem.inspectFile(at: ishOutputFile) == nil {
-            fileSystem.writeFile(ish, at: ishOutputFile, overwrite: overwrite)
+            try fileSystem.writeFile(ish, at: ishOutputFile, overwrite: overwrite)
         }
         if overwrite || fileSystem.inspectFile(at: isdOutputFile) == nil {
-            fileSystem.writeFile(isd, at: isdOutputFile, overwrite: overwrite)
+            try fileSystem.writeFile(isd, at: isdOutputFile, overwrite: overwrite)
         }
         logger?.log(.info("Built ISF \(ishOutputFile.fileName)/\(isdOutputFile.fileName) (\(isf.sampleRate) Hz, \(isf.channelCount) ch, \(ish.length + isd.length) bytes)"))
     }
@@ -475,7 +543,7 @@ extension ColoXD {
         let gsw = try GSWFile(outputs: outputs)
         let gswData = try gsw.binaryData
         if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
-            fileSystem.writeFile(gswData, at: outputFile, overwrite: overwrite)
+            try fileSystem.writeFile(gswData, at: outputFile, overwrite: overwrite)
             logger?.log(.info("Built flash menu \(outputFile.fileName) (\(gsw.tags.count) tags, \(gsw.allTextureRefs.count) textures, \(gswData.length) bytes)"))
         }
     }
@@ -511,7 +579,7 @@ extension ColoXD {
         let fontData = try font.data
 
         if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
-            fileSystem.writeFile(fontData, at: outputFile, overwrite: overwrite)
+            try fileSystem.writeFile(fontData, at: outputFile, overwrite: overwrite)
             logger?.log(.info("Built font \(outputFile.fileName) (\(font.visibleGlyphs.count) glyphs, \(fontData.length) bytes)"))
         }
     }
@@ -584,6 +652,7 @@ extension ColoXD {
     private static func packFSYSFromRegistry(
         registryFile: File,
         sourceFolder: Folder,
+        discPath: String? = nil,
         gsEngine: GeniusSonorityEngine,
         fileSystem: FileSystemTree
     ) throws -> FileData {
@@ -599,9 +668,12 @@ extension ColoXD {
         }
 
         let archive = FSYSArchive(metadata: registry.metaData, entries: archiveEntries)
-        let fsysFileName = registryFile.fileName.withoutExtension
+        // `discPath` is the archive's original location relative to `files/`;
+        // fall back to the registry-derived filename for callers (and older
+        // registries) that don't carry one.
+        let outputPath = discPath ?? registryFile.fileName.withoutExtension
         return FileData(
-            fileName: fsysFileName,
+            file: File(outputPath),
             data: try archive.data(groupID: registry.groupID, engine: gsEngine)
         )
     }
@@ -635,9 +707,13 @@ extension ColoXD {
             guard let data = fileSystem.readFile(at: sourcePath) else {
                 throw FSTErrors.fileNotFound(sourcePath, .init())
             }
-            let outputFile = outputFolder.file("files/" + entry.file.fileName)
+            // `rebuildPath` is the file's original location relative to
+            // `files/`, so subdirectories on the disc are reproduced rather
+            // than flattened into one folder (which also collided whenever
+            // two directories held the same filename).
+            let outputFile = outputFolder.folder("files").file(entry.rebuildPath)
             if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
-                fileSystem.writeFile(data, at: outputFile, overwrite: overwrite)
+                try fileSystem.writeFile(data, at: outputFile, overwrite: overwrite)
             }
 
             let percent = Int(Double(i + 1) / Double(totalCount) * 100)
@@ -646,37 +722,50 @@ extension ColoXD {
             }
         }
 
-        // Phase 2: Pack FSYS archives concurrently
+        // Phase 2: Pack FSYS archives concurrently.
+        //
+        // Results go through an unsafe buffer pointer, not `array[i] = …`:
+        // subscripting an Array from several threads races even with one
+        // distinct index per thread, because the setter first runs
+        // `_makeMutableAndUnique()` on the shared array struct. See the
+        // matching note in `ColoXDDumpOperation`.
+        //
+        // Every worker only *reads* `fileSystem` here; `FileSystemTree` is
+        // documented as safe for concurrent reads but not for any write, so
+        // nothing in this loop may mutate the tree.
         var fsysResults = [Result<FileData, Error>?](repeating: nil, count: fsysEntries.count)
         let progressLock = NSLock()
         var fsysProcessed = 0
         var lastReportedPercent = Int(Double(binaryEntries.count) / Double(totalCount) * 100)
 
-        DispatchQueue.concurrentPerform(iterations: fsysEntries.count) { i in
-            let entry = fsysEntries[i]
-            let registryFile = sourceFolder.file(entry.file.path)
+        fsysResults.withUnsafeMutableBufferPointer { results in
+            DispatchQueue.concurrentPerform(iterations: fsysEntries.count) { i in
+                let entry = fsysEntries[i]
+                let registryFile = sourceFolder.file(entry.file.path)
 
-            do {
-                fsysResults[i] = .success(try packFSYSFromRegistry(
-                    registryFile: registryFile,
-                    sourceFolder: sourceFolder,
-                    gsEngine: gsEngine,
-                    fileSystem: fileSystem
-                ))
-            } catch {
-                fsysResults[i] = .failure(error)
-            }
-
-            if let logger {
-                progressLock.lock()
-                fsysProcessed += 1
-                let processed = binaryEntries.count + fsysProcessed
-                let percent = Int(min(Double(processed) / Double(totalCount) * 100, 100))
-                if percent > lastReportedPercent {
-                    lastReportedPercent = percent
-                    logger.log(.taskStatus(taskName: "Build Colosseum/XD File System", status: .progress(Percentage(Double(percent)))))
+                do {
+                    results[i] = .success(try packFSYSFromRegistry(
+                        registryFile: registryFile,
+                        sourceFolder: sourceFolder,
+                        discPath: entry.rebuildPath,
+                        gsEngine: gsEngine,
+                        fileSystem: fileSystem
+                    ))
+                } catch {
+                    results[i] = .failure(error)
                 }
-                progressLock.unlock()
+
+                if let logger {
+                    progressLock.lock()
+                    fsysProcessed += 1
+                    let processed = binaryEntries.count + fsysProcessed
+                    let percent = Int(min(Double(processed) / Double(totalCount) * 100, 100))
+                    if percent > lastReportedPercent {
+                        lastReportedPercent = percent
+                        logger.log(.taskStatus(taskName: "Build Colosseum/XD File System", status: .progress(Percentage(Double(percent)))))
+                    }
+                    progressLock.unlock()
+                }
             }
         }
 
@@ -685,9 +774,9 @@ extension ColoXD {
             guard let result else { continue }
             switch result {
             case .success(let packed):
-                let outputFile = outputFolder.file("files/" + packed.fileName)
+                let outputFile = outputFolder.folder("files").file(packed.file.path)
                 if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
-                    fileSystem.writeFile(packed.data, at: outputFile, overwrite: overwrite)
+                    try fileSystem.writeFile(packed.data, at: outputFile, overwrite: overwrite)
                 }
             case .failure(let error):
                 throw error
@@ -703,7 +792,7 @@ extension ColoXD {
             fileSystem: fileSystem
         )
         let tocOutputFile = outputFolder.file("files/" + gsEngine.data.fsys.GSfsysFile.fileName)
-        fileSystem.writeFile(tocData, at: tocOutputFile, overwrite: true)
+        try fileSystem.writeFile(tocData, at: tocOutputFile, overwrite: true)
         logger?.log(.info("Wrote \(tocOutputFile.fileName) (\(tocData.length) bytes)"))
 
         logger?.log(.taskStatus(taskName: "Build Colosseum/XD File System", status: .completed(true)))

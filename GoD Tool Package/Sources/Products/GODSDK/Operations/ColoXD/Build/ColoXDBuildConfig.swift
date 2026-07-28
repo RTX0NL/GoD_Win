@@ -87,6 +87,18 @@ extension ColoXD {
                 isdOutputFile: File,
                 overwrite: Bool
             )
+            case buildColoScripts(
+                sourceFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool,
+                gameEngine: Folder
+            )
+            case buildColoScript(
+                sourceFile: File,
+                outputFile: File,
+                overwrite: Bool,
+                gameEngine: Folder
+            )
         }
 
         let operations: [OperationConfig<Operations>]

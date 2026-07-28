@@ -10,11 +10,26 @@ public struct FSTRegistry: Codable {
     
     public struct Entry: Codable {
         public let type: EntryType
+        /// Where the dumped artifact lives in the project (the registry JSON
+        /// for an `.fsys` entry, the extracted bytes for a `.binary` one).
         public let file: File
-        
-        public init(type: EntryType, file: File) {
+        /// Path of the original file relative to the disc's `files/` folder,
+        /// e.g. `subdir/thing.bin`. The project layout groups files by type
+        /// and so loses the disc's own directory structure; this is what the
+        /// rebuild puts back. Nil for registries dumped before this field
+        /// existed, in which case the rebuild falls back to the bare
+        /// filename (the old, flattening behaviour).
+        public let discPath: String?
+
+        public init(type: EntryType, file: File, discPath: String? = nil) {
             self.type = type
             self.file = file
+            self.discPath = discPath
+        }
+
+        /// Path to write this entry to under the rebuilt `files/` folder.
+        public var rebuildPath: String {
+            discPath ?? file.fileName
         }
     }
     

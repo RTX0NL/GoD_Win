@@ -1,4 +1,5 @@
 import GoDFoundation
+import Colosseum
 
 extension ColoXD {
     struct DumpConfig: Codable {
@@ -70,6 +71,20 @@ extension ColoXD {
                 isdFile: File,
                 outputFolder: Folder,
                 overwrite: Bool
+            )
+            case dumpColoScripts(
+                scriptsFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool,
+                language: ColoScriptLanguage,
+                gameEngine: Folder
+            )
+            case dumpColoScript(
+                scdFile: File,
+                outputFolder: Folder,
+                overwrite: Bool,
+                language: ColoScriptLanguage,
+                gameEngine: Folder
             )
         }
         
