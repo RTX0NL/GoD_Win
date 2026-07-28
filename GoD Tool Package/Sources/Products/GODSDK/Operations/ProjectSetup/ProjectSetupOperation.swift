@@ -30,7 +30,13 @@ enum Project {
     }
 
     static func setup(iso isoInputFile: File) throws {
-        let fileSystem = FileSystem.shared
+        try setup(iso: isoInputFile, fileSystem: FileSystem.shared)
+    }
+
+    /// Testable seam: same as `setup(iso:)` but over any `FileSystemTree`,
+    /// so the generated project layout and config files can be asserted
+    /// against an `InMemoryFST` without touching disk.
+    static func setup(iso isoInputFile: File, fileSystem: FileSystemTree) throws {
         let projectFileSystem = InMemoryFST()
 
         let buildFolder = Folder("/Build")
@@ -97,7 +103,7 @@ enum Project {
             return isoInputFile.fileName.withoutExtensions + ".iso"
         }()
         let isoOutputFile = isoFolder.file(outputFilename)
-        projectFileSystem.writeFile(isoData, at: isoOutputFile, overwrite: false)
+        try projectFileSystem.writeFile(isoData, at: isoOutputFile, overwrite: false)
 
         var settings = GoddessSettings.default
         if isWii {
@@ -161,8 +167,8 @@ enum Project {
             engines.append(try PokemonEngine.defaults())
         }
 
-        engines.forEach { engine in
-            engine.write(to: projectFileSystem, in: enginesFolder, overwrite: false)
+        try engines.forEach { engine in
+            try engine.write(to: projectFileSystem, in: enginesFolder, overwrite: false)
         }
 
         // Write the region-matched DOL symbol map into the engine's
@@ -174,14 +180,14 @@ enum Project {
            let xdEngine = try? XDEngine.defaults() {
             let mapPath = enginesFolder.folder(xdEngine.name)
                 .file(xdEngine.data.resources.dolSymbolMap.path)
-            projectFileSystem.writeFile(regionalMap, at: mapPath, overwrite: true)
+            try projectFileSystem.writeFile(regionalMap, at: mapPath, overwrite: true)
         }
         if isColosseum,
            let regionalMap = PokemonColosseum.symbolMapData(for: gameID),
            let coloEngine = try? ColosseumEngine.defaults() {
             let mapPath = enginesFolder.folder(coloEngine.name)
                 .file(coloEngine.data.resources.dolSymbolMap.path)
-            projectFileSystem.writeFile(regionalMap, at: mapPath, overwrite: true)
+            try projectFileSystem.writeFile(regionalMap, at: mapPath, overwrite: true)
         }
 
         // common.rel pointer-index → label name varies by region for
@@ -195,7 +201,7 @@ enum Project {
            let coloEngine = try? ColosseumEngine.defaults() {
             let symbolPath = enginesFolder.folder(coloEngine.name)
                 .file(coloEngine.data.resources.commonRelSymbolMap.path)
-            projectFileSystem.writeFile(regionalSymbols, at: symbolPath, overwrite: true)
+            try projectFileSystem.writeFile(regionalSymbols, at: symbolPath, overwrite: true)
         }
 
         // Build config generation
@@ -846,7 +852,18 @@ enum Project {
                                     isColosseum: isColosseum,
                                     enginesFolder: enginesFolder
                                 ),
-                                dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed(".")
+                                dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
+                                // XD ships a default main.dol type map (struct
+                                // tables + embedded MSG files). Colosseum has
+                                // none yet, so it stays untyped raw hex.
+                                typeMapPath: isXD
+                                    ? enginesFolder.folder("XD Engine").file("Resources/dol_typemap.json").prefixed(".")
+                                    : nil,
+                                // The DOL type map's chunk types resolve against
+                                // the XD engine's struct definitions.
+                                engines: isXD
+                                    ? [enginesFolder.folder("XD Engine").prefixed(".")]
+                                    : nil
                             )
                         ),
                         enabled: .yes
@@ -869,19 +886,20 @@ enum Project {
         try projectFileSystem.encodeJSON(dumpConfig, to: dumpConfigFile, overwrite: false)
 
         let projectFolder = Folder(isoInputFile.path.withoutExtensions + " project")
-        fileSystem.createFolder(at: projectFolder, overwrite: false)
-        fileSystem.importFST(projectFileSystem, from: Folder("/"), to: projectFolder, overwrite: false)
+        try fileSystem.createFolder(at: projectFolder, overwrite: false)
+        try fileSystem.importFST(projectFileSystem, from: Folder("/"), to: projectFolder, overwrite: false)
 
         if let executablePath = Bundle.main.executablePath {
-            [buildConfigFile, dumpConfigFile].forEach { config in
+            try [buildConfigFile, dumpConfigFile].forEach { config in
                 let script =
                 """
                 #!/bin/zsh
                 \(executablePath.replacingOccurrences(of: " ", with: "\\ ")) \(Folder("..").file(config.path).path.replacingOccurrences(of: " ", with: "\\ "))
                 """
                 let file = projectFolder.folder("Scripts").file(config.fileName.replacingOccurrences(of: "-Config.json", with: ".sh"))
-                fileSystem.writeFile(script.data(format: .utf8), at: file, overwrite: false)
-                fileSystem.setExecutable(file: file)
+                try fileSystem.writeFile(script.data(format: .utf8), at: file, overwrite: false)
+                // Only the on-disk file system has POSIX permissions.
+                (fileSystem as? FileSystem)?.setExecutable(file: file)
             }
 
         }

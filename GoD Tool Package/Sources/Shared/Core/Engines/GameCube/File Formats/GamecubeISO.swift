@@ -29,33 +29,33 @@ public final class GamecubeISO: FileSystemTree {
         fst.readFile(at: path)
     }
     
-    public func moveFile(at path: File, to newPath: File, overwrite: Bool) -> Bool {
-        fst.moveFile(at: path, to: newPath, overwrite: overwrite)
+    public func moveFile(at path: File, to newPath: File, overwrite: Bool) throws {
+        try fst.moveFile(at: path, to: newPath, overwrite: overwrite)
     }
     
-    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) -> Bool {
+    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) throws {
         file.setByteOrder(.big)
-        return fst.writeFile(file, at: path, overwrite: overwrite)
+        try fst.writeFile(file, at: path, overwrite: overwrite)
     }
     
-    public func deleteFile(at path: File) -> Bool {
-        fst.deleteFile(at: path)
+    public func deleteFile(at path: File) throws {
+        try fst.deleteFile(at: path)
     }
     
     public func inspectFolder(at path: Folder) -> FolderMetaData? {
         fst.inspectFolder(at: path)
     }
     
-    public func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) -> Bool {
-        fst.moveFolder(at: path, to: newPath, overwrite: overwrite)
+    public func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) throws {
+        try fst.moveFolder(at: path, to: newPath, overwrite: overwrite)
     }
     
-    public func createFolder(at path: Folder, overwrite: Bool) -> Bool {
-        fst.createFolder(at: path, overwrite: overwrite)
+    public func createFolder(at path: Folder, overwrite: Bool) throws {
+        try fst.createFolder(at: path, overwrite: overwrite)
     }
     
-    public func deleteFolder(at path: Folder) -> Bool {
-        fst.deleteFolder(at: path)
+    public func deleteFolder(at path: Folder) throws {
+        try fst.deleteFolder(at: path)
     }
     
     public init(
@@ -68,8 +68,8 @@ public final class GamecubeISO: FileSystemTree {
         data.setByteOrder(.big)
         
         // Create root folders
-        fst.createFolder(at: systemFolder, overwrite: true)
-        fst.createFolder(at: filesFolder, overwrite: true)
+        try fst.createFolder(at: systemFolder, overwrite: true)
+        try fst.createFolder(at: filesFolder, overwrite: true)
         
         // Get boot.bin
         let bootDataStruct = dolphinEngine.bootDataStruct
@@ -79,26 +79,26 @@ public final class GamecubeISO: FileSystemTree {
             throw FileFormatErrors.invalid(format: Self.formatName)
         }
         
-        fst.writeFile(bootData.data, at: bootFile, overwrite: true)
+        try fst.writeFile(bootData.data, at: bootFile, overwrite: true)
         
         // Get fst.bin
-        let fstOffset: Int = try bootData.fstOffset
-        let fstSize: Int = try bootData.fstSize
+        let fstOffset: Int = try bootData.fst_offset
+        let fstSize: Int = try bootData.fst_size
         let fstFile = dolphinEngine.data.systemFiles.fstFile
         guard let fstData = data.read(atAddress: fstOffset, length: fstSize) else {
             throw FileFormatErrors.invalid(format: Self.formatName)
         }
         
-        fst.writeFile(fstData, at: fstFile, overwrite: true)
+        try fst.writeFile(fstData, at: fstFile, overwrite: true)
         
         // Get main.dol
-        let dolOffset: Int = try bootData.mainExecutableOffset
+        let dolOffset: Int = try bootData.main_executable_offset
         let dolHeaderStruct = dolphinEngine.dolHeaderStruct
         guard let dolHeader = data.read(struct: dolHeaderStruct, atAddress: dolOffset) else {
             throw FileFormatErrors.invalid(format: Self.formatName)
         }
-        let textSectionsSizes: [UInt32] = try dolHeader.textSectionsSizes
-        let dataSectionsSizes: [UInt32] = try dolHeader.dataSectionsSizes
+        let textSectionsSizes: [UInt32] = try dolHeader.text_sections_sizes
+        let dataSectionsSizes: [UInt32] = try dolHeader.data_sections_sizes
         
         let textSizes = textSectionsSizes.map { $0.asInt }
         let dataSizes = dataSectionsSizes.map { $0.asInt }
@@ -109,7 +109,7 @@ public final class GamecubeISO: FileSystemTree {
         }
         let dolFile = dolphinEngine.data.systemFiles.executableFile
         
-        fst.writeFile(dolData, at: dolFile, overwrite: true)
+        try fst.writeFile(dolData, at: dolFile, overwrite: true)
         
         // Get bi2.bin
         let bi2DataStruct = dolphinEngine.bi2Struct
@@ -119,7 +119,7 @@ public final class GamecubeISO: FileSystemTree {
             throw FileFormatErrors.invalid(format: Self.formatName)
         }
         
-        fst.writeFile(bi2Data.data, at: bi2File, overwrite: true)
+        try fst.writeFile(bi2Data.data, at: bi2File, overwrite: true)
         
         // Get apploader.img
         let apploaderHeaderStruct = dolphinEngine.apploaderHeaderStruct
@@ -128,7 +128,7 @@ public final class GamecubeISO: FileSystemTree {
             throw FileFormatErrors.invalid(format: Self.formatName)
         }
         let appSize: Int = try apploaderHeader.size
-        let trailerSize: Int = try apploaderHeader.trailerSize
+        let trailerSize: Int = try apploaderHeader.trailer_size
         let apploaderFile = dolphinEngine.data.systemFiles.apploaderFile
         
         let apploaderSize = apploaderHeader.length + appSize + trailerSize
@@ -136,9 +136,9 @@ public final class GamecubeISO: FileSystemTree {
             throw FileFormatErrors.invalid(format: Self.formatName)
         }
         
-        fst.writeFile(apploader, at: apploaderFile, overwrite: true)
+        try fst.writeFile(apploader, at: apploaderFile, overwrite: true)
         
-        let userSectionOffset: Int = try bootData.userDataOffset
+        let userSectionOffset: Int = try bootData.user_data_offset
         
         let shouldPreserveJunkData = dolphinEngine.data.systemFiles.preserveJunkData
         if shouldPreserveJunkData, fstOffset > dolOffset {
@@ -150,20 +150,20 @@ public final class GamecubeISO: FileSystemTree {
                 }
                 if !junkData.isNull {
                     let junkFile = dolphinEngine.data.systemFiles.junkFile
-                    fst.writeFile(junkData, at: junkFile, overwrite: true)
+                    try fst.writeFile(junkData, at: junkFile, overwrite: true)
                 }
             }
         }
         
         let fstManifest = try DolphinFST(tocData: fstData, userSectionOffset: userSectionOffset, dolphinEngine: dolphinEngine)
         
-        fstManifest.folders.sorted().forEach { folder in
-            fst.createFolder(at: folder, overwrite: true)
+        try fstManifest.folders.sorted().forEach { folder in
+            try fst.createFolder(at: folder, overwrite: true)
         }
-        fstManifest.files.keys.sorted().forEach { file in
+        try fstManifest.files.keys.sorted().forEach { file in
             guard let (offset, size) = fstManifest.files[file],
                   let fileData = data.read(atAddress: offset + userSectionOffset, length: size)  else { return }
-            fst.writeFile(fileData, at: file, overwrite: true)
+            try fst.writeFile(fileData, at: file, overwrite: true)
         }
     }
     
@@ -175,7 +175,7 @@ public final class GamecubeISO: FileSystemTree {
     ) {
         self.dolphinEngine = dolphinEngine
         self.gamecubeEngine = gamecubeEngine
-        importFST(fst, from: rootFolder, to: Folder("/"), overwrite: true)
+        try? importFST(fst, from: rootFolder, to: Folder("/"), overwrite: true)
     }
     
     public var data: GoDData {
@@ -213,7 +213,7 @@ public final class GamecubeISO: FileSystemTree {
             // Set main.dol
             let dolAlignment = max(dolphinEngine.data.systemFiles.dolOffsetAlignment, 1)
             let dolOffset = (apploaderOffset + apploaderData.length).aligned(to: dolAlignment)
-            bootStruct.mainExecutableOffset = dolOffset
+            bootStruct.main_executable_offset = dolOffset
             
             let dolFile = dolphinEngine.data.systemFiles.executableFile
             guard let dolData = readFile(at: dolFile) else {
@@ -224,11 +224,18 @@ public final class GamecubeISO: FileSystemTree {
             // Set fst.bin
             let fstAlignment = max(dolphinEngine.data.systemFiles.fstOffsetMultiplier, 1)
             let fstOffset = (dolOffset + dolData.length).aligned(to: fstAlignment)
-            bootStruct.fstOffset = fstOffset
+            bootStruct.fst_offset = fstOffset
             
-            let fstSize = fstManifest.tocDataLength
-            bootStruct.fstSize = fstSize
-            bootStruct.maxFstSize = fstSize
+            // Build the manifest exactly once. It is a computed property, so
+            // each access re-walks the whole tree and re-assigns every file's
+            // user-section offset — reading it three times did the work three
+            // times and, worse, meant the offsets baked into the FST came from
+            // a different object than the ones used to place the bytes.
+            let manifest = fstManifest
+
+            let fstSize = manifest.tocDataLength
+            bootStruct.fst_size = fstSize
+            bootStruct.max_fst_size = fstSize
             
             var junkData = GoDData(length: 0, byteOrder: .big)
             if dolphinEngine.data.systemFiles.preserveJunkData {
@@ -240,16 +247,16 @@ public final class GamecubeISO: FileSystemTree {
             
             let userAlignment = dolphinEngine.data.userFiles.userOffsetAlignment
             let userOffset = (fstOffset + fstSize + junkData.length).aligned(to: userAlignment)
-            bootStruct.userDataOffset = userOffset
+            bootStruct.user_data_offset = userOffset
             
-            let fstData = try fstManifest.tocData(userOffset: userOffset, dolphinEngine: dolphinEngine)
+            let fstData = try manifest.tocData(userOffset: userOffset, dolphinEngine: dolphinEngine)
             
             isoData.write(fstData, atAddress: fstOffset)
             isoData.write(junkData, atAddress: fstOffset + fstData.length)
             
             // Set user files
             let userData = GoDData(byteOrder: .big)
-            try fstManifest.files
+            try manifest.files
                 .sorted(by: { item1, item2 in
                     item1.value.offsetInUserSection < item2.value.offsetInUserSection
                 })
@@ -262,7 +269,7 @@ public final class GamecubeISO: FileSystemTree {
                 }
             
             userData.align(to: 0x10)
-            bootStruct.userDataLength = userData.length
+            bootStruct.user_data_length = userData.length
             
             isoData.write(userData, atAddress: userOffset)
             

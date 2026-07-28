@@ -59,7 +59,7 @@ extension Project {
         // so the original mirror stays intact and a user can diff the
         // two files to validate cipher / packing correctness.
         let gciOutputFile = saveFolder.file(gciInputFile.fileName)
-        projectFileSystem.writeFile(raw, at: gciOutputFile, overwrite: false)
+        try projectFileSystem.writeFile(raw, at: gciOutputFile, overwrite: false)
 
         let stem = gciInputFile.fileName.withoutExtensions
         let ext = gciInputFile.fileType ?? "gci"
@@ -83,8 +83,8 @@ extension Project {
         }
         engines.append(try PokemonEngine.defaults())
 
-        engines.forEach { engine in
-            engine.write(to: projectFileSystem, in: enginesFolder, overwrite: false)
+        try engines.forEach { engine in
+            try engine.write(to: projectFileSystem, in: enginesFolder, overwrite: false)
         }
 
         var dumpOperations: [OperationConfig<GoddessConfig.Operations>] = [
@@ -261,18 +261,18 @@ extension Project {
         try projectFileSystem.encodeJSON(buildConfig, to: buildConfigFile, overwrite: false)
 
         let projectFolder = Folder(gciInputFile.path.withoutExtensions + " save project")
-        fileSystem.createFolder(at: projectFolder, overwrite: false)
-        fileSystem.importFST(projectFileSystem, from: Folder("/"), to: projectFolder, overwrite: false)
+        try fileSystem.createFolder(at: projectFolder, overwrite: false)
+        try fileSystem.importFST(projectFileSystem, from: Folder("/"), to: projectFolder, overwrite: false)
 
         if let executablePath = Bundle.main.executablePath {
-            [dumpConfigFile, buildConfigFile].forEach { config in
+            try [dumpConfigFile, buildConfigFile].forEach { config in
                 let script =
                 """
                 #!/bin/zsh
                 \(executablePath.replacingOccurrences(of: " ", with: "\\ ")) \(Folder("..").file(config.path).path.replacingOccurrences(of: " ", with: "\\ "))
                 """
                 let file = projectFolder.folder("Scripts").file(config.fileName.replacingOccurrences(of: "-Config.json", with: ".sh"))
-                fileSystem.writeFile(script.data(format: .utf8), at: file, overwrite: false)
+                try fileSystem.writeFile(script.data(format: .utf8), at: file, overwrite: false)
                 fileSystem.setExecutable(file: file)
             }
         }

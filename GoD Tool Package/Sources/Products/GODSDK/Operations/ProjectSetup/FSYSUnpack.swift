@@ -41,7 +41,7 @@ extension Project {
 
         let stem = fsysInputFile.fileName.withoutExtensions
         let outputFolder = (fsysInputFile.parentFolder ?? Folder("/")).folder("\(stem)_fsys")
-        _ = fileSystem.createFolder(at: outputFolder, overwrite: true)
+        try fileSystem.createFolder(at: outputFolder, overwrite: true)
 
         // Entry names aren't guaranteed unique within an archive — suffix
         // the entry index on collision.
@@ -52,7 +52,7 @@ extension Project {
                 outputName = "\(entry.metadata.name)_\(index).\(entry.metadata.fileType)"
             }
             usedNames.insert(outputName)
-            _ = fileSystem.writeFile(entry.data, at: outputFolder.file(outputName), overwrite: true)
+            try fileSystem.writeFile(entry.data, at: outputFolder.file(outputName), overwrite: true)
         }
 
         print("Unpacked \(archive.entries.count) entries from \(fsysInputFile.fileName) (\(detectedGame)) into \(outputFolder.path)")

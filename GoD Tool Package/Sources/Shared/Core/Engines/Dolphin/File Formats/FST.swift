@@ -15,16 +15,25 @@ public class DolphinFST {
     public var files = [File: (offsetInUserSection: Int, size: Int)]()
     public var folders = [Folder]()
     
-    public init(tocData: GoDData, userSectionOffset: Int, dolphinEngine: DolphinEngine) throws {
-        let offsetMultiplier: Int = max(dolphinEngine.data.systemFiles.fstOffsetMultiplier, 1)
-        
+    /// - Parameter offsetMultiplier: what an entry's stored file offset is
+    ///   multiplied by to get a byte offset. Wii discs store it >> 2, so the
+    ///   Wii engine's value (4) has to be passed in — the Dolphin engine's is 1.
+    ///   Entry *sizes* are plain byte counts on both platforms.
+    public init(
+        tocData: GoDData,
+        userSectionOffset: Int,
+        dolphinEngine: DolphinEngine,
+        offsetMultiplier: Int? = nil
+    ) throws {
+        let offsetMultiplier: Int = max(offsetMultiplier ?? dolphinEngine.data.systemFiles.fstOffsetMultiplier, 1)
+
         let rootStruct: StructDefinition = dolphinEngine.fstRootEntryStruct
         let fileStruct: StructDefinition = dolphinEngine.fstFileEntryStruct
         let folderStruct: StructDefinition = dolphinEngine.fstDirectoryEntryStruct
         guard let root = tocData.read(struct: rootStruct, atAddress: 0) else {
             throw FileFormatErrors.invalid(format: Self.formatName)
         }
-        let entryCount: Int = try root.entryCount
+        let entryCount: Int = try root.entry_count
         
         let entrySize = 12
         let stringTableOffset = entryCount * entrySize
@@ -46,8 +55,8 @@ public class DolphinFST {
                 guard let entry = tocData.read(struct: folderStruct, atAddress: entryOffset) else {
                     throw FileFormatErrors.invalid(format: Self.formatName)
                 }
-                let nameOffset: Int = try entry.nameOffset
-                let endIndex: Int = try entry.nextEntry
+                let nameOffset: Int = try entry.name_offset
+                let endIndex: Int = try entry.next_entry
                 guard let folderName = getString(nameOffset) else {
                     throw FileFormatErrors.invalid(format: Self.formatName)
                 }
@@ -59,9 +68,9 @@ public class DolphinFST {
                 guard let entry = tocData.read(struct: fileStruct, atAddress: entryOffset) else {
                     throw FileFormatErrors.invalid(format: Self.formatName)
                 }
-                let nameOffset: Int = try entry.nameOffset
-                let fileOffset: Int = (try entry.fileOffset) * offsetMultiplier
-                let fileSize: Int = (try entry.fileSize) * offsetMultiplier
+                let nameOffset: Int = try entry.name_offset
+                let fileOffset: Int = (try entry.file_offset) * offsetMultiplier
+                let fileSize: Int = try entry.file_size
                 guard let filename = getString(nameOffset) else {
                     throw FileFormatErrors.invalid(format: Self.formatName)
                 }
@@ -98,7 +107,11 @@ public class DolphinFST {
         func add(_ files: [File]) {
             files.forEach(add)
         }
-        
+
+        // Folders are visited in path order so a parent is always registered
+        // before its children — `folders` doubles as the creation order when
+        // the tree is materialised, and a child can't be created into a
+        // folder that doesn't exist yet.
         func add(_ folders: [Folder]) {
             folders
                 .sorted { item1, item2 in
@@ -121,9 +134,15 @@ public class DolphinFST {
             return tocDataEntryCount * entrySize + stringTableLength
     }
     
-    public func tocData(userOffset: Int, dolphinEngine: DolphinEngine) throws -> GoDData {
-        let offsetMultiplier = max(dolphinEngine.data.systemFiles.fstOffsetMultiplier, 1)
-        
+    /// - Parameter offsetMultiplier: see the parsing initialiser. Pass the Wii
+    ///   engine's value (4) when writing a Wii FST.
+    public func tocData(
+        userOffset: Int,
+        dolphinEngine: DolphinEngine,
+        offsetMultiplier: Int? = nil
+    ) throws -> GoDData {
+        let offsetMultiplier = max(offsetMultiplier ?? dolphinEngine.data.systemFiles.fstOffsetMultiplier, 1)
+
         let tocData = GoDData(length: tocDataLength, byteOrder: .big)
         
         let entrySize = 12
@@ -132,8 +151,8 @@ public class DolphinFST {
         let folderStruct = dolphinEngine.fstDirectoryEntryStruct
         
         let rootData = StructData(definition: rootStruct, byteOrder: .big)
-        rootData.isDirectory = true
-        rootData.entryCount = tocDataEntryCount
+        rootData.is_directory = true
+        rootData.entry_count = tocDataEntryCount
         tocData.write(struct: rootData, atAddress: 0)
         
         let stringTable = GoDData(byteOrder: .big)
@@ -157,10 +176,10 @@ public class DolphinFST {
                 let fullOffset = offset + userOffset
                 
                 let fileData = StructData(definition: fileStruct, byteOrder: .big)
-                fileData.isDirectory = false
-                fileData.nameOffset = nameOffset
-                fileData.fileOffset = fullOffset / offsetMultiplier
-                fileData.fileSize = size / offsetMultiplier
+                fileData.is_directory = false
+                fileData.name_offset = nameOffset
+                fileData.file_offset = fullOffset / offsetMultiplier
+                fileData.file_size = size
                 tocData.write(struct: fileData, atAddress: currentOffset)
             } else {
                 let folder = Folder(currentPath)
@@ -170,10 +189,10 @@ public class DolphinFST {
                 let parentIndex = folderIndexes[parentFolder] ?? 0
                 
                 let folderData = StructData(definition: folderStruct, byteOrder: .big)
-                folderData.isDirectory = true
-                folderData.nameOffset = nameOffset
-                folderData.parentEntry = parentIndex
-                folderData.nextEntry = currentIndex + entryCount(for: folder) + 1
+                folderData.is_directory = true
+                folderData.name_offset = nameOffset
+                folderData.parent_entry = parentIndex
+                folderData.next_entry = currentIndex + entryCount(for: folder) + 1
                 tocData.write(struct: folderData, atAddress: currentOffset)
                 folderIndexes[folder] = currentIndex
             }

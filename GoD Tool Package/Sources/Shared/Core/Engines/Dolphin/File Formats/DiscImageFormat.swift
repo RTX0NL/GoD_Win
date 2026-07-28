@@ -48,7 +48,14 @@ public enum DiscImageFormat: Equatable {
                 }
                 return .unknown  // PSP CSO or malformed
             }
-            if head == [0x57, 0x49, 0x41, 0x01] {  // "WIA\x01"
+            // WIA and RVZ share a reader but not a magic: Dolphin writes
+            // "RVZ\x01" for the newer variant. Missing the RVZ spelling made
+            // real `.rvz` files fall through as `.unknown`, i.e. get treated
+            // as raw disc images, so setup read compressed bytes as a game ID
+            // instead of reporting that the format isn't decodable yet.
+            if head == [0x57, 0x49, 0x41, 0x01]     // "WIA\x01"
+                || head == [0x52, 0x56, 0x5A, 0x01] // "RVZ\x01"
+            {
                 return .wiaOrRVZ
             }
         }
