@@ -384,3 +384,49 @@ public final class WiiISO: FileSystemTree {
         partitions.first(where: { $0.partition.type == 0 })?.partition
     }
 }
+
+// MARK: - Random access
+//
+// Routed to the owning partition, the same way the whole-file operations are.
+// A path outside every partition has no file to address, so these report it
+// rather than silently doing nothing.
+
+public extension WiiISO {
+    func fileSize(at path: File) -> Int? {
+        guard let (partition, relativePath) = partitionAndRelativePath(for: path) else { return nil }
+        return partition.fileSize(at: File(relativePath))
+    }
+
+    func readFile(at path: File, range: Range<Int>) -> GoDData? {
+        guard let (partition, relativePath) = partitionAndRelativePath(for: path) else { return nil }
+        return partition.readFile(at: File(relativePath), range: range)
+    }
+
+    func appendToFile(_ data: GoDData, at path: File) throws {
+        let (partition, relativePath) = try requirePartition(for: path)
+        try partition.appendToFile(data, at: File(relativePath))
+    }
+
+    func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
+        let (partition, relativePath) = try requirePartition(for: path)
+        try partition.writeFile(data, at: File(relativePath), offset: offset)
+    }
+
+    func resizeFile(at path: File, to length: Int) throws {
+        let (partition, relativePath) = try requirePartition(for: path)
+        try partition.resizeFile(at: File(relativePath), to: length)
+    }
+
+    private func partitionAndRelativePath(for path: File) -> (WiiPartition, String)? {
+        guard let (_, relativePath) = resolvePartition(for: path.path),
+              let partition = partitionForPath(path.path)?.partition else { return nil }
+        return (partition, relativePath)
+    }
+
+    private func requirePartition(for path: File) throws -> (WiiPartition, String) {
+        guard let resolved = partitionAndRelativePath(for: path) else {
+            throw FSTErrors.invalidPath(path.path, .init())
+        }
+        return resolved
+    }
+}

@@ -15,7 +15,7 @@ public final class GamecubeISO: FileSystemTree {
     
     private let dolphinEngine: DolphinEngine
     private let gamecubeEngine: GamecubeEngine
-    private let fst = InMemoryFST()
+    fileprivate let fst = InMemoryFST()
     
     public var fstManifest: DolphinFST {
         DolphinFST(fileSystem: self, root: filesFolder)
@@ -287,5 +287,29 @@ public final class GamecubeISO: FileSystemTree {
     
     public var systemFolder: Folder {
         dolphinEngine.data.systemFiles.systemFolder
+    }
+}
+
+// MARK: - Random access
+//
+// A pass-through to the backing tree, like the whole-file operations above.
+
+public extension GamecubeISO {
+    func fileSize(at path: File) -> Int? { fst.fileSize(at: path) }
+
+    func readFile(at path: File, range: Range<Int>) -> GoDData? {
+        fst.readFile(at: path, range: range)
+    }
+
+    func appendToFile(_ data: GoDData, at path: File) throws {
+        try fst.appendToFile(data, at: path)
+    }
+
+    func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
+        try fst.writeFile(data, at: path, offset: offset)
+    }
+
+    func resizeFile(at path: File, to length: Int) throws {
+        try fst.resizeFile(at: path, to: length)
     }
 }

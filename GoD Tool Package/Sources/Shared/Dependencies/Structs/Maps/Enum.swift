@@ -5,6 +5,7 @@
 //  Created by Stars Momodu on 09/08/2022.
 //
 
+import Foundation
 import GoDFoundation
 
 @dynamicMemberLookup

@@ -12,9 +12,10 @@
 //
 //  This is a drop-in for that role: same protocol, same semantics, but each
 //  logical path is a real file under a scratch root, so memory stays flat and
-//  the operating system's page cache does the work. Because it also conforms
-//  to `RandomAccessFileSystemTree`, whole-disc operations (padding to capacity,
-//  reading one file out of an image) stop having to materialise everything.
+//  the operating system's page cache does the work. Its range-addressed reads
+//  and writes — part of the `FileSystemTree` contract — also let whole-disc
+//  operations (padding to capacity, reading one file out of an image) stop
+//  materialising everything.
 //
 //  The scratch directory is deliberately a plain mirror of the logical tree
 //  rather than an opaque store, so a failed run can be inspected by hand.
@@ -97,7 +98,7 @@ public final class DiskBackedFST: FileSystemTree {
         return url
     }
 
-    private func url(_ file: File) -> URL { resolve(file.path) }
+    fileprivate func url(_ file: File) -> URL { resolve(file.path) }
     private func url(_ folder: Folder) -> URL { resolve(folder.path) }
 
     private func isDirectory(_ url: URL) -> Bool {
@@ -271,91 +272,44 @@ public final class DiskBackedFST: FileSystemTree {
 }
 
 // MARK: - Random access
+//
+// Resolution is the only part that differs from any other on-disk tree, so the
+// FileHandle work is shared with `FileSystem` via `POSIXRandomAccess`.
 
-extension DiskBackedFST: RandomAccessFileSystemTree {
+public extension DiskBackedFST {
 
-    public func fileSize(at path: File) -> Int? {
-        let url = url(path)
-        guard isRegularFile(url) else { return nil }
-        return (try? fm.attributesOfItem(atPath: url.path)[.size]) as? Int
+    func fileSize(at path: File) -> Int? {
+        POSIXRandomAccess.fileSize(at: url(path))
     }
 
-    public func readFile(at path: File, range: Range<Int>) -> GoDData? {
-        guard let size = fileSize(at: path) else { return nil }
-        let clamped = range.clamped(to: 0..<size)
-        guard !clamped.isEmpty else { return GoDData(byteOrder: .big) }
-        guard let handle = try? FileHandle(forReadingFrom: url(path)) else { return nil }
-        defer { try? handle.close() }
-        do {
-            try handle.seek(toOffset: UInt64(clamped.lowerBound))
-            let data = try handle.read(upToCount: clamped.count) ?? Data()
-            return GoDData(data: data, byteOrder: .big)
-        } catch {
-            return nil
-        }
+    func readFile(at path: File, range: Range<Int>) -> GoDData? {
+        POSIXRandomAccess.read(at: url(path), range: range)
     }
 
-    public func appendToFile(_ data: GoDData, at path: File) throws {
-        let url = url(path)
-        if !isRegularFile(url) {
-            try writeFile(data, at: path, overwrite: false)
-            return
+    func appendToFile(_ data: GoDData, at path: File) throws {
+        let target = url(path)
+        guard POSIXRandomAccess.isRegularFile(target) else {
+            return try writeFile(data, at: path, overwrite: false)
         }
-        guard let handle = try? FileHandle(forWritingTo: url) else {
-            throw FSTErrors.failedToWriteFile(path, .init())
-        }
-        defer { try? handle.close() }
-        do {
-            try handle.seekToEnd()
-            try handle.write(contentsOf: data.data)
-        } catch {
-            throw FSTErrors.failedToWriteFile(path, .init())
-        }
+        try POSIXRandomAccess.append(data, to: target)
     }
 
-    public func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
-        guard offset >= 0 else {
-            throw FSTErrors.invalidPath(path.path, .init())
-        }
-        let url = url(path)
-        if !isRegularFile(url) {
-            try writeFile(GoDData(byteOrder: .big), at: path, overwrite: false)
-        }
-        // Writing past the end has to zero-fill the gap; `FileHandle` seeks
-        // past EOF happily but leaves a hole whose contents aren't guaranteed.
-        if let size = fileSize(at: path), size < offset {
-            try resizeFile(at: path, to: offset)
-        }
-        guard let handle = try? FileHandle(forWritingTo: url) else {
-            throw FSTErrors.failedToWriteFile(path, .init())
-        }
-        defer { try? handle.close() }
-        do {
-            try handle.seek(toOffset: UInt64(offset))
-            try handle.write(contentsOf: data.data)
-        } catch {
-            throw FSTErrors.failedToWriteFile(path, .init())
-        }
+    func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
+        guard offset >= 0 else { throw FSTErrors.invalidPath(path.path, .init()) }
+        try ensureFileExists(at: path)
+        try POSIXRandomAccess.write(data, to: url(path), offset: offset)
     }
 
-    public func resizeFile(at path: File, to length: Int) throws {
-        guard length >= 0 else {
-            throw FSTErrors.invalidPath(path.path, .init())
-        }
-        let url = url(path)
-        if !isRegularFile(url) {
-            try writeFile(GoDData(byteOrder: .big), at: path, overwrite: false)
-        }
-        guard let handle = try? FileHandle(forWritingTo: url) else {
-            throw FSTErrors.failedToWriteFile(path, .init())
-        }
-        defer { try? handle.close() }
-        do {
-            // `truncate` both grows (zero-filled) and shrinks, in constant
-            // memory — the whole reason this protocol exists.
-            try handle.truncate(atOffset: UInt64(length))
-        } catch {
-            throw FSTErrors.failedToWriteFile(path, .init())
-        }
+    func resizeFile(at path: File, to length: Int) throws {
+        guard length >= 0 else { throw FSTErrors.invalidPath(path.path, .init()) }
+        try ensureFileExists(at: path)
+        try POSIXRandomAccess.resize(url(path), to: length)
+    }
+
+    /// Range writes address a file that may not exist yet; create an empty one
+    /// so the offset/resize below has something to act on.
+    private func ensureFileExists(at path: File) throws {
+        guard !POSIXRandomAccess.isRegularFile(url(path)) else { return }
+        try writeFile(GoDData(byteOrder: .big), at: path, overwrite: false)
     }
 }

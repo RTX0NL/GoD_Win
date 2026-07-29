@@ -87,16 +87,30 @@ final class DiskBackedFSTTests: XCTestCase {
         }
     }
 
+    /// Several files per folder, deliberately written out of order: a listing
+    /// has to come back sorted and identical from either tree. With one file
+    /// each this passed while the in-memory tree was still returning Set order,
+    /// which varies between process runs.
     func testFolderListingAndDeepSizeMatchAcrossTrees() throws {
         for (name, tree) in try allTrees() {
-            try tree.writeFile(data("12345"), at: File("/root/a.txt"), overwrite: false)
-            try tree.writeFile(data("678"), at: File("/root/sub/b.txt"), overwrite: false)
-            try tree.writeFile(data("9012"), at: File("/root/sub/deep/c.txt"), overwrite: false)
+            try tree.writeFile(data("12345"), at: File("/root/c.txt"), overwrite: false)
+            try tree.writeFile(data("678"), at: File("/root/a.txt"), overwrite: false)
+            try tree.writeFile(data("90"), at: File("/root/b.txt"), overwrite: false)
+            try tree.writeFile(data("1234"), at: File("/root/sub/x.txt"), overwrite: false)
+            try tree.writeFile(data("5678"), at: File("/root/nested/y.txt"), overwrite: false)
 
             let meta = tree.inspectFolder(at: Folder("/root"))
-            XCTAssertEqual(meta?.size, 12, "\(name): deep size covers the whole subtree")
-            XCTAssertEqual(meta?.files.map(\.path), ["/root/a.txt"], name)
-            XCTAssertEqual(meta?.subFolders.map(\.path), ["/root/sub"], name)
+            XCTAssertEqual(meta?.size, 18, "\(name): deep size covers the whole subtree")
+            XCTAssertEqual(
+                meta?.files.map(\.path),
+                ["/root/a.txt", "/root/b.txt", "/root/c.txt"],
+                "\(name): files must be sorted"
+            )
+            XCTAssertEqual(
+                meta?.subFolders.map(\.path),
+                ["/root/nested", "/root/sub"],
+                "\(name): subfolders must be sorted"
+            )
         }
     }
 
@@ -147,9 +161,6 @@ final class DiskBackedFSTTests: XCTestCase {
 
     func testAppendAndOffsetWritesMatchAcrossTrees() throws {
         for (name, tree) in try allTrees() {
-            guard let tree = tree as? RandomAccessFileSystemTree else {
-                return XCTFail("\(name) should offer random access")
-            }
             let file = File("/x.bin")
             try tree.writeFile(GoDData(byteStream: [1, 2], byteOrder: .big), at: file, overwrite: false)
             try tree.appendToFile(GoDData(byteStream: [3, 4], byteOrder: .big), at: file)

@@ -17,7 +17,7 @@ public final class WiiPartition: FileSystemTree {
 
     private let wiiEngine: WiiEngine
     private let dolphinEngine: DolphinEngine
-    private let fst = InMemoryFST()
+    fileprivate let fst = InMemoryFST()
 
     private static let partitionTypeNames = ["DATA", "UPDATE", "CHANNEL"]
     private var typeName: String {
@@ -447,5 +447,30 @@ public final class WiiPartition: FileSystemTree {
 
         logger?.log(.taskStatus(taskName: taskName, status: .completed(true)))
         return result
+    }
+}
+
+// MARK: - Random access
+//
+// Pass-through to the partition's backing tree, matching the whole-file
+// forwarders above.
+
+public extension WiiPartition {
+    func fileSize(at path: File) -> Int? { fst.fileSize(at: path) }
+
+    func readFile(at path: File, range: Range<Int>) -> GoDData? {
+        fst.readFile(at: path, range: range)
+    }
+
+    func appendToFile(_ data: GoDData, at path: File) throws {
+        try fst.appendToFile(data, at: path)
+    }
+
+    func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
+        try fst.writeFile(data, at: path, offset: offset)
+    }
+
+    func resizeFile(at path: File, to length: Int) throws {
+        try fst.resizeFile(at: path, to: length)
     }
 }

@@ -140,8 +140,13 @@ public class InMemoryFST: FileSystemTree {
             name: path.folderName,
             size: deepTotal,
             notes: nil,
-            files: files,
-            subFolders: folders
+            // Sorted: `children` is a Set, so iteration order varies between
+            // process runs (Swift seeds hashing per-process). An operation
+            // that builds output from a listing would otherwise differ run to
+            // run, and this tree has to agree with the on-disk ones, which
+            // sort too.
+            files: files.sorted(),
+            subFolders: folders.sorted()
         )
     }
 
@@ -228,23 +233,24 @@ public class InMemoryFST: FileSystemTree {
 // MARK: - Random access
 //
 // Held in memory already, so these are slices and in-place edits rather than
-// real IO. Conforming keeps the fast paths uniform: a caller can ask any tree
-// for a byte range without branching on which kind it has.
+// real IO. Note these rely on `GoDData` being a reference type: the object a
+// read hands back *is* the stored one, so mutating it is what makes an
+// in-place append or resize take effect.
 
-extension InMemoryFST: RandomAccessFileSystemTree {
+public extension InMemoryFST {
 
-    public func fileSize(at path: File) -> Int? {
+    func fileSize(at path: File) -> Int? {
         readFile(at: path)?.length
     }
 
-    public func readFile(at path: File, range: Range<Int>) -> GoDData? {
+    func readFile(at path: File, range: Range<Int>) -> GoDData? {
         guard let data = readFile(at: path) else { return nil }
         let clamped = range.clamped(to: 0..<data.length)
         guard !clamped.isEmpty else { return GoDData(byteOrder: data.byteOrder) }
         return data.read(atAddress: clamped.lowerBound, length: clamped.count)
     }
 
-    public func appendToFile(_ data: GoDData, at path: File) throws {
+    func appendToFile(_ data: GoDData, at path: File) throws {
         guard let existing = readFile(at: path) else {
             try writeFile(data, at: path, overwrite: false)
             return
@@ -252,7 +258,7 @@ extension InMemoryFST: RandomAccessFileSystemTree {
         existing.append(data)
     }
 
-    public func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
+    func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
         guard offset >= 0 else {
             throw FSTErrors.invalidPath(path.path, .init())
         }
@@ -266,7 +272,7 @@ extension InMemoryFST: RandomAccessFileSystemTree {
         existing.write(data, atAddress: UInt(offset))
     }
 
-    public func resizeFile(at path: File, to length: Int) throws {
+    func resizeFile(at path: File, to length: Int) throws {
         guard length >= 0 else {
             throw FSTErrors.invalidPath(path.path, .init())
         }

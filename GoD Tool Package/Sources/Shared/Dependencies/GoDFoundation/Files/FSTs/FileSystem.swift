@@ -194,7 +194,7 @@ public class FileSystem: FileSystemTree {
         try? fm.setAttributes([FileAttributeKey.posixPermissions: 0o777], ofItemAtPath: fullPath.path)
     }
     
-    private func extendPath(_ file: File) -> File {
+    fileprivate func extendPath(_ file: File) -> File {
         if file.path.startsWith("./") || file.path.startsWith("../") {
             return currentDirectory.file(file.path)
         } else {
@@ -227,5 +227,47 @@ public extension FileSystemTree {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data: GoDData = try encoder.encode(value)
         try writeFile(data, at: file, overwrite: overwrite)
+    }
+}
+
+// MARK: - Random access
+//
+// Same FileHandle work as `DiskBackedFST`; only path resolution differs, so it
+// is shared via `POSIXRandomAccess`.
+
+public extension FileSystem {
+
+    func fileSize(at path: File) -> Int? {
+        POSIXRandomAccess.fileSize(at: extendPath(path).url)
+    }
+
+    func readFile(at path: File, range: Range<Int>) -> GoDData? {
+        POSIXRandomAccess.read(at: extendPath(path).url, range: range)
+    }
+
+    func appendToFile(_ data: GoDData, at path: File) throws {
+        let full = extendPath(path)
+        guard POSIXRandomAccess.isRegularFile(full.url) else {
+            return try writeFile(data, at: path, overwrite: false)
+        }
+        try POSIXRandomAccess.append(data, to: full.url)
+    }
+
+    func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
+        guard offset >= 0 else { throw FSTErrors.invalidPath(path.path, .init()) }
+        try ensureFileExists(at: path)
+        try POSIXRandomAccess.write(data, to: extendPath(path).url, offset: offset)
+    }
+
+    func resizeFile(at path: File, to length: Int) throws {
+        guard length >= 0 else { throw FSTErrors.invalidPath(path.path, .init()) }
+        try ensureFileExists(at: path)
+        try POSIXRandomAccess.resize(extendPath(path).url, to: length)
+    }
+
+    /// Range writes address a file that may not exist yet.
+    private func ensureFileExists(at path: File) throws {
+        guard !POSIXRandomAccess.isRegularFile(extendPath(path).url) else { return }
+        try writeFile(GoDData(byteOrder: .big), at: path, overwrite: false)
     }
 }
