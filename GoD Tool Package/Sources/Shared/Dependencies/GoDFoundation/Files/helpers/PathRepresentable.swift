@@ -14,8 +14,11 @@ public protocol PathRepresentable: CustomStringConvertible {
 }
 
 public extension PathRepresentable {
+    /// The path as a file URL, in the platform's own spelling. Logical paths
+    /// are POSIX-shaped, so this has to convert — handing `/Data/Text` to
+    /// `URL(fileURLWithPath:)` on Windows would root it on the current drive.
     var url: URL {
-        return URL(fileURLWithPath: path)
+        return URL(fileURLWithPath: nativePath)
     }
     
     var description: String {

@@ -859,7 +859,13 @@ public extension StructData {
         }
     }
 
-    private static func writeValue(
+    /// Writes one value at one offset, dispatching on its declared type.
+    /// Internal rather than private because the CSV codec is a third
+    /// serialization over this same ladder — it decomposes a row into leaf
+    /// columns and writes each through here, so the byte-level rules
+    /// (widths, sign, byte order, enum raw values, string padding) have
+    /// exactly one implementation.
+    internal static func writeValue(
         _ value: Any?,
         type: StructProperty,
         propertyName: String,
@@ -1137,7 +1143,10 @@ public extension StructData {
         return Int(bitPattern: UInt(value))
     }
 
-    private static func writeInteger(
+    /// Internal so the CSV codec can write a float's raw bit pattern when a
+    /// cell carries one (`0x7FA00000`) — a NaN payload doesn't survive being
+    /// parsed as a number, so those bits are written as an integer instead.
+    internal static func writeInteger(
         _ value: Int,
         width: Int,
         signed: Bool,

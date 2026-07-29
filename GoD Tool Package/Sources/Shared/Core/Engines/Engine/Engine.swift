@@ -52,6 +52,20 @@ public extension Engine {
     /// `@dynamicMemberLookup` reads. Reject a bad one where the engine loads
     /// rather than letting it silently resolve to nothing, or letting a
     /// duplicate resolve to whichever copy happens to come first.
+    /// Case names are the serialized form of an enum-typed field — a field
+    /// whose raw value the enum names is written as that name, and one it
+    /// doesn't falls back to the integer. A name that could be read as a
+    /// number, or that whitespace splits, makes that form ambiguous, so
+    /// reject it where the enum loads rather than where it's serialized.
+    static func validateCaseNames(of enumeration: Enum) throws {
+        let invalid = enumeration.invalidCaseNames
+        guard invalid.isEmpty else {
+            throw EngineDecodingError.invalidEnumCaseNames(
+                enumName: enumeration.name, names: invalid, .init()
+            )
+        }
+    }
+
     private func validatePropertyNames(of definition: StructDefinition) throws {
         let invalid = definition.invalidPropertyNames
         guard invalid.isEmpty else {
@@ -92,6 +106,7 @@ public extension Engine {
                     guard let def: Enum = getEnum(enumName) else {
                         throw EngineDecodingError.missingEnumProperty(structName: name, property: fieldName, enumName: enumName, .init())
                     }
+                    try Self.validateCaseNames(of: def)
                     return .enumeration(def)
                 case .label:
                     return .label
@@ -173,12 +188,16 @@ public extension Engine {
                 guard let rawEnumData: GoDData = fst.readFile(at: file) else {
                     throw EngineDecodingError.couldntReadEnumData(file, .init())
                 }
+                let enumData: Enum
                 do {
-                    let enumData = try JSONDecoder().decode(Enum.self, from: rawEnumData)
-                    enumEntries.append(enumData)
+                    enumData = try JSONDecoder().decode(Enum.self, from: rawEnumData)
                 } catch let error {
                     throw EngineDecodingError.couldntDecodeEnum(file, error, .init())
                 }
+                // Checked here as well as at struct resolution so an enum no
+                // struct references still can't load with unusable names.
+                try Self.validateCaseNames(of: enumData)
+                enumEntries.append(enumData)
             }
         }
         let enums = try EnumsType(validated: enumEntries)

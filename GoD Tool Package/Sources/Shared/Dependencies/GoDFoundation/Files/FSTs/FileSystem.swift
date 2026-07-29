@@ -18,12 +18,13 @@ public class FileSystem: FileSystemTree {
 
     public static let shared = FileSystem()
     private init() {
-        let cwd = FileManager.default.currentDirectoryPath
+        // argv-adjacent input: a native path, converted on the way in.
+        let cwd = PlatformPath.logical(from: FileManager.default.currentDirectoryPath)
         currentDirectory = Folder(cwd.hasPrefix("/") ? cwd : "/")
     }
     
     public func inspectFile(at path: File) -> FileMetaData? {
-        let filePath = extendPath(path).path
+        let filePath = extendPath(path).nativePath
         
         let exists = fm.fileExists(atPath: filePath)
         guard exists else { return nil }
@@ -60,7 +61,7 @@ public class FileSystem: FileSystemTree {
             try createFolder(at: parentFolder, overwrite: overwrite)
         }
         do {
-            try fm.moveItem(atPath: fullPath.path, toPath: fullNewPath.path)
+            try fm.moveItem(atPath: fullPath.nativePath, toPath: fullNewPath.nativePath)
         } catch {
             throw FSTErrors.failedToMoveFile(fullPath, fullNewPath, .init())
         }
@@ -95,7 +96,7 @@ public class FileSystem: FileSystemTree {
     
     public func inspectFolder(at path: Folder) -> FolderMetaData? {
         let fullPath = extendPath(path)
-        guard let paths = try? fm.contentsOfDirectory(atPath: fullPath.path) else {
+        guard let paths = try? fm.contentsOfDirectory(atPath: fullPath.nativePath) else {
             return nil
         }
         let folder = path
@@ -104,7 +105,7 @@ public class FileSystem: FileSystemTree {
         
         paths.forEach { path in
             var isDirectory: ObjCBool = false
-            _ = fm.fileExists(atPath: fullPath.file(path).path, isDirectory: &isDirectory)
+            _ = fm.fileExists(atPath: fullPath.file(path).nativePath, isDirectory: &isDirectory)
             if isDirectory.boolValue {
                 let subFolder = folder.folder(path)
                 folders.append(subFolder)
@@ -114,7 +115,7 @@ public class FileSystem: FileSystemTree {
             }
         }
         
-        let attributes = try? fm.attributesOfItem(atPath: fullPath.path)
+        let attributes = try? fm.attributesOfItem(atPath: fullPath.nativePath)
         let size: Int? = attributes?[.size] as? Int
         
         return .init(
@@ -139,7 +140,7 @@ public class FileSystem: FileSystemTree {
             throw FSTErrors.itemExists(fullPath.path, .init())
         }
         do {
-            try fm.moveItem(atPath: fullPath.path, toPath: fullNewPath.path)
+            try fm.moveItem(atPath: fullPath.nativePath, toPath: fullNewPath.nativePath)
         } catch {
             throw FSTErrors.failedToMoveFolder(fullPath, fullNewPath, .init())
         }
@@ -150,7 +151,7 @@ public class FileSystem: FileSystemTree {
     public func createFolder(at path: Folder, overwrite: Bool) throws {
         let fullPath = extendPath(path)
         do {
-            try fm.createDirectory(atPath: fullPath.path, withIntermediateDirectories: true)
+            try fm.createDirectory(atPath: fullPath.nativePath, withIntermediateDirectories: true)
         } catch {
             throw FSTErrors.failedToCreateFolder(fullPath, .init())
         }
@@ -161,7 +162,7 @@ public class FileSystem: FileSystemTree {
         let fullPath = extendPath(path)
         guard itemExists(at: fullPath) else { return }
         do {
-            try fm.removeItem(atPath: fullPath.path)
+            try fm.removeItem(atPath: fullPath.nativePath)
         } catch {
             throw FSTErrors.failedToDeleteFolder(fullPath, .init())
         }
@@ -171,12 +172,12 @@ public class FileSystem: FileSystemTree {
         guard let url = bundle.url(forResource: filename.withoutExtension, withExtension: filename.fileExtension) else {
             return nil
         }
-        return File(url.path)
+        return File(nativePath: url.path)
     }
     
     public var documents: Folder {
         Folder(
-            NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)[0]
+            nativePath: NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)[0]
         )
     }
     
@@ -191,7 +192,7 @@ public class FileSystem: FileSystemTree {
     public func setExecutable(file: File) {
         let fullPath = currentDirectory.file(file.path)
         guard itemExists(at: fullPath) else { return }
-        try? fm.setAttributes([FileAttributeKey.posixPermissions: 0o777], ofItemAtPath: fullPath.path)
+        try? fm.setAttributes([FileAttributeKey.posixPermissions: 0o777], ofItemAtPath: fullPath.nativePath)
     }
     
     fileprivate func extendPath(_ file: File) -> File {
@@ -233,41 +234,41 @@ public extension FileSystemTree {
 // MARK: - Random access
 //
 // Same FileHandle work as `DiskBackedFST`; only path resolution differs, so it
-// is shared via `POSIXRandomAccess`.
+// is shared via `FileHandleAccess`.
 
 public extension FileSystem {
 
     func fileSize(at path: File) -> Int? {
-        POSIXRandomAccess.fileSize(at: extendPath(path).url)
+        FileHandleAccess.fileSize(at: extendPath(path).url)
     }
 
     func readFile(at path: File, range: Range<Int>) -> GoDData? {
-        POSIXRandomAccess.read(at: extendPath(path).url, range: range)
+        FileHandleAccess.read(at: extendPath(path).url, range: range)
     }
 
     func appendToFile(_ data: GoDData, at path: File) throws {
         let full = extendPath(path)
-        guard POSIXRandomAccess.isRegularFile(full.url) else {
+        guard FileHandleAccess.isRegularFile(full.url) else {
             return try writeFile(data, at: path, overwrite: false)
         }
-        try POSIXRandomAccess.append(data, to: full.url)
+        try FileHandleAccess.append(data, to: full.url)
     }
 
     func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
         guard offset >= 0 else { throw FSTErrors.invalidPath(path.path, .init()) }
         try ensureFileExists(at: path)
-        try POSIXRandomAccess.write(data, to: extendPath(path).url, offset: offset)
+        try FileHandleAccess.write(data, to: extendPath(path).url, offset: offset)
     }
 
     func resizeFile(at path: File, to length: Int) throws {
         guard length >= 0 else { throw FSTErrors.invalidPath(path.path, .init()) }
         try ensureFileExists(at: path)
-        try POSIXRandomAccess.resize(extendPath(path).url, to: length)
+        try FileHandleAccess.resize(extendPath(path).url, to: length)
     }
 
     /// Range writes address a file that may not exist yet.
     private func ensureFileExists(at path: File) throws {
-        guard !POSIXRandomAccess.isRegularFile(extendPath(path).url) else { return }
+        guard !FileHandleAccess.isRegularFile(extendPath(path).url) else { return }
         try writeFile(GoDData(byteOrder: .big), at: path, overwrite: false)
     }
 }

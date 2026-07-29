@@ -54,9 +54,9 @@ if first == "--version" || first == "-v" || first == "version" {
     await runMCPServer()
 } else {
     var failed = false
-    for inputFile in arguments.map({ File(absolutePath(for: $0)) }) {
+    for inputFile in arguments.map({ File(nativePath: absolutePath(for: $0)) }) {
         // Skip the executable path itself if it slips into the argument list.
-        guard inputFile.path != Bundle.main.executablePath else { continue }
+        guard inputFile.nativePath != Bundle.main.executablePath else { continue }
         do {
             try GODOps.process(inputFile: inputFile)
         } catch {

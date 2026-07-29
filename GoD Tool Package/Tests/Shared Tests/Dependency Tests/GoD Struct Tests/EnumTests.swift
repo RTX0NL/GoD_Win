@@ -111,6 +111,43 @@ final class EnumTests: XCTestCase {
         XCTAssertEqual(decoded.values.count, 3)
     }
 
+    // MARK: - Case name validation
+
+    func testValidCaseNames() {
+        for name in ["Red", "_reserved", "B1_1.fsys", "D1_garage_B2_1.fsys", "Mr.Mime", "Farfetch'd", "U-turn", "x", "_"] {
+            XCTAssertTrue(Enum.isValidCaseName(name), "expected '\(name)' to be valid")
+        }
+    }
+
+    func testInvalidCaseNames() {
+        // Leading digit / sign: indistinguishable from the raw value the name
+        // stands for. Whitespace: breaks the "<name> = <rawValue>" codec.
+        for name in ["", "22", "0x10", "2ndStage", "-1", "+1", " Red", "Red ", "Value 1", "HP = Max", "two\nlines", "tab\there"] {
+            XCTAssertFalse(Enum.isValidCaseName(name), "expected '\(name)' to be invalid")
+        }
+    }
+
+    func testInvalidCaseNamesAreReportedSortedAndDeduped() {
+        let broken = Enum(
+            name: "Broken",
+            allowUnknownCases: false,
+            values: [
+                .init(name: "Fine", rawValue: 0),
+                .init(name: "Value 1", rawValue: 1),
+                .init(name: "2nd", rawValue: 2),
+            ],
+            propertyType: .uint8
+        )
+        XCTAssertEqual(broken.invalidCaseNames, ["2nd", "Value 1"])
+        XCTAssertTrue(colors.invalidCaseNames.isEmpty)
+    }
+
+    func testSynthesizedUnknownCaseNameIsValid() throws {
+        // The synthesized form folds the enum name's spaces to underscores
+        // precisely so the result is a legal case name.
+        XCTAssertTrue(Enum.isValidCaseName(try openColors.get(42).name))
+    }
+
     // MARK: - Error descriptions
 
     func testErrorDescriptions() {

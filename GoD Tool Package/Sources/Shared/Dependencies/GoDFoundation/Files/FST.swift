@@ -58,15 +58,7 @@ public struct FolderMetaData {
 /// **Random access is part of the contract.** Whole-file reads and writes are
 /// the wrong shape for disc images: padding an ISO to capacity through
 /// `readFile`/`writeFile` moves gigabytes to append zeros, where `resizeFile`
-/// does it in constant memory.
-///
-/// This was briefly a separate `RandomAccessFileSystemTree` refinement that
-/// callers reached through a dynamic cast, with a whole-file fallback. That
-/// bought nothing: dispatch hands a single tree to every operation, so the
-/// moment one operation needs range access every tree reaching an operation
-/// has to provide it — and none of the implementations can't. Requiring
-/// "write these bytes at this offset" is no bigger an ask than the
-/// "write this whole file" the protocol already demanded.
+/// is a single truncation.
 public protocol FileSystemTree {
     func inspectFile(at path: File) -> FileMetaData?
     func readFile(at path: File) -> GoDData?

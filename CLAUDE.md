@@ -340,6 +340,17 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
   `Engine.getStruct` rejects anything else, and rejects duplicates, at load
   time. A near-miss lookup logs a "did you mean" warning in debug builds and
   carries the suggestion in `StructError.MissingKey`.
+- **Enum case names are looser than property names**, deliberately: a property
+  name is a JSON key and a `@dynamicMemberLookup` member, so it has to be an
+  identifier, while a case name is only ever a *value*. A case name must start
+  with a letter or `_` and contain no whitespace — punctuation is fine, and real
+  enums depend on it (`FsysGroupIDs` names its cases after archive filenames,
+  `B1_1.fsys`). The two restrictions each close an ambiguity: a leading digit or
+  sign would be indistinguishable from the raw value the name stands for (an
+  unnamed value serializes as its integer), and whitespace would break
+  `Enum.Case`'s `"<name> = <rawValue>"` codec. Enforced by
+  `Enum.isValidCaseName`, checked when an engine folder loads and when a struct
+  resolves an `.enumeration` reference.
 
 ### File Organization
 - One primary type per file

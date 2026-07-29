@@ -38,7 +38,7 @@ public final class DiskBackedFST: FileSystemTree {
     public init(root: Folder) throws {
         self.root = root
         self.ownsRoot = false
-        try fm.createDirectory(atPath: root.path, withIntermediateDirectories: true)
+        try fm.createDirectory(atPath: root.nativePath, withIntermediateDirectories: true)
     }
 
     private init(temporaryRoot: Folder) {
@@ -52,20 +52,20 @@ public final class DiskBackedFST: FileSystemTree {
         let base = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("\(name)-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        return DiskBackedFST(temporaryRoot: Folder(base.path))
+        return DiskBackedFST(temporaryRoot: Folder(nativePath: base.path))
     }
 
     deinit {
         if ownsRoot {
-            try? fm.removeItem(atPath: root.path)
+            try? fm.removeItem(atPath: root.nativePath)
         }
     }
 
     /// Deletes the backing directory. Safe to call more than once.
     public func removeBackingStore() throws {
-        guard fm.fileExists(atPath: root.path) else { return }
+        guard fm.fileExists(atPath: root.nativePath) else { return }
         do {
-            try fm.removeItem(atPath: root.path)
+            try fm.removeItem(atPath: root.nativePath)
         } catch {
             throw FSTErrors.failedToDeleteFolder(root, .init())
         }
@@ -91,7 +91,7 @@ public final class DiskBackedFST: FileSystemTree {
                 components.append(String(component))
             }
         }
-        var url = URL(fileURLWithPath: root.path, isDirectory: true)
+        var url = URL(fileURLWithPath: root.nativePath, isDirectory: true)
         for component in components {
             url.appendPathComponent(component)
         }
@@ -274,42 +274,42 @@ public final class DiskBackedFST: FileSystemTree {
 // MARK: - Random access
 //
 // Resolution is the only part that differs from any other on-disk tree, so the
-// FileHandle work is shared with `FileSystem` via `POSIXRandomAccess`.
+// FileHandle work is shared with `FileSystem` via `FileHandleAccess`.
 
 public extension DiskBackedFST {
 
     func fileSize(at path: File) -> Int? {
-        POSIXRandomAccess.fileSize(at: url(path))
+        FileHandleAccess.fileSize(at: url(path))
     }
 
     func readFile(at path: File, range: Range<Int>) -> GoDData? {
-        POSIXRandomAccess.read(at: url(path), range: range)
+        FileHandleAccess.read(at: url(path), range: range)
     }
 
     func appendToFile(_ data: GoDData, at path: File) throws {
         let target = url(path)
-        guard POSIXRandomAccess.isRegularFile(target) else {
+        guard FileHandleAccess.isRegularFile(target) else {
             return try writeFile(data, at: path, overwrite: false)
         }
-        try POSIXRandomAccess.append(data, to: target)
+        try FileHandleAccess.append(data, to: target)
     }
 
     func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
         guard offset >= 0 else { throw FSTErrors.invalidPath(path.path, .init()) }
         try ensureFileExists(at: path)
-        try POSIXRandomAccess.write(data, to: url(path), offset: offset)
+        try FileHandleAccess.write(data, to: url(path), offset: offset)
     }
 
     func resizeFile(at path: File, to length: Int) throws {
         guard length >= 0 else { throw FSTErrors.invalidPath(path.path, .init()) }
         try ensureFileExists(at: path)
-        try POSIXRandomAccess.resize(url(path), to: length)
+        try FileHandleAccess.resize(url(path), to: length)
     }
 
     /// Range writes address a file that may not exist yet; create an empty one
     /// so the offset/resize below has something to act on.
     private func ensureFileExists(at path: File) throws {
-        guard !POSIXRandomAccess.isRegularFile(url(path)) else { return }
+        guard !FileHandleAccess.isRegularFile(url(path)) else { return }
         try writeFile(GoDData(byteOrder: .big), at: path, overwrite: false)
     }
 }

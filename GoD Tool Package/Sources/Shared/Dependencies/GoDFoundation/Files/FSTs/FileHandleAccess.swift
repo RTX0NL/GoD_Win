@@ -1,5 +1,5 @@
 //
-//  POSIXRandomAccess.swift
+//  FileHandleAccess.swift
 //
 //  The random-access half of `FileSystemTree`, for trees whose files are real
 //  files on disk.
@@ -9,10 +9,18 @@
 //  tree rebases onto its root. Everything after that is the same `FileHandle`
 //  work, so it lives here once and both pass in their resolved URL.
 //
+//  Everything here goes through Foundation, not raw syscalls, so it carries
+//  Foundation's portability rather than POSIX's: `truncate(atOffset:)` reaches
+//  `ftruncate` on Darwin and Linux and `SetEndOfFile` on Windows, and WASI
+//  exposes the same operations if Foundation is wired to it. The one thing to
+//  watch on swift-corelibs-foundation is `attributesOfItem`, whose value
+//  boxing has differed from Darwin — a failed `as? Int` there reads as "file
+//  missing" rather than as an error.
+//
 
 import Foundation
 
-enum POSIXRandomAccess {
+enum FileHandleAccess {
 
     static func fileSize(at url: URL) -> Int? {
         guard isRegularFile(url) else { return nil }
@@ -46,14 +54,14 @@ enum POSIXRandomAccess {
 
     static func append(_ data: GoDData, to url: URL) throws {
         guard let handle = try? FileHandle(forWritingTo: url) else {
-            throw FSTErrors.failedToWriteFile(File(url.path), .init())
+            throw FSTErrors.failedToWriteFile(File(nativePath: url.path), .init())
         }
         defer { try? handle.close() }
         do {
             try handle.seekToEnd()
             try handle.write(contentsOf: data.data)
         } catch {
-            throw FSTErrors.failedToWriteFile(File(url.path), .init())
+            throw FSTErrors.failedToWriteFile(File(nativePath: url.path), .init())
         }
     }
 
@@ -67,14 +75,14 @@ enum POSIXRandomAccess {
             try resize(url, to: offset)
         }
         guard let handle = try? FileHandle(forWritingTo: url) else {
-            throw FSTErrors.failedToWriteFile(File(url.path), .init())
+            throw FSTErrors.failedToWriteFile(File(nativePath: url.path), .init())
         }
         defer { try? handle.close() }
         do {
             try handle.seek(toOffset: UInt64(offset))
             try handle.write(contentsOf: data.data)
         } catch {
-            throw FSTErrors.failedToWriteFile(File(url.path), .init())
+            throw FSTErrors.failedToWriteFile(File(nativePath: url.path), .init())
         }
     }
 
@@ -82,13 +90,13 @@ enum POSIXRandomAccess {
     /// the reason random access is worth having on the protocol at all.
     static func resize(_ url: URL, to length: Int) throws {
         guard let handle = try? FileHandle(forWritingTo: url) else {
-            throw FSTErrors.failedToWriteFile(File(url.path), .init())
+            throw FSTErrors.failedToWriteFile(File(nativePath: url.path), .init())
         }
         defer { try? handle.close() }
         do {
             try handle.truncate(atOffset: UInt64(length))
         } catch {
-            throw FSTErrors.failedToWriteFile(File(url.path), .init())
+            throw FSTErrors.failedToWriteFile(File(nativePath: url.path), .init())
         }
     }
 }

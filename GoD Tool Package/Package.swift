@@ -359,6 +359,10 @@ let package = Package(
             dependencies: ["ScriptDecompiler", "GoDFoundation"],
             path: "Tests/Shared Tests/Dependency Tests/Script Decompiler Tests"),
         .testTarget(
+            name: "GoDEngineTests",
+            dependencies: ["GoDEngine", "GoDFoundation", "Structs"],
+            path: "Tests/Shared Tests/Engine Tests/Core Engine Tests"),
+        .testTarget(
             name: "PPCTests",
             dependencies: ["Dolphin", "GoDFoundation"],
             path: "Tests/Shared Tests/Engine Tests/PPC Tests"),

@@ -31,7 +31,7 @@ enum LauncherScript {
     /// `./Scripts/Dump.sh` from the project root looked for the config one
     /// level above the project.
     static func body(executablePath: String, configFile: File) -> String {
-        let relativeConfig = Folder("..").file(configFile.path).path
+        let relativeConfig = Folder("..").file(configFile.path).nativePath
         return """
         #!/bin/sh
         cd "$(dirname "$0")" || exit 1

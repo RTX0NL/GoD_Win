@@ -111,6 +111,36 @@ public struct Enum: Codable, Equatable, Nameable {
         return value
     }
     
+    /// Case names that aren't usable (see `isValidCaseName`). Non-empty means
+    /// the enum can't be serialized unambiguously.
+    public var invalidCaseNames: [String] {
+        values.map(\.name).filter { !Self.isValidCaseName($0) }.sorted()
+    }
+
+    /// Whether `name` is usable as a case name.
+    ///
+    /// A case name must start with a letter or `_` and contain no whitespace.
+    /// That's deliberately looser than `StructDefinition.isValidPropertyName`:
+    /// a property name is a JSON key and a `@dynamicMemberLookup` member, so it
+    /// has to be an identifier, whereas a case name is only ever a *value*.
+    /// Punctuation is therefore fine, and real enums depend on it —
+    /// `FsysGroupIDs` names its cases after archive filenames (`B1_1.fsys`).
+    ///
+    /// The two restrictions each close a concrete ambiguity:
+    ///   * a leading digit or sign would make the name indistinguishable from
+    ///     the raw value it stands for, wherever a serialized field accepts
+    ///     either form — which is everywhere, since an unnamed value falls
+    ///     back to its integer;
+    ///   * whitespace would break `Case`'s `"<name> = <rawValue>"` codec,
+    ///     which splits on `" = "`.
+    public static func isValidCaseName(_ name: String) -> Bool {
+        guard let first = name.unicodeScalars.first else { return false }
+        guard first == "_" || CharacterSet.letters.contains(first) else { return false }
+        return !name.unicodeScalars.contains(where: {
+            CharacterSet.whitespacesAndNewlines.contains($0)
+        })
+    }
+
     /// Prefix of the synthesized name given to a raw value the enum doesn't
     /// name, e.g. `FileTypes_22` for raw 22 of `FileTypes`.
     public var unknownCasePrefix: String {
