@@ -191,7 +191,12 @@ let package = Package(
             dependencies: [
                 "GoDEngine",
                 "GoDFoundation",
-                "Structs"
+                "Structs",
+                // The DOL disassembly/assembly pipeline needs both this
+                // module's PowerPC types and the ISA-agnostic section/type-map
+                // machinery. The dependency runs this way round so
+                // `Disassembler` stays free of any instruction set.
+                "Disassembler"
             ],
             path: "Sources/Shared/Core/Engines/Dolphin"
         ),
@@ -402,6 +407,7 @@ let package = Package(
                 "Colosseum",
                 "GeniusSonority",
                 "XD",
+                "Pokemon",
                 "TestSupport",
                 "FixtureCatalog"
             ],
