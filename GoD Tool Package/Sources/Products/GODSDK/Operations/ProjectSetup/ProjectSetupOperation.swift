@@ -132,6 +132,14 @@ enum Project {
             engines.append(try profile.makeEngine())
         }
 
+        // PBR is a Wii title with no GameCube-side `GameProfile`, so its
+        // engine is added directly. It owns the `common.fsys` data-table
+        // definitions — the container header, the Pokémon model body map,
+        // and the per-table entry structs.
+        if isPBR {
+            engines.append(try PBREngine.defaults())
+        }
+
         // The Pokémon engine ships canonical species/move/item/ability/
         // nature/type enums plus the combined Trainer struct. Every GS
         // game (Colo/XD/PBR) consumes it for name↔id resolution.
@@ -153,6 +161,28 @@ enum Project {
                 )
             }
         }
+
+        // Engines whose structs and enums resolve typed data chunks in the
+        // DOL and the RELs. Disassembly and assembly combine these into one
+        // engine, in this order, so the game's own definitions win and the
+        // shared sets they reference — Genius Sonority file/group enums,
+        // Pokemon species/move/item enums — resolve behind them.
+        //
+        // Order matters: Colosseum and XD both declare `CharacterModel`, at
+        // different sizes, so the game engine has to come first.
+        let typedDataEngines: [Folder] = {
+            var folders = [Folder]()
+            if let profile {
+                folders.append(enginesFolder.folder(profile.engineName).prefixed("."))
+            }
+            if isGeniusSonority, let game = gsGame {
+                folders.append(
+                    enginesFolder.folder(GeniusSonorityEngine.defaultEngine(for: game).name).prefixed(".")
+                )
+                folders.append(enginesFolder.folder(PokemonEngine.engineName).prefixed("."))
+            }
+            return folders
+        }()
 
         // Build config generation
         let buildConfig: GoddessConfig
@@ -310,41 +340,57 @@ enum Project {
             // itself rather than a literal, so the two can't drift apart.
             let gameEngineFolder = enginesFolder.folder(profile?.engineName ?? "")
 
-            // The asset steps are the same list on both sides — one entry
-            // per format, all disabled until the user opts in. They used to be
-            // written out four times (once per game, per direction).
-            let assetSourceFolders: [(ColoXD.AssetFormat, source: Folder, binaries: Folder)] = [
-                (.flashMenu, flashMenusSourceFolder, flashMenusFolder),
-                (.font, fontsSourceFolder, fontsFolder),
-                (.message(variant: profile?.msgVariant ?? "xd"), messagesSourceFolder, messagesFolder),
-                (.texture, atxSourceFolder, atxFolder),
+            // One asset step per format on each side, all disabled until the
+            // user opts in. Each format has its own operation, so the pairs
+            // are listed rather than mapped over — the config a user reads
+            // names the format it acts on.
+            let msgVariant = profile?.msgVariant ?? "xd"
+            let assetBuildSteps: [OperationConfig<ColoXD.BuildConfig.Operations>] = [
+                OperationConfig(operation: .buildFlashMenus(
+                    projectsFolder: flashMenusSourceFolder.prefixed("."),
+                    outputFolder: flashMenusFolder.prefixed("."),
+                    overwrite: true
+                ), enabled: .no),
+                OperationConfig(operation: .buildFonts(
+                    fontsFolder: fontsSourceFolder.prefixed("."),
+                    outputFolder: fontsFolder.prefixed("."),
+                    overwrite: true
+                ), enabled: .no),
+                OperationConfig(operation: .buildMessages(
+                    jsonFolder: messagesSourceFolder.prefixed("."),
+                    outputFolder: messagesFolder.prefixed("."),
+                    overwrite: true
+                ), enabled: .no),
+                OperationConfig(operation: .buildATXs(
+                    jsonFolder: atxSourceFolder.prefixed("."),
+                    outputFolder: atxFolder.prefixed("."),
+                    overwrite: true
+                ), enabled: .no),
             ]
 
-            let assetBuildSteps: [OperationConfig<ColoXD.BuildConfig.Operations>] =
-                assetSourceFolders.map { format, source, binaries in
-                    OperationConfig(
-                        operation: .buildAssets(
-                            format: format,
-                            input: .folder(source.prefixed(".")),
-                            outputFolder: binaries.prefixed("."),
-                            overwrite: true
-                        ),
-                        enabled: .no
-                    )
-                }
-
-            let assetDumpSteps: [OperationConfig<ColoXD.DumpConfig.Operations>] =
-                assetSourceFolders.map { format, source, binaries in
-                    OperationConfig(
-                        operation: .dumpAssets(
-                            format: format,
-                            input: .folder(binaries.prefixed(".")),
-                            outputFolder: source.prefixed("."),
-                            overwrite: false
-                        ),
-                        enabled: .no
-                    )
-                }
+            let assetDumpSteps: [OperationConfig<ColoXD.DumpConfig.Operations>] = [
+                OperationConfig(operation: .dumpFlashMenus(
+                    flashMenusFolder: flashMenusFolder.prefixed("."),
+                    outputFolder: flashMenusSourceFolder.prefixed("."),
+                    overwrite: false
+                ), enabled: .no),
+                OperationConfig(operation: .dumpFonts(
+                    fontsFolder: fontsFolder.prefixed("."),
+                    outputFolder: fontsSourceFolder.prefixed("."),
+                    overwrite: false
+                ), enabled: .no),
+                OperationConfig(operation: .dumpMessages(
+                    messagesFolder: messagesFolder.prefixed("."),
+                    outputFolder: messagesSourceFolder.prefixed("."),
+                    overwrite: false,
+                    variant: msgVariant
+                ), enabled: .no),
+                OperationConfig(operation: .dumpATXs(
+                    atxFolder: atxFolder.prefixed("."),
+                    outputFolder: atxSourceFolder.prefixed("."),
+                    overwrite: false
+                ), enabled: .no),
+            ]
 
             // One chain for every Genius Sonority GameCube game. The two
             // blocks this replaces were identical apart from the FSYS
@@ -535,7 +581,8 @@ enum Project {
                                     outputFolder: commonRelSourceFolder.prefixed("."),
                                     overwrite: false,
                                     dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
-                                    gameEngine: enginesFolder.folder(profile.engineName).prefixed(".")
+                                    gameEngine: enginesFolder.folder(profile.engineName).prefixed("."),
+                                    engines: typedDataEngines
                                 )
                             ),
                             enabled: .yes
@@ -561,7 +608,8 @@ enum Project {
                                     typeMapPath: gameEngineFolder.file(plan.typeMapResource.path).prefixed("."),
                                     dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
                                     gameEngine: gameEngineFolder.prefixed("."),
-                                    filter: plan.filter
+                                    filter: plan.filter,
+                                    engines: typedDataEngines
                                 )
                             ),
                             enabled: .no
@@ -586,10 +634,10 @@ enum Project {
                                     gameEngineFolder.file(resource.path).prefixed(".")
                                 },
                                 // A type map's chunk types resolve against the
-                                // game engine's struct definitions.
+                                // combined engine, game definitions first.
                                 engines: profile?.dolTypeMapResource == nil
                                     ? nil
-                                    : [gameEngineFolder.prefixed(".")]
+                                    : typedDataEngines
                             )
                         ),
                         enabled: .yes

@@ -46,11 +46,12 @@ final class ColoScriptOperationTests: XCTestCase {
 
         let config = ColoXD.DumpConfig(operations: [
             OperationConfig(
-                operation: .dumpAssets(
-                    format: .coloScript(language: language, engine: engineFolder),
-                    input: .file(scdFile),
+                operation: .dumpColoScript(
+                    scdFile: scdFile,
                     outputFolder: Folder("/project/Source/Scripts"),
-                    overwrite: true
+                    overwrite: true,
+                    language: language,
+                    gameEngine: engineFolder
                 ),
                 enabled: .yes
             )
@@ -97,18 +98,18 @@ final class ColoScriptOperationTests: XCTestCase {
 
             let sourceFolder = Folder("/project/Source/Scripts")
             try ColoXD.dump(config: ColoXD.DumpConfig(operations: [
-                OperationConfig(operation: .dumpAssets(
-                    format: .coloScript(language: language, engine: engineFolder),
-                    input: .file(scdFile), outputFolder: sourceFolder,
-                    overwrite: true), enabled: .yes)
+                OperationConfig(operation: .dumpColoScript(
+                    scdFile: scdFile, outputFolder: sourceFolder,
+                    overwrite: true, language: language,
+                    gameEngine: engineFolder), enabled: .yes)
             ]), settings: .default, fileSystem: fst, logger: nil)
 
             let rebuiltFolder = Folder("/project/rebuilt")
             try ColoXD.build(config: ColoXD.BuildConfig(operations: [
-                OperationConfig(operation: .buildAssets(
-                    format: .coloScript(language: language, engine: engineFolder),
-                    input: .file(sourceFolder.file("test.\(language.fileExtension)")),
-                    outputFolder: rebuiltFolder, overwrite: true), enabled: .yes)
+                OperationConfig(operation: .buildColoScript(
+                    sourceFile: sourceFolder.file("test.\(language.fileExtension)"),
+                    outputFile: rebuiltFolder.file("test.scd"),
+                    overwrite: true, gameEngine: engineFolder), enabled: .yes)
             ]), settings: .default, fileSystem: fst, logger: nil)
 
             let rebuilt = fst.readFile(at: rebuiltFolder.file("test.scd"))?.rawBytes
@@ -120,12 +121,12 @@ final class ColoScriptOperationTests: XCTestCase {
     /// serialization (so it works from a `Dump-Config.json` on disk).
     func testLanguageFlagRoundTripsThroughConfigJSON() throws {
         for language in ColoScriptLanguage.allCases {
-            let op = ColoXD.DumpConfig.Operations.dumpAssets(
-                format: .coloScript(language: language, engine: Folder("/engine")),
-                input: .file(File("/a.scd")), outputFolder: Folder("/out"), overwrite: true)
+            let op = ColoXD.DumpConfig.Operations.dumpColoScript(
+                scdFile: File("/a.scd"), outputFolder: Folder("/out"),
+                overwrite: true, language: language, gameEngine: Folder("/engine"))
             let data: Data = try JSONEncoder().encode(op)
             let decoded = try JSONDecoder().decode(ColoXD.DumpConfig.Operations.self, from: data)
-            guard case .dumpAssets(.coloScript(let decodedLanguage, _), _, _, _) = decoded else {
+            guard case .dumpColoScript(_, _, _, let decodedLanguage, _) = decoded else {
                 return XCTFail("wrong case decoded")
             }
             XCTAssertEqual(decodedLanguage, language)

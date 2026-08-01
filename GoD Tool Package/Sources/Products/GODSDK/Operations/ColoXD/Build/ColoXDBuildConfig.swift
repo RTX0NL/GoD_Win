@@ -36,14 +36,63 @@ extension ColoXD {
                 overwrite: Bool,
                 geniusSonorityEngine: Folder
             )
-            /// Rebuild one asset format's binaries from its artifacts.
-            /// The counterpart to `dumpAssets`; see it for why the format is a
-            /// parameter rather than a case per format.
-            case buildAssets(
-                format: AssetFormat,
-                input: AssetPath,
+            case buildFonts(
+                fontsFolder: Folder,
                 outputFolder: Folder,
                 overwrite: Bool
+            )
+            case buildFlashMenus(
+                projectsFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
+            case buildFlashMenu(
+                metadataFile: File,
+                outputFile: File,
+                overwrite: Bool
+            )
+            case buildMessages(
+                jsonFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
+            case buildMessage(
+                jsonFile: File,
+                outputFile: File,
+                overwrite: Bool
+            )
+            case buildATXs(
+                jsonFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
+            case buildATX(
+                metadataFile: File,
+                outputFile: File,
+                overwrite: Bool
+            )
+            case buildAudios(
+                jsonFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
+            case buildAudio(
+                metadataFile: File,
+                ishOutputFile: File,
+                isdOutputFile: File,
+                overwrite: Bool
+            )
+            case buildColoScripts(
+                sourceFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool,
+                gameEngine: Folder
+            )
+            case buildColoScript(
+                sourceFile: File,
+                outputFile: File,
+                overwrite: Bool,
+                gameEngine: Folder
             )
         }
 

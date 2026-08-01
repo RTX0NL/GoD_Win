@@ -14,9 +14,11 @@ import XCTest
 import Foundation
 import GoDFoundation
 import Disassembler
+import Dolphin
 import Structs
 import XD
 import Colosseum
+import Pokemon
 @testable import GODOps
 
 final class BundledTypeMapTests: XCTestCase {
@@ -71,7 +73,7 @@ final class BundledTypeMapTests: XCTestCase {
         XCTAssertTrue(tableEntryTypes(map).contains { $0.type == "CharacterModel" && defined.contains("CharacterModel") })
     }
 
-    /// The engine folders that resolve a map's struct types now come from the
+    /// The engine folders that resolve a map's struct types come from the
     /// operation (via `resolveStructTypes(engineFolders:)`), not the map.
     func testResolveStructTypesUsesConfigEngineFolders() throws {
         let fst = InMemoryFST()
@@ -84,12 +86,68 @@ final class BundledTypeMapTests: XCTestCase {
         let resolved = resolveStructTypes(from: map, engineFolders: [engineFolder], fileSystem: fst, logger: nil)
         XCTAssertNotNil(resolved["CharacterModel"], "should resolve from the supplied engine folder")
 
-        // No engine folders → falls back to the built-in XD struct set.
-        let fallback = resolveStructTypes(from: map, engineFolders: [], fileSystem: fst, logger: nil)
-        XCTAssertNotNil(fallback["CharacterModel"], "empty engines should fall back to built-in XD structs")
-
         // An unresolvable type stays unresolved (chunk would degrade to raw).
         let unknown = TypeMap(chunks: [.table(.init(name: "Nope", start: "x", entryType: "NoSuchStruct"))])
         XCTAssertNil(resolveStructTypes(from: unknown, engineFolders: [engineFolder], fileSystem: fst, logger: nil)["NoSuchStruct"])
+    }
+
+    /// There is deliberately no fallback to a built-in engine. Resolving one
+    /// game's type map against another game's structs is worse than not
+    /// resolving it: Colosseum and XD both declare `CharacterModel`, at 0xDC
+    /// and 0x34 bytes, so the fallback would silently read a Colosseum table
+    /// at a quarter of its stride and report it as typed.
+    func testResolveStructTypesDoesNotFallBackToABuiltInEngine() throws {
+        let fst = InMemoryFST()
+        let map = TypeMap(chunks: [
+            .table(.init(name: "CharacterModels", start: "x", entryType: "CharacterModel"))
+        ])
+        XCTAssertTrue(resolveStructTypes(from: map, engineFolders: [], fileSystem: fst, logger: nil).isEmpty)
+        // A folder that isn't an engine is the same story.
+        XCTAssertTrue(
+            resolveStructTypes(from: map, engineFolders: [Folder("/nope")], fileSystem: fst, logger: nil).isEmpty
+        )
+    }
+
+    /// Enum fields have to survive resolution. The local resolver this
+    /// replaced mapped every `.enumeration` to `uint8` and never read the
+    /// `Enumerations/` folder, so no typed chunk ever had one.
+    ///
+    /// (Every enum the XD structs reference is declared by the XD engine
+    /// itself, so this doesn't exercise cross-engine lookup — that's
+    /// `GenericEngineCombiningTests`. The Pokemon folder is here because it
+    /// is what ProjectSetup now seeds, and it must not disturb resolution.)
+    func testResolveStructTypesKeepsEnumFields() throws {
+        let fst = InMemoryFST()
+        let engines = Folder("/project/Engines")
+        let gameFolder = installEngine(try XDEngine.defaults(), under: engines, in: fst)
+        let pokemonFolder = installEngine(try PokemonEngine.defaults(), under: engines, in: fst)
+
+        // A struct the XD engine declares with an enum-typed field.
+        let withEnum = XDEngine.Structs.allItems.first { map in
+            map.properties.contains { if case .enumeration = $0.type { return true }; return false }
+        }
+        let structName: String = try XCTUnwrap(withEnum?.name, "expected an XD struct with an enum field")
+        let map = TypeMap(chunks: [.table(.init(name: "T", start: "x", entryType: structName))])
+
+        let resolved = resolveStructTypes(
+            from: map, engineFolders: [gameFolder, pokemonFolder], fileSystem: fst, logger: nil
+        )
+        let definition = try XCTUnwrap(resolved[structName])
+        let enumFields = definition.properties.filter {
+            if case .enumeration = $0.type { return true }
+            return false
+        }
+        XCTAssertFalse(
+            enumFields.isEmpty,
+            "enum fields must survive resolution — the previous local resolver mapped them all to uint8"
+        )
+        // And they must carry their real cases, not just be enum-shaped.
+        for field in enumFields {
+            guard case .enumeration(let resolvedEnum) = field.type else { continue }
+            XCTAssertFalse(
+                resolvedEnum.values.isEmpty,
+                "enum '\(resolvedEnum.name)' resolved with no cases — the Enumerations folder wasn't read"
+            )
+        }
     }
 }

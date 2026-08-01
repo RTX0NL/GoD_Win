@@ -201,9 +201,8 @@ final class ColoXDOperationTests: XCTestCase {
 
         let dumpConfig = ColoXD.DumpConfig(operations: [
             OperationConfig(
-                operation: .dumpAssets(
-                    format: .texture,
-                    input: .file(atxFile),
+                operation: .dumpATX(
+                    atxFile: atxFile,
                     outputFolder: Folder("/project/ATX"),
                     overwrite: true
                 ),
@@ -227,10 +226,9 @@ final class ColoXDOperationTests: XCTestCase {
         let rebuiltFile = rebuiltFolder.file("atx_sample.atx")
         let buildConfig = ColoXD.BuildConfig(operations: [
             OperationConfig(
-                operation: .buildAssets(
-                    format: .texture,
-                    input: .file(manifest),
-                    outputFolder: rebuiltFolder,
+                operation: .buildATX(
+                    metadataFile: manifest,
+                    outputFile: rebuiltFile,
                     overwrite: true
                 ),
                 enabled: .yes
