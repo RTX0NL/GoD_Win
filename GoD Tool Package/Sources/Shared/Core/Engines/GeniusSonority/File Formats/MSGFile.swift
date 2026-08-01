@@ -152,25 +152,32 @@ public struct MSGFile: FileFormat, Equatable {
             // Header bytes 0x08..0x0F — reserved suffix
             for b in paddedBytes(reservedSuffix, to: 8) { out.append(UInt8(b)) }
 
-            // Sort entries by ID so the table always comes out in a
-            // deterministic order, matching the legacy tool's behaviour.
-            let sorted = entries.sorted(by: { $0.id < $1.id })
-
+            // Entries are written in the order they are held. Nothing in the
+            // format requires the table to be sorted — the game finds a string
+            // by scanning for its id, not by binary search — and sorting here
+            // silently reordered whatever order the file was parsed in or the
+            // user authored in the JSON.
+            //
             // Reserve space for the entry table. We know each string's
             // offset only after we decide the layout — compute offsets by
             // laying strings out sequentially after the table.
             let tableStart = 0x10
-            let tableLength = sorted.count * 8
+            let tableLength = entries.count * 8
             var stringStart = tableStart + tableLength
 
             var stringBlobs: [(id: UInt32, offset: Int, bytes: [UInt8])] = []
-            for entry in sorted {
+            for entry in entries {
                 let bytes = entry.string.rawData(byteOrder: .big).rawBytes
                 stringBlobs.append((entry.id, stringStart, bytes))
-                // Each string is terminated by a UTF-16 null word, and the
-                // next entry starts on a 2-byte boundary.
+                // Each string is terminated by a null word and the next one
+                // starts immediately after it — the game packs the pool with
+                // no alignment. Rounding each start up to an even address
+                // (which this used to do) is invisible in Colosseum, where
+                // every character is two bytes wide, but XD's format is
+                // variable-width: an odd-length body cost one pad byte per
+                // string. That was the whole of the +546 bytes the three
+                // DOL-embedded XD message tables used to gain on re-encode.
                 stringStart += bytes.count + 2
-                if stringStart % 2 != 0 { stringStart += 1 }
             }
 
             // Write entry table
