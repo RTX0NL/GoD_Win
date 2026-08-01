@@ -638,10 +638,10 @@ private func renderByteBlocksAsAssembly(
     return lines.joined(separator: "\n")
 }
 
-enum DolAssemblyErrors: Error, CustomStringConvertible {
+public enum DolAssemblyErrors: Error, CustomStringConvertible {
     case sectionsFileNotFound(file: File, ErrorTrace)
 
-    var description: String {
+    public var description: String {
         switch self {
         case let .sectionsFileNotFound(file, trace):
             return "sections.txt not found: \(file)\n\(trace)"

@@ -709,11 +709,11 @@ private extension JSONEncoder {
     }()
 }
 
-enum DolDisassemblyErrors: Error, CustomStringConvertible {
+public enum DolDisassemblyErrors: Error, CustomStringConvertible {
     case dolNotFound(file: File, ErrorTrace)
     case structNotFound(name: String, ErrorTrace)
 
-    var description: String {
+    public var description: String {
         switch self {
         case let .dolNotFound(file, trace):
             return "DOL file not found: \(file)\n\(trace)"
