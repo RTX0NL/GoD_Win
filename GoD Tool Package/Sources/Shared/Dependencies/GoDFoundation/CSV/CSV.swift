@@ -21,10 +21,12 @@ public enum CSV {
         }
     }
 
-    /// Characters that force a field to be quoted. Leading/trailing
-    /// whitespace is included so a value that deliberately carries it
-    /// survives a reader that trims unquoted cells.
-    private static let mustQuote: Set<Character> = [",", "\"", "\n", "\r"]
+    /// Characters that force a field to be quoted. `\r\n` is listed as well
+    /// as its halves because Swift clusters it into a single Character, so
+    /// matching only `\r` and `\n` would miss it. Leading/trailing
+    /// whitespace is handled separately, so a value that deliberately
+    /// carries it survives a reader that trims unquoted cells.
+    private static let mustQuote: Set<Character> = [",", "\"", "\n", "\r", "\r\n"]
 
     // MARK: - Writing
 

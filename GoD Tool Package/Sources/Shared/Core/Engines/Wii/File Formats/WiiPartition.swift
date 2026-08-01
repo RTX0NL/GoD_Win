@@ -450,7 +450,7 @@ public final class WiiPartition: FileSystemTree {
     }
 }
 
-// MARK: - Random access
+// MARK: - Sizing and readers
 //
 // Pass-through to the partition's backing tree, matching the whole-file
 // forwarders above.
@@ -458,17 +458,7 @@ public final class WiiPartition: FileSystemTree {
 public extension WiiPartition {
     func fileSize(at path: File) -> Int? { fst.fileSize(at: path) }
 
-    func readFile(at path: File, range: Range<Int>) -> GoDData? {
-        fst.readFile(at: path, range: range)
-    }
-
-    func appendToFile(_ data: GoDData, at path: File) throws {
-        try fst.appendToFile(data, at: path)
-    }
-
-    func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
-        try fst.writeFile(data, at: path, offset: offset)
-    }
+    func reader(at path: File) -> GoDReadable? { fst.reader(at: path) }
 
     func resizeFile(at path: File, to length: Int) throws {
         try fst.resizeFile(at: path, to: length)

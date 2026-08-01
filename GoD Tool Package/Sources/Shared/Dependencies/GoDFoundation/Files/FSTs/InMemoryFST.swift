@@ -230,46 +230,19 @@ public class InMemoryFST: FileSystemTree {
     }
 }
 
-// MARK: - Random access
+// MARK: - Sizing
 //
-// Held in memory already, so these are slices and in-place edits rather than
-// real IO. Note these rely on `GoDData` being a reference type: the object a
-// read hands back *is* the stored one, so mutating it is what makes an
-// in-place append or resize take effect.
+// Held in memory already, so these are direct edits rather than real IO. Note
+// they rely on `GoDData` being a reference type: the object a read hands back
+// *is* the stored one, so mutating it is what makes a resize take effect.
+//
+// `reader(at:)` is inherited from the protocol extension — a whole-file read
+// is already the cheapest thing this tree can do.
 
 public extension InMemoryFST {
 
     func fileSize(at path: File) -> Int? {
         readFile(at: path)?.length
-    }
-
-    func readFile(at path: File, range: Range<Int>) -> GoDData? {
-        guard let data = readFile(at: path) else { return nil }
-        let clamped = range.clamped(to: 0..<data.length)
-        guard !clamped.isEmpty else { return GoDData(byteOrder: data.byteOrder) }
-        return data.read(atAddress: clamped.lowerBound, length: clamped.count)
-    }
-
-    func appendToFile(_ data: GoDData, at path: File) throws {
-        guard let existing = readFile(at: path) else {
-            try writeFile(data, at: path, overwrite: false)
-            return
-        }
-        existing.append(data)
-    }
-
-    func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
-        guard offset >= 0 else {
-            throw FSTErrors.invalidPath(path.path, .init())
-        }
-        guard let existing = readFile(at: path) else {
-            let padded = GoDData(length: offset, byteOrder: .big)
-            padded.append(data)
-            try writeFile(padded, at: path, overwrite: false)
-            return
-        }
-        // `GoDData.write` grows the buffer when the write runs past the end.
-        existing.write(data, atAddress: UInt(offset))
     }
 
     func resizeFile(at path: File, to length: Int) throws {

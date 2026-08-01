@@ -385,7 +385,7 @@ public final class WiiISO: FileSystemTree {
     }
 }
 
-// MARK: - Random access
+// MARK: - Sizing and readers
 //
 // Routed to the owning partition, the same way the whole-file operations are.
 // A path outside every partition has no file to address, so these report it
@@ -397,19 +397,9 @@ public extension WiiISO {
         return partition.fileSize(at: File(relativePath))
     }
 
-    func readFile(at path: File, range: Range<Int>) -> GoDData? {
+    func reader(at path: File) -> GoDReadable? {
         guard let (partition, relativePath) = partitionAndRelativePath(for: path) else { return nil }
-        return partition.readFile(at: File(relativePath), range: range)
-    }
-
-    func appendToFile(_ data: GoDData, at path: File) throws {
-        let (partition, relativePath) = try requirePartition(for: path)
-        try partition.appendToFile(data, at: File(relativePath))
-    }
-
-    func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
-        let (partition, relativePath) = try requirePartition(for: path)
-        try partition.writeFile(data, at: File(relativePath), offset: offset)
+        return partition.reader(at: File(relativePath))
     }
 
     func resizeFile(at path: File, to length: Int) throws {

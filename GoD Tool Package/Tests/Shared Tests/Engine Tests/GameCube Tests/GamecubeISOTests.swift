@@ -120,6 +120,48 @@ final class GamecubeISOTests: XCTestCase {
         XCTAssertEqual(testFile?.length, 64)
     }
 
+    /// The parser takes a `GoDReadable`, so it must produce the same tree
+    /// whether the disc is resident in memory or streamed off disk. This is
+    /// the property that lets a dump avoid holding a 1.4 GB image: if the two
+    /// sources ever disagreed, they would disagree only on real discs.
+    func testParsingFromAStreamedFileMatchesParsingFromMemory() throws {
+        let (dolphinEngine, gamecubeEngine) = try defaultEngines()
+        let isoData = try buildMinimalISO()
+
+        let scratch = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("GamecubeISOStreamed-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        let discURL = scratch.appendingPathComponent("disc.iso")
+        try Data(isoData.rawBytes).write(to: discURL)
+        let streamed = try GoDStreamedData(file: File(nativePath: discURL.path))
+
+        let fromMemory = try GamecubeISO(
+            data: isoData, dolphinEngine: dolphinEngine, gamecubeEngine: gamecubeEngine
+        )
+        let fromDisk = try GamecubeISO(
+            data: streamed, dolphinEngine: dolphinEngine, gamecubeEngine: gamecubeEngine
+        )
+
+        for path in ["/sys/boot.bin", "/sys/bi2.bin", "/sys/apploader.img",
+                     "/sys/main.dol", "/sys/fst.bin", "/files/test.bin"] {
+            let memory = fromMemory.readFile(at: File(path))?.rawBytes
+            XCTAssertNotNil(memory, path)
+            XCTAssertEqual(fromDisk.readFile(at: File(path))?.rawBytes, memory, path)
+        }
+    }
+
+    /// A little-endian source would read every offset byte-swapped and fail
+    /// somewhere far from the cause, so it is rejected at the door.
+    func testLittleEndianSourceIsRejected() throws {
+        let (dolphinEngine, gamecubeEngine) = try defaultEngines()
+        let littleEndian = GoDData(byteStream: try buildMinimalISO().rawBytes, byteOrder: .little)
+        XCTAssertThrowsError(
+            try GamecubeISO(data: littleEndian, dolphinEngine: dolphinEngine, gamecubeEngine: gamecubeEngine)
+        )
+    }
+
     // MARK: - Round-trip
 
     func testRoundTripFromFST() throws {

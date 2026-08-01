@@ -58,15 +58,28 @@ public final class GamecubeISO: FileSystemTree {
         try fst.deleteFolder(at: path)
     }
     
+    /// Reads a disc image.
+    ///
+    /// `data` is a `GoDReadable`, not a `GoDData`, because this only ever
+    /// reads windows of the image — the boot header, the FST, then one member
+    /// file at a time. Taking the narrower type would force a caller to hold
+    /// a 1.4 GB image in memory to extract a few megabytes of it; pass a
+    /// `GoDStreamedData` and peak memory is the largest single member instead.
+    ///
+    /// The image must be big-endian, which is the only thing a GameCube disc
+    /// ever is. A little-endian source would read every offset byte-swapped
+    /// and fail somewhere less obvious than here.
     public init(
-        data: GoDData,
+        data: GoDReadable,
         dolphinEngine: DolphinEngine,
         gamecubeEngine: GamecubeEngine
     ) throws {
         self.dolphinEngine = dolphinEngine
         self.gamecubeEngine = gamecubeEngine
-        data.setByteOrder(.big)
-        
+        guard data.byteOrder == .big else {
+            throw FileFormatErrors.invalid(format: Self.formatName)
+        }
+
         // Create root folders
         try fst.createFolder(at: systemFolder, overwrite: true)
         try fst.createFolder(at: filesFolder, overwrite: true)
@@ -290,24 +303,14 @@ public final class GamecubeISO: FileSystemTree {
     }
 }
 
-// MARK: - Random access
+// MARK: - Sizing and readers
 //
 // A pass-through to the backing tree, like the whole-file operations above.
 
 public extension GamecubeISO {
     func fileSize(at path: File) -> Int? { fst.fileSize(at: path) }
 
-    func readFile(at path: File, range: Range<Int>) -> GoDData? {
-        fst.readFile(at: path, range: range)
-    }
-
-    func appendToFile(_ data: GoDData, at path: File) throws {
-        try fst.appendToFile(data, at: path)
-    }
-
-    func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
-        try fst.writeFile(data, at: path, offset: offset)
-    }
+    func reader(at path: File) -> GoDReadable? { fst.reader(at: path) }
 
     func resizeFile(at path: File, to length: Int) throws {
         try fst.resizeFile(at: path, to: length)

@@ -23,6 +23,13 @@ final class CSVTests: XCTestCase {
         XCTAssertEqual(CSV.escape("carriage\rreturn"), "\"carriage\rreturn\"")
     }
 
+    func testFieldContainingCRLFIsQuoted() {
+        // Swift clusters "\r\n" into one Character, so a naive membership
+        // test against "\r" and "\n" alone misses it and emits a field that
+        // silently splits the row on the way back in.
+        XCTAssertEqual(CSV.escape("a\r\nb"), "\"a\r\nb\"")
+    }
+
     func testEmbeddedQuotesAreDoubled() {
         XCTAssertEqual(CSV.escape("say \"hi\""), "\"say \"\"hi\"\"\"")
     }

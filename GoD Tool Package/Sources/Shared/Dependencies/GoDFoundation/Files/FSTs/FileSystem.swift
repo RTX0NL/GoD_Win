@@ -231,10 +231,7 @@ public extension FileSystemTree {
     }
 }
 
-// MARK: - Random access
-//
-// Same FileHandle work as `DiskBackedFST`; only path resolution differs, so it
-// is shared via `FileHandleAccess`.
+// MARK: - Sizing and readers
 
 public extension FileSystem {
 
@@ -242,33 +239,21 @@ public extension FileSystem {
         FileHandleAccess.fileSize(at: extendPath(path).url)
     }
 
-    func readFile(at path: File, range: Range<Int>) -> GoDData? {
-        FileHandleAccess.read(at: extendPath(path).url, range: range)
-    }
-
-    func appendToFile(_ data: GoDData, at path: File) throws {
-        let full = extendPath(path)
-        guard FileHandleAccess.isRegularFile(full.url) else {
-            return try writeFile(data, at: path, overwrite: false)
-        }
-        try FileHandleAccess.append(data, to: full.url)
-    }
-
-    func writeFile(_ data: GoDData, at path: File, offset: Int) throws {
-        guard offset >= 0 else { throw FSTErrors.invalidPath(path.path, .init()) }
-        try ensureFileExists(at: path)
-        try FileHandleAccess.write(data, to: extendPath(path).url, offset: offset)
+    /// Streams from disk rather than materialising the file. This is the whole
+    /// reason `reader(at:)` exists on the protocol: a disc image opened through
+    /// `readFile` costs its full size in memory before the first byte is
+    /// parsed, and disc images are the files this project spends its time on.
+    func reader(at path: File) -> GoDReadable? {
+        try? GoDStreamedData(file: extendPath(path))
     }
 
     func resizeFile(at path: File, to length: Int) throws {
         guard length >= 0 else { throw FSTErrors.invalidPath(path.path, .init()) }
-        try ensureFileExists(at: path)
+        // `resize` needs something to open, and growing a file that isn't
+        // there yet is a reasonable way to ask for one.
+        if !FileHandleAccess.isRegularFile(extendPath(path).url) {
+            try writeFile(GoDData(byteOrder: .big), at: path, overwrite: false)
+        }
         try FileHandleAccess.resize(extendPath(path).url, to: length)
-    }
-
-    /// Range writes address a file that may not exist yet.
-    private func ensureFileExists(at path: File) throws {
-        guard !FileHandleAccess.isRegularFile(extendPath(path).url) else { return }
-        try writeFile(GoDData(byteOrder: .big), at: path, overwrite: false)
     }
 }

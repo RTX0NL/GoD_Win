@@ -55,10 +55,12 @@ public struct FolderMetaData {
 /// read racing a write — is undefined. Callers that fan out (e.g. the FSYS
 /// pack/unpack passes) must confine all mutation to a single thread.
 ///
-/// **Random access is part of the contract.** Whole-file reads and writes are
-/// the wrong shape for disc images: padding an ISO to capacity through
-/// `readFile`/`writeFile` moves gigabytes to append zeros, where `resizeFile`
-/// is a single truncation.
+/// **Reading a range is not the tree's job.** A tree hands out whole files, or
+/// a `GoDReadable` over one (`reader(at:)`); windowed access is that reader's
+/// contract, not this one. Sizing and resizing stay here because they are
+/// file-system operations rather than ways of interpreting bytes — and because
+/// padding a disc image to capacity through `readFile`/`writeFile` would move
+/// gigabytes to append zeros, where `resizeFile` is a single truncation.
 public protocol FileSystemTree {
     func inspectFile(at path: File) -> FileMetaData?
     func readFile(at path: File) -> GoDData?
@@ -71,21 +73,17 @@ public protocol FileSystemTree {
     func createFolder(at path: Folder, overwrite: Bool) throws
     func deleteFolder(at path: Folder) throws
 
-    // MARK: Random access
+    /// A reader over the file's bytes.
+    ///
+    /// Parsers that only need windows of a large file — a disc image being the
+    /// case that forced this — should take a `GoDReadable` and get it from
+    /// here rather than calling `readFile`, which materialises the lot. The
+    /// default does exactly that materialise; trees whose files are real files
+    /// on disk override it to stream (see `FileSystem`).
+    func reader(at path: File) -> GoDReadable?
 
     /// Size in bytes, without reading the contents.
     func fileSize(at path: File) -> Int?
-
-    /// Reads `range` of the file. Nil if the file is missing; a range running
-    /// past the end is clamped, so a short read is not an error.
-    func readFile(at path: File, range: Range<Int>) -> GoDData?
-
-    /// Appends to the end of an existing file, creating it if absent.
-    func appendToFile(_ data: GoDData, at path: File) throws
-
-    /// Writes `data` at `offset`, zero-filling any gap when the file ends
-    /// before `offset`.
-    func writeFile(_ data: GoDData, at path: File, offset: Int) throws
 
     /// Sets the file's length, zero-filling when growing and discarding the
     /// tail when shrinking.
@@ -93,6 +91,12 @@ public protocol FileSystemTree {
 }
 
 public extension FileSystemTree {
+    /// Whole-file fallback. Correct everywhere, cheap only where the file is
+    /// small or already in memory.
+    func reader(at path: File) -> GoDReadable? {
+        readFile(at: path)
+    }
+
     /// Grows the file to `length` with zeros, leaving it alone if already at
     /// least that long — the padding operation disc images want.
     func padFile(at path: File, toAtLeast length: Int) throws {
