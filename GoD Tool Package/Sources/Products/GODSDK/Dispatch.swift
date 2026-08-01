@@ -78,14 +78,25 @@ public enum GODOps {
         fileSystem: FileSystem = FileSystem.shared,
         logger: Logger? = nil
     ) throws {
-        try runConfig(at: file, fileSystem: fileSystem, logger: logger, handler: EngineOperationHandler())
+        try runConfig(
+            at: file,
+            fileSystem: StreamedFileSystem(fileSystem),
+            logger: logger,
+            handler: EngineOperationHandler()
+        )
     }
 
-    /// Testable seam: same as `runConfig` but over any `FileSystemTree` and
-    /// with an injectable operation handler.
+    /// Testable seam: same as `runConfig` but over an injected tree and
+    /// operation handler.
+    ///
+    /// The tree is a `StreamedFileSystem` because operations that open a disc
+    /// image need one and dispatch is where that choice belongs — deciding it
+    /// here means no operation has to probe at runtime for what it was handed.
+    /// Wrapping an in-memory tree (`StreamedFileSystem(materialising:)`) is how
+    /// tests opt out; reads then materialise, which is all they can do anyway.
     static func runConfig(
         at file: File,
-        fileSystem: FileSystemTree,
+        fileSystem: StreamedFileSystem,
         logger: Logger?,
         handler: OperationHandler
     ) throws {
@@ -102,14 +113,20 @@ public enum GODOps {
         fileSystem: FileSystem = FileSystem.shared,
         logger: Logger? = nil
     ) throws {
-        try runOperation(json: json, settingsJSON: settingsJSON, fileSystem: fileSystem, logger: logger, handler: EngineOperationHandler())
+        try runOperation(
+            json: json,
+            settingsJSON: settingsJSON,
+            fileSystem: StreamedFileSystem(fileSystem),
+            logger: logger,
+            handler: EngineOperationHandler()
+        )
     }
 
     /// Testable seam for `runOperation` with an injectable handler.
     static func runOperation(
         json: Data,
         settingsJSON: Data?,
-        fileSystem: FileSystemTree,
+        fileSystem: StreamedFileSystem,
         logger: Logger?,
         handler: OperationHandler
     ) throws {
@@ -125,13 +142,11 @@ public enum GODOps {
 
     static func run(
         _ config: GoddessConfig,
-        fileSystem: FileSystemTree,
+        fileSystem: StreamedFileSystem,
         logger: Logger?,
         handler: OperationHandler
     ) throws {
-        // Only the on-disk file system has a current-directory concept;
-        // in-memory trees resolve every path absolutely.
-        (fileSystem as? FileSystem)?.changeDirectory(config.rootFolder)
+        fileSystem.changeDirectory(config.rootFolder)
         let settings: GoddessSettings = (try? config.settingsFile.flatMap { file in
             try fileSystem.decodeJSON(from: file)
         }) ?? GoddessSettings.default
@@ -140,7 +155,7 @@ public enum GODOps {
 
         let enabledOps = config.operations.enabledEntries
         for (index, operation) in enabledOps.enumerated() {
-            (fileSystem as? FileSystem)?.changeDirectory(config.rootFolder)
+            fileSystem.changeDirectory(config.rootFolder)
             try run(operation: operation, settings: settings, fileSystem: fileSystem, logger: log, handler: handler)
             log.log(.info("Operation \(index + 1)/\(enabledOps.count) completed"))
         }
@@ -149,12 +164,14 @@ public enum GODOps {
     static func run(
         operation: GoddessConfig.Operations,
         settings: GoddessSettings,
-        fileSystem: FileSystemTree,
+        fileSystem: StreamedFileSystem,
         logger: Logger,
         handler: OperationHandler
     ) throws {
         switch operation {
         case .gamecubeDump(let dumpConfig):
+            // The only operation that starts by opening a disc image, and so
+            // the only one that takes the streamed tree rather than any tree.
             try handler.gamecubeDump(config: dumpConfig, settings: settings, fileSystem: fileSystem, logger: logger)
         case .gamecubeBuild(let buildConfig):
             try handler.gamecubeBuild(config: buildConfig, settings: settings, fileSystem: fileSystem, logger: logger)

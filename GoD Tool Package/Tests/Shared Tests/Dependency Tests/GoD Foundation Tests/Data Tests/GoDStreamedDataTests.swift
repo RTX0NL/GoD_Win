@@ -159,27 +159,53 @@ final class GoDStreamedDataTests: XCTestCase {
         XCTAssertEqual(streamed.readString(atAddress: 0, format: .utf8, maxCharacters: 6), "GXXE01")
     }
 
-    // MARK: - The file system hands one out
+    // MARK: - The file system that hands one out
 
-    /// `FileSystem.reader(at:)` is what makes the whole thing reachable from an
-    /// operation; if it fell back to the protocol default the streaming would
-    /// silently never happen.
-    func testFileSystemVendsAStreamedReader() throws {
+    /// `StreamedFileSystem` over a real on-disk tree opens the file rather
+    /// than reading it. If it fell back, the streaming would silently never
+    /// happen and only a 1.4 GB disc would show it.
+    func testStreamedFileSystemOpensRatherThanReads() throws {
         let url = scratch.appendingPathComponent("disc.bin")
         try Data(sequence(2048)).write(to: url)
-        let reader = FileSystem.shared.reader(at: File(nativePath: url.path))
-        XCTAssertTrue(reader is GoDStreamedData, "FileSystem should stream, not materialise")
-        XCTAssertEqual(reader?.read(atAddress: 1000, length: 4)?.rawBytes, Array(sequence(2048)[1000..<1004]))
+        let fs = StreamedFileSystem()
+        let opened = fs.streamFile(at: File(nativePath: url.path))
+        XCTAssertTrue(opened is GoDStreamedData, "expected a streamed read")
+        XCTAssertEqual(opened?.read(atAddress: 1000, length: 4)?.rawBytes, Array(sequence(2048)[1000..<1004]))
     }
 
-    /// An in-memory tree has nothing to stream from, so it uses the default —
-    /// still a working `GoDReadable`, just not a streamed one.
-    func testInMemoryTreeFallsBackToWholeFileReader() throws {
-        let fst = InMemoryFST()
+    /// Wrapping a tree with no files behind it still has to answer reads —
+    /// tests and in-memory pipelines go through the same operations.
+    func testMaterialisingWrapperStillReads() throws {
+        let backing = InMemoryFST()
         let file = File("/a.bin")
-        try fst.writeFile(GoDData(byteStream: sequence(32), byteOrder: .big), at: file, overwrite: true)
-        let reader = try XCTUnwrap(fst.reader(at: file))
-        XCTAssertFalse(reader is GoDStreamedData)
-        XCTAssertEqual(reader.read(atAddress: 8, length: 4)?.rawBytes, Array(sequence(32)[8..<12]))
+        try backing.writeFile(GoDData(byteStream: sequence(32), byteOrder: .big), at: file, overwrite: true)
+
+        let fs = StreamedFileSystem(materialising: backing)
+        let opened = try XCTUnwrap(fs.streamFile(at: file))
+        XCTAssertFalse(opened is GoDStreamedData, "nothing to stream from an in-memory tree")
+        XCTAssertEqual(opened.read(atAddress: 8, length: 4)?.rawBytes, Array(sequence(32)[8..<12]))
+    }
+
+    /// A missing file is nil, not a trap — same answer either read would give.
+    func testStreamingAMissingFileIsNil() {
+        XCTAssertNil(StreamedFileSystem().streamFile(at: File(nativePath: scratch.appendingPathComponent("nope").path)))
+        XCTAssertNil(StreamedFileSystem(materialising: InMemoryFST()).streamFile(at: File("/nope")))
+    }
+
+    /// Writes, metadata and folder work go straight through: this is the same
+    /// file system, read differently, not a different file system.
+    func testEverythingElseForwardsToTheBackingTree() throws {
+        let backing = InMemoryFST()
+        let fs = StreamedFileSystem(materialising: backing)
+        let file = File("/dir/a.bin")
+        try fs.createFolder(at: Folder("/dir"), overwrite: true)
+        try fs.writeFile(GoDData(byteStream: [1, 2, 3], byteOrder: .big), at: file, overwrite: true)
+
+        XCTAssertEqual(backing.readFile(at: file)?.rawBytes, [1, 2, 3], "write did not reach the backing tree")
+        XCTAssertEqual(fs.fileSize(at: file), 3)
+        XCTAssertNotNil(fs.inspectFile(at: file))
+        XCTAssertNotNil(fs.inspectFolder(at: Folder("/dir")))
+        try fs.deleteFile(at: file)
+        XCTAssertNil(backing.readFile(at: file))
     }
 }

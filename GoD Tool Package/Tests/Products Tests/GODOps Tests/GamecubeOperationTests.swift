@@ -44,7 +44,7 @@ final class GamecubeOperationTests: XCTestCase {
                 enabled: .yes
             )
         ])
-        try Gamecube.dump(config: config, settings: .default, fileSystem: fst, logger: SilentLogger())
+        try Gamecube.dump(config: config, settings: .default, fileSystem: StreamedFileSystem(materialising: fst), logger: SilentLogger())
 
         // System files land under sys/
         for sysFile in ["boot.bin", "bi2.bin", "apploader.img", "main.dol", "fst.bin"] {
@@ -79,7 +79,7 @@ final class GamecubeOperationTests: XCTestCase {
             )
         ])
         XCTAssertThrowsError(
-            try Gamecube.dump(config: config, settings: .default, fileSystem: fst, logger: SilentLogger())
+            try Gamecube.dump(config: config, settings: .default, fileSystem: StreamedFileSystem(materialising: fst), logger: SilentLogger())
         )
     }
 
@@ -101,7 +101,7 @@ final class GamecubeOperationTests: XCTestCase {
                 enabled: .yes
             )
         ])
-        try Gamecube.dump(config: dumpConfig, settings: .default, fileSystem: fst, logger: SilentLogger())
+        try Gamecube.dump(config: dumpConfig, settings: .default, fileSystem: StreamedFileSystem(materialising: fst), logger: SilentLogger())
 
         let buildConfig = Gamecube.BuildConfig(operations: [
             OperationConfig(
@@ -143,7 +143,7 @@ final class GamecubeOperationTests: XCTestCase {
                 enabled: .yes
             )
         ])
-        try Gamecube.dump(config: dumpConfig, settings: .default, fileSystem: fst, logger: SilentLogger())
+        try Gamecube.dump(config: dumpConfig, settings: .default, fileSystem: StreamedFileSystem(materialising: fst), logger: SilentLogger())
 
         // Pre-existing output with overwrite=false must survive untouched.
         let sentinel = GoDData(byteStream: [0xDE, 0xAD], byteOrder: .big)

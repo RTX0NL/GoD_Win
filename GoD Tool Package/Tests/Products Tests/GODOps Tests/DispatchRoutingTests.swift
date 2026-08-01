@@ -41,7 +41,7 @@ final class DispatchRoutingTests: XCTestCase {
         fields.append("\"operations\": [ \(operationEntries.joined(separator: ", ")) ]")
         writeText("{ \(fields.joined(separator: ", ")) }", at: File("/project/config.json"), in: fst)
 
-        try GODOps.runConfig(at: File("/project/config.json"), fileSystem: fst, logger: SilentLogger(), handler: handler)
+        try GODOps.runConfig(at: File("/project/config.json"), fileSystem: StreamedFileSystem(materialising: fst), logger: SilentLogger(), handler: handler)
         return handler
     }
 
@@ -671,7 +671,7 @@ final class DispatchRoutingTests: XCTestCase {
           "operations": [ { "operation": \(cisoDumpJSON), "enabled": "YES" } ] }
         """, at: File("/project/config.json"), in: fst)
         let spy = SpyOperationHandler()
-        try GODOps.runConfig(at: File("/project/config.json"), fileSystem: fst, logger: SilentLogger(), handler: spy)
+        try GODOps.runConfig(at: File("/project/config.json"), fileSystem: StreamedFileSystem(materialising: fst), logger: SilentLogger(), handler: spy)
         let call = try XCTUnwrap(spy.calls.first)
         XCTAssertFalse(call.settings.verbose)
         XCTAssertNil(call.settings.wiiCommonKeyFile)
@@ -693,7 +693,7 @@ final class DispatchRoutingTests: XCTestCase {
         let fst = InMemoryFST()
         writeText("{ \"name\": \"broken\" }", at: File("/project/config.json"), in: fst)
         XCTAssertThrowsError(
-            try GODOps.runConfig(at: File("/project/config.json"), fileSystem: fst, logger: SilentLogger(), handler: SpyOperationHandler())
+            try GODOps.runConfig(at: File("/project/config.json"), fileSystem: StreamedFileSystem(materialising: fst), logger: SilentLogger(), handler: SpyOperationHandler())
         )
     }
 
@@ -704,7 +704,7 @@ final class DispatchRoutingTests: XCTestCase {
           "operations": [ { "operation": { "notARealOperation": { "config": {} } }, "enabled": "YES" } ] }
         """, at: File("/project/config.json"), in: fst)
         XCTAssertThrowsError(
-            try GODOps.runConfig(at: File("/project/config.json"), fileSystem: fst, logger: SilentLogger(), handler: SpyOperationHandler())
+            try GODOps.runConfig(at: File("/project/config.json"), fileSystem: StreamedFileSystem(materialising: fst), logger: SilentLogger(), handler: SpyOperationHandler())
         )
     }
 
@@ -715,7 +715,7 @@ final class DispatchRoutingTests: XCTestCase {
         try GODOps.runOperation(
             json: Data(cisoDumpJSON.utf8),
             settingsJSON: nil,
-            fileSystem: InMemoryFST(),
+            fileSystem: StreamedFileSystem(materialising: InMemoryFST()),
             logger: SilentLogger(),
             handler: spy
         )
@@ -731,7 +731,7 @@ final class DispatchRoutingTests: XCTestCase {
         try GODOps.runOperation(
             json: Data(wrapped.utf8),
             settingsJSON: Data("{ \"verbose\": true }".utf8),
-            fileSystem: InMemoryFST(),
+            fileSystem: StreamedFileSystem(materialising: InMemoryFST()),
             logger: SilentLogger(),
             handler: spy
         )

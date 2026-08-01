@@ -397,11 +397,6 @@ public extension WiiISO {
         return partition.fileSize(at: File(relativePath))
     }
 
-    func reader(at path: File) -> GoDReadable? {
-        guard let (partition, relativePath) = partitionAndRelativePath(for: path) else { return nil }
-        return partition.reader(at: File(relativePath))
-    }
-
     func resizeFile(at path: File, to length: Int) throws {
         let (partition, relativePath) = try requirePartition(for: path)
         try partition.resizeFile(at: File(relativePath), to: length)

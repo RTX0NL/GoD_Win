@@ -195,7 +195,7 @@ public class FileSystem: FileSystemTree {
         try? fm.setAttributes([FileAttributeKey.posixPermissions: 0o777], ofItemAtPath: fullPath.nativePath)
     }
     
-    fileprivate func extendPath(_ file: File) -> File {
+    public func extendPath(_ file: File) -> File {
         if file.path.startsWith("./") || file.path.startsWith("../") {
             return currentDirectory.file(file.path)
         } else {
@@ -203,7 +203,7 @@ public class FileSystem: FileSystemTree {
         }
     }
 
-    private func extendPath(_ folder: Folder) -> Folder {
+    public func extendPath(_ folder: Folder) -> Folder {
         if folder.path.startsWith("./") || folder.path.startsWith("../") {
             return currentDirectory.folder(folder.path)
         } else {
@@ -237,14 +237,6 @@ public extension FileSystem {
 
     func fileSize(at path: File) -> Int? {
         FileHandleAccess.fileSize(at: extendPath(path).url)
-    }
-
-    /// Streams from disk rather than materialising the file. This is the whole
-    /// reason `reader(at:)` exists on the protocol: a disc image opened through
-    /// `readFile` costs its full size in memory before the first byte is
-    /// parsed, and disc images are the files this project spends its time on.
-    func reader(at path: File) -> GoDReadable? {
-        try? GoDStreamedData(file: extendPath(path))
     }
 
     func resizeFile(at path: File, to length: Int) throws {

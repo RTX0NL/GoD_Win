@@ -310,8 +310,6 @@ public final class GamecubeISO: FileSystemTree {
 public extension GamecubeISO {
     func fileSize(at path: File) -> Int? { fst.fileSize(at: path) }
 
-    func reader(at path: File) -> GoDReadable? { fst.reader(at: path) }
-
     func resizeFile(at path: File, to length: Int) throws {
         try fst.resizeFile(at: path, to: length)
     }
