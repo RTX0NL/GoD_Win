@@ -326,6 +326,11 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 ## Coding Conventions
 
 ### Naming
+- **American spelling, everywhere.** Identifiers, comments, doc comments, log
+  messages and Markdown all use `-ize`/`-ization` and `color`, not `-ise` or
+  `colour`. Swift's own APIs are American (`initialize`, `serialized`,
+  `normalized`), so mixing the two means guessing which convention a given
+  symbol follows.
 - **Types**: PascalCase (`FSYSArchive`, `GoddessConfig`)
 - **Properties/methods**: camelCase (`fileMetaDataPadding`, `readFile`)
 - **Constants in engine data**: SCREAMING_SNAKE_CASE
@@ -359,6 +364,26 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 - Operations organized by game: `Gamecube/`, `ColoXD/`
 
 ### Patterns
+- **No type casting.** `as?` / `as!` / `is` against a concrete type are not
+  allowed without an explicitly cleared exception. A cast is a capability
+  question asked at runtime, and the answer belongs in the type system: add the
+  requirement to the protocol with a default implementation, or take the
+  concrete type as a parameter so the caller supplies it. `GoDReadable.allData`
+  is the worked example — it replaced `self as? GoDData`, and now a readable
+  says for itself whether it can hand over a whole buffer.
+  `FileSystemTree.setExecutable` is another: a default no-op on the protocol
+  instead of `(fileSystem as? FileSystem)?.setExecutable(…)`.
+  Not covered by this rule: narrowing `Any` that came out of
+  `JSONSerialization` (there is no static type to recover), Foundation
+  bridging, and `as` coercions that can't fail.
+- **Don't collapse a `GoDReadable` to `GoDData` unless the work needs a
+  buffer.** The point of the opaque readable is that it can optimize behind the
+  caller's back — `GoDStreamedData` reads windows off disk, and
+  `WiiDecryptedPartitionView` decrypts groups on demand. Calling `allData`
+  throws that away, so it should appear where whole bytes are genuinely
+  required (writing the file elsewhere, feeding a compressor) and nowhere else.
+  A parser that only needs `read(atAddress:length:)` should take a
+  `GoDReadable`.
 - Protocol-based abstractions (`Engine`, `FileSystemTree`, `FileFormat`, `Logger`)
 - Associated types for engine customization
 - `Codable` for all config/persistent types
@@ -416,6 +441,55 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
       `Enums`/`Structs` are still empty shells with the five struct defs under
       `Wii/Structs/entries/` unreferenced (parsing is hand-rolled, so partition
       metadata isn't JSON-editable yet)
+- [ ] PBR `common.fsys` data tables — `PBREngine` is a real `Engine` and
+      `ProjectSetup` writes it for PBR discs. It declares the container
+      format (`PBRCommonTableHeader` + string pool + name table + relocation
+      table, geometry verified on all 33 PAL tables), the Pokémon model body
+      map (`PBRPokemonModel` / `PBRModelBoneMap` / `PBRModelAnimationMap`,
+      slot roles derived by resolving 321 model rows against the bone and
+      action names in the `.sdr` each points at), and a typed entry struct
+      for every one of the 33 tables. Table→file-index registry covers the
+      US/PAL and JP orderings.
+
+      Layouts come from the game's own generated accessors: PBR reaches every
+      table through a 33-slot pointer array at **0x8063CE34** (PAL), and each
+      table has a row-getter whose stride is a compile-time constant plus a
+      set of one-line field getters. Mining those and resolving their call
+      sites back to a pointer-array slot resolved 26 of the 33 tables, every
+      one with a stride matching its header word. Two rules fell out and are
+      load-bearing: **intra-entry alignment gaps are filled with `0xD0`, not
+      zero** (14 tables have such runs — this is what separates a live
+      unknown field from a hole, and it corrected several fields the legacy
+      tool had mislabelled), and inter-region padding is zero.
+
+      Remaining: a dump/build *operation*; the name-pool 16-bit hash is
+      unidentified (see below); `PokemonModelEffects`, `FightAIBattlePass`,
+      `FightAIPokemonPartData` and `FightAIExpectData` have no field
+      accessors so their interiors stay byte arrays. See
+      `PBRCommonTableStructTests` and `PBRCommonTableRealCorpusTests` — the
+      latter skips without a PBR dump (`GODDESS_PBR_COMMON` points it
+      elsewhere) and includes a guard that fails if any run declared as
+      padding carries live bytes on the disc.
+
+#### PBR common.fsys name pools
+
+7 of the 33 tables carry a string pool + name table + relocation table;
+26 carry none. The pool holds `{u16 hash, NUL-terminated ASCII name}`
+records; the name table maps each to an entry index and is sorted ascending
+by that hash (binary search by name); the relocation table lists the words
+holding file offsets that the loader converts to RAM pointers — one per name
+record, since those are the only variable pointers in the file (the header's
+own `entries_offset` is fixed and needs no entry).
+
+Five tables name every row — `Abilities` (`TOKUSEI_000`…), `FightAIExpectData`
+(species romaji), `FloorEvent` (`bf_00`…), `TrainerEvent` (trainer
+archetypes), `ExperienceTables` — and those names are the natural key column
+for a CSV dump. `Moves` and `FightAIMoveData` carry a single degenerate
+record with an empty name. **The 16-bit hash is not reproducible yet**: no
+standard hash matches, and a brute force over the whole CRC16 poly/init space
+found nothing, so a dump has to carry the hash alongside the name. Editing
+existing rows round-trips; inventing a new *named* row does not, until the
+hash function is recovered.
 
 ### TODO
 - [ ] REL disassembly and reassembly — **temporarily disabled** via `RelOperationsGate` (all REL ops throw on entry, incl. common.rel/map.rel wrappers) until migrated to the same typed-data import flow as DOL
