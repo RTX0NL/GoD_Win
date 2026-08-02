@@ -7,8 +7,8 @@
 //      0x00000  banner   — 0x2000  CARD banner / icon images + comments
 //      0x02000  header0  — 0x2000  slot-header records + flag/state area
 //      0x04000  header1  — 0x2000  spare / GBA-exchange bookkeeping
-//      0x06000  slotA    — 0x28000 encrypted serialised SystemSaveData
-//      0x2E000  slotB    — 0x28000 encrypted serialised SystemSaveData
+//      0x06000  slotA    — 0x28000 encrypted serialized SystemSaveData
+//      0x2E000  slotB    — 0x28000 encrypted serialized SystemSaveData
 //
 //  Total body size: 0x56000.
 //

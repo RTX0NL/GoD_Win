@@ -95,7 +95,7 @@ extension ColoSaveOps {
         var parsed: [(slot: ColosseumSaveSlot, headerOK: Bool?, bodyOK: Bool?)] = []
         for i in 0..<ColoSaveCardFile.slotCount {
             let path = unpackedFolder.file(GCIOps.coloSlotFilename(i))
-            guard let raw = fileSystem.readFile(at: path) else {
+            guard let raw = fileSystem.readFile(at: path)?.allData else {
                 throw ColoSaveOpsErrors.missingSlot(file: path, .init())
             }
             let (plaintext, headerOK, bodyOK) = try decryptedPlaintext(of: raw, decrypted: decrypted, logger: logger)

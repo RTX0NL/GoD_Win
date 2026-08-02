@@ -107,7 +107,7 @@ extension XDSaveOps {
     ) throws -> GoDData {
         if let jsonName = entry.json {
             let jsonFile = slotFolder.file(jsonName)
-            guard let jsonBytes = fileSystem.readFile(at: jsonFile) else {
+            guard let jsonBytes = fileSystem.readFile(at: jsonFile)?.allData else {
                 throw XDSaveOpsErrors.missingArtifact(file: jsonFile, .init())
             }
             guard let structName = entry.structType,
@@ -142,7 +142,7 @@ extension XDSaveOps {
         }
         if let binName = entry.bin {
             let binFile = slotFolder.file(binName)
-            guard let binBytes = fileSystem.readFile(at: binFile) else {
+            guard let binBytes = fileSystem.readFile(at: binFile)?.allData else {
                 throw XDSaveOpsErrors.missingArtifact(file: binFile, .init())
             }
             return binBytes

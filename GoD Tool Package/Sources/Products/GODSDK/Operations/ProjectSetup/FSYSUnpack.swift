@@ -15,7 +15,7 @@ extension Project {
     static func unpack(fsys fsysInputFile: File) throws {
         let fileSystem = FileSystem.shared
 
-        guard let data = fileSystem.readFile(at: fsysInputFile) else {
+        guard let data = fileSystem.readFile(at: fsysInputFile)?.allData else {
             throw ProjectSetupErrors.fsysNotFound(fsysInputFile, .init())
         }
 

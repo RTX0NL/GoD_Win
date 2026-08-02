@@ -88,7 +88,7 @@ public extension XDEngine {
         /// Name of the FSYS archive containing deck data (without .fsys extension)
         public var decksFsys: String = "deck_archive"
 
-        /// Per-deck routing — output folders + EU dedup behaviour. Drives
+        /// Per-deck routing — output folders + EU dedup behavior. Drives
         /// where the trainer dump op writes each deck's data and how the
         /// FSYS dump aliases `_eu` variants to their base entries.
         public var decks: Decks = Decks()

@@ -219,6 +219,9 @@ public final class GoDData: ExpressibleByStringLiteral {
 }
 
 extension GoDData: GoDReadable {
+    /// Already a buffer, so there is nothing to produce.
+    public var allData: GoDData? { self }
+
     public func read(atAddress address: UInt, length: UInt) -> GoDData? {
         let start = Int(address)
         let end = start + Int(length)

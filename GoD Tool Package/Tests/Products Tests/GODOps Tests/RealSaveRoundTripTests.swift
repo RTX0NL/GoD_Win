@@ -107,7 +107,7 @@ final class RealSaveRoundTripTests: XCTestCase {
         // Non-latest slot: encrypted bytes must be untouched.
         let nonLatestName = latestIsA ? "slot-b.bin" : "slot-a.bin"
         let nonLatestOrig = latestIsA ? origB : origA
-        let nonLatest = try XCTUnwrap(fst.readFile(at: unpacked.file(nonLatestName)))
+        let nonLatest = try XCTUnwrap(fst.readFile(at: unpacked.file(nonLatestName))?.allData)
         XCTAssertEqual(nonLatest.rawBytes, nonLatestOrig.rawBytes, "\(label): non-latest slot must pass through unchanged")
 
         // Latest slot: rebuilt from scratch. It won't be byte-identical
@@ -119,7 +119,7 @@ final class RealSaveRoundTripTests: XCTestCase {
         let latestName = latestIsA ? "slot-a.bin" : "slot-b.bin"
         let origSlot = latestIsA ? slotA : slotB
         let origPlain = origSlot.raw.rawBytes
-        let rebuilt = try XCTUnwrap(fst.readFile(at: unpacked.file(latestName)))
+        let rebuilt = try XCTUnwrap(fst.readFile(at: unpacked.file(latestName))?.allData)
         let rebuiltData = GoDData(byteStream: rebuilt.rawBytes, byteOrder: .big)
         XCTAssertTrue(try XDSaveCipher.decrypt(slot: rebuiltData), "\(label): rebuilt checksum must validate")
         let rebuiltPlain = rebuiltData.rawBytes
@@ -177,11 +177,11 @@ final class RealSaveRoundTripTests: XCTestCase {
             settings: .default, fileSystem: fst, logger: SilentLogger())
 
         for i in 0..<ColoSaveCardFile.slotCount where i != latestIndex {
-            let passthrough = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-\(i + 1).bin")))
+            let passthrough = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-\(i + 1).bin"))?.allData)
             XCTAssertEqual(passthrough.rawBytes, encSlots[i].rawBytes, "non-latest slot \(i + 1) must pass through unchanged")
         }
 
-        let rebuilt = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-\(latestIndex + 1).bin")))
+        let rebuilt = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-\(latestIndex + 1).bin"))?.allData)
         let rebuiltPlain = GoDData(byteStream: rebuilt.rawBytes, byteOrder: .big)
         let result = try ColoSaveCipher.decrypt(slot: rebuiltPlain)
         XCTAssertTrue(result.headerValid && result.bodyValid, "rebuilt Colo checksums must validate")

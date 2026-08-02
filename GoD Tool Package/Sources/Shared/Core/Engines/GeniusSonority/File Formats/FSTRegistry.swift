@@ -18,7 +18,7 @@ public struct FSTRegistry: Codable {
         /// and so loses the disc's own directory structure; this is what the
         /// rebuild puts back. Nil for registries dumped before this field
         /// existed, in which case the rebuild falls back to the bare
-        /// filename (the old, flattening behaviour).
+        /// filename (the old, flattening behavior).
         public let discPath: String?
 
         public init(type: EntryType, file: File, discPath: String? = nil) {

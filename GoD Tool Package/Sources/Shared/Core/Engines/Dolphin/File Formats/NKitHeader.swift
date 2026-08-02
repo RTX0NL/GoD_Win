@@ -105,7 +105,7 @@ public struct NKitHeader: Equatable {
         self.updatePartitionCRC = updateCRC
     }
 
-    // MARK: - Serialise
+    // MARK: - Serialize
 
     /// Write the header into `binary` at the well-known 0x200 offset.
     /// `binary` must already be at least `0x200 + fieldsSize` bytes

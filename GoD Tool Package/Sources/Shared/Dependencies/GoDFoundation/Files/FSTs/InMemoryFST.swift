@@ -47,7 +47,7 @@ public class InMemoryFST: FileSystemTree {
         )
     }
 
-    public func readFile(at path: File) -> GoDData? {
+    public func readFile(at path: File) -> GoDReadable? {
         guard let node = fst[path.path],
               case .file(let data) = node else {
             return nil
@@ -249,7 +249,9 @@ public extension InMemoryFST {
         guard length >= 0 else {
             throw FSTErrors.invalidPath(path.path, .init())
         }
-        guard let existing = readFile(at: path) else {
+        // The stored object, not a copy: an in-place pad/delete is what makes
+        // the resize visible to the next reader.
+        guard let existing = readFile(at: path)?.allData else {
             try writeFile(GoDData(length: length, byteOrder: .big), at: path, overwrite: false)
             return
         }

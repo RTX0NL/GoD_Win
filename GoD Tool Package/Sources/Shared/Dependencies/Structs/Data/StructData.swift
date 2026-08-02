@@ -310,7 +310,7 @@ public class StructData {
     ///
     /// Prefer this over the `String?` dynamic-member setter for anything
     /// that writes real game data: a subscript setter can't throw, so that
-    /// path can only skip an unrecognised case silently, leaving the field
+    /// path can only skip an unrecognized case silently, leaving the field
     /// at whatever it already held (zero, for a fresh struct). A file type
     /// the engine's enum doesn't list would then be written as type 0.
     public func setEnumCase(_ keypath: String, named caseName: String) throws {

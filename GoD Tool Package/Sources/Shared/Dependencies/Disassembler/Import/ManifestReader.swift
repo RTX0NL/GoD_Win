@@ -11,7 +11,7 @@ public struct ManifestReader {
         fileSystem: FileSystemTree
     ) -> DataSectionManifest? {
         let manifestFile = folder.file("manifest.json")
-        guard let data = fileSystem.readFile(at: manifestFile) else { return nil }
+        guard let data = fileSystem.readFile(at: manifestFile)?.allData else { return nil }
         return try? JSONDecoder().decode(DataSectionManifest.self, from: data)
     }
 
@@ -21,7 +21,7 @@ public struct ManifestReader {
         fileSystem: FileSystemTree
     ) -> TextSectionManifest? {
         let manifestFile = folder.file("manifest.json")
-        guard let data = fileSystem.readFile(at: manifestFile) else { return nil }
+        guard let data = fileSystem.readFile(at: manifestFile)?.allData else { return nil }
         return try? JSONDecoder().decode(TextSectionManifest.self, from: data)
     }
 
@@ -39,7 +39,7 @@ public struct ManifestReader {
             var files = [(name: String, content: String)]()
             for filePath in manifest.files {
                 let file = sectionFolder.file(filePath)
-                if let data = fileSystem.readFile(at: file) {
+                if let data = fileSystem.readFile(at: file)?.allData {
                     files.append((name: filePath, content: data.string(format: .utf8)))
                 }
             }
@@ -53,7 +53,7 @@ public struct ManifestReader {
 
         // Fall back to single file
         let sectionFile = codeFolder.file("\(sectionName).s")
-        if let data = fileSystem.readFile(at: sectionFile) {
+        if let data = fileSystem.readFile(at: sectionFile)?.allData {
             return [(sectionName + ".s", data.string(format: .utf8))]
         }
 
@@ -70,7 +70,7 @@ public struct ManifestReader {
         var files = [(name: String, content: String)]()
 
         for file in contents.files where file.fileType == "s" {
-            if let data = fileSystem.readFile(at: file) {
+            if let data = fileSystem.readFile(at: file)?.allData {
                 files.append((name: file.fileName, content: data.string(format: .utf8)))
             }
         }

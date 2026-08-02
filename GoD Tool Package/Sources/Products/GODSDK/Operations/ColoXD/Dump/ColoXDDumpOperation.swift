@@ -48,7 +48,7 @@ extension ColoXD {
             case let .unpackFSYS(fsysFile, outputFolder, overwrite, gsEnginePath):
                 let gsEngine = try GeniusSonorityEngine(from: gsEnginePath, in: fileSystem)
 
-                guard let data = fileSystem.readFile(at: fsysFile) else {
+                guard let data = fileSystem.readFile(at: fsysFile)?.allData else {
                     throw FSTErrors.fileNotFound(fsysFile, .init())
                 }
 

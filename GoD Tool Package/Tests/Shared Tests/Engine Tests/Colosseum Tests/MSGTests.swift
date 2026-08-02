@@ -3,7 +3,7 @@ import Foundation
 import GoDFoundation
 import GeniusSonority
 
-/// MSG-specific behaviour beyond the protocol members (which are covered
+/// MSG-specific behavior beyond the protocol members (which are covered
 /// in FileFormatProtocolTests): inline control-code parsing, real-sample
 /// parse assertions, reservedPrefix/suffix preservation.
 final class MSGTests: XCTestCase {

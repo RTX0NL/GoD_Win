@@ -66,27 +66,27 @@ final class WiiISORoundTripTests: XCTestCase {
             dolphinEngine: dolphinEngine
         )
 
-        XCTAssertEqual(iso.readFile(at: File("/disc_header.bin"))?.rawBytes, expected.discHeader)
-        XCTAssertEqual(iso.readFile(at: File("/region_settings.bin"))?.rawBytes, expected.regionSettings)
+        XCTAssertEqual(iso.readFile(at: File("/disc_header.bin"))?.allData?.rawBytes, expected.discHeader)
+        XCTAssertEqual(iso.readFile(at: File("/region_settings.bin"))?.allData?.rawBytes, expected.regionSettings)
 
         // Partition metadata is stored verbatim, at the partition root
         // rather than under /sys — see `WiiEngine.Data.PartitionFiles`.
-        XCTAssertEqual(iso.readFile(at: File("/DATA/ticket.bin"))?.rawBytes, expected.ticket)
-        XCTAssertEqual(iso.readFile(at: File("/DATA/tmd.bin"))?.rawBytes, expected.tmd)
-        XCTAssertEqual(iso.readFile(at: File("/DATA/cert.bin"))?.rawBytes, expected.cert)
-        XCTAssertEqual(iso.readFile(at: File("/DATA/h3.bin"))?.rawBytes, expected.h3)
+        XCTAssertEqual(iso.readFile(at: File("/DATA/ticket.bin"))?.allData?.rawBytes, expected.ticket)
+        XCTAssertEqual(iso.readFile(at: File("/DATA/tmd.bin"))?.allData?.rawBytes, expected.tmd)
+        XCTAssertEqual(iso.readFile(at: File("/DATA/cert.bin"))?.allData?.rawBytes, expected.cert)
+        XCTAssertEqual(iso.readFile(at: File("/DATA/h3.bin"))?.allData?.rawBytes, expected.h3)
 
         // System files come out of the decrypted payload.
-        XCTAssertEqual(iso.readFile(at: File("/DATA/sys/boot.bin"))?.rawBytes, expected.boot)
-        XCTAssertEqual(iso.readFile(at: File("/DATA/sys/bi2.bin"))?.rawBytes, expected.bi2)
-        XCTAssertEqual(iso.readFile(at: File("/DATA/sys/apploader.img"))?.rawBytes, expected.apploader)
-        XCTAssertEqual(iso.readFile(at: File("/DATA/sys/main.dol"))?.rawBytes, expected.dol)
-        XCTAssertEqual(iso.readFile(at: File("/DATA/sys/fst.bin"))?.rawBytes, expected.fst)
+        XCTAssertEqual(iso.readFile(at: File("/DATA/sys/boot.bin"))?.allData?.rawBytes, expected.boot)
+        XCTAssertEqual(iso.readFile(at: File("/DATA/sys/bi2.bin"))?.allData?.rawBytes, expected.bi2)
+        XCTAssertEqual(iso.readFile(at: File("/DATA/sys/apploader.img"))?.allData?.rawBytes, expected.apploader)
+        XCTAssertEqual(iso.readFile(at: File("/DATA/sys/main.dol"))?.allData?.rawBytes, expected.dol)
+        XCTAssertEqual(iso.readFile(at: File("/DATA/sys/fst.bin"))?.allData?.rawBytes, expected.fst)
 
         // User files, including a nested one, come out of the FST walk.
         for (path, bytes) in expected.files {
             XCTAssertEqual(
-                iso.readFile(at: File("/DATA" + path))?.rawBytes, bytes,
+                iso.readFile(at: File("/DATA" + path))?.allData?.rawBytes, bytes,
                 "user file \(path) should be extracted from the decrypted partition"
             )
         }
@@ -121,21 +121,21 @@ final class WiiISORoundTripTests: XCTestCase {
             dolphinEngine: dolphinEngine
         )
 
-        XCTAssertEqual(reparsed.readFile(at: File("/disc_header.bin"))?.rawBytes, trip.expected.discHeader)
-        XCTAssertEqual(reparsed.readFile(at: File("/region_settings.bin"))?.rawBytes, trip.expected.regionSettings)
+        XCTAssertEqual(reparsed.readFile(at: File("/disc_header.bin"))?.allData?.rawBytes, trip.expected.discHeader)
+        XCTAssertEqual(reparsed.readFile(at: File("/region_settings.bin"))?.allData?.rawBytes, trip.expected.regionSettings)
 
         // The ticket and cert chain are re-emitted verbatim; the TMD is
         // relinked to the rebuilt H3 table and fakesigned, so it changes.
-        XCTAssertEqual(reparsed.readFile(at: File("/DATA/ticket.bin"))?.rawBytes, trip.expected.ticket)
-        XCTAssertEqual(reparsed.readFile(at: File("/DATA/cert.bin"))?.rawBytes, trip.expected.cert)
+        XCTAssertEqual(reparsed.readFile(at: File("/DATA/ticket.bin"))?.allData?.rawBytes, trip.expected.ticket)
+        XCTAssertEqual(reparsed.readFile(at: File("/DATA/cert.bin"))?.allData?.rawBytes, trip.expected.cert)
 
-        XCTAssertEqual(reparsed.readFile(at: File("/DATA/sys/bi2.bin"))?.rawBytes, trip.expected.bi2)
-        XCTAssertEqual(reparsed.readFile(at: File("/DATA/sys/apploader.img"))?.rawBytes, trip.expected.apploader)
-        XCTAssertEqual(reparsed.readFile(at: File("/DATA/sys/main.dol"))?.rawBytes, trip.expected.dol)
+        XCTAssertEqual(reparsed.readFile(at: File("/DATA/sys/bi2.bin"))?.allData?.rawBytes, trip.expected.bi2)
+        XCTAssertEqual(reparsed.readFile(at: File("/DATA/sys/apploader.img"))?.allData?.rawBytes, trip.expected.apploader)
+        XCTAssertEqual(reparsed.readFile(at: File("/DATA/sys/main.dol"))?.allData?.rawBytes, trip.expected.dol)
 
         for (path, bytes) in trip.expected.files {
             XCTAssertEqual(
-                reparsed.readFile(at: File("/DATA" + path))?.rawBytes, bytes,
+                reparsed.readFile(at: File("/DATA" + path))?.allData?.rawBytes, bytes,
                 "user file \(path) should survive the encrypt/decrypt round trip"
             )
         }
@@ -143,7 +143,7 @@ final class WiiISORoundTripTests: XCTestCase {
         // A non-DATA partition is carried through as an opaque decrypted blob.
         let updateBlob = try XCTUnwrap(trip.expected.updateBlob)
         let rebuiltBlob = try XCTUnwrap(
-            reparsed.readFile(at: File("/UPDATE/sys/partition_data.bin"))?.rawBytes,
+            reparsed.readFile(at: File("/UPDATE/sys/partition_data.bin"))?.allData?.rawBytes,
             "the UPDATE partition must survive a rebuild"
         )
         XCTAssertEqual(

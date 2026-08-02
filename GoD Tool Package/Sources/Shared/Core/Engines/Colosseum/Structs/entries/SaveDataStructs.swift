@@ -12,7 +12,7 @@ import GoDFoundation
 ///
 /// Undocumented regions are named `unknown<n>` byte arrays (visible +
 /// editable). NOTE: what look like inter-field "alignment" gaps here
-/// are NOT zero padding — the game serialises these structs out of a
+/// are NOT zero padding — the game serializes these structs out of a
 /// reused I/O buffer without memset, so the gaps carry non-zero
 /// leftover/undocumented bytes that must be preserved byte-for-byte.
 /// They are therefore `unknown<n>` fields, not `.padding` (and the

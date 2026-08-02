@@ -20,7 +20,7 @@ extension RelDisassembly {
         let dolphinEngine = try DolphinEngine(from: config.dolphinEngine, in: fileSystem)
         _ = dolphinEngine  // reserved for future (e.g. SDA base → name resolution)
 
-        guard let relData = fileSystem.readFile(at: config.relPath) else {
+        guard let relData = fileSystem.readFile(at: config.relPath)?.allData else {
             throw RelDisassemblyErrors.relNotFound(file: config.relPath, .init())
         }
 
@@ -36,7 +36,7 @@ extension RelDisassembly {
 
         var symbolIndex = RelSymbolIndex()
         if let indexPath = config.symbolIndexPath,
-           let indexData = fileSystem.readFile(at: indexPath),
+           let indexData = fileSystem.readFile(at: indexPath)?.allData,
            let parsed = try? JSONDecoder().decode(RelSymbolIndex.self, from: indexData) {
             symbolIndex = parsed
             logger?.log(.info("Loaded \(parsed.symbols.count) symbol names from index"))
@@ -44,7 +44,7 @@ extension RelDisassembly {
 
         var dolSymbolLookup: [UInt32: String] = [:]
         if let dolMapPath = config.dolSymbolMapPath,
-           let dolMapData = fileSystem.readFile(at: dolMapPath) {
+           let dolMapData = fileSystem.readFile(at: dolMapPath)?.allData {
             let parser = SymbolMapParser()
             let dolSymbols = parser.parse(dolMapData.string(format: .utf8))
             dolSymbolLookup = parser.buildLookup(dolSymbols)
@@ -54,7 +54,7 @@ extension RelDisassembly {
         var typeMap: TypeMap?
         var resolvedStructs: [String: StructDefinition] = [:]
         if let typeMapPath = config.typeMapPath,
-           let typeMapData = fileSystem.readFile(at: typeMapPath) {
+           let typeMapData = fileSystem.readFile(at: typeMapPath)?.allData {
             typeMap = try? JSONDecoder().decode(TypeMap.self, from: typeMapData)
             if let tm = typeMap {
                 logger?.log(.info("Loaded type map with \(tm.chunks.count) chunks"))

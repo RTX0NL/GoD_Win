@@ -13,7 +13,7 @@
 //  someone already has on disk.
 //
 //  Encoder always emits the canonical `"0x..."` form (lowercase, no
-//  padding) so round-tripping through the type normalises historic
+//  padding) so round-tripping through the type normalizes historic
 //  decimal JSON to hex on the next write.
 //
 

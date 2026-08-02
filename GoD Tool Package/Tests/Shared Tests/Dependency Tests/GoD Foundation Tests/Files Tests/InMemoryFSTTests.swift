@@ -27,7 +27,7 @@ final class InMemoryFSTTests: XCTestCase {
         let file = File("/folder/hello.txt")
         try fst.writeFile(data("hello world"), at: file, overwrite: false)
 
-        let read = fst.readFile(at: file)
+        let read = fst.readFile(at: file)?.allData
         XCTAssertEqual(read?.string(format: .utf8), "hello world")
 
         let meta = fst.inspectFile(at: file)
@@ -38,7 +38,7 @@ final class InMemoryFSTTests: XCTestCase {
 
     func testReadMissingFileReturnsNil() {
         let fst = InMemoryFST()
-        XCTAssertNil(fst.readFile(at: File("/nope.txt")))
+        XCTAssertNil(fst.readFile(at: File("/nope.txt"))?.allData)
         XCTAssertNil(fst.inspectFile(at: File("/nope.txt")))
     }
 
@@ -47,10 +47,10 @@ final class InMemoryFSTTests: XCTestCase {
         let file = File("/a.txt")
         try fst.writeFile(data("first"), at: file, overwrite: false)
         XCTAssertThrowsError(try fst.writeFile(data("second"), at: file, overwrite: false))
-        XCTAssertEqual(fst.readFile(at: file)?.string(format: .utf8), "first")
+        XCTAssertEqual(fst.readFile(at: file)?.allData?.string(format: .utf8), "first")
 
         try fst.writeFile(data("second"), at: file, overwrite: true)
-        XCTAssertEqual(fst.readFile(at: file)?.string(format: .utf8), "second")
+        XCTAssertEqual(fst.readFile(at: file)?.allData?.string(format: .utf8), "second")
     }
 
     func testMoveFile() throws {
@@ -60,8 +60,8 @@ final class InMemoryFSTTests: XCTestCase {
         try fst.writeFile(data("payload"), at: src, overwrite: false)
 
         try fst.moveFile(at: src, to: dst, overwrite: false)
-        XCTAssertNil(fst.readFile(at: src))
-        XCTAssertEqual(fst.readFile(at: dst)?.string(format: .utf8), "payload")
+        XCTAssertNil(fst.readFile(at: src)?.allData)
+        XCTAssertEqual(fst.readFile(at: dst)?.allData?.string(format: .utf8), "payload")
 
         // Old path removed from parent listing.
         let contents = fst.inspectFolder(at: Folder("/dir"))
@@ -74,7 +74,7 @@ final class InMemoryFSTTests: XCTestCase {
         try fst.writeFile(data("b"), at: File("/b.txt"), overwrite: false)
         XCTAssertThrowsError(try fst.moveFile(at: File("/a.txt"), to: File("/b.txt"), overwrite: false))
         try fst.moveFile(at: File("/a.txt"), to: File("/b.txt"), overwrite: true)
-        XCTAssertEqual(fst.readFile(at: File("/b.txt"))?.string(format: .utf8), "a")
+        XCTAssertEqual(fst.readFile(at: File("/b.txt"))?.allData?.string(format: .utf8), "a")
     }
 
     func testMoveMissingFileThrows() {
@@ -87,7 +87,7 @@ final class InMemoryFSTTests: XCTestCase {
         let file = File("/dir/a.txt")
         try fst.writeFile(data("x"), at: file, overwrite: false)
         try fst.deleteFile(at: file)
-        XCTAssertNil(fst.readFile(at: file))
+        XCTAssertNil(fst.readFile(at: file)?.allData)
         XCTAssertEqual(fst.inspectFolder(at: Folder("/dir"))?.files.count ?? 0, 0)
     }
 
@@ -127,7 +127,7 @@ final class InMemoryFSTTests: XCTestCase {
         let fst = InMemoryFST()
         try fst.writeFile(data("keep me"), at: File("/f/a.txt"), overwrite: false)
         try fst.createFolder(at: Folder("/f"), overwrite: false)
-        XCTAssertEqual(fst.readFile(at: File("/f/a.txt"))?.string(format: .utf8), "keep me")
+        XCTAssertEqual(fst.readFile(at: File("/f/a.txt"))?.allData?.string(format: .utf8), "keep me")
     }
 
     func testInspectFolderDeepSizeAcrossSubfolders() throws {
@@ -148,8 +148,8 @@ final class InMemoryFSTTests: XCTestCase {
         try fst.writeFile(data("b"), at: File("/root/sub/b.txt"), overwrite: false)
 
         try fst.deleteFolder(at: Folder("/root"))
-        XCTAssertNil(fst.readFile(at: File("/root/a.txt")))
-        XCTAssertNil(fst.readFile(at: File("/root/sub/b.txt")))
+        XCTAssertNil(fst.readFile(at: File("/root/a.txt"))?.allData)
+        XCTAssertNil(fst.readFile(at: File("/root/sub/b.txt"))?.allData)
         XCTAssertNil(fst.inspectFolder(at: Folder("/root")))
         XCTAssertNil(fst.inspectFolder(at: Folder("/root/sub")))
     }
@@ -182,12 +182,12 @@ final class InMemoryFSTTests: XCTestCase {
         try fst.moveFolder(at: Folder("/A"), to: Folder("/B"), overwrite: false)
 
         // New paths resolve to the moved data.
-        XCTAssertEqual(fst.readFile(at: File("/B/sub/file"))?.string(format: .utf8), "nested-data")
-        XCTAssertEqual(fst.readFile(at: File("/B/top.txt"))?.string(format: .utf8), "top-data")
+        XCTAssertEqual(fst.readFile(at: File("/B/sub/file"))?.allData?.string(format: .utf8), "nested-data")
+        XCTAssertEqual(fst.readFile(at: File("/B/top.txt"))?.allData?.string(format: .utf8), "top-data")
 
         // Old paths are gone.
-        XCTAssertNil(fst.readFile(at: File("/A/sub/file")))
-        XCTAssertNil(fst.readFile(at: File("/A/top.txt")))
+        XCTAssertNil(fst.readFile(at: File("/A/sub/file"))?.allData)
+        XCTAssertNil(fst.readFile(at: File("/A/top.txt"))?.allData)
         XCTAssertNil(fst.inspectFolder(at: Folder("/A")))
 
         // Folder listing reflects the moved (rekeyed) children, not stale ones.
@@ -206,7 +206,7 @@ final class InMemoryFSTTests: XCTestCase {
         let fst = InMemoryFST()
         try fst.writeFile(data("x"), at: File("/dir/old.txt"), overwrite: false)
         try fst.rename(file: File("/dir/old.txt"), to: "new.txt")
-        XCTAssertEqual(fst.readFile(at: File("/dir/new.txt"))?.string(format: .utf8), "x")
+        XCTAssertEqual(fst.readFile(at: File("/dir/new.txt"))?.allData?.string(format: .utf8), "x")
     }
 
     func testItemExists() throws {
@@ -222,8 +222,8 @@ final class InMemoryFSTTests: XCTestCase {
         struct Payload: Codable, Equatable { let a: Int; let b: String }
         let fst = InMemoryFST()
         let value = Payload(a: 7, b: "seven")
-        try fst.writeFile(value, at: File("/data.json"), overwrite: false)
-        let decoded: Payload? = fst.readFile(at: File("/data.json"))
+        try fst.writeJSON(value, at: File("/data.json"), overwrite: false)
+        let decoded: Payload = try fst.decodeJSON(from: File("/data.json"))
         XCTAssertEqual(decoded, value)
     }
 }

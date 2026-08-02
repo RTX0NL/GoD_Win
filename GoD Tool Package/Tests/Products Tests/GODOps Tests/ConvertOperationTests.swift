@@ -89,7 +89,7 @@ final class ConvertOperationTests: XCTestCase {
             format: .gtx(geniusSonorityEngine: gsFolder)
         ), in: fst)
 
-        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt/tex.gtx")), "expected rebuilt GTX binary")
+        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt/tex.gtx"))?.allData, "expected rebuilt GTX binary")
         assertBytesEqual(rebuilt, gtxBinary, "GTX round trip")
     }
 
@@ -113,7 +113,7 @@ final class ConvertOperationTests: XCTestCase {
             overwrite: true,
             format: .gsw(geniusSonorityEngine: gsFolder)
         ), in: fst)
-        XCTAssertNotNil(fst.readFile(at: File("/project/rebuilt/menu.gsw")), "expected rebuilt GSW binary")
+        XCTAssertNotNil(fst.readFile(at: File("/project/rebuilt/menu.gsw"))?.allData, "expected rebuilt GSW binary")
     }
 
     func testDecodeThenEncodePairedISF() throws {
@@ -188,7 +188,7 @@ final class ConvertOperationTests: XCTestCase {
             engine: engineFolder
         ), in: fst)
 
-        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/bin/record.bin")), "expected rebuilt binary")
+        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/bin/record.bin"))?.allData, "expected rebuilt binary")
         assertBytesEqual(rebuilt, original, "struct round trip")
     }
 
@@ -235,7 +235,7 @@ final class ConvertOperationTests: XCTestCase {
             engine: engineFolder
         ), in: fst)
 
-        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/bin/table.bin")), "expected rebuilt table binary")
+        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/bin/table.bin"))?.allData, "expected rebuilt table binary")
         assertBytesEqual(rebuilt, original, "struct table round trip")
     }
 

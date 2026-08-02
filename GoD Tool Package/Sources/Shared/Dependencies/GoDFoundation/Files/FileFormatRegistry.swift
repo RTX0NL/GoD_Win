@@ -165,7 +165,9 @@ public struct FileFormatRegistry {
         guard let meta = fileSystem.inspectFolder(at: folder) else { return }
         for file in meta.files {
             let key = prefix.isEmpty ? file.fileName : "\(prefix)/\(file.fileName)"
-            if let data = fileSystem.readFile(at: file) {
+            // A source that can't hand over a whole buffer has nothing to
+            // contribute here — the artifact bundle is bytes by definition.
+            if let data = fileSystem.readFile(at: file)?.allData {
                 outputs.append(FileData(file: File(key), data: data))
             }
         }

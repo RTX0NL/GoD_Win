@@ -83,7 +83,7 @@ final class PathConventionTests: XCTestCase {
         }
     }
 
-    // MARK: - Host behaviour
+    // MARK: - Host behavior
 
     /// On this build the convention is POSIX, so `nativePath` matches `path`.
     /// The value of the assertion is that it goes through the converter at all

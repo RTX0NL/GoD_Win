@@ -47,9 +47,9 @@ public final class StreamedFileSystem: FileSystemTree {
     }
 
     /// Wraps a tree with no files behind it — an in-memory tree in a test, or
-    /// a pipeline stage. Reads materialise; nothing streams, and nothing
+    /// a pipeline stage. Reads materialize; nothing streams, and nothing
     /// pretends to.
-    public init(materialising tree: FileSystemTree) {
+    public init(materializing tree: FileSystemTree) {
         self.backing = tree
         self.disk = nil
     }
@@ -58,7 +58,7 @@ public final class StreamedFileSystem: FileSystemTree {
     ///
     /// The result is a `GoDReadable` because the caller shouldn't care which
     /// it got: a `GoDStreamedData` when the file is really on disk, the
-    /// materialised bytes otherwise. Both answer `read(atAddress:length:)`
+    /// allData bytes otherwise. Both answer `read(atAddress:length:)`
     /// identically, including returning nil past the end.
     public func streamFile(at path: File) -> GoDReadable? {
         guard let disk else { return backing.readFile(at: path) }
@@ -88,7 +88,7 @@ public final class StreamedFileSystem: FileSystemTree {
         backing.inspectFile(at: path)
     }
 
-    public func readFile(at path: File) -> GoDData? {
+    public func readFile(at path: File) -> GoDReadable? {
         backing.readFile(at: path)
     }
 
@@ -126,5 +126,9 @@ public final class StreamedFileSystem: FileSystemTree {
 
     public func resizeFile(at path: File, to length: Int) throws {
         try backing.resizeFile(at: path, to: length)
+    }
+
+    public func setExecutable(file: File) {
+        backing.setExecutable(file: file)
     }
 }

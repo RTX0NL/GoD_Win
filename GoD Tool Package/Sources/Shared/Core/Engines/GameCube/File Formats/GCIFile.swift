@@ -156,7 +156,7 @@ public struct GCIFile: FileFormat {
         self.init(name: name, header: header, body: body)
     }
 
-    // MARK: - Binary serialisation
+    // MARK: - Binary serialization
 
     public var binaries: [FileData] {
         get throws {
@@ -165,7 +165,7 @@ public struct GCIFile: FileFormat {
         }
     }
 
-    /// Serialise the parsed header + body back to a single `.gci` byte
+    /// Serialize the parsed header + body back to a single `.gci` byte
     /// stream. Public so callers (build ops) can grab the bytes without
     /// going through `FileData` wrapping.
     public func assembled() throws -> GoDData {

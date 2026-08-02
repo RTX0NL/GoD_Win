@@ -37,7 +37,7 @@ final class ScriptFunctionDefTests: XCTestCase {
     }
 
     func testEnumRefDecodesFromBareName() throws {
-        // Backwards-compat: any unrecognised string is treated as an enum ref.
+        // Backwards-compat: any unrecognized string is treated as an enum ref.
         XCTAssertEqual(try decodeParam("\"SomeFlag\""), .enumRef("SomeFlag"))
     }
 

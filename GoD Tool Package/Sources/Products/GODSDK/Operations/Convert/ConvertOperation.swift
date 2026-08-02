@@ -54,7 +54,7 @@ extension Convert {
         format: FileFormatSelection,
         fileSystem: FileSystemTree
     ) throws {
-        guard let bytes = fileSystem.readFile(at: inputFile) else {
+        guard let bytes = fileSystem.readFile(at: inputFile)?.allData else {
             throw ConvertErrors.inputFileNotFound(file: inputFile, .init())
         }
         let engine = try GeniusSonorityEngine(from: format.geniusSonorityEngine, in: fileSystem)
@@ -78,7 +78,7 @@ extension Convert {
                 // header input (same folder, same stem, swapped extension).
                 let dataFile = inputFile.parentFolder?.file("\(stem).\(dataExtension)")
                     ?? File("\(stem).\(dataExtension)")
-                guard let dataBytes = fileSystem.readFile(at: dataFile) else {
+                guard let dataBytes = fileSystem.readFile(at: dataFile)?.allData else {
                     throw ConvertErrors.inputFileNotFound(file: dataFile, .init())
                 }
                 inputs.append(FileData(file: File("\(stem).\(dataExtension)"), data: dataBytes))
@@ -114,7 +114,7 @@ extension Convert {
         engineFolder: Folder,
         fileSystem: FileSystemTree
     ) throws {
-        guard let bytes = fileSystem.readFile(at: inputFile) else {
+        guard let bytes = fileSystem.readFile(at: inputFile)?.allData else {
             throw ConvertErrors.inputFileNotFound(file: inputFile, .init())
         }
         let engine = try GenericEngine(from: engineFolder, in: fileSystem)
@@ -139,7 +139,7 @@ extension Convert {
         engineFolder: Folder,
         fileSystem: FileSystemTree
     ) throws {
-        guard let jsonBytes = fileSystem.readFile(at: inputFile) else {
+        guard let jsonBytes = fileSystem.readFile(at: inputFile)?.allData else {
             throw ConvertErrors.inputFileNotFound(file: inputFile, .init())
         }
         let engine = try GenericEngine(from: engineFolder, in: fileSystem)
@@ -158,7 +158,7 @@ extension Convert {
         engineFolder: Folder,
         fileSystem: FileSystemTree
     ) throws {
-        guard let bytes = fileSystem.readFile(at: inputFile) else {
+        guard let bytes = fileSystem.readFile(at: inputFile)?.allData else {
             throw ConvertErrors.inputFileNotFound(file: inputFile, .init())
         }
         let engine = try GenericEngine(from: engineFolder, in: fileSystem)
@@ -193,7 +193,7 @@ extension Convert {
         engineFolder: Folder,
         fileSystem: FileSystemTree
     ) throws {
-        guard let jsonBytes = fileSystem.readFile(at: inputFile) else {
+        guard let jsonBytes = fileSystem.readFile(at: inputFile)?.allData else {
             throw ConvertErrors.inputFileNotFound(file: inputFile, .init())
         }
         let engine = try GenericEngine(from: engineFolder, in: fileSystem)

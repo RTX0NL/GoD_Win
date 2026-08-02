@@ -102,7 +102,7 @@ extension ColoXD {
         variant: MSGFile.Variant,
         fileSystem: FileSystemTree
     ) throws -> [FileData] {
-        guard let data = fileSystem.readFile(at: file) else {
+        guard let data = fileSystem.readFile(at: file)?.allData else {
             throw FSTErrors.fileNotFound(file, .init())
         }
         var parsed = try MSGFile(binary: data, variant: variant)
@@ -115,7 +115,7 @@ extension ColoXD {
         stem: String,
         fileSystem: FileSystemTree
     ) throws -> FileData {
-        guard let manifestData = fileSystem.readFile(at: manifest) else {
+        guard let manifestData = fileSystem.readFile(at: manifest)?.allData else {
             throw FSTErrors.fileNotFound(manifest, .init())
         }
         let file = try MSGFile(outputs: [

@@ -4,7 +4,7 @@ import GoDFoundation
 import TestSupport
 
 /// Golden encode/decode tests for `LZSSCompressor` (the codec inside FSYS
-/// entries). Behavioural round-trips live in `LZSSCompressorTests`; this
+/// entries). Behavioral round-trips live in `LZSSCompressorTests`; this
 /// file pins the on-wire stream format with checked-in fixtures (defined
 /// by `LZSSFixtures` in `FixtureCatalog`): `lzss_sample.bin` is a known
 /// mixed-compressibility input and `lzss_sample.lzss` its compressed form.

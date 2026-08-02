@@ -97,7 +97,7 @@ final class ColoXDOperationTests: XCTestCase {
         let expected = FSYSFixtures.entries()
         for (entry, path) in zip(expected, expectedExtractedPaths) {
             let extracted = try XCTUnwrap(
-                fst.readFile(at: File(path)),
+                fst.readFile(at: File(path))?.allData,
                 "\(entry.filename) should be extracted to \(path)"
             )
             assertBytesEqual(extracted, entry.data, entry.filename)
@@ -143,7 +143,7 @@ final class ColoXDOperationTests: XCTestCase {
         try pack(registryFile: registryFile, outputFile: packedFile, gsFolder: gsFolder, fst: fst)
 
         // The packed archive parses back to the fixture model 1:1.
-        let packed = try XCTUnwrap(fst.readFile(at: packedFile))
+        let packed = try XCTUnwrap(fst.readFile(at: packedFile)?.allData)
         let parsed = try FSYSArchive(data: packed, engine: gsEngine)
         let expected = FSYSFixtures.entries()
         XCTAssertEqual(parsed.groupID, FSYSFixtures.groupID)
@@ -167,8 +167,8 @@ final class ColoXDOperationTests: XCTestCase {
         try fst.writeFile(blob, at: archiveFile, overwrite: true)
         try unpack(fsysFile: archiveFile, outputFolder: registryFolder, gsFolder: gsFolder, fst: fst)
 
-        let firstRegistryBytes = try XCTUnwrap(fst.readFile(at: registryFile)).rawBytes
-        let firstExtractedBytes = expectedExtractedPaths.map { fst.readFile(at: File($0))?.rawBytes }
+        let firstRegistryBytes = try XCTUnwrap(fst.readFile(at: registryFile)?.allData).rawBytes
+        let firstExtractedBytes = expectedExtractedPaths.map { fst.readFile(at: File($0))?.allData?.rawBytes }
 
         let packedFile = File("/project/rebuilt/fsys_sample.fsys")
         try pack(registryFile: registryFile, outputFile: packedFile, gsFolder: gsFolder, fst: fst)
@@ -179,11 +179,11 @@ final class ColoXDOperationTests: XCTestCase {
         try unpack(fsysFile: packedFile, outputFolder: secondRegistryFolder, gsFolder: gsFolder, fst: fst)
 
         let secondRegistryBytes = try XCTUnwrap(
-            fst.readFile(at: secondRegistryFolder.file("fsys_sample.json"))
+            fst.readFile(at: secondRegistryFolder.file("fsys_sample.json"))?.allData
         ).rawBytes
         assertBytesEqual(secondRegistryBytes, firstRegistryBytes, "registry JSON")
         for (path, first) in zip(expectedExtractedPaths, firstExtractedBytes) {
-            let second = try XCTUnwrap(fst.readFile(at: File(path))).rawBytes
+            let second = try XCTUnwrap(fst.readFile(at: File(path))?.allData).rawBytes
             assertBytesEqual(second, try XCTUnwrap(first), path)
         }
     }
@@ -214,12 +214,12 @@ final class ColoXDOperationTests: XCTestCase {
         // The op nests a per-ATX project folder: manifest + one PNG per frame.
         let projectFolder = Folder("/project/ATX/atx_sample")
         let manifest = projectFolder.file("atx_sample.atx.json")
-        let manifestData = try XCTUnwrap(fst.readFile(at: manifest))
+        let manifestData = try XCTUnwrap(fst.readFile(at: manifest)?.allData)
         struct ManifestPeek: Codable { let framePaths: [String]? }
         let peek = try JSONDecoder().decode(ManifestPeek.self, from: manifestData.data)
         XCTAssertEqual(peek.framePaths, ["atx_sample_frame_000.png", "atx_sample_frame_001.png"])
         for frame in peek.framePaths ?? [] {
-            XCTAssertNotNil(fst.readFile(at: projectFolder.file(frame)), "Expected dumped frame \(frame)")
+            XCTAssertNotNil(fst.readFile(at: projectFolder.file(frame))?.allData, "Expected dumped frame \(frame)")
         }
 
         let rebuiltFolder = Folder("/project/rebuilt")
@@ -236,7 +236,7 @@ final class ColoXDOperationTests: XCTestCase {
         ])
         try ColoXD.build(config: buildConfig, settings: .default, fileSystem: fst, logger: SilentLogger())
 
-        let rebuilt = try XCTUnwrap(fst.readFile(at: rebuiltFile))
+        let rebuilt = try XCTUnwrap(fst.readFile(at: rebuiltFile)?.allData)
         assertBytesEqual(rebuilt, atxBytes, "rebuilt ATX")
     }
 }

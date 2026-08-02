@@ -44,7 +44,7 @@ public enum RVZPacking {
         /// partial-word state across `read` calls so a caller can pull
         /// odd-sized chunks and the stream stays consistent.
         private var byteCursor: Int = 0
-        private var initialised = false
+        private var initialized = false
 
         /// Seed must be exactly 68 bytes (17 big-endian UInt32 words).
         public init(seed: [UInt8]) {
@@ -82,9 +82,9 @@ public enum RVZPacking {
         /// Produce `count` PRNG bytes. Safe to call with odd sizes —
         /// partial-word state is preserved between calls.
         public mutating func read(_ count: Int) -> [UInt8] {
-            if !initialised {
+            if !initialized {
                 for _ in 0..<4 { mix() }
-                initialised = true
+                initialized = true
                 wordCursor = 0
                 byteCursor = 0
             }
@@ -192,7 +192,7 @@ public enum RVZPacking {
 
     // MARK: - Encode
 
-    /// Serialise a segment list to its on-wire byte representation.
+    /// Serialize a segment list to its on-wire byte representation.
     /// Literal sizes must fit in 31 bits (`size < 0x80000000`); packed
     /// sizes must have the MSB clear before encoding (the MSB is set
     /// by the encoder).

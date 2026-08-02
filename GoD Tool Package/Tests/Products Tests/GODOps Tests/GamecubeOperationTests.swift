@@ -44,7 +44,7 @@ final class GamecubeOperationTests: XCTestCase {
                 enabled: .yes
             )
         ])
-        try Gamecube.dump(config: config, settings: .default, fileSystem: StreamedFileSystem(materialising: fst), logger: SilentLogger())
+        try Gamecube.dump(config: config, settings: .default, fileSystem: StreamedFileSystem(materializing: fst), logger: SilentLogger())
 
         // System files land under sys/
         for sysFile in ["boot.bin", "bi2.bin", "apploader.img", "main.dol", "fst.bin"] {
@@ -55,12 +55,12 @@ final class GamecubeOperationTests: XCTestCase {
         }
 
         // The user file survives with exact contents
-        let testFile = try XCTUnwrap(fst.readFile(at: File("/project/Unpacked/files/test.bin")))
+        let testFile = try XCTUnwrap(fst.readFile(at: File("/project/Unpacked/files/test.bin"))?.allData)
         XCTAssertEqual(testFile.rawBytes, (0..<64).map { UInt8($0) })
 
         // boot.bin is the re-serialized boot struct, sized by the engine's
         // struct definition (rebuild-from-scratch, not a raw byte copy).
-        let boot = try XCTUnwrap(fst.readFile(at: File("/project/Unpacked/sys/boot.bin")))
+        let boot = try XCTUnwrap(fst.readFile(at: File("/project/Unpacked/sys/boot.bin"))?.allData)
         XCTAssertEqual(boot.length, dolphinEngine.bootDataStruct.length)
     }
 
@@ -79,7 +79,7 @@ final class GamecubeOperationTests: XCTestCase {
             )
         ])
         XCTAssertThrowsError(
-            try Gamecube.dump(config: config, settings: .default, fileSystem: StreamedFileSystem(materialising: fst), logger: SilentLogger())
+            try Gamecube.dump(config: config, settings: .default, fileSystem: StreamedFileSystem(materializing: fst), logger: SilentLogger())
         )
     }
 
@@ -101,7 +101,7 @@ final class GamecubeOperationTests: XCTestCase {
                 enabled: .yes
             )
         ])
-        try Gamecube.dump(config: dumpConfig, settings: .default, fileSystem: StreamedFileSystem(materialising: fst), logger: SilentLogger())
+        try Gamecube.dump(config: dumpConfig, settings: .default, fileSystem: StreamedFileSystem(materializing: fst), logger: SilentLogger())
 
         let buildConfig = Gamecube.BuildConfig(operations: [
             OperationConfig(
@@ -118,12 +118,12 @@ final class GamecubeOperationTests: XCTestCase {
         try Gamecube.build(config: buildConfig, settings: .default, fileSystem: fst)
 
         // The rebuilt image must parse and contain the same user file.
-        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.iso")))
+        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.iso"))?.allData)
         let rebuilt = try GamecubeISO(data: rebuiltData, dolphinEngine: dolphinEngine, gamecubeEngine: gamecubeEngine)
-        let rebuiltFile = try XCTUnwrap(rebuilt.readFile(at: File("/files/test.bin")))
+        let rebuiltFile = try XCTUnwrap(rebuilt.readFile(at: File("/files/test.bin"))?.allData)
         XCTAssertEqual(rebuiltFile.rawBytes, (0..<64).map { UInt8($0) })
-        XCTAssertNotNil(rebuilt.readFile(at: File("/sys/boot.bin")))
-        XCTAssertNotNil(rebuilt.readFile(at: File("/sys/main.dol")))
+        XCTAssertNotNil(rebuilt.readFile(at: File("/sys/boot.bin"))?.allData)
+        XCTAssertNotNil(rebuilt.readFile(at: File("/sys/main.dol"))?.allData)
     }
 
     func testGamecubeBuildRespectsOverwriteFlag() throws {
@@ -143,7 +143,7 @@ final class GamecubeOperationTests: XCTestCase {
                 enabled: .yes
             )
         ])
-        try Gamecube.dump(config: dumpConfig, settings: .default, fileSystem: StreamedFileSystem(materialising: fst), logger: SilentLogger())
+        try Gamecube.dump(config: dumpConfig, settings: .default, fileSystem: StreamedFileSystem(materializing: fst), logger: SilentLogger())
 
         // Pre-existing output with overwrite=false must survive untouched.
         let sentinel = GoDData(byteStream: [0xDE, 0xAD], byteOrder: .big)
@@ -163,7 +163,7 @@ final class GamecubeOperationTests: XCTestCase {
         ])
         try? Gamecube.build(config: buildConfig, settings: .default, fileSystem: fst)
 
-        let after = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.iso")))
+        let after = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.iso"))?.allData)
         XCTAssertEqual(after.rawBytes, [0xDE, 0xAD], "overwrite=false must not replace an existing ISO")
     }
 

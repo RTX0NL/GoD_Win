@@ -29,7 +29,7 @@ enum Project {
         let settingsFolder = Folder("/Settings")
         let enginesFolder = Folder("/Engines")
 
-        guard let rawInput = fileSystem.readFile(at: isoInputFile) else {
+        guard let rawInput = fileSystem.readFile(at: isoInputFile)?.allData else {
             throw ProjectSetupErrors.isoNotFound(isoInputFile, .init())
         }
 
@@ -119,7 +119,7 @@ enum Project {
                 let gsfsysFile = gsEngine.data.fsys.GSfsysFile
 
                 let isoFileSystem = try? GamecubeISO(data: isoData, dolphinEngine: dolphinEngine, gamecubeEngine: gamecubeEngine)
-                if let tocData = isoFileSystem?.readFile(at: gsfsysFile),
+                if let tocData = isoFileSystem?.readFile(at: gsfsysFile)?.allData,
                    let toc = try? FsysTOC(tocData: tocData, engine: gsEngine) {
                     gsEngine = try GeniusSonorityEngine(data: gsEngine.data, enums: gsEngine.enums, structs: gsEngine.structs, toc: toc)
                 }

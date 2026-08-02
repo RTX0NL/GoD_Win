@@ -3,7 +3,7 @@ import Foundation
 import GoDFoundation
 import GeniusSonority
 
-/// Registry-level behaviour only — dispatch, filesystem I/O layout, error
+/// Registry-level behavior only — dispatch, filesystem I/O layout, error
 /// paths. The protocol members of each format are exercised in
 /// `FileFormatProtocolTests` so these tests focus on what the registry
 /// adds on top: extension → handler routing, baseName-less dump folder

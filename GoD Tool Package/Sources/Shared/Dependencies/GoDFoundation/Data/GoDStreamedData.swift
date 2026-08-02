@@ -19,7 +19,7 @@
 //  `readString`/`readGSString`, which walk forward two bytes at a time and
 //  stop when a read fails.
 //
-//  **Thread safety:** not synchronised, matching `GoDData` and
+//  **Thread safety:** not synchronized, matching `GoDData` and
 //  `FileSystemTree`. The handle carries one file offset and the block cache is
 //  a plain dictionary, so concurrent reads of the same instance are undefined.
 //  Open one per thread if you need to fan out.
@@ -84,6 +84,15 @@ public final class GoDStreamedData: GoDReadable {
     deinit { close() }
 
     // MARK: - GoDReadable
+
+    /// Reads the whole file. Defined because some callers legitimately need
+    /// every byte — writing the image back out, handing it to a converter —
+    /// but it is the one operation here that costs the file's full size in
+    /// memory, which is what this type exists to avoid. Prefer `read`.
+    public var allData: GoDData? {
+        read(atAddress: 0, length: length)
+    }
+
 
     public func read(atAddress address: UInt, length: UInt) -> GoDData? {
         let start = Int(address)

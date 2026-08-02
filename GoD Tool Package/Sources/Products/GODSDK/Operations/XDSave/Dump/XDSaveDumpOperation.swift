@@ -104,10 +104,10 @@ extension XDSaveOps {
 
         let slotAFile = unpackedFolder.file(GCIOps.slotAFilename)
         let slotBFile = unpackedFolder.file(GCIOps.slotBFilename)
-        guard let slotABytes = fileSystem.readFile(at: slotAFile) else {
+        guard let slotABytes = fileSystem.readFile(at: slotAFile)?.allData else {
             throw XDSaveOpsErrors.missingSlot(file: slotAFile, .init())
         }
-        guard let slotBBytes = fileSystem.readFile(at: slotBFile) else {
+        guard let slotBBytes = fileSystem.readFile(at: slotBFile)?.allData else {
             throw XDSaveOpsErrors.missingSlot(file: slotBFile, .init())
         }
 
@@ -204,7 +204,7 @@ extension XDSaveOps {
 
             guard let bytes = slot.subBlockBytes(at: index) else {
                 // Zero-size sections aren't dumped at all — match
-                // PKHeX's behaviour of leaving them implicit.
+                // PKHeX's behavior of leaving them implicit.
                 continue
             }
 

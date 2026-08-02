@@ -57,7 +57,7 @@ public struct GSWFile: FileFormat {
 
     /// Write the canonical PNG path (`<name>_texture_NNN.png`) onto every
     /// embedded texture ref so the emitted JSON is a self-describing
-    /// manifest. Called at serialise time; readers that encounter an
+    /// manifest. Called at serialize time; readers that encounter an
     /// unstamped dump fall back to reconstructing the filename.
     public mutating func stampTexturePaths() {
         for tagIdx in tags.indices {
@@ -191,7 +191,7 @@ public struct GSWTextureRef: Codable, Equatable {
     public var width: Int
     public var height: Int
     /// Path of the PNG sidecar, relative to the JSON's parent folder.
-    /// Stamped by `GSWFile.stampTexturePaths()` when serialising so the
+    /// Stamped by `GSWFile.stampTexturePaths()` when serializing so the
     /// build side can resolve siblings without a naming-convention scan.
     /// Absent on older dumps — readers fall back to the canonical pattern.
     public var pngPath: String?

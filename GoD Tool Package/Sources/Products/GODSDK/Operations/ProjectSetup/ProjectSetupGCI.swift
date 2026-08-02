@@ -40,7 +40,7 @@ extension Project {
         let settingsFolder = Folder("/Settings")
         let enginesFolder = Folder("/Engines")
 
-        guard let raw = fileSystem.readFile(at: gciInputFile) else {
+        guard let raw = fileSystem.readFile(at: gciInputFile)?.allData else {
             throw ProjectSetupErrors.gciNotFound(gciInputFile, .init())
         }
 
@@ -51,7 +51,7 @@ extension Project {
         let isXD = gamecodePrefix == "GXX"
         let isColosseum = gamecodePrefix == "GC6"
         guard isXD || isColosseum else {
-            throw ProjectSetupErrors.unrecognisedGCIGamecode(gamecode, .init())
+            throw ProjectSetupErrors.unrecognizedGCIGamecode(gamecode, .init())
         }
 
         // Mirror the GCI input into the project under its original name.

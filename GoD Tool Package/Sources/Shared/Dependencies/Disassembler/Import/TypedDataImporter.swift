@@ -97,11 +97,11 @@ public struct TypedDataImporter {
     /// existing `importStruct(structData:labelTable:byteOrder:)` step
     /// resolves them to addresses.
     ///
-    /// Floats serialised as `"NaN"`/`"Infinity"`/`"-Infinity"` (the
+    /// Floats serialized as `"NaN"`/`"Infinity"`/`"-Infinity"` (the
     /// sentinel form `RelDisassembly` emits to keep `JSONSerialization`
     /// from throwing on invalid IEEE-754) are restored to their
     /// non-finite values here. Missing keys leave the default zero
-    /// bytes alone — the StructData is initialised zeroed.
+    /// bytes alone — the StructData is initialized zeroed.
     public func decodeStruct(
         from json: [String: Any],
         definition: StructDefinition,
@@ -118,7 +118,7 @@ public struct TypedDataImporter {
     /// Decode a JSON document holding a table of structs. Both the
     /// `RelDisassembly` shape (`{"type", "count", "entries"}`) and the
     /// `DolDisassembly` shape (`{"structType", "entries"}`) are
-    /// recognised — both share a flat `entries` array of dicts.
+    /// recognized — both share a flat `entries` array of dicts.
     /// Returns the decoded entries plus their labels (`_label` field
     /// when present, e.g. on DOL-emitted dumps).
     public func decodeTable(

@@ -150,20 +150,20 @@ extension ColoXD {
     // MARK: - Manifest helpers
 
     /// Reads a manifest and the companion files it names, in the shape the
-    /// `FileFormat.init(outputs:)` initialisers expect.
+    /// `FileFormat.init(outputs:)` initializers expect.
     static func artifactBundle(
         manifest: File,
         companions: (GoDData, Folder) -> [String],
         fileSystem: FileSystemTree
     ) throws -> [FileData] {
-        guard let manifestData = fileSystem.readFile(at: manifest),
+        guard let manifestData = fileSystem.readFile(at: manifest)?.allData,
               let baseFolder = manifest.parentFolder else {
             throw FSTErrors.fileNotFound(manifest, .init())
         }
         var outputs = [FileData(file: File(manifest.fileName), data: manifestData)]
         for relative in companions(manifestData, baseFolder) {
             let file = resolveRelativeFile(relative, in: baseFolder)
-            guard let data = fileSystem.readFile(at: file) else {
+            guard let data = fileSystem.readFile(at: file)?.allData else {
                 throw FSTErrors.fileNotFound(file, .init())
             }
             outputs.append(FileData(file: File(relative), data: data))

@@ -186,7 +186,7 @@
       "table": {
         "name": "MsgPalettes",
         "start": "MsgPalettes",
-        "entryType": "RGBAColour"
+        "entryType": "RGBAColor"
       }
     }
   ]

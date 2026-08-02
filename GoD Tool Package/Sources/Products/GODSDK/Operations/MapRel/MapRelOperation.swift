@@ -25,6 +25,7 @@ extension MapRelDump {
             typeMapPath: config.typeMapPath,
             dolphinEngine: config.dolphinEngine,
             gameEngine: config.gameEngine,
+            engines: config.engines,
             settings: settings,
             fileSystem: fileSystem,
             logger: logger
@@ -56,6 +57,7 @@ extension MapRelDump {
                 typeMapPath: config.typeMapPath,
                 dolphinEngine: config.dolphinEngine,
                 gameEngine: config.gameEngine,
+                engines: config.engines,
                 settings: settings,
                 fileSystem: fileSystem,
                 logger: logger
@@ -70,6 +72,7 @@ extension MapRelDump {
         typeMapPath: File,
         dolphinEngine: Folder,
         gameEngine: Folder,
+        engines: [Folder]?,
         settings: GoddessSettings,
         fileSystem: FileSystemTree,
         logger: Logger?
@@ -85,9 +88,9 @@ extension MapRelDump {
             symbolIndexPath: fileSystem.inspectFile(at: symbolPath) != nil ? symbolPath : nil,
             dolSymbolMapPath: fileSystem.inspectFile(at: dolSymbolPath) != nil ? dolSymbolPath : nil,
             typeMapPath: fileSystem.inspectFile(at: typeMapPath) != nil ? typeMapPath : nil,
-            // The map.rel type map's chunk types resolve against the game
-            // engine's own struct definitions.
-            engines: [gameEngine]
+            // The map.rel type map's chunk types resolve against the
+            // combined engine, game definitions first.
+            engines: engines ?? [gameEngine]
         )
         try RelDisassembly.disassemble(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
     }
@@ -119,7 +122,7 @@ extension MapRelDump {
         _ relFile: File,
         fileSystem: FileSystemTree
     ) -> RELFile.ColosseumMapType {
-        guard let data = fileSystem.readFile(at: relFile) else { return .type1 }
+        guard let data = fileSystem.readFile(at: relFile)?.allData else { return .type1 }
         let stem = relFile.fileName.withoutExtensions
         guard let rel = try? RELFile(binary: data, name: stem) else { return .type1 }
         return rel.classifyColosseumMap()

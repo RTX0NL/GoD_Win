@@ -165,7 +165,7 @@ public extension GeniusSonorityEngine {
         let fsysConfig = self.data.fsys
 
         let gsfsysFile = rootFolder.file(self.data.fsys.GSfsysFile.path)
-        guard let gsfsysData = fileSystem.readFile(at: gsfsysFile) else {
+        guard let gsfsysData = fileSystem.readFile(at: gsfsysFile)?.allData else {
             throw FSYSPipelineError.missingTableOfContents(gsfsysFile, .init())
         }
         let toc = try FsysTOC(tocData: gsfsysData, engine: self)
@@ -197,7 +197,7 @@ public extension GeniusSonorityEngine {
                 return
             }
             for path in folderData.files {
-                guard let data = fileSystem.readFile(at: path) else { continue }
+                guard let data = fileSystem.readFile(at: path)?.allData else { continue }
                 let entry = (path: path, discPath: discRelativePath(path), data: data)
                 if path.fileType == "fsys" {
                     fsysPaths.append(entry)
@@ -326,7 +326,7 @@ public extension GeniusSonorityEngine {
                     entries: remappedEntries
                 )
 
-                try projectFileSystem.writeFile(remappedRegistry, at: fsysResult.registryFile, overwrite: true)
+                try projectFileSystem.writeJSON(remappedRegistry, at: fsysResult.registryFile, overwrite: true)
                 fstEntries.append(.init(
                     type: .fsys,
                     file: fsysResult.registryFile,
@@ -339,7 +339,7 @@ public extension GeniusSonorityEngine {
 
         logger?.log(.taskStatus(taskName: "Decode Colosseum/XD File System", status: .completed(true)))
 
-        try projectFileSystem.writeFile(
+        try projectFileSystem.writeJSON(
             FSTRegistry(entries: fstEntries),
             at: Folder("/").file("FST.json"),
             overwrite: true
@@ -358,7 +358,7 @@ public extension GeniusSonorityEngine {
         fileSystem: FileSystemTree
     ) throws -> [FSYSArchive.Entry] {
         let filePath = sourceFolder.file(registryEntry.file.path)
-        guard let data = fileSystem.readFile(at: filePath) else {
+        guard let data = fileSystem.readFile(at: filePath)?.allData else {
             throw FSTErrors.fileNotFound(filePath, .init())
         }
 
@@ -493,7 +493,7 @@ public extension GeniusSonorityEngine {
         // Phase 1: Copy non-FSYS binary files to output
         for (i, entry) in binaryEntries.enumerated() {
             let sourcePath = sourceFolder.file(entry.file.path)
-            guard let data = fileSystem.readFile(at: sourcePath) else {
+            guard let data = fileSystem.readFile(at: sourcePath)?.allData else {
                 throw FSTErrors.fileNotFound(sourcePath, .init())
             }
             // `rebuildPath` is the file's original location relative to

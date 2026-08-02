@@ -7,7 +7,7 @@ import TestSupport
 /// Encode/decode tests for `GSFont` against a checked-in golden fixture
 /// (defined by `GSFontFixtures` in `FixtureCatalog`: a primary block
 /// chained to a smaller secondary block). The raw `.fnt` binary round-trips
-/// byte-identically; the PGM atlas is a normalised re-render, but the
+/// byte-identically; the PGM atlas is a normalized re-render, but the
 /// ×17/÷17 nibble mapping is exactly invertible, so the reader-canonical
 /// golden keeps both directions `.exact`.
 ///

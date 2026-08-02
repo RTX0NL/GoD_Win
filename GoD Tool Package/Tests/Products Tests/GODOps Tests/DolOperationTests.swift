@@ -157,7 +157,7 @@ final class DolOperationTests: XCTestCase {
 
         // Output lands in a subfolder named after the DOL ("main" for main.dol).
         let sections = try XCTUnwrap(
-            fst.readFile(at: File("/project/Disassembly/main/sections.txt")),
+            fst.readFile(at: File("/project/Disassembly/main/sections.txt"))?.allData,
             "Expected sections.txt in the per-DOL output folder"
         )
         let sectionsText = sections.string(format: .utf8)
@@ -165,7 +165,7 @@ final class DolOperationTests: XCTestCase {
         XCTAssertTrue(sectionsText.contains("# Entry point: 0x80003100"))
 
         let asm = try XCTUnwrap(
-            fst.readFile(at: File("/project/Disassembly/main/text0.s")),
+            fst.readFile(at: File("/project/Disassembly/main/text0.s"))?.allData,
             "Expected text0.s (single-file layout without a symbol map)"
         )
         let asmText = asm.string(format: .utf8)
@@ -185,7 +185,7 @@ final class DolOperationTests: XCTestCase {
         )
         try DolAssembly.assemble(config: asmConfig, settings: .default, fileSystem: fst, logger: SilentLogger())
 
-        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol")))
+        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData)
         let rebuilt = try Dol(data: rebuiltData, dolphinEngine: engine)
 
         XCTAssertEqual(rebuilt.entryPoint, Self.entryPoint)
@@ -233,7 +233,7 @@ final class DolOperationTests: XCTestCase {
         try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, registry: registry)
 
         let artifact = try XCTUnwrap(
-            fst.readFile(at: File("/project/Disassembly/main/data0/lbl_80004008/blob.blob.enc")),
+            fst.readFile(at: File("/project/Disassembly/main/data0/lbl_80004008/blob.blob.enc"))?.allData,
             "Expected the blob's registry artifact in a per-chunk subfolder"
         )
         XCTAssertEqual(artifact.rawBytes, [0xFE, 0xFD, 0xFC, 0xFB, 0xFA, 0xF9],
@@ -241,7 +241,7 @@ final class DolOperationTests: XCTestCase {
 
         try assemble(in: fst, dolphinFolder: dolphinFolder, registry: registry)
 
-        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol")))
+        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData)
         let rebuilt = try Dol(data: rebuiltData, dolphinEngine: engine)
         XCTAssertEqual(rebuilt.dataSections[0].RAMAddress, Self.dataRAMAddress)
         XCTAssertEqual(rebuilt.dataSections[0].data.rawBytes, dataBytes,
@@ -274,7 +274,7 @@ final class DolOperationTests: XCTestCase {
 
         try assemble(in: fst, dolphinFolder: dolphinFolder, registry: registry)
 
-        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol")))
+        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData)
         let rebuilt = try Dol(data: rebuiltData, dolphinEngine: engine)
         let expected: [UInt8] = [
             0x80, 0x00, 0x40, 0x14,             // shifted by +4: target label moved with the grown blob
@@ -300,15 +300,15 @@ final class DolOperationTests: XCTestCase {
         try seedDol(in: fst, engine: engine, dataBytes: dataBytes)
         try disassemble(in: fst, dolphinFolder: dolphinFolder)
 
-        XCTAssertNil(fst.readFile(at: File("/project/Disassembly/main/data0/lbl_8000400D.s")))
-        XCTAssertNil(fst.readFile(at: File("/project/Disassembly/main/data0/lbl_8000400D.bin")))
+        XCTAssertNil(fst.readFile(at: File("/project/Disassembly/main/data0/lbl_8000400D.s"))?.allData)
+        XCTAssertNil(fst.readFile(at: File("/project/Disassembly/main/data0/lbl_8000400D.bin"))?.allData)
         XCTAssertNotNil(
-            fst.readFile(at: File("/project/Disassembly/main/data0/lbl_80004008.bin")),
+            fst.readFile(at: File("/project/Disassembly/main/data0/lbl_80004008.bin"))?.allData,
             "aligned pointer target must still become a chunk boundary"
         )
 
         try assemble(in: fst, dolphinFolder: dolphinFolder)
-        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol")))
+        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData)
         let rebuilt = try Dol(data: rebuiltData, dolphinEngine: engine)
         XCTAssertEqual(rebuilt.dataSections[0].data.rawBytes, dataBytes)
     }
@@ -322,15 +322,15 @@ final class DolOperationTests: XCTestCase {
         try seedDol(in: fst, engine: engine, secondTextWords: text1Words)
         try disassemble(in: fst, dolphinFolder: dolphinFolder)
 
-        let text1 = try XCTUnwrap(fst.readFile(at: File("/project/Disassembly/main/text1.s"))).string(format: .utf8)
+        let text1 = try XCTUnwrap(fst.readFile(at: File("/project/Disassembly/main/text1.s"))?.allData).string(format: .utf8)
         XCTAssertTrue(text1.contains("bl lbl_80003100"),
                       "cross-section call must use a label, got:\n\(text1)")
-        let text0 = try XCTUnwrap(fst.readFile(at: File("/project/Disassembly/main/text0.s"))).string(format: .utf8)
+        let text0 = try XCTUnwrap(fst.readFile(at: File("/project/Disassembly/main/text0.s"))?.allData).string(format: .utf8)
         XCTAssertTrue(text0.contains("lbl_80003100:"),
                       "target section must define the label the caller references")
 
         try assemble(in: fst, dolphinFolder: dolphinFolder)
-        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol")))
+        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData)
         let rebuilt = try Dol(data: rebuiltData, dolphinEngine: engine)
         XCTAssertEqual(rebuilt.textSections[0].assembly.rawBytes, Self.textSectionBytes)
         XCTAssertEqual(

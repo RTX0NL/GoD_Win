@@ -11,7 +11,7 @@
 //  Every input path is resolved to an absolute path against the process
 //  working directory before it reaches GODOps. Downstream code (project
 //  folder naming, `Folder` construction, `FileSystem.extendPath`) assumes
-//  absolute paths, so normalising once here keeps `GODDESS game.iso` and
+//  absolute paths, so normalizing once here keeps `GODDESS game.iso` and
 //  `GODDESS ./game.iso` working the same as a fully-qualified path.
 //
 //  Exit status is EXIT_FAILURE if *any* input failed, so shell scripts,
@@ -26,7 +26,7 @@ import GODOps
 
 /// Resolves `argument` to an absolute path against the process working
 /// directory. Absolute paths and `~`-relative paths pass through
-/// (expanded); everything else is joined onto the CWD and normalised so
+/// (expanded); everything else is joined onto the CWD and normalized so
 /// `.`/`..` components don't survive into `File`/`Folder`.
 func absolutePath(for argument: String) -> String {
     let expanded = NSString(string: argument).expandingTildeInPath

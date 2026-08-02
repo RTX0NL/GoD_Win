@@ -76,7 +76,7 @@ public struct WIAFileHeader: Equatable {
         self.fileHeadHash = hash2
     }
 
-    /// Serialise to the 0x48-byte on-disc representation. The hash
+    /// Serialize to the 0x48-byte on-disc representation. The hash
     /// fields are written verbatim; callers are responsible for
     /// filling them with the correct SHA-1 values before calling.
     public var binaryData: GoDData {

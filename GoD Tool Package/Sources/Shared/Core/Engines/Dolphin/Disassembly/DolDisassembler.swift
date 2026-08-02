@@ -55,7 +55,7 @@ public struct DolDisassembler {
         into destination: FileSystemTree = InMemoryFST(),
         logger: Logger? = nil
     ) throws -> FileSystemTree {
-        guard let dolData = fileSystem.readFile(at: dolPath) else {
+        guard let dolData = fileSystem.readFile(at: dolPath)?.allData else {
             throw DolDisassemblyErrors.dolNotFound(file: dolPath, .init())
         }
 
@@ -67,7 +67,7 @@ public struct DolDisassembler {
         var allSymbols = [PPCSymbol]()
         var symbolLookup = [UInt32: String]()
         if let symbolMapPath = symbolMapPath,
-           let symbolData = fileSystem.readFile(at: symbolMapPath) {
+           let symbolData = fileSystem.readFile(at: symbolMapPath)?.allData {
             let text = symbolData.string(format: .utf8)
             let parser = SymbolMapParser()
             allSymbols = parser.parse(text)
@@ -256,7 +256,7 @@ public struct DolDisassembler {
         var typeMap: TypeMap?
         var resolvedStructs = [String: StructDefinition]()
         if let typeMapPath = typeMapPath,
-           let typeMapData = fileSystem.readFile(at: typeMapPath) {
+           let typeMapData = fileSystem.readFile(at: typeMapPath)?.allData {
             typeMap = try? JSONDecoder().decode(TypeMap.self, from: typeMapData)
             if let tm = typeMap {
                 logger?.log(.info("Loaded type map with \(tm.chunks.count) chunks"))

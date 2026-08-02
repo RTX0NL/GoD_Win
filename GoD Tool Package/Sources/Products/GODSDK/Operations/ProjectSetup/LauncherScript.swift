@@ -52,8 +52,8 @@ enum LauncherScript {
             let file = projectFolder.folder("Scripts").file(name)
             let script = body(executablePath: executablePath, configFile: config)
             try fileSystem.writeFile(script.data(format: .utf8), at: file, overwrite: false)
-            // Only the on-disk file system has POSIX permissions.
-            (fileSystem as? FileSystem)?.setExecutable(file: file)
+            // A no-op on trees without permissions.
+            fileSystem.setExecutable(file: file)
         }
     }
 }

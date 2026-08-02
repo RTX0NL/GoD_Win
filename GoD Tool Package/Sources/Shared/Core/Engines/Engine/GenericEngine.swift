@@ -57,3 +57,50 @@ public struct GenericEngine: Engine {
         self.structs = structs
     }
 }
+
+// MARK: - Combining engines
+
+public extension GenericEngine {
+
+    /// Combines several engines into one, preserving their order.
+    ///
+    /// `getStruct` / `getEnum` take the first definition of a given name, so
+    /// the sub-engines are effectively consulted in turn and the earliest
+    /// one wins. Where two engines name the same type differently — Colosseum
+    /// and XD both declare `CharacterModel`, at 0xDC and 0x34 bytes — order
+    /// is what decides, so callers should pass the game engine first.
+    ///
+    /// Definitions resolve across the whole combination, not just within the
+    /// engine that declared them: a Colosseum struct can reference a Pokemon
+    /// enum as long as both engines are in the list. That is the point of
+    /// combining rather than trying each engine in isolation.
+    init(combining engines: [any Engine]) throws {
+        try self.init(
+            data: Data(),
+            enums: Enums(unchecked: engines.flatMap { $0.enums.entries }),
+            structs: Structs(unchecked: engines.flatMap { $0.structs.entries })
+        )
+    }
+
+    /// Loads each folder as an engine and combines them, in order.
+    init(combining folders: [Folder], in fileSystem: FileSystemTree) throws {
+        try self.init(combining: folders.map { folder in
+            try GenericEngine(from: folder, in: fileSystem)
+        })
+    }
+
+    /// Names declared by more than one of the combined engines, where only
+    /// the first is reachable. Worth logging: a shadowed struct resolves to a
+    /// different layout than its author intended.
+    var shadowedNames: (structs: [String], enums: [String]) {
+        func repeated(_ names: [String]) -> [String] {
+            var seen = Set<String>()
+            var shadowed = Set<String>()
+            for name in names {
+                if !seen.insert(name).inserted { shadowed.insert(name) }
+            }
+            return shadowed.sorted()
+        }
+        return (repeated(structs.entries.map(\.name)), repeated(enums.entries.map(\.name)))
+    }
+}

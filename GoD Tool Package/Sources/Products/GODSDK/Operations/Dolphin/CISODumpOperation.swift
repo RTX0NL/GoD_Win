@@ -9,7 +9,7 @@ extension CISODump {
         logger: Logger? = nil
     ) throws {
         logger?.log(.taskStatus(taskName: "Dump CISO", status: .started))
-        guard let cisoData = fileSystem.readFile(at: config.cisoPath) else {
+        guard let cisoData = fileSystem.readFile(at: config.cisoPath)?.allData else {
             throw CISOErrors.inputNotFound(file: config.cisoPath, .init())
         }
         let iso = try CISOConverter.dump(ciso: cisoData, targetDiscSize: config.targetDiscSize)
@@ -27,7 +27,7 @@ extension CISOBuild {
         logger: Logger? = nil
     ) throws {
         logger?.log(.taskStatus(taskName: "Build CISO", status: .started))
-        guard let isoData = fileSystem.readFile(at: config.isoPath) else {
+        guard let isoData = fileSystem.readFile(at: config.isoPath)?.allData else {
             throw CISOErrors.inputNotFound(file: config.isoPath, .init())
         }
         let ciso = CISOConverter.build(iso: isoData, blockSize: config.blockSize)

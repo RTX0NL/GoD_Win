@@ -185,7 +185,7 @@ final class XDSaveOperationTests: XCTestCase {
         let config = try XCTUnwrap(meta.sections.first { $0.index == configIndex })
         XCTAssertEqual(config.json, "00-Config.json")
         XCTAssertNil(config.bin)
-        XCTAssertNotNil(fst.readFile(at: latest.file("00-Config.json")))
+        XCTAssertNotNil(fst.readFile(at: latest.file("00-Config.json"))?.allData)
 
         let trainer1 = try XCTUnwrap(meta.sections.first { $0.index == trainer1Index })
         XCTAssertNil(trainer1.json)
@@ -208,7 +208,7 @@ final class XDSaveOperationTests: XCTestCase {
         XCTAssertTrue(save.decrypted)
         XCTAssertEqual(save.latestSlot, "A", "slot A has the higher counter")
         let latest = out.folder(XDSaveOps.latestSlotFolderName)
-        let raw = try XCTUnwrap(fst.readFile(at: latest.file("raw-slot.bin")))
+        let raw = try XCTUnwrap(fst.readFile(at: latest.file("raw-slot.bin"))?.allData)
         XCTAssertEqual(raw.rawBytes, plainA.rawBytes)
     }
 
@@ -248,12 +248,12 @@ final class XDSaveOperationTests: XCTestCase {
         try runBuild(fst: fst, xdEngine: engineFolder, input: out, unpacked: unpacked, decrypted: false)
 
         // Slot A (non-latest) is untouched — byte-identical to the original.
-        let rebuiltA = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-a.bin")))
+        let rebuiltA = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-a.bin"))?.allData)
         XCTAssertEqual(rebuiltA.rawBytes, encA.rawBytes, "non-latest slot A must pass through unchanged")
 
         // Slot B (latest) is a from-scratch rebuild — encrypted, and it
         // decrypts back to the original plaintext with valid checksums.
-        let rebuiltB = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-b.bin")))
+        let rebuiltB = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-b.bin"))?.allData)
         let decrypted = GoDData(byteStream: rebuiltB.rawBytes, byteOrder: .big)
         XCTAssertTrue(try XDSaveCipher.decrypt(slot: decrypted), "rebuilt slot B checksum must validate")
         XCTAssertEqual(decrypted.rawBytes, plainB.rawBytes, "rebuilt slot B plaintext must match original")
@@ -274,7 +274,7 @@ final class XDSaveOperationTests: XCTestCase {
         // Edit the Config JSON: set gcGameIndex to a known value.
         let latest = out.folder(XDSaveOps.latestSlotFolderName)
         let configFile = latest.file("00-Config.json")
-        let json = try XCTUnwrap(fst.readFile(at: configFile))
+        let json = try XCTUnwrap(fst.readFile(at: configFile)?.allData)
         var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: json.data) as? [String: Any])
         var data = try XCTUnwrap(root["data"] as? [String: Any])
         // JSON keys are the property names exactly as declared.
@@ -292,14 +292,14 @@ final class XDSaveOperationTests: XCTestCase {
         try runBuild(fst: fst, xdEngine: engineFolder, input: out, unpacked: unpacked, decrypted: false)
 
         // Rebuilt latest slot must still validate.
-        let rebuiltA = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-a.bin")))
+        let rebuiltA = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-a.bin"))?.allData)
         let decrypted = GoDData(byteStream: rebuiltA.rawBytes, byteOrder: .big)
         XCTAssertTrue(try XDSaveCipher.decrypt(slot: decrypted), "rebuilt slot checksum must validate")
 
         let out2 = Folder("/project/Save2")
         try runDump(fst: fst, xdEngine: engineFolder, unpacked: unpacked, out: out2, decrypted: false)
         let latest2 = out2.folder(XDSaveOps.latestSlotFolderName)
-        let json2 = try XCTUnwrap(fst.readFile(at: latest2.file("00-Config.json")))
+        let json2 = try XCTUnwrap(fst.readFile(at: latest2.file("00-Config.json"))?.allData)
         let root2 = try XCTUnwrap(try JSONSerialization.jsonObject(with: json2.data) as? [String: Any])
         let data2 = try XCTUnwrap(root2["data"] as? [String: Any])
         let gameIndex2 = try XCTUnwrap(data2[gameIndexKey] as? String)

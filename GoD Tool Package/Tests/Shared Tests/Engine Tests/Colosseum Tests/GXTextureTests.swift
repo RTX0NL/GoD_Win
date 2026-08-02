@@ -265,7 +265,7 @@ final class GXTextureTests: XCTestCase {
 
     /// CMPR is lossy (DXT1-style quantization). Verify the encoder produces a
     /// well-formed GTX that still re-decodes to the same dimensions — pixel
-    /// equality is not asserted since block colour endpoints get re-quantized.
+    /// equality is not asserted since block color endpoints get re-quantized.
     func testRoundTripCMPRStructural() throws {
         guard let sample = Self.roundTripSamples.first(where: { $0.format == .CMPR }) else {
             throw XCTSkip("no CMPR sample registered")

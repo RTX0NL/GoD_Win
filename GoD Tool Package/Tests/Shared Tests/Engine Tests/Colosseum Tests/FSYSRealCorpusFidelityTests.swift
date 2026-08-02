@@ -142,7 +142,7 @@ final class FSYSRealCorpusFidelityTests: XCTestCase {
                 let raw = [UInt8](rawData)
                 let data = GoDData(byteStream: raw, byteOrder: .big)
 
-                // Zero-entry archives carry uninitialised packer memory that
+                // Zero-entry archives carry uninitialized packer memory that
                 // can't be re-derived — they have their own test below.
                 if let header = data.read(struct: headerStruct, atAddress: 0),
                    let entryCount: Int = header.entry_count, entryCount == 0 {
@@ -177,7 +177,7 @@ final class FSYSRealCorpusFidelityTests: XCTestCase {
     /// made the rebuilt file 32 bytes short.
     ///
     /// The reserved string-table window is *not* asserted byte-for-byte: in
-    /// every real zero-entry archive it holds uninitialised packer memory
+    /// every real zero-entry archive it holds uninitialized packer memory
     /// (RAM addresses, fragments of unrelated filenames like `w_gorgeo` or
     /// `GSFSYS`), different in each file and derivable from nothing in the
     /// archive itself. Reproducing it would mean storing and replaying those
@@ -212,7 +212,7 @@ final class FSYSRealCorpusFidelityTests: XCTestCase {
                     .filter { raw[$0] != rebuilt[$0] && !leftover.contains($0) }
                 XCTAssertTrue(
                     differing.isEmpty,
-                    "\(name): differs outside the uninitialised window at "
+                    "\(name): differs outside the uninitialized window at "
                         + differing.prefix(8).map { "0x" + String($0, radix: 16) }.joined(separator: ", ")
                 )
                 checked += 1

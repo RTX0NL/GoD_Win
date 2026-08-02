@@ -58,7 +58,7 @@ final class CISOOperationTests: XCTestCase {
         let iso = seedISO(in: fst)
         try buildCISO(in: fst)
 
-        let ciso = try XCTUnwrap(fst.readFile(at: File("/project/game.ciso")))
+        let ciso = try XCTUnwrap(fst.readFile(at: File("/project/game.ciso"))?.allData)
         XCTAssertEqual(Array(ciso.rawBytes.prefix(4)), CISOFile.magic)
 
         let parsed = try CISOFile(binary: ciso, discSize: UInt64(iso.length))
@@ -81,7 +81,7 @@ final class CISOOperationTests: XCTestCase {
         )
         try CISODump.dump(config: dumpConfig, settings: .default, fileSystem: fst, logger: SilentLogger())
 
-        let restored = try XCTUnwrap(fst.readFile(at: File("/project/restored.iso")))
+        let restored = try XCTUnwrap(fst.readFile(at: File("/project/restored.iso"))?.allData)
         XCTAssertEqual(restored.length, iso.length)
         XCTAssertEqual(restored.rawBytes, iso.rawBytes, "zero blocks must be restored in place")
     }
@@ -99,7 +99,7 @@ final class CISOOperationTests: XCTestCase {
         )
         try CISODump.dump(config: dumpConfig, settings: .default, fileSystem: fst, logger: SilentLogger())
 
-        let restored = try XCTUnwrap(fst.readFile(at: File("/project/restored.iso")))
+        let restored = try XCTUnwrap(fst.readFile(at: File("/project/restored.iso"))?.allData)
         XCTAssertEqual(UInt64(restored.length), target)
         XCTAssertEqual(Array(restored.rawBytes.prefix(iso.length)), iso.rawBytes)
         XCTAssertTrue(restored.rawBytes[iso.length...].allSatisfy { $0 == 0 },
@@ -163,7 +163,7 @@ final class CISOOperationTests: XCTestCase {
             "Skipped write must not log success"
         )
 
-        let after = try XCTUnwrap(fst.readFile(at: File("/project/game.ciso")))
+        let after = try XCTUnwrap(fst.readFile(at: File("/project/game.ciso"))?.allData)
         XCTAssertEqual(after.rawBytes, [0xDE, 0xAD], "overwrite=false must not replace an existing CISO")
     }
 
@@ -194,7 +194,7 @@ final class CISOOperationTests: XCTestCase {
             "Skipped write must not log success"
         )
 
-        let after = try XCTUnwrap(fst.readFile(at: File("/project/restored.iso")))
+        let after = try XCTUnwrap(fst.readFile(at: File("/project/restored.iso"))?.allData)
         XCTAssertEqual(after.rawBytes, [0xBE, 0xEF], "overwrite=false must not replace an existing ISO")
     }
 }

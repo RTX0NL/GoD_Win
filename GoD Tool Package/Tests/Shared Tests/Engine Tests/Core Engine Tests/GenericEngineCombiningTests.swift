@@ -145,7 +145,7 @@ final class GenericEngineCombiningTests: XCTestCase {
             return XCTFail("no engine written at \(source.path)")
         }
         for file in contents.files {
-            if let data = fst.readFile(at: file) {
+            if let data = fst.readFile(at: file)?.allData {
                 try fst.writeFile(data, at: destination.file(file.fileName), overwrite: true)
             }
         }

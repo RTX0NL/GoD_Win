@@ -7,7 +7,7 @@ public enum ProjectSetupErrors: GoDError {
     case fsysParseFailed(File, underlying: String, ErrorTrace)
     case invalidGameID(ErrorTrace)
     case unsupportedInputFormat(format: String, file: File, ErrorTrace)
-    case unrecognisedGCIGamecode(String, ErrorTrace)
+    case unrecognizedGCIGamecode(String, ErrorTrace)
 
     public var description: String {
         switch self {
@@ -23,7 +23,7 @@ public enum ProjectSetupErrors: GoDError {
             return "Error: Couldn't read Game ID\n\(errorTrace)"
         case let .unsupportedInputFormat(format, file, errorTrace):
             return "Error: Detected \(format) at \(file.path), but the decoder isn't wired up yet. Convert to raw .iso first.\n\(errorTrace)"
-        case let .unrecognisedGCIGamecode(gamecode, errorTrace):
+        case let .unrecognizedGCIGamecode(gamecode, errorTrace):
             return "Error: GCI gamecode '\(gamecode)' is not a known XD/Colo save\n\(errorTrace)"
         }
     }

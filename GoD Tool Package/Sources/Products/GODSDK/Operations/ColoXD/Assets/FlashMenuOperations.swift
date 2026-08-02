@@ -98,7 +98,7 @@ extension ColoXD {
         stem: String,
         fileSystem: FileSystemTree
     ) throws -> [FileData] {
-        guard let data = fileSystem.readFile(at: file) else {
+        guard let data = fileSystem.readFile(at: file)?.allData else {
             throw FSTErrors.fileNotFound(file, .init())
         }
         let parsed = try GSWParser.parse(data: data, name: stem)

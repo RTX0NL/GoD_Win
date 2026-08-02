@@ -61,7 +61,7 @@ extension ColoXD {
         stem: String,
         fileSystem: FileSystemTree
     ) throws -> [FileData] {
-        guard let data = fileSystem.readFile(at: file) else {
+        guard let data = fileSystem.readFile(at: file)?.allData else {
             throw FSTErrors.fileNotFound(file, .init())
         }
         let font = try GSFont(data: data)
@@ -85,7 +85,7 @@ extension ColoXD {
         }
         let metadata: GSFontAtlas.Metadata = try fileSystem.decodeJSON(from: manifest)
         let atlas = baseFolder.file(metadata.atlasPath)
-        guard let imageData = fileSystem.readFile(at: atlas) else {
+        guard let imageData = fileSystem.readFile(at: atlas)?.allData else {
             throw FSTErrors.fileNotFound(atlas, .init())
         }
         let font = try GSFontAtlas.importAtlas(imageData: imageData, metadata: metadata)

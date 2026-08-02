@@ -30,7 +30,7 @@ extension CommonRelDump {
             typeMapPath: fileSystem.inspectFile(at: typeMapPath) != nil ? typeMapPath : nil,
             // The common.rel type map's chunk types resolve against the game
             // engine's own struct definitions.
-            engines: [config.gameEngine]
+            engines: config.engines ?? [config.gameEngine]
         )
 
         logger?.log(.info("Dumping common.rel from \(config.relPath.path)"))

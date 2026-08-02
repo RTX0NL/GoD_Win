@@ -132,20 +132,20 @@ public extension Engine {
         let engineFolder = folder.folder(name)
         try fst.createFolder(at: engineFolder, overwrite: overwrite)
         let dataFile = engineFolder.file(name + ".json")
-        try fst.writeFile(data, at: dataFile, overwrite: overwrite)
+        try fst.writeJSON(data, at: dataFile, overwrite: overwrite)
 
         let enumsFolder = engineFolder.folder("Enumerations")
         try fst.createFolder(at: enumsFolder, overwrite: overwrite)
         for enumData in enums.entries {
             let enumFile = enumsFolder.file(enumData.name + ".json")
-            try fst.writeFile(enumData, at: enumFile, overwrite: overwrite)
+            try fst.writeJSON(enumData, at: enumFile, overwrite: overwrite)
         }
 
         let structsFolder = engineFolder.folder("Structs")
         try fst.createFolder(at: structsFolder, overwrite: overwrite)
         for structMap in structs.entries {
             let structFile = structsFolder.file(structMap.name + ".json")
-            try fst.writeFile(structMap, at: structFile, overwrite: overwrite)
+            try fst.writeJSON(structMap, at: structFile, overwrite: overwrite)
         }
 
         // Copy bundled reference resources (REL typemap, symbol indexes,
@@ -185,7 +185,7 @@ public extension Engine {
         if folderContents.subFolders.contains(enumsFolder),
            let enumsFolderContents = fst.inspectFolder(at: enumsFolder)?.files.withExtension("json") {
             for file in enumsFolderContents {
-                guard let rawEnumData: GoDData = fst.readFile(at: file) else {
+                guard let rawEnumData = fst.readFile(at: file)?.allData else {
                     throw EngineDecodingError.couldntReadEnumData(file, .init())
                 }
                 let enumData: Enum
@@ -207,7 +207,7 @@ public extension Engine {
         if folderContents.subFolders.contains(structsFolder),
            let structsFolderContents = fst.inspectFolder(at: structsFolder)?.files.withExtension("json") {
             for file in structsFolderContents {
-                guard let rawStructData: GoDData = fst.readFile(at: file) else {
+                guard let rawStructData = fst.readFile(at: file)?.allData else {
                     throw EngineDecodingError.couldntReadStructData(file, .init())
                 }
                 do {

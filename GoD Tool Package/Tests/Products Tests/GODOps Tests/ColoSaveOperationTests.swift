@@ -219,7 +219,7 @@ final class ColoSaveOperationTests: XCTestCase {
                 // Opaque binary sections dump their raw slice.
                 XCTAssertNil(entry.json)
                 let binName = try XCTUnwrap(entry.bin)
-                let bin = try XCTUnwrap(fst.readFile(at: latest.file(binName)))
+                let bin = try XCTUnwrap(fst.readFile(at: latest.file(binName))?.allData)
                 XCTAssertEqual(
                     bin.rawBytes,
                     Array(plainLatest[expected.offset..<(expected.offset + expected.length)]),
@@ -248,7 +248,7 @@ final class ColoSaveOperationTests: XCTestCase {
             XCTAssertNil(summary.bodyChecksumValid)
         }
         let latest = out.folder(ColoSaveOps.latestSlotFolderName)
-        let raw = try XCTUnwrap(fst.readFile(at: latest.file("raw-slot.bin")))
+        let raw = try XCTUnwrap(fst.readFile(at: latest.file("raw-slot.bin"))?.allData)
         XCTAssertEqual(raw.rawBytes, plains[latestSlotIndex].rawBytes)
     }
 
@@ -287,7 +287,7 @@ final class ColoSaveOperationTests: XCTestCase {
 
         // Non-latest slots pass through byte-identically.
         for i in 0..<ColoSaveCardFile.slotCount where i != latestSlotIndex {
-            let passthrough = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-\(i + 1).bin")))
+            let passthrough = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-\(i + 1).bin"))?.allData)
             XCTAssertEqual(passthrough.rawBytes, encSlots[i].rawBytes, "non-latest slot \(i + 1) must pass through unchanged")
         }
 
@@ -295,7 +295,7 @@ final class ColoSaveOperationTests: XCTestCase {
         // valid checksums, and matches the codec-normalized plaintext
         // (typed sections round-trip through the gsColo string codec;
         // real saves are already codec-stable, the LCG fixture isn't).
-        let rebuilt = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-\(latestSlotIndex + 1).bin")))
+        let rebuilt = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-\(latestSlotIndex + 1).bin"))?.allData)
         let decrypted = GoDData(byteStream: rebuilt.rawBytes, byteOrder: .big)
         let result = try ColoSaveCipher.decrypt(slot: decrypted)
         XCTAssertTrue(result.headerValid, "rebuilt header checksum invalid")
@@ -316,7 +316,7 @@ final class ColoSaveOperationTests: XCTestCase {
         // Edit the Config JSON: gcGameIndex (lowercased JSON key).
         let latest = out.folder(ColoSaveOps.latestSlotFolderName)
         let configFile = latest.file("00-Config.json")
-        let json = try XCTUnwrap(fst.readFile(at: configFile))
+        let json = try XCTUnwrap(fst.readFile(at: configFile)?.allData)
         var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: json.data) as? [String: Any])
         var data = try XCTUnwrap(root["data"] as? [String: Any])
         let gameIndexKey = "gcGameIndex"
@@ -331,7 +331,7 @@ final class ColoSaveOperationTests: XCTestCase {
         try runBuild(fst: fst, engine: engineFolder, input: out, unpacked: unpacked, decrypted: false)
 
         // Rebuilt latest slot must still validate.
-        let rebuilt = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-\(latestSlotIndex + 1).bin")))
+        let rebuilt = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-\(latestSlotIndex + 1).bin"))?.allData)
         let decrypted = GoDData(byteStream: rebuilt.rawBytes, byteOrder: .big)
         let result = try ColoSaveCipher.decrypt(slot: decrypted)
         XCTAssertTrue(result.headerValid && result.bodyValid, "rebuilt checksums must validate")
@@ -340,7 +340,7 @@ final class ColoSaveOperationTests: XCTestCase {
         let out2 = Folder("/project/Save2")
         try runDump(fst: fst, engine: engineFolder, unpacked: unpacked, out: out2, decrypted: false)
         let latest2 = out2.folder(ColoSaveOps.latestSlotFolderName)
-        let json2 = try XCTUnwrap(fst.readFile(at: latest2.file("00-Config.json")))
+        let json2 = try XCTUnwrap(fst.readFile(at: latest2.file("00-Config.json"))?.allData)
         let root2 = try XCTUnwrap(try JSONSerialization.jsonObject(with: json2.data) as? [String: Any])
         let data2 = try XCTUnwrap(root2["data"] as? [String: Any])
         let gameIndex2 = try XCTUnwrap(data2[gameIndexKey] as? String)

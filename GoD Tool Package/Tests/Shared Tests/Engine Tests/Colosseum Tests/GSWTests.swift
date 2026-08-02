@@ -4,7 +4,7 @@ import GoDFoundation
 import GeniusSonority
 import GTX
 
-/// GSW-specific format behaviour beyond the protocol members: tag stream
+/// GSW-specific format behavior beyond the protocol members: tag stream
 /// walk, texture detection, truncation handling. Each test exercises a
 /// single decode step on a hand-crafted or real sample.
 final class GSWTests: XCTestCase {

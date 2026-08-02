@@ -63,7 +63,7 @@ final class ColoScriptOperationTests: XCTestCase {
 
     func testDumpSwiftDecompilesAndRecompilesByteExact() throws {
         let (fst, outFile) = try runDump(language: .swift)
-        guard let source = fst.readFile(at: outFile)?.string(format: .utf8) else {
+        guard let source = fst.readFile(at: outFile)?.allData?.string(format: .utf8) else {
             return XCTFail("no .swift output written")
         }
         XCTAssertTrue(source.contains("func function_0()"))
@@ -75,7 +75,7 @@ final class ColoScriptOperationTests: XCTestCase {
 
     func testDumpPythonDecompilesAndRecompilesByteExact() throws {
         let (fst, outFile) = try runDump(language: .python)
-        guard let source = fst.readFile(at: outFile)?.string(format: .utf8) else {
+        guard let source = fst.readFile(at: outFile)?.allData?.string(format: .utf8) else {
             return XCTFail("no .py output written")
         }
         XCTAssertTrue(source.contains("def function_0()"))
@@ -112,7 +112,7 @@ final class ColoScriptOperationTests: XCTestCase {
                     overwrite: true, gameEngine: engineFolder), enabled: .yes)
             ]), settings: .default, fileSystem: fst, logger: nil)
 
-            let rebuilt = fst.readFile(at: rebuiltFolder.file("test.scd"))?.rawBytes
+            let rebuilt = fst.readFile(at: rebuiltFolder.file("test.scd"))?.allData?.rawBytes
             XCTAssertEqual(rebuilt, makeScriptBytes(), "\(language) dump→build not byte-exact")
         }
     }

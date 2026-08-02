@@ -43,7 +43,7 @@ public protocol FileFormat {
     /// points at companion assets, plus the assets themselves as they were
     /// read from the project folder). Build ops typically only need to
     /// supply the manifest — companion assets are read out of its declared
-    /// paths — but the protocol accepts the fully-materialised bundle to
+    /// paths — but the protocol accepts the fully-allData bundle to
     /// keep it self-describing.
     init(outputs: [FileData]) throws
 

@@ -3,7 +3,7 @@
 //
 //  Standalone golden-fixture generator for the test suite. The fixtures'
 //  content is defined by the `FixtureCatalog` library; this executable
-//  materialises them into the test targets' `Fixtures/` folders.
+//  materializes them into the test targets' `Fixtures/` folders.
 //
 //      swift run FixtureGen           # (re)write fixtures that changed
 //      swift run FixtureGen --check   # verify committed fixtures match the

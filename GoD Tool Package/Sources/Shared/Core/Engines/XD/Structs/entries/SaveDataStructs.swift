@@ -7,7 +7,7 @@ import GoDFoundation
 ///
 /// Convention: undocumented regions are `unknown<n>` byte arrays.
 /// Inter-field "gaps" are NOT zero alignment padding — the game
-/// serialises these structs from a reused I/O buffer without memset, so
+/// serializes these structs from a reused I/O buffer without memset, so
 /// the gaps carry non-zero leftover that must round-trip byte-for-byte.
 /// Hence `.none` alignment + explicit `unknown<n>` fields (the auto-
 /// aligning `.cStyle` mode would zero the gaps and break round-trip).

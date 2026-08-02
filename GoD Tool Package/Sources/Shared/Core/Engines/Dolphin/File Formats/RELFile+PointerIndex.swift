@@ -159,7 +159,7 @@ public extension RELFile {
 
     /// Classifies a Colosseum map REL by reading the half-word at
     /// pointer index 1's target. If it's one of the "expected angle"
-    /// sentinels the legacy parser recognises (or ±360 wraparounds),
+    /// sentinels the legacy parser recognizes (or ±360 wraparounds),
     /// the layout is Type 1; anything else, or a `numberOfEntryPoints`
     /// over the legacy cap of 20, means Type 2.
     ///

@@ -120,7 +120,7 @@ extension ColoXD {
         engine: ColosseumEngine,
         fileSystem: FileSystemTree
     ) throws -> [FileData] {
-        guard let data = fileSystem.readFile(at: file) else {
+        guard let data = fileSystem.readFile(at: file)?.allData else {
             throw FSTErrors.fileNotFound(file, .init())
         }
         let script = try ColoScript(data: data)
@@ -139,7 +139,7 @@ extension ColoXD {
         engine: ColosseumEngine,
         fileSystem: FileSystemTree
     ) throws -> GoDData {
-        guard let sourceData = fileSystem.readFile(at: source) else {
+        guard let sourceData = fileSystem.readFile(at: source)?.allData else {
             throw FSTErrors.fileNotFound(source, .init())
         }
         var parser = ColoScriptTextParser(builtInFunctions: engine.scriptBuiltInFunctionsByID)

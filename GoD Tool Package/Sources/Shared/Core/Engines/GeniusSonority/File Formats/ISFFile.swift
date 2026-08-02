@@ -15,13 +15,13 @@
 //  stable: decode→encode→decode reproduces the PCM within a small RMS
 //  error and is deterministic after cycle 1. Loop points and header
 //  metadata round-trip exactly because they live in the sidecar JSON and
-//  are re-serialised into the rebuilt ISH verbatim.
+//  are re-serialized into the rebuilt ISH verbatim.
 //
 //  Core algorithms:
 //    - DSP ADPCM decode: 8-byte frame → 14 samples (scale, coef index,
 //      14 signed nibbles fed through the LPC predictor).
 //    - DSP ADPCM encode: brute-force per-frame search — for each of the 8
-//      coefficient pairs, pick the scale that minimises quantisation
+//      coefficient pairs, pick the scale that minimizes quantisation
 //      error, encode 14 samples, pick the coefficient pair with the
 //      lowest total error.
 //    - Coefficient generation: autocorrelation → order-2 LPC via

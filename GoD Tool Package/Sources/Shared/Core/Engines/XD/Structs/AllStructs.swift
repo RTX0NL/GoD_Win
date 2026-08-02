@@ -50,7 +50,7 @@ public extension XDEngine {
                 XDStructDefaults.soundMetadataStruct,
                 XDStructDefaults.peopleIDStruct,
                 XDStructDefaults.battleTypeStruct,
-                XDStructDefaults.rgbaColourStruct,
+                XDStructDefaults.rgbaColorStruct,
                 XDStructDefaults.pokemonMenuAnimationStruct,
                 // Deck structs (per trainer deck file)
                 XDStructDefaults.deckTrainerStruct,

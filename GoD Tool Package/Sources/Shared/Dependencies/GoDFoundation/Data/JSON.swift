@@ -8,8 +8,20 @@
 import Foundation
 
 public extension JSONDecoder {
-    func decode<T>(_ type: T.Type, from data: GoDData) throws -> T where T : Decodable {
-        try decode(type, from: data.data)
+    /// Decodes from anything readable.
+    ///
+    /// JSON has to be complete before it can be parsed, so this is one of the
+    /// few places where wanting the whole buffer isn't a compromise. A source
+    /// that won't produce one can't be decoded at all, which is a decoding
+    /// failure rather than something to paper over.
+    func decode<T>(_ type: T.Type, from data: GoDReadable) throws -> T where T : Decodable {
+        guard let buffer = data.allData else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: [],
+                debugDescription: "source of \(data.length) bytes cannot provide a whole buffer to decode"
+            ))
+        }
+        return try decode(type, from: buffer.data)
     }
 }
 

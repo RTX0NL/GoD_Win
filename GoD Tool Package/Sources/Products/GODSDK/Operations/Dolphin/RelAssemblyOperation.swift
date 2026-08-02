@@ -20,7 +20,7 @@ extension RelAssembly {
         logger?.log(.taskStatus(taskName: "Assemble REL", status: .started))
 
         let jsonFile = config.inputFolder.file("\(config.relName).rel.json")
-        guard let jsonData = fileSystem.readFile(at: jsonFile) else {
+        guard let jsonData = fileSystem.readFile(at: jsonFile)?.allData else {
             throw RelAssemblyErrors.manifestNotFound(file: jsonFile, .init())
         }
 

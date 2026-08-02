@@ -59,7 +59,7 @@ public struct DataSectionImporter {
 
             case .assembly:
                 let file = sectionFolder.file(chunk.file)
-                if let data = fileSystem.readFile(at: file),
+                if let data = fileSystem.readFile(at: file)?.allData,
                    let callback = assemblySizeCallback {
                     let content = data.string(format: .utf8)
                     size = callback([(chunk.file, content)])
@@ -72,7 +72,7 @@ public struct DataSectionImporter {
                     size = declaredSize
                 } else {
                     let file = sectionFolder.file(chunk.file)
-                    size = fileSystem.readFile(at: file)?.length ?? 0
+                    size = fileSystem.readFile(at: file)?.allData?.length ?? 0
                 }
             }
 
@@ -114,7 +114,7 @@ public struct DataSectionImporter {
             case .struct:
                 guard let structType = chunk.structType,
                       let definition = structResolver(structType),
-                      let jsonData = fileSystem.readFile(at: file) else {
+                      let jsonData = fileSystem.readFile(at: file)?.allData else {
                     continue
                 }
                 // Decode JSON → StructData. The dump-side wrapping (DOL
@@ -148,7 +148,7 @@ public struct DataSectionImporter {
                     continue
                 }
                 let entries: [LabeledData]
-                if let jsonData = fileSystem.readFile(at: file),
+                if let jsonData = fileSystem.readFile(at: file)?.allData,
                    let decoded = typedImporter.decodeTable(
                     jsonBytes: jsonData,
                     definition: definition,
@@ -162,15 +162,15 @@ public struct DataSectionImporter {
                 // section size stays stable even if the JSON has been
                 // hand-edited to add/remove rows. Surplus entries are
                 // dropped; missing ones are filled with a zero StructData.
-                var normalised = Array(entries.prefix(count))
-                while normalised.count < count {
-                    normalised.append(LabeledData(
+                var normalized = Array(entries.prefix(count))
+                while normalized.count < count {
+                    normalized.append(LabeledData(
                         label: nil,
                         data: StructData(definition: definition, byteOrder: byteOrder)
                     ))
                 }
                 let tableData = typedImporter.importTable(
-                    entries: normalised,
+                    entries: normalized,
                     definition: definition,
                     labelTable: labelTable,
                     byteOrder: byteOrder
@@ -179,7 +179,7 @@ public struct DataSectionImporter {
                 currentAddress += UInt32(definition.length * count)
 
             case .assembly:
-                guard let fileData = fileSystem.readFile(at: file) else { continue }
+                guard let fileData = fileSystem.readFile(at: file)?.allData else { continue }
                 let content = fileData.string(format: .utf8)
                 let assembled = try assemblyCallback(
                     [(chunk.file, content)],
@@ -190,7 +190,7 @@ public struct DataSectionImporter {
                 currentAddress += UInt32(assembled.length)
 
             case .binary, .file:
-                guard let binData = fileSystem.readFile(at: file) else { continue }
+                guard let binData = fileSystem.readFile(at: file)?.allData else { continue }
                 result.append(binData)
                 currentAddress += UInt32(binData.length)
             }

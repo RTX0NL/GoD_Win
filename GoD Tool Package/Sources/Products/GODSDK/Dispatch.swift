@@ -55,7 +55,7 @@ public enum GODOps {
     // MARK: - Project setup
 
     /// Set up an editing project from a GameCube/Wii disc image (raw or
-    /// CISO/NKit; `.wia`/`.rvz` recognised but not yet decodable).
+    /// CISO/NKit; `.wia`/`.rvz` recognized but not yet decodable).
     public static func setupProject(discImage: File) throws {
         try Project.setup(iso: discImage)
     }
@@ -92,8 +92,8 @@ public enum GODOps {
     /// The tree is a `StreamedFileSystem` because operations that open a disc
     /// image need one and dispatch is where that choice belongs — deciding it
     /// here means no operation has to probe at runtime for what it was handed.
-    /// Wrapping an in-memory tree (`StreamedFileSystem(materialising:)`) is how
-    /// tests opt out; reads then materialise, which is all they can do anyway.
+    /// Wrapping an in-memory tree (`StreamedFileSystem(materializing:)`) is how
+    /// tests opt out; reads then materialize, which is all they can do anyway.
     static func runConfig(
         at file: File,
         fileSystem: StreamedFileSystem,

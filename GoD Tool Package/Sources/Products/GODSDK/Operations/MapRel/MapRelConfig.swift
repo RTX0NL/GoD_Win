@@ -34,6 +34,9 @@ enum MapRelDump {
         let typeMapPath: File
         let dolphinEngine: Folder
         let gameEngine: Folder
+        /// Engine folders whose structs and enums resolve the typemap's
+        /// chunk types, combined in order. Absent = just `gameEngine`.
+        let engines: [Folder]?
 
         init(
             relPath: File,
@@ -41,7 +44,8 @@ enum MapRelDump {
             overwrite: Bool,
             typeMapPath: File,
             dolphinEngine: Folder,
-            gameEngine: Folder
+            gameEngine: Folder,
+            engines: [Folder]? = nil
         ) {
             self.relPath = relPath
             self.outputFolder = outputFolder
@@ -49,6 +53,7 @@ enum MapRelDump {
             self.typeMapPath = typeMapPath
             self.dolphinEngine = dolphinEngine
             self.gameEngine = gameEngine
+            self.engines = engines
         }
     }
 
@@ -64,6 +69,9 @@ enum MapRelDump {
         let dolphinEngine: Folder
         let gameEngine: Folder
         let filter: Filter
+        /// Engine folders whose structs and enums resolve the typemap's
+        /// chunk types, combined in order. Absent = just `gameEngine`.
+        let engines: [Folder]?
 
         init(
             relsFolder: Folder,
@@ -72,7 +80,8 @@ enum MapRelDump {
             typeMapPath: File,
             dolphinEngine: Folder,
             gameEngine: Folder,
-            filter: Filter
+            filter: Filter,
+            engines: [Folder]? = nil
         ) {
             self.relsFolder = relsFolder
             self.outputFolder = outputFolder
@@ -81,6 +90,7 @@ enum MapRelDump {
             self.dolphinEngine = dolphinEngine
             self.gameEngine = gameEngine
             self.filter = filter
+            self.engines = engines
         }
     }
 }

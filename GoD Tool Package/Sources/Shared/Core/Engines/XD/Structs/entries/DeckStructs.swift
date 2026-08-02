@@ -81,9 +81,9 @@ public extension XDStructDefaults {
         alignmentStyle: .none,
         properties: [
             .uint8(name: "pokemonSelectionFlags",
-                   description: "Bitfield for pokemon-send-out behaviour. See DeckTables.swift for the bit meanings."),
+                   description: "Bitfield for pokemon-send-out behavior. See DeckTables.swift for the bit meanings."),
             .uint8(name: "moveSelectionFlags",
-                   description: "Bitfield for move-pick behaviour."),
+                   description: "Bitfield for move-pick behavior."),
             .padding(length: 2),
             .uint8(name: "atkStatStages",
                    description: "0x04 — high nibble = max stages (midpoint 6), low nibble = min stages."),

@@ -42,7 +42,7 @@ public struct THPFile: FileFormat {
 
     /// The combined THP bytes — THH header and THD frame stream joined,
     /// pointer offsets already re-based. This is the canonical form we
-    /// store and edit against; splitting happens at serialise time.
+    /// store and edit against; splitting happens at serialize time.
     public var combined: GoDData
     /// Size of the THH portion of `combined`, in bytes. Used to reverse
     /// the pointer fixup when re-splitting. Recovered from the combined

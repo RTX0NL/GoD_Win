@@ -3,7 +3,7 @@ import Foundation
 import GoDFoundation
 import GeniusSonority
 
-/// GSFont-specific format behaviour beyond the protocol members (which
+/// GSFont-specific format behavior beyond the protocol members (which
 /// FileFormatProtocolTests covers): nested block chain, glyph parsing,
 /// edge cases. Each test asserts a single observable property of the
 /// parsed struct — no roundtrips.

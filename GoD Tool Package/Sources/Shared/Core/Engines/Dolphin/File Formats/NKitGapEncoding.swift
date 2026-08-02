@@ -90,7 +90,7 @@ public enum NKitGapEncoding {
 
     // MARK: - Encode
 
-    /// Serialise a gap to its on-disc byte representation. Length is
+    /// Serialize a gap to its on-disc byte representation. Length is
     /// asserted to be 4-byte aligned (the format's hard invariant).
     public static func encode(_ gap: Gap) -> [UInt8] {
         precondition(gap.length % 4 == 0, "NKit gap lengths must be 4-byte aligned")

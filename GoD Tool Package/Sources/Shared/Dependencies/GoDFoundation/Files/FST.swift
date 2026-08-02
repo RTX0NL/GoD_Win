@@ -50,21 +50,23 @@ public struct FolderMetaData {
 /// stops. Callers that genuinely don't care can opt out explicitly with
 /// `try?`.
 ///
-/// **Thread safety:** implementations are *not* synchronised. Concurrent
+/// **Thread safety:** implementations are *not* synchronized. Concurrent
 /// reads of an otherwise-idle tree are safe; any concurrent write — or a
 /// read racing a write — is undefined. Callers that fan out (e.g. the FSYS
 /// pack/unpack passes) must confine all mutation to a single thread.
 ///
-/// **Reads hand out whole files.** Windowed access belongs to `GoDReadable`,
-/// and opening a file as one is `StreamedFileSystem`'s job — not every tree
-/// has a file to open, so it isn't a promise this protocol can make. Sizing
-/// and resizing do stay here: they are file-system operations rather than ways
-/// of interpreting bytes, and padding a disc image to capacity through
+/// **A read hands back a `GoDReadable`, not a buffer.** Whether those bytes
+/// are already in memory, streamed off disk, or decrypted on demand is the
+/// tree's business, not the caller's — `StreamedFileSystem` returns a source
+/// that never materializes unless asked, and nothing downstream has to know.
+/// Callers that genuinely need the whole file say so with `.allData`.
+/// Sizing and resizing stay here: they are file-system operations rather than
+/// ways of interpreting bytes, and padding a disc image to capacity through
 /// `readFile`/`writeFile` would move gigabytes to append zeros where
 /// `resizeFile` is a single truncation.
 public protocol FileSystemTree {
     func inspectFile(at path: File) -> FileMetaData?
-    func readFile(at path: File) -> GoDData?
+    func readFile(at path: File) -> GoDReadable?
     func moveFile(at path: File, to newPath: File, overwrite: Bool) throws
     func writeFile(_ file: GoDData, at path: File, overwrite: Bool) throws
     func deleteFile(at path: File) throws
@@ -80,9 +82,18 @@ public protocol FileSystemTree {
     /// Sets the file's length, zero-filling when growing and discarding the
     /// tail when shrinking.
     func resizeFile(at path: File, to length: Int) throws
+
+    /// Marks the file executable where the tree has a notion of permissions.
+    func setExecutable(file: File)
 }
 
 public extension FileSystemTree {
+    /// Nothing to set on a tree without permissions — an in-memory file has
+    /// no mode bits, and a file inside a disc image isn't run by the host.
+    /// On the protocol rather than behind an `as? FileSystem` at the one call
+    /// site that needs it, so asking is not a runtime type question.
+    func setExecutable(file: File) {}
+
     /// Grows the file to `length` with zeros, leaving it alone if already at
     /// least that long — the padding operation disc images want.
     func padFile(at path: File, toAtLeast length: Int) throws {
@@ -116,12 +127,13 @@ public extension FileSystemTree {
         try moveFolder(at: path, to: newFolder, overwrite: overwrite)
     }
 
-    func readFile<T: Decodable>(at path: File) -> T? {
-        guard let data: GoDData = readFile(at: path) else { return nil }
-        return T.decodeJSON(from: data)
-    }
-
-    func writeFile(_ item: Encodable, at path: File, overwrite: Bool) throws {
+    /// Encodes `item` as JSON and writes it.
+    ///
+    /// Named apart from `writeFile` on purpose. As an overload it sat next to
+    /// the `GoDData` write and quietly won whenever the argument was a
+    /// `GoDData?` — `Optional` is `Encodable`, so a forgotten unwrap compiled
+    /// and wrote base64 into what should have been raw bytes.
+    func writeJSON(_ item: Encodable, at path: File, overwrite: Bool) throws {
         guard let data = item.encodeJSON() else {
             throw FSTErrors.failedToWriteFile(path, .init())
         }
@@ -163,10 +175,11 @@ public extension FileSystemTree {
                     let relativePath = file.path.substring(from: rootFolder.path.count)
                     newFile = targetFolder.file(relativePath)
                 }
-                try writeFile(data, at: newFile, overwrite: overwrite)
+                guard let bytes = data.allData else { continue }
+                try writeFile(bytes, at: newFile, overwrite: overwrite)
 
                 if shouldTrackProgress {
-                    sizeProcessed += data.length
+                    sizeProcessed += bytes.length
                     let percentage = Percentage(min(Double(sizeProcessed) / Double(totalSize) * 100, 100))
                     logger?.log(.taskStatus(taskName: "Import FST", status: .progress(percentage)))
                 }

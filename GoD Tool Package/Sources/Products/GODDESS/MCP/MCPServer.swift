@@ -61,7 +61,7 @@ let goddessTools: [Tool] = [
         description: """
         Set up a GODDESS editing project. Call this FIRST when starting work on \
         a new ROM or save. Accepts a GameCube/Wii disc image (.iso/.gcm/.ciso; \
-        .wia/.rvz are recognised but must be converted to raw ISO first) or a \
+        .wia/.rvz are recognized but must be converted to raw ISO first) or a \
         memory-card save (.gci). Creates a '<name> project' (disc) or \
         '<name> save project' (save) folder next to the input, containing the \
         unpacked contents, exported engine definitions, and ready-to-run \

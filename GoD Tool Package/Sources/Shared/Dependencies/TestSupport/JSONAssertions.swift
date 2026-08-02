@@ -30,7 +30,7 @@ public func assertJSONEqual(
     }
     guard let actualNorm = try? JSONSerialization.data(withJSONObject: actualObj, options: opts),
           let expectedNorm = try? JSONSerialization.data(withJSONObject: expectedObj, options: opts) else {
-        XCTFail("\(label)failed to normalise JSON for comparison", file: file, line: line); return
+        XCTFail("\(label)failed to normalize JSON for comparison", file: file, line: line); return
     }
 
     if actualNorm != expectedNorm {

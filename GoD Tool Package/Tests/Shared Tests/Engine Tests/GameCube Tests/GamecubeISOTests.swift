@@ -108,14 +108,14 @@ final class GamecubeISOTests: XCTestCase {
         let iso = try GamecubeISO(data: isoData, dolphinEngine: dolphinEngine, gamecubeEngine: gamecubeEngine)
 
         // System files should exist
-        XCTAssertNotNil(iso.readFile(at: File("/sys/boot.bin")))
-        XCTAssertNotNil(iso.readFile(at: File("/sys/bi2.bin")))
-        XCTAssertNotNil(iso.readFile(at: File("/sys/apploader.img")))
-        XCTAssertNotNil(iso.readFile(at: File("/sys/main.dol")))
-        XCTAssertNotNil(iso.readFile(at: File("/sys/fst.bin")))
+        XCTAssertNotNil(iso.readFile(at: File("/sys/boot.bin"))?.allData)
+        XCTAssertNotNil(iso.readFile(at: File("/sys/bi2.bin"))?.allData)
+        XCTAssertNotNil(iso.readFile(at: File("/sys/apploader.img"))?.allData)
+        XCTAssertNotNil(iso.readFile(at: File("/sys/main.dol"))?.allData)
+        XCTAssertNotNil(iso.readFile(at: File("/sys/fst.bin"))?.allData)
 
         // User file should exist
-        let testFile = iso.readFile(at: File("/files/test.bin"))
+        let testFile = iso.readFile(at: File("/files/test.bin"))?.allData
         XCTAssertNotNil(testFile)
         XCTAssertEqual(testFile?.length, 64)
     }
@@ -146,9 +146,9 @@ final class GamecubeISOTests: XCTestCase {
 
         for path in ["/sys/boot.bin", "/sys/bi2.bin", "/sys/apploader.img",
                      "/sys/main.dol", "/sys/fst.bin", "/files/test.bin"] {
-            let memory = fromMemory.readFile(at: File(path))?.rawBytes
+            let memory = fromMemory.readFile(at: File(path))?.allData?.rawBytes
             XCTAssertNotNil(memory, path)
-            XCTAssertEqual(fromDisk.readFile(at: File(path))?.rawBytes, memory, path)
+            XCTAssertEqual(fromDisk.readFile(at: File(path))?.allData?.rawBytes, memory, path)
         }
     }
 
@@ -180,11 +180,11 @@ final class GamecubeISOTests: XCTestCase {
         )
 
         // Verify rebuilt ISO has the same files
-        XCTAssertNotNil(rebuilt.readFile(at: File("/sys/boot.bin")))
-        XCTAssertNotNil(rebuilt.readFile(at: File("/files/test.bin")))
+        XCTAssertNotNil(rebuilt.readFile(at: File("/sys/boot.bin"))?.allData)
+        XCTAssertNotNil(rebuilt.readFile(at: File("/files/test.bin"))?.allData)
 
-        let originalFile = iso.readFile(at: File("/files/test.bin"))
-        let rebuiltFile = rebuilt.readFile(at: File("/files/test.bin"))
+        let originalFile = iso.readFile(at: File("/files/test.bin"))?.allData
+        let rebuiltFile = rebuilt.readFile(at: File("/files/test.bin"))?.allData
         XCTAssertEqual(originalFile?.rawBytes, rebuiltFile?.rawBytes, "User file data should survive round-trip")
     }
 
@@ -198,7 +198,7 @@ final class GamecubeISOTests: XCTestCase {
         let newData = GoDData(byteStream: [UInt8(1), UInt8(2), UInt8(3), UInt8(4)], byteOrder: .big)
         try iso.writeFile(newData, at: File("/files/new.bin"), overwrite: true)
 
-        let readBack = iso.readFile(at: File("/files/new.bin"))
+        let readBack = iso.readFile(at: File("/files/new.bin"))?.allData
         XCTAssertEqual(readBack?.rawBytes, newData.rawBytes)
     }
 

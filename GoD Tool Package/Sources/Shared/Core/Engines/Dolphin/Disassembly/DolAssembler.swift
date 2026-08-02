@@ -45,7 +45,7 @@ public struct DolAssembler {
 
         // Read sections.txt for layout info
         let sectionsFile = codeFolder.file("sections.txt")
-        guard let sectionsData = fileSystem.readFile(at: sectionsFile) else {
+        guard let sectionsData = fileSystem.readFile(at: sectionsFile)?.allData else {
             throw DolAssemblyErrors.sectionsFileNotFound(file: sectionsFile, .init())
         }
         let layoutParser = SectionLayoutParser()
@@ -59,7 +59,7 @@ public struct DolAssembler {
         // the dump side uses.
         var resolvedStructs = [String: StructDefinition]()
         if let typeMapPath = typeMapPath,
-           let typeMapData = fileSystem.readFile(at: typeMapPath) {
+           let typeMapData = fileSystem.readFile(at: typeMapPath)?.allData {
             if let typeMap = try? JSONDecoder().decode(TypeMap.self, from: typeMapData) {
                 resolvedStructs = resolveStructTypes(
                     from: typeMap,
@@ -149,7 +149,7 @@ public struct DolAssembler {
 
         // Load symbol map for external references (exception handlers, etc.)
         if let symbolMapPath = symbolMapPath,
-           let mapData = fileSystem.readFile(at: symbolMapPath) {
+           let mapData = fileSystem.readFile(at: symbolMapPath)?.allData {
             let parser = SymbolMapParser()
             let symbols = parser.parse(mapData.string(format: .utf8))
             for sym in symbols where globalSymbols[sym.name] == nil {
@@ -159,7 +159,7 @@ public struct DolAssembler {
 
         // Load BSS entry list and assign addresses
         if let bssPath = bssEntryListPath,
-           let bssData = fileSystem.readFile(at: bssPath) {
+           let bssData = fileSystem.readFile(at: bssPath)?.allData {
             if let bssList = try? JSONDecoder().decode(BSSEntryList.self, from: bssData) {
                 let assigned = bssList.assignAddresses(baseAddress: layout.bssAddress)
                 for entry in assigned {
@@ -337,13 +337,13 @@ public struct DolAssembler {
                 let file = sectionFolder.file(chunk.file)
                 switch chunk.type {
                 case .assembly:
-                    if let data = fileSystem.readFile(at: file) {
+                    if let data = fileSystem.readFile(at: file)?.allData {
                         files.append((name: chunk.file, content: data.string(format: .utf8)))
                     } else {
                         logger?.log(.warning("Assembly chunk '\(chunk.label)' dropped: \(chunk.file) missing — section \(sectionName) will come out short"))
                     }
                 case .binary:
-                    if let data = fileSystem.readFile(at: file) {
+                    if let data = fileSystem.readFile(at: file)?.allData {
                         files.append((
                             name: "\(chunk.label).synthesized.s",
                             content: renderByteBlocksAsAssembly(
@@ -400,7 +400,7 @@ public struct DolAssembler {
 
         // Fall back to single file
         let sectionFile = codeFolder.file("\(sectionName).s")
-        if let data = fileSystem.readFile(at: sectionFile) {
+        if let data = fileSystem.readFile(at: sectionFile)?.allData {
             return [(sectionName + ".s", data.string(format: .utf8))]
         }
         return []
@@ -481,7 +481,7 @@ public struct DolAssembler {
                 }
             }
         }
-        return fileSystem.readFile(at: sectionFolder.file(chunk.file))
+        return fileSystem.readFile(at: sectionFolder.file(chunk.file))?.allData
     }
 
     /// Decode a `.struct` or `.table` chunk's JSON and render the
@@ -505,7 +505,7 @@ public struct DolAssembler {
             logger?.log(.warning("Struct type '\(structType)' for chunk '\(chunk.label)' not resolved — is typeMapPath set in the config?"))
             return nil
         }
-        guard let jsonData = fileSystem.readFile(at: sectionFolder.file(chunk.file)) else {
+        guard let jsonData = fileSystem.readFile(at: sectionFolder.file(chunk.file))?.allData else {
             return nil
         }
         let importer = TypedDataImporter()
@@ -594,7 +594,7 @@ public struct DolAssembler {
         var files = [(name: String, content: String)]()
 
         for file in contents.files where file.fileType == "s" {
-            if let data = fileSystem.readFile(at: file) {
+            if let data = fileSystem.readFile(at: file)?.allData {
                 files.append((name: file.fileName, content: data.string(format: .utf8)))
             }
         }

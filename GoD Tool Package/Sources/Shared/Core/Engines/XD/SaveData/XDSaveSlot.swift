@@ -243,8 +243,8 @@ public extension XDSaveSlot {
         let phase = sectionAlignmentPhase
         let align = sectionAlignment
         let delta = (target - phase) % align
-        let normalised = delta < 0 ? delta + align : delta
-        return normalised == 0 ? target : target + (align - normalised)
+        let normalized = delta < 0 ? delta + align : delta
+        return normalized == 0 ? target : target + (align - normalized)
     }
 
     /// Reads the slot's 16 sub-block (offset, size) tuples in

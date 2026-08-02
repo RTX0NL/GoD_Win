@@ -79,12 +79,12 @@ final class WiiOperationTests: XCTestCase {
         )
 
         let unpacked = Folder("/project/Unpacked/DATA")
-        XCTAssertEqual(fst.readFile(at: unpacked.file("sys/boot.bin"))?.rawBytes, expected.boot)
-        XCTAssertEqual(fst.readFile(at: unpacked.file("sys/main.dol"))?.rawBytes, expected.dol)
-        XCTAssertEqual(fst.readFile(at: unpacked.file("ticket.bin"))?.rawBytes, expected.ticket)
+        XCTAssertEqual(fst.readFile(at: unpacked.file("sys/boot.bin"))?.allData?.rawBytes, expected.boot)
+        XCTAssertEqual(fst.readFile(at: unpacked.file("sys/main.dol"))?.allData?.rawBytes, expected.dol)
+        XCTAssertEqual(fst.readFile(at: unpacked.file("ticket.bin"))?.allData?.rawBytes, expected.ticket)
         for (path, bytes) in expected.files {
             XCTAssertEqual(
-                fst.readFile(at: File(unpacked.path + path))?.rawBytes, bytes,
+                fst.readFile(at: File(unpacked.path + path))?.allData?.rawBytes, bytes,
                 "dump should export user file \(path) into the project"
             )
         }
@@ -96,17 +96,17 @@ final class WiiOperationTests: XCTestCase {
             logger: SilentLogger()
         )
 
-        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.iso")))
+        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.iso"))?.allData)
         let reparsed = try WiiISO(
             data: rebuilt,
             commonKey: WiiDiscFixtures.commonKey,
             wiiEngine: wiiEngine,
             dolphinEngine: dolphinEngine
         )
-        XCTAssertEqual(reparsed.readFile(at: File("/DATA/sys/main.dol"))?.rawBytes, expected.dol)
+        XCTAssertEqual(reparsed.readFile(at: File("/DATA/sys/main.dol"))?.allData?.rawBytes, expected.dol)
         for (path, bytes) in expected.files {
             XCTAssertEqual(
-                reparsed.readFile(at: File("/DATA" + path))?.rawBytes, bytes,
+                reparsed.readFile(at: File("/DATA" + path))?.allData?.rawBytes, bytes,
                 "user file \(path) should survive the dump/build operations"
             )
         }
@@ -125,7 +125,7 @@ final class WiiOperationTests: XCTestCase {
         ])
         try WiiOps.build(config: config, settings: .default, fileSystem: fst, logger: SilentLogger())
 
-        let filled = try XCTUnwrap(fst.readFile(at: File("/project/wii.iso")))
+        let filled = try XCTUnwrap(fst.readFile(at: File("/project/wii.iso"))?.allData)
         XCTAssertEqual(filled.length, targetSize)
         XCTAssertEqual(Array(filled.rawBytes.prefix(4)), original, "original content must be preserved at the start")
         XCTAssertTrue(filled.rawBytes.dropFirst(4).allSatisfy { $0 == 0 }, "padding must be zeros")

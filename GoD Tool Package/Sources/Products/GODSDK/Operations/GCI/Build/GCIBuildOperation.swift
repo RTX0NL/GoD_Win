@@ -40,11 +40,11 @@ extension GCIOps {
         let body: GoDData
         if isXDSaveShape(header: header) {
             guard
-                let banner = fileSystem.readFile(at: inputFolder.file(bannerFilename)),
-                let header0 = fileSystem.readFile(at: inputFolder.file(header0Filename)),
-                let header1 = fileSystem.readFile(at: inputFolder.file(header1Filename)),
-                let slotA = fileSystem.readFile(at: inputFolder.file(slotAFilename)),
-                let slotB = fileSystem.readFile(at: inputFolder.file(slotBFilename))
+                let banner = fileSystem.readFile(at: inputFolder.file(bannerFilename))?.allData,
+                let header0 = fileSystem.readFile(at: inputFolder.file(header0Filename))?.allData,
+                let header1 = fileSystem.readFile(at: inputFolder.file(header1Filename))?.allData,
+                let slotA = fileSystem.readFile(at: inputFolder.file(slotAFilename))?.allData,
+                let slotB = fileSystem.readFile(at: inputFolder.file(slotBFilename))?.allData
             else {
                 throw GCIOpsErrors.missingRegion(folder: inputFolder, .init())
             }
@@ -57,19 +57,19 @@ extension GCIOps {
             )
             body = try card.assembledBody()
         } else if isColoSaveShape(header: header) {
-            guard let preamble = fileSystem.readFile(at: inputFolder.file(preambleFilename)) else {
+            guard let preamble = fileSystem.readFile(at: inputFolder.file(preambleFilename))?.allData else {
                 throw GCIOpsErrors.missingRegion(folder: inputFolder, .init())
             }
             var slots: [GoDData] = []
             for i in 0..<ColoSaveCardFile.slotCount {
-                guard let slot = fileSystem.readFile(at: inputFolder.file(coloSlotFilename(i))) else {
+                guard let slot = fileSystem.readFile(at: inputFolder.file(coloSlotFilename(i)))?.allData else {
                     throw GCIOpsErrors.missingRegion(folder: inputFolder, .init())
                 }
                 slots.append(slot)
             }
             body = try ColoSaveCardFile(preamble: preamble, slots: slots).assembledBody()
         } else {
-            guard let raw = fileSystem.readFile(at: inputFolder.file(bodyFilename)) else {
+            guard let raw = fileSystem.readFile(at: inputFolder.file(bodyFilename))?.allData else {
                 throw GCIOpsErrors.missingRegion(folder: inputFolder, .init())
             }
             body = raw

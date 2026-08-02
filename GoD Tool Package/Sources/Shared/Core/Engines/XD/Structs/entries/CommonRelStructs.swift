@@ -345,8 +345,8 @@ public extension XDStructDefaults {
         description: "Battle type rules (0x20 bytes)"
     )
 
-    static let rgbaColourStruct = StructMap(
-        name: "RGBAColour",
+    static let rgbaColorStruct = StructMap(
+        name: "RGBAColor",
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
@@ -355,7 +355,7 @@ public extension XDStructDefaults {
             .uint8(name: "blue"),
             .uint8(name: "alpha"),
         ],
-        description: "RGBA colour value (4 bytes)"
+        description: "RGBA color value (4 bytes)"
     )
 
     static let pokemonMenuAnimationStruct = StructMap(

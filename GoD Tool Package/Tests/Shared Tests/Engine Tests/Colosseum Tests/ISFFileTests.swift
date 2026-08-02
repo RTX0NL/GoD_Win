@@ -7,7 +7,7 @@
 //
 //    • Header metadata (sampleRate, channelCount, interleaveSize,
 //      toolDate, loop flags) round-trips exactly through parse →
-//      serialise → parse.
+//      serialize → parse.
 //    • Loop sample-position math is lossless in the sample domain (byte
 //      offsets may shift slightly because of ADPCM framing — but samples
 //      are what humans edit against).

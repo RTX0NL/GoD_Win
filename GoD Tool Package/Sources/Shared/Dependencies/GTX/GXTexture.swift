@@ -478,7 +478,7 @@ public struct GXTextureDecoder {
                 let off = palStart + i * 2
                 guard off + 2 <= data.length else { break }
                 let raw: UInt16 = data.readSafely(atAddress: off)
-                palette.append(colour16(Int(raw), palFmt))
+                palette.append(color16(Int(raw), palFmt))
             }
         }
 
@@ -519,14 +519,14 @@ public struct GXTextureDecoder {
                     px.append(hi < palette.count ? palette[hi] : (0,0,0,0))
                     px.append(lo < palette.count ? palette[lo] : (0,0,0,0))
                 } else {
-                    px.append(colourVal(hi, fmt)); px.append(colourVal(lo, fmt))
+                    px.append(colorVal(hi, fmt)); px.append(colorVal(lo, fmt))
                 }
             }
         case 8:
             for i in 0..<len {
                 let v: UInt8 = data.readSafely(atAddress: start + i)
                 if fmt.isIndexed { px.append(Int(v) < palette.count ? palette[Int(v)] : (0,0,0,0)) }
-                else { px.append(colourVal(Int(v), fmt)) }
+                else { px.append(colorVal(Int(v), fmt)) }
             }
         case 16:
             for i in 0..<(len/2) {
@@ -534,7 +534,7 @@ public struct GXTextureDecoder {
                 if fmt.isIndexed {
                     let idx = fmt == .C14X2 ? Int(v >> 2) : Int(v)
                     px.append(idx < palette.count ? palette[idx] : (0,0,0,0))
-                } else { px.append(colour16(Int(v), fmt.rawValue)) }
+                } else { px.append(color16(Int(v), fmt.rawValue)) }
             }
         default: break
         }
@@ -595,13 +595,13 @@ public struct GXTextureDecoder {
         return (0...15).map { let n = UInt32(15-$0); return pal[Int((idx >> (n*2)) & 3)] }
     }
 
-    // MARK: - Colour helpers
+    // MARK: - Color helpers
 
     private func rgb565(_ raw: Int) -> (UInt8, UInt8, UInt8, UInt8) {
         (UInt8((raw>>11)&0x1F)*8, UInt8((raw>>5)&0x3F)*4, UInt8(raw&0x1F)*8, 255)
     }
 
-    private func colourVal(_ raw: Int, _ fmt: GXTextureFormat) -> (UInt8, UInt8, UInt8, UInt8) {
+    private func colorVal(_ raw: Int, _ fmt: GXTextureFormat) -> (UInt8, UInt8, UInt8, UInt8) {
         switch fmt {
         case .I4:  let v = UInt8(raw * 0x11); return (v, v, v, 255)
         case .I8:  let v = UInt8(raw); return (v, v, v, 255)
@@ -611,7 +611,7 @@ public struct GXTextureDecoder {
         }
     }
 
-    private func colour16(_ raw: Int, _ fmt: Int) -> (UInt8, UInt8, UInt8, UInt8) {
+    private func color16(_ raw: Int, _ fmt: Int) -> (UInt8, UInt8, UInt8, UInt8) {
         switch fmt {
         case 0, 0x43: let i = UInt8(raw & 0xFF), a = UInt8(raw >> 8); return (i, i, i, a) // IA8
         case 1, 0x44: return rgb565(raw) // RGB565
@@ -688,7 +688,7 @@ public struct GXTextureDecoder {
                 palette.append((0, 0, 0, 0))
             }
             for c in palette {
-                let raw = encodeColour16(c, palFmt)
+                let raw = encodeColor16(c, palFmt)
                 palBytes.append(UInt8(raw >> 8))
                 palBytes.append(UInt8(raw & 0xFF))
             }
@@ -788,7 +788,7 @@ public struct GXTextureDecoder {
         }
     }
 
-    private func encodeColour16(_ p: (UInt8, UInt8, UInt8, UInt8), _ fmt: GXPaletteFormat) -> Int {
+    private func encodeColor16(_ p: (UInt8, UInt8, UInt8, UInt8), _ fmt: GXPaletteFormat) -> Int {
         switch fmt {
         case .IA8:
             let i = (Int(p.0) + Int(p.1) + Int(p.2)) / 3
@@ -885,28 +885,28 @@ public struct GXTextureDecoder {
 
     private func encodeDXT1SubBlock(_ pixels: [(r: UInt8, g: UInt8, b: UInt8, a: UInt8)]) -> [UInt8] {
         var hasTransparency = false
-        var uniqueColours = [Int]()
+        var uniqueColors = [Int]()
 
         for p in pixels {
             if p.a < 0x80 {
                 hasTransparency = true
             } else {
                 let rgb = encodePixel16(p, .RGB565)
-                if !uniqueColours.contains(rgb) { uniqueColours.append(rgb) }
+                if !uniqueColors.contains(rgb) { uniqueColors.append(rgb) }
             }
         }
 
-        if uniqueColours.isEmpty {
+        if uniqueColors.isEmpty {
             return [0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF]
         }
 
-        // Find the two colours with the greatest range
-        var bestC0 = uniqueColours[0], bestC1 = uniqueColours[0]
-        if uniqueColours.count > 1 {
+        // Find the two colors with the greatest range
+        var bestC0 = uniqueColors[0], bestC1 = uniqueColors[0]
+        if uniqueColors.count > 1 {
             var greatestRange = 0
-            for c0 in uniqueColours {
-                for c1 in uniqueColours {
-                    let d = colourDistance565(c0, c1)
+            for c0 in uniqueColors {
+                for c1 in uniqueColors {
+                    let d = colorDistance565(c0, c1)
                     if d > greatestRange { greatestRange = d; bestC0 = c0; bestC1 = c1 }
                 }
             }
@@ -958,7 +958,7 @@ public struct GXTextureDecoder {
         (r: ((raw >> 11) & 0x1F) * 8, g: ((raw >> 5) & 0x3F) * 4, b: (raw & 0x1F) * 8, a: 255)
     }
 
-    private func colourDistance565(_ c0: Int, _ c1: Int) -> Int {
+    private func colorDistance565(_ c0: Int, _ c1: Int) -> Int {
         let a = decodeRGB565(c0), b = decodeRGB565(c1)
         return abs(a.r - b.r) + abs(a.g - b.g) + abs(a.b - b.b)
     }

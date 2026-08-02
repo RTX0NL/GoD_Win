@@ -106,7 +106,7 @@ final class GCIOperationTests: XCTestCase {
             ("slot-b.bin",  0x2E000..<0x56000),
         ]
         for region in regions {
-            let data = try XCTUnwrap(fst.readFile(at: out.file(region.name)), "Missing \(region.name)")
+            let data = try XCTUnwrap(fst.readFile(at: out.file(region.name))?.allData, "Missing \(region.name)")
             XCTAssertEqual(data.rawBytes, bodySlice(of: gci, region.range), "\(region.name) content mismatch")
         }
     }
@@ -120,7 +120,7 @@ final class GCIOperationTests: XCTestCase {
 
         // The manifest header round-trips via Codable and the regions
         // concatenate back to the original body, so byte-identity holds.
-        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.gci")))
+        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.gci"))?.allData)
         XCTAssertEqual(rebuilt.rawBytes, gci.rawBytes)
     }
 
@@ -130,16 +130,16 @@ final class GCIOperationTests: XCTestCase {
         let out = Folder("/project/Dump")
         try dump(gci, to: out, in: fst)
 
-        let preamble = try XCTUnwrap(fst.readFile(at: out.file("preamble.bin")))
+        let preamble = try XCTUnwrap(fst.readFile(at: out.file("preamble.bin"))?.allData)
         XCTAssertEqual(preamble.rawBytes, bodySlice(of: gci, 0x00000..<0x06000))
         for i in 0..<ColoSaveCardFile.slotCount {
             let start = ColoSaveCardFile.preambleSize + i * ColoSaveCardFile.slotSize
-            let slot = try XCTUnwrap(fst.readFile(at: out.file("slot-\(i + 1).bin")), "Missing slot-\(i + 1).bin")
+            let slot = try XCTUnwrap(fst.readFile(at: out.file("slot-\(i + 1).bin"))?.allData, "Missing slot-\(i + 1).bin")
             XCTAssertEqual(slot.rawBytes, bodySlice(of: gci, start..<(start + ColoSaveCardFile.slotSize)))
         }
 
         try build(from: out, to: File("/project/rebuilt.gci"), in: fst)
-        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.gci")))
+        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.gci"))?.allData)
         XCTAssertEqual(rebuilt.rawBytes, gci.rawBytes)
     }
 
@@ -150,13 +150,13 @@ final class GCIOperationTests: XCTestCase {
         let out = Folder("/project/Dump")
         try dump(gci, to: out, in: fst)
 
-        let body = try XCTUnwrap(fst.readFile(at: out.file("body.bin")))
+        let body = try XCTUnwrap(fst.readFile(at: out.file("body.bin"))?.allData)
         XCTAssertEqual(body.rawBytes, bodySlice(of: gci, 0..<(2 * GCIFile.blockSize)))
-        XCTAssertNil(fst.readFile(at: out.file("slot-a.bin")))
-        XCTAssertNil(fst.readFile(at: out.file("preamble.bin")))
+        XCTAssertNil(fst.readFile(at: out.file("slot-a.bin"))?.allData)
+        XCTAssertNil(fst.readFile(at: out.file("preamble.bin"))?.allData)
 
         try build(from: out, to: File("/project/rebuilt.gci"), in: fst)
-        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.gci")))
+        let rebuilt = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.gci"))?.allData)
         XCTAssertEqual(rebuilt.rawBytes, gci.rawBytes)
     }
 

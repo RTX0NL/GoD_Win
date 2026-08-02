@@ -49,12 +49,12 @@ public final class WiiISO: FileSystemTree {
         return nil
     }
 
-    public func readFile(at path: File) -> GoDData? {
+    public func readFile(at path: File) -> GoDReadable? {
         if path.path == "/disc_header.bin" || path.path == "/region_settings.bin" {
-            return topLevelFST.readFile(at: path)
+            return topLevelFST.readFile(at: path)?.allData
         }
         if let (_, relativePath) = resolvePartition(for: path.path) {
-            return partitionForPath(path.path)?.partition.readFile(at: File(relativePath))
+            return partitionForPath(path.path)?.partition.readFile(at: File(relativePath))?.allData
         }
         return nil
     }
@@ -276,7 +276,7 @@ public final class WiiISO: FileSystemTree {
 
         // Restore the second magic word. It sits in the unencrypted region
         // rather than in any file we dump, so a rebuild has to re-emit it —
-        // wit and the drive firmware use it to recognise a Wii disc.
+        // wit and the drive firmware use it to recognize a Wii disc.
         isoData.write(Self.discMagicWord2, atAddress: Self.discMagicWord2Offset)
 
         // Build partition table and write partitions
@@ -330,10 +330,10 @@ public final class WiiISO: FileSystemTree {
         self.dolphinEngine = dolphinEngine
 
         let headerFile = rootFolder.file("disc_header.bin")
-        self.discHeader = source.readFile(at: headerFile) ?? GoDData(length: 0x440, byteOrder: .big)
+        self.discHeader = source.readFile(at: headerFile)?.allData ?? GoDData(length: 0x440, byteOrder: .big)
 
         let regionFile = rootFolder.file("region_settings.bin")
-        self.regionSettings = source.readFile(at: regionFile) ?? GoDData(length: 0x20, byteOrder: .big)
+        self.regionSettings = source.readFile(at: regionFile)?.allData ?? GoDData(length: 0x20, byteOrder: .big)
 
         var foundPartitions: [(name: String, partition: WiiPartition)] = []
         if let rootContents = source.inspectFolder(at: rootFolder) {
@@ -351,10 +351,10 @@ public final class WiiISO: FileSystemTree {
                 let certFile = subFolder.file(partFiles.certFile.path)
                 let h3File = subFolder.file(partFiles.h3File.path)
 
-                let ticket = source.readFile(at: ticketFile) ?? GoDData(length: 0x2A4, byteOrder: .big)
-                let tmd = source.readFile(at: tmdFile) ?? GoDData(length: 0, byteOrder: .big)
-                let cert = source.readFile(at: certFile) ?? GoDData(length: 0, byteOrder: .big)
-                let h3 = source.readFile(at: h3File) ?? GoDData(length: 0x18000, byteOrder: .big)
+                let ticket = source.readFile(at: ticketFile)?.allData ?? GoDData(length: 0x2A4, byteOrder: .big)
+                let tmd = source.readFile(at: tmdFile)?.allData ?? GoDData(length: 0, byteOrder: .big)
+                let cert = source.readFile(at: certFile)?.allData ?? GoDData(length: 0, byteOrder: .big)
+                let h3 = source.readFile(at: h3File)?.allData ?? GoDData(length: 0x18000, byteOrder: .big)
 
                 let partition = WiiPartition(
                     fst: source,

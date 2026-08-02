@@ -130,19 +130,91 @@ public enum StructTableCSV {
     }
 
     /// Finite floats print in Swift's shortest form, which parses back to
-    /// the same bits. Non-finite ones print as their raw bit pattern: a NaN
-    /// carries a payload that `Float("NaN")` would discard, and real data
-    /// has plenty of float-typed fields that aren't really floats.
+    /// the same bits.
+    ///
+    /// Non-finite ones print as `NaN` / `Infinity` / `-Infinity`. The
+    /// infinities are single exact bit patterns, so those spellings are
+    /// lossless; `NaN` is only used for the canonical quiet NaN, because
+    /// IEEE-754 gives NaN a 22-bit payload and a spelling can't carry one.
+    /// A payload-bearing or signalling NaN falls back to its raw bit
+    /// pattern — real data has float-typed fields that aren't really
+    /// floats, and those bytes have to survive.
+    ///
+    /// Classification is done on the bits rather than via `isFinite` so a
+    /// signalling NaN is never loaded into a floating-point register, which
+    /// on some hardware quiets it.
     private static func floatCell(bits: UInt32) -> String {
-        let value = Float(bitPattern: bits)
-        guard value.isFinite else { return "0x" + String(format: "%08X", bits) }
-        return String(describing: value)
+        guard (bits >> 23) & 0xFF == 0xFF else {
+            return String(describing: Float(bitPattern: bits))
+        }
+        switch bits {
+        case 0x7F80_0000: return NonFiniteFloat.infinity.text
+        case 0xFF80_0000: return NonFiniteFloat.negativeInfinity.text
+        case 0x7FC0_0000: return NonFiniteFloat.nan.text   // Float.nan
+        default: return "0x" + String(format: "%08X", bits)
+        }
     }
 
     private static func doubleCell(bits: UInt64) -> String {
-        let value = Double(bitPattern: bits)
-        guard value.isFinite else { return "0x" + String(format: "%016llX", bits) }
-        return String(describing: value)
+        guard (bits >> 52) & 0x7FF == 0x7FF else {
+            return String(describing: Double(bitPattern: bits))
+        }
+        switch bits {
+        case 0x7FF0_0000_0000_0000: return NonFiniteFloat.infinity.text
+        case 0xFFF0_0000_0000_0000: return NonFiniteFloat.negativeInfinity.text
+        case 0x7FF8_0000_0000_0000: return NonFiniteFloat.nan.text   // Double.nan
+        default: return "0x" + String(format: "%016llX", bits)
+        }
+    }
+
+    /// The three non-finite values that have a spelling, with the exact bit
+    /// patterns they stand for.
+    ///
+    /// Parsed explicitly rather than leaning on `Float("NaN")`: that goes
+    /// through the platform's `strtof`, whose handling of these spellings
+    /// (and of `nan(0x...)` forms) varies, and this codec has to behave the
+    /// same on every platform it builds for.
+    enum NonFiniteFloat: CaseIterable {
+        case nan, infinity, negativeInfinity
+
+        var text: String {
+            switch self {
+            case .nan: return "NaN"
+            case .infinity: return "Infinity"
+            case .negativeInfinity: return "-Infinity"
+            }
+        }
+
+        /// Spellings accepted on the way in, beyond `text` itself. Matching
+        /// is case-insensitive.
+        var accepted: [String] {
+            switch self {
+            case .nan: return ["nan"]
+            case .infinity: return ["infinity", "inf", "+infinity", "+inf"]
+            case .negativeInfinity: return ["-infinity", "-inf"]
+            }
+        }
+
+        var floatBits: UInt32 {
+            switch self {
+            case .nan: return 0x7FC0_0000
+            case .infinity: return 0x7F80_0000
+            case .negativeInfinity: return 0xFF80_0000
+            }
+        }
+
+        var doubleBits: UInt64 {
+            switch self {
+            case .nan: return 0x7FF8_0000_0000_0000
+            case .infinity: return 0x7FF0_0000_0000_0000
+            case .negativeInfinity: return 0xFFF0_0000_0000_0000
+            }
+        }
+
+        static func parse(_ text: String) -> NonFiniteFloat? {
+            let lowered = text.lowercased()
+            return allCases.first { $0.accepted.contains(lowered) }
+        }
     }
 
     // MARK: - Decoding
@@ -275,21 +347,25 @@ public enum StructTableCSV {
                 try writeValue(value)
             case .float, .lossless_float:
                 guard !trimmed.isEmpty else { return }
-                if let bits = parseHex(trimmed) {
+                if let nonFinite = NonFiniteFloat.parse(trimmed) {
+                    try writeBits(Int(nonFinite.floatBits), width: 4)
+                } else if let bits = parseHex(trimmed) {
                     try writeBits(Int(bits & 0xFFFF_FFFF), width: 4)
                 } else if let value = Float(trimmed) {
                     try writeBits(Int(value.bitPattern), width: 4)
                 } else {
-                    throw fail("a decimal number or an 0x bit pattern")
+                    throw fail("a decimal number, NaN/Infinity/-Infinity, or an 0x bit pattern")
                 }
             case .double, .lossless_double:
                 guard !trimmed.isEmpty else { return }
-                if let bits = parseHex(trimmed) {
+                if let nonFinite = NonFiniteFloat.parse(trimmed) {
+                    try writeBits(Int(bitPattern: UInt(nonFinite.doubleBits)), width: 8)
+                } else if let bits = parseHex(trimmed) {
                     try writeBits(Int(bitPattern: UInt(bits)), width: 8)
                 } else if let value = Double(trimmed) {
                     try writeBits(Int(bitPattern: UInt(value.bitPattern)), width: 8)
                 } else {
-                    throw fail("a decimal number or an 0x bit pattern")
+                    throw fail("a decimal number, NaN/Infinity/-Infinity, or an 0x bit pattern")
                 }
             case .boolean:
                 guard !trimmed.isEmpty else { return }

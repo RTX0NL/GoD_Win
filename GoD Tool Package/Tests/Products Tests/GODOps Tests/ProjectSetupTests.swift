@@ -78,7 +78,7 @@ final class ProjectSetupTests: XCTestCase {
 
     func testSetupCopiesTheDiscImageIntoBuildISO() throws {
         let (fst, project) = try runSetup(gameID: PokemonXD.gameIDUS)
-        let copied = fst.readFile(at: project.folder("Build").folder("ISO").file("game.iso"))
+        let copied = fst.readFile(at: project.folder("Build").folder("ISO").file("game.iso"))?.allData
         XCTAssertEqual(copied?.length, 0x50000)
         XCTAssertEqual(copied?.readString(atAddress: 0, format: .utf8, maxCharacters: 4), PokemonXD.gameIDUS)
     }
@@ -241,7 +241,7 @@ final class ProjectSetupTests: XCTestCase {
     func testWiiFillUsesTheEngineDiscCapacity() throws {
         let (fst, project) = try runSetup(gameID: "RPBE", wii: true)
         let build = try decodeConfig(project.folder("Config").file("Build-Config.json"), in: fst)
-        let json = try XCTUnwrap(fst.readFile(at: project.folder("Config").file("Build-Config.json")))
+        let json = try XCTUnwrap(fst.readFile(at: project.folder("Config").file("Build-Config.json"))?.allData)
             .string(format: .utf8)
         let capacity = try WiiEngine.defaults().data.disc.maxDiscCapacity
         XCTAssertTrue(json.contains("\(capacity)"), "expected the engine's disc capacity in the generated config")
@@ -289,7 +289,7 @@ final class ProjectSetupTests: XCTestCase {
         XCTAssertThrowsError(try Project.setup(iso: File("/nope/missing.iso"), fileSystem: fst))
     }
 
-    /// A `.wia`/`.rvz` image is recognised but not decodable yet; setup must
+    /// A `.wia`/`.rvz` image is recognized but not decodable yet; setup must
     /// say so rather than parsing compressed bytes as a raw disc. Both magics
     /// are covered — Dolphin writes "RVZ\u{01}" for the newer variant, and
     /// missing that spelling silently produced a garbage project.
@@ -304,7 +304,7 @@ final class ProjectSetupTests: XCTestCase {
             try fst.writeFile(data, at: input, overwrite: true)
             XCTAssertThrowsError(
                 try Project.setup(iso: input, fileSystem: fst),
-                "\(magic) should be recognised as an undecodable compressed image"
+                "\(magic) should be recognized as an undecodable compressed image"
             )
         }
     }

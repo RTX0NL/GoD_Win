@@ -116,10 +116,10 @@ extension ColoXD {
         stem: String,
         fileSystem: FileSystemTree
     ) throws -> [FileData] {
-        guard let ishData = fileSystem.readFile(at: ishFile) else {
+        guard let ishData = fileSystem.readFile(at: ishFile)?.allData else {
             throw FSTErrors.fileNotFound(ishFile, .init())
         }
-        guard let isdData = fileSystem.readFile(at: isdFile) else {
+        guard let isdData = fileSystem.readFile(at: isdFile)?.allData else {
             throw FSTErrors.fileNotFound(isdFile, .init())
         }
         return try ISFFile(ish: ishData, isd: isdData, name: stem).outputs

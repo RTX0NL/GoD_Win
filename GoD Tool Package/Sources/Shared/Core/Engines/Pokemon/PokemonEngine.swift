@@ -12,7 +12,10 @@ public struct PokemonEngine: Engine {
     public typealias EnumsType = PokemonEngine.Enums
     public typealias StructsType = PokemonEngine.Structs
 
-    public let name = "Pokemon Engine"
+    /// Also the engine's folder name once serialized, so callers that only
+    /// need the path don't have to build an engine to read it.
+    public static let engineName = "Pokemon Engine"
+    public let name = PokemonEngine.engineName
     public private(set) var data = PokemonEngine.Data()
     public private(set) var enums = PokemonEngine.Enums()
     public private(set) var structs = PokemonEngine.Structs()

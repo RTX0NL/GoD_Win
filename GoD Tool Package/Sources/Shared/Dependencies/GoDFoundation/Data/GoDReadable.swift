@@ -7,12 +7,49 @@
 
 import Foundation
 
+/// Something you can read bytes out of, whether or not those bytes are in
+/// memory.
+///
+/// This is what a `FileSystemTree` read hands back, so it has to be usable
+/// without knowing which it got. `GoDData` holds a buffer; `GoDStreamedData`
+/// reads windows off disk; `WiiDecryptedPartitionView` decrypts them on
+/// demand. A caller that only reads should never need to tell them apart —
+/// hence `length` as a requirement (a source that can't say how big it is
+/// can't be read safely) and the whole-buffer helpers below, which are the
+/// one place the difference actually costs something.
 public protocol GoDReadable {
     var byteOrder: ByteOrder { get }
+
+    /// Total size in bytes. Cheap on every conformer — a stored count, a file
+    /// size read at open, or a computed extent — never a read of the contents.
+    var length: Int { get }
+
+    /// The entire contents as one in-memory buffer, or nil if this source
+    /// won't produce one.
+    ///
+    /// Optional because handing over a whole buffer is a real cost for
+    /// everything except `GoDData`, which just returns itself. A conformer
+    /// that can afford it says so by implementing this; one that can't — or
+    /// shouldn't be asked, like a view over an encrypted partition — leaves
+    /// the default and callers get nil.
+    ///
+    /// Reach for it only when the work genuinely needs bytes it can hold:
+    /// writing the file somewhere else, feeding a compressor, decoding JSON.
+    /// Anything that walks a structure wants `read(atAddress:length:)`, which
+    /// is what lets a streamed source stay streamed.
+    var allData: GoDData? { get }
+
     func read(atAddress address: UInt, length: UInt) -> GoDData?
 }
 
 public extension GoDReadable {
+    /// Nothing to hand over unless a conformer says otherwise. Defaulting to
+    /// nil rather than to a full read keeps the expensive answer opt-in: a
+    /// source has to volunteer its buffer, and a caller that assumed one is
+    /// available finds out at the call site instead of somewhere downstream
+    /// having quietly read a disc image into memory.
+    var allData: GoDData? { nil }
+
     func read(atAddress address: Int, length: Int) -> GoDData? {
         return read(atAddress: UInt(address), length: UInt(length))
     }

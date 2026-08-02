@@ -21,7 +21,7 @@ extension WiiOps {
 
                 let wiiEngine = try WiiEngine(from: wiiEnginePath, in: fileSystem)
                 let dolphinEngine = try DolphinEngine(from: dolphinEnginePath, in: fileSystem)
-                guard let data = fileSystem.readFile(at: isoPath) else {
+                guard let data = fileSystem.readFile(at: isoPath)?.allData else {
                     throw FSTErrors.fileNotFound(isoPath, .init())
                 }
 
@@ -40,7 +40,7 @@ extension WiiOps {
     }
 
     static func loadCommonKey(from file: File, fileSystem: FileSystemTree) throws -> [UInt8] {
-        guard let keyData = fileSystem.readFile(at: file) else {
+        guard let keyData = fileSystem.readFile(at: file)?.allData else {
             throw WiiErrors.commonKeyNotFound(file, .init())
         }
 

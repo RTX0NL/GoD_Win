@@ -110,7 +110,7 @@ public class DolphinFST {
 
         // Folders are visited in path order so a parent is always registered
         // before its children — `folders` doubles as the creation order when
-        // the tree is materialised, and a child can't be created into a
+        // the tree is allData, and a child can't be created into a
         // folder that doesn't exist yet.
         func add(_ folders: [Folder]) {
             folders
@@ -134,7 +134,7 @@ public class DolphinFST {
             return tocDataEntryCount * entrySize + stringTableLength
     }
     
-    /// - Parameter offsetMultiplier: see the parsing initialiser. Pass the Wii
+    /// - Parameter offsetMultiplier: see the parsing initializer. Pass the Wii
     ///   engine's value (4) when writing a Wii FST.
     public func tocData(
         userOffset: Int,

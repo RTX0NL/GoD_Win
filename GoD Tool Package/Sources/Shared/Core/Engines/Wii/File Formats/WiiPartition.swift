@@ -33,7 +33,7 @@ public final class WiiPartition: FileSystemTree {
     // MARK: - FileSystemTree delegation
 
     public func inspectFile(at path: File) -> FileMetaData? { fst.inspectFile(at: path) }
-    public func readFile(at path: File) -> GoDData? { fst.readFile(at: path) }
+    public func readFile(at path: File) -> GoDReadable? { fst.readFile(at: path) }
     public func moveFile(at path: File, to newPath: File, overwrite: Bool) throws { try fst.moveFile(at: path, to: newPath, overwrite: overwrite) }
     public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) throws {
         file.setByteOrder(.big)
@@ -311,20 +311,20 @@ public final class WiiPartition: FileSystemTree {
 
         let decryptedData = GoDData(length: 0, byteOrder: .big)
 
-        guard let bootFileData = readFile(at: partFiles.bootFile),
+        guard let bootFileData = readFile(at: partFiles.bootFile)?.allData,
               let bootStruct = bootFileData.read(struct: dolphinEngine.bootDataStruct, atAddress: 0) else {
             logger?.log(.error("Failed to read boot.bin for \(typeName) partition encryption"))
             throw encodingFailure()
         }
 
-        guard let bi2Data = readFile(at: partFiles.bi2File) else { throw encodingFailure() }
+        guard let bi2Data = readFile(at: partFiles.bi2File)?.allData else { throw encodingFailure() }
         decryptedData.write(bi2Data, atAddress: systemFiles.bi2DataOffset)
 
-        guard let apploaderData = readFile(at: partFiles.apploaderFile) else { throw encodingFailure() }
+        guard let apploaderData = readFile(at: partFiles.apploaderFile)?.allData else { throw encodingFailure() }
         let apploaderOffset = systemFiles.apploaderOffset
         decryptedData.write(apploaderData, atAddress: apploaderOffset)
 
-        guard let dolData = readFile(at: partFiles.executableFile) else { throw encodingFailure() }
+        guard let dolData = readFile(at: partFiles.executableFile)?.allData else { throw encodingFailure() }
         let dolAlignment = max(systemFiles.dolOffsetAlignment, 1)
         let dolOffset = (apploaderOffset + apploaderData.length).aligned(to: dolAlignment)
         decryptedData.write(dolData, atAddress: dolOffset)
@@ -354,7 +354,7 @@ public final class WiiPartition: FileSystemTree {
 
         let sortedFiles = fstManifest.files.sorted(by: { $0.value.offsetInUserSection < $1.value.offsetInUserSection })
         for (file, value) in sortedFiles {
-            guard let fileData = fst.readFile(at: file) else { throw encodingFailure() }
+            guard let fileData = fst.readFile(at: file)?.allData else { throw encodingFailure() }
             decryptedData.write(fileData, atAddress: userOffset + value.offsetInUserSection)
         }
 
@@ -376,7 +376,7 @@ public final class WiiPartition: FileSystemTree {
         if type == 0 {
             decryptedData = try rebuiltGameFilesystem(taskName: taskName, logger: logger)
         } else {
-            guard let blob = readFile(at: Self.partitionDataFile) else {
+            guard let blob = readFile(at: Self.partitionDataFile)?.allData else {
                 logger?.log(.error("Failed to read \(Self.partitionDataFile.path) for \(typeName) partition encryption"))
                 logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
                 throw FileFormatErrors.failedToEncode(format: Self.formatName, target: "Wii partition")
@@ -385,7 +385,7 @@ public final class WiiPartition: FileSystemTree {
         }
 
         // Read ticket for title key
-        guard let ticketData = readFile(at: partFiles.ticketFile) else {
+        guard let ticketData = readFile(at: partFiles.ticketFile)?.allData else {
             logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
             throw FileFormatErrors.failedToEncode(format: Self.formatName, target: "Wii partition")
         }

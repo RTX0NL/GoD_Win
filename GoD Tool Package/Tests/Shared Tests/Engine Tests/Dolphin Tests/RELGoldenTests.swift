@@ -10,7 +10,7 @@ import TestSupport
 /// a programmatic REL exercising every body kind, fixup kind and chunk kind
 /// (empty / text / data / bss sections; plain, @ha, @lo and ADDR32
 /// relocations against both DOL and self; binary and pointer data chunks;
-/// multiple imported modules), serialised with the current writer and
+/// multiple imported modules), serialized with the current writer and
 /// frozen in its reader-canonical form.
 ///
 /// Regenerate: `swift run FixtureGen`

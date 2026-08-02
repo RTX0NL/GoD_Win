@@ -180,7 +180,7 @@ final class GoDStreamedDataTests: XCTestCase {
         let file = File("/a.bin")
         try backing.writeFile(GoDData(byteStream: sequence(32), byteOrder: .big), at: file, overwrite: true)
 
-        let fs = StreamedFileSystem(materialising: backing)
+        let fs = StreamedFileSystem(materializing: backing)
         let opened = try XCTUnwrap(fs.streamFile(at: file))
         XCTAssertFalse(opened is GoDStreamedData, "nothing to stream from an in-memory tree")
         XCTAssertEqual(opened.read(atAddress: 8, length: 4)?.rawBytes, Array(sequence(32)[8..<12]))
@@ -189,23 +189,23 @@ final class GoDStreamedDataTests: XCTestCase {
     /// A missing file is nil, not a trap — same answer either read would give.
     func testStreamingAMissingFileIsNil() {
         XCTAssertNil(StreamedFileSystem().streamFile(at: File(nativePath: scratch.appendingPathComponent("nope").path)))
-        XCTAssertNil(StreamedFileSystem(materialising: InMemoryFST()).streamFile(at: File("/nope")))
+        XCTAssertNil(StreamedFileSystem(materializing: InMemoryFST()).streamFile(at: File("/nope")))
     }
 
     /// Writes, metadata and folder work go straight through: this is the same
     /// file system, read differently, not a different file system.
     func testEverythingElseForwardsToTheBackingTree() throws {
         let backing = InMemoryFST()
-        let fs = StreamedFileSystem(materialising: backing)
+        let fs = StreamedFileSystem(materializing: backing)
         let file = File("/dir/a.bin")
         try fs.createFolder(at: Folder("/dir"), overwrite: true)
         try fs.writeFile(GoDData(byteStream: [1, 2, 3], byteOrder: .big), at: file, overwrite: true)
 
-        XCTAssertEqual(backing.readFile(at: file)?.rawBytes, [1, 2, 3], "write did not reach the backing tree")
+        XCTAssertEqual(backing.readFile(at: file)?.allData?.rawBytes, [1, 2, 3], "write did not reach the backing tree")
         XCTAssertEqual(fs.fileSize(at: file), 3)
         XCTAssertNotNil(fs.inspectFile(at: file))
         XCTAssertNotNil(fs.inspectFolder(at: Folder("/dir")))
         try fs.deleteFile(at: file)
-        XCTAssertNil(backing.readFile(at: file))
+        XCTAssertNil(backing.readFile(at: file)?.allData)
     }
 }

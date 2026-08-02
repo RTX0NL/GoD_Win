@@ -23,19 +23,26 @@ enum CommonRelDump {
         /// Read for `commonRelSymbolMap`, `commonRelTypeMap`, and
         /// `dolSymbolMap` paths via `Data.Resources`.
         let gameEngine: Folder
+        /// Engine folders whose structs and enums resolve the typemap's
+        /// chunk types, combined in order (game definitions first, then the
+        /// shared sets they reference). Absent = just `gameEngine`, which
+        /// resolves its own structs but not, say, a Pokemon enum they name.
+        let engines: [Folder]?
 
         init(
             relPath: File,
             outputFolder: Folder,
             overwrite: Bool,
             dolphinEngine: Folder,
-            gameEngine: Folder
+            gameEngine: Folder,
+            engines: [Folder]? = nil
         ) {
             self.relPath = relPath
             self.outputFolder = outputFolder
             self.overwrite = overwrite
             self.dolphinEngine = dolphinEngine
             self.gameEngine = gameEngine
+            self.engines = engines
         }
     }
 }

@@ -43,7 +43,7 @@ public class FileSystem: FileSystemTree {
         )
     }
     
-    public func readFile(at path: File) -> GoDData? {
+    public func readFile(at path: File) -> GoDReadable? {
         let filePath = extendPath(path)
         guard let data = try? Data(contentsOf: filePath.url) else  {
             return nil

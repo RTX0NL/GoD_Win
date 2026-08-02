@@ -3,20 +3,20 @@ import Foundation
 import GoDFoundation
 import Dolphin
 
-/// CISO is a trivial format; these tests verify header parse/serialise
+/// CISO is a trivial format; these tests verify header parse/serialize
 /// roundtrip and end-to-end ISO ↔ CISO roundtrip on synthetic data.
 final class CISOFileTests: XCTestCase {
 
     // MARK: - Header roundtrip
 
-    func testCISO_headerSerialiseParseRoundtrip() throws {
+    func testCISO_headerSerializeParseRoundtrip() throws {
         var map = [Bool](repeating: false, count: 8)
         map[0] = true
         map[3] = true
         map[7] = true
         let original = CISOFile(blockSize: 0x0020_0000, blockMap: map, discSize: 8 * 0x0020_0000)
 
-        // Serialise and re-parse. Need to append some dummy body bytes
+        // Serialize and re-parse. Need to append some dummy body bytes
         // so the parser has a file to look at (parse only reads the
         // header, not body).
         let bytes = original.headerBytes

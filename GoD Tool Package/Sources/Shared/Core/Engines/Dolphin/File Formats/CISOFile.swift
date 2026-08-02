@@ -100,7 +100,7 @@ public struct CISOFile: Equatable {
 
     // MARK: - Header bytes
 
-    /// Serialise the 32 KiB header (magic + block size + full map,
+    /// Serialize the 32 KiB header (magic + block size + full map,
     /// zero-padded to 32760 entries).
     public var headerBytes: GoDData {
         let out = GoDData(byteOrder: .little)

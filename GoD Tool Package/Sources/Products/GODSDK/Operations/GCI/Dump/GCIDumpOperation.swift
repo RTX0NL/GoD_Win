@@ -45,7 +45,7 @@ extension GCIOps {
         logger: Logger?
     ) throws {
         logger?.log(.taskStatus(taskName: "Dump GCI", status: .started))
-        guard let raw = fileSystem.readFile(at: gciFile) else {
+        guard let raw = fileSystem.readFile(at: gciFile)?.allData else {
             throw GCIOpsErrors.inputNotFound(file: gciFile, .init())
         }
 
