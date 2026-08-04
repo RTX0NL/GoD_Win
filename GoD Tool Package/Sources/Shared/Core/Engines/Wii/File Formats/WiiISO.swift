@@ -59,7 +59,7 @@ public final class WiiISO: FileSystemTree {
         return nil
     }
 
-    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) throws {
+    public func writeFile(_ file: GoDReadable, at path: File, overwrite: Bool) throws {
         guard let (_, relativePath) = resolvePartition(for: path.path),
               let partition = partitionForPath(path.path)?.partition else {
             throw FSTErrors.invalidPath(path.path, .init())
@@ -162,8 +162,14 @@ public final class WiiISO: FileSystemTree {
     // MARK: - Decrypt from ISO
 
     /// Parse a Wii ISO from encrypted binary data.
+    /// Reads an encrypted disc image.
+    ///
+    /// `data` is a `GoDReadable` so a 4.7 GB image never has to be resident:
+    /// the header, region settings and partition table are small windows, and
+    /// each partition decrypts groups on demand through
+    /// `WiiDecryptedPartitionView`.
     public init(
-        data: GoDData,
+        data: GoDReadable,
         commonKey: [UInt8],
         wiiEngine: WiiEngine,
         dolphinEngine: DolphinEngine,
@@ -171,7 +177,11 @@ public final class WiiISO: FileSystemTree {
     ) throws {
         self.wiiEngine = wiiEngine
         self.dolphinEngine = dolphinEngine
-        data.setByteOrder(.big)
+        // A Wii disc is only ever big-endian; a swapped source would read
+        // every offset backwards and fail somewhere far from the cause.
+        guard data.byteOrder == .big else {
+            throw FileFormatErrors.invalid(format: Self.formatName)
+        }
 
         let taskName = "Parse Wii ISO"
         logger?.log(.taskStatus(taskName: taskName, status: .started))

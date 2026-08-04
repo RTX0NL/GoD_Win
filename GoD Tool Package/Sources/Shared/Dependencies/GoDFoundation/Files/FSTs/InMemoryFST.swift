@@ -77,11 +77,16 @@ public class InMemoryFST: FileSystemTree {
         registerChild(path: newPath.path)
     }
 
-    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) throws {
+    public func writeFile(_ file: GoDReadable, at path: File, overwrite: Bool) throws {
         guard !itemExists(at: path) || overwrite else {
             throw FSTErrors.itemExists(path.path, .init())
         }
-        fst[path.path] = .file(file)
+        // An in-memory tree has to hold the bytes; there is nowhere else to
+        // put them. A source that won't produce a buffer can't be stored.
+        guard let data = file.allData else {
+            throw FSTErrors.failedToWriteFile(path, .init())
+        }
+        fst[path.path] = .file(data)
         registerChild(path: path.path)
     }
 

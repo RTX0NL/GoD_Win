@@ -4,15 +4,10 @@ import Dolphin
 import GameCube
 
 extension Gamecube {
-    /// Takes a `StreamedFileSystem` rather than any tree: this operation opens
-    /// a disc image, and reading one through `readFile` would cost its full
-    /// size in memory before the first byte is parsed. Requiring the streamed
-    /// tree in the signature is what makes the caller's choice of tree matter
-    /// — there is no capability to probe for at runtime.
     static func dump(
         config: DumpConfig,
         settings: GoddessSettings,
-        fileSystem: StreamedFileSystem,
+        fileSystem: FileSystemTree,
         logger: Logger? = nil
     ) throws {
         try config.operations.enabledEntries.forEach { operation in
@@ -24,9 +19,10 @@ extension Gamecube {
                 dolphinEnginePath,
                 gamecubeEnginePath
             ):
-                // Opened, not read: `GamecubeISO` only ever wants windows of
-                // the image, so a 1.4 GB ISO never has to be resident.
-                guard let data = fileSystem.streamFile(at: isoPath) else {
+                // Whether this streams is the tree's business — dispatch
+                // hands ISO work a `StreamedFileSystem`, and `GamecubeISO`
+                // only ever reads windows either way.
+                guard let data = fileSystem.readFile(at: isoPath) else {
                     throw FSTErrors.fileNotFound(isoPath, .init())
                 }
                 let dolphinEngine = try DolphinEngine(from: dolphinEnginePath, in: fileSystem)

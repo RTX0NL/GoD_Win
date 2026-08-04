@@ -28,7 +28,7 @@ final class SpyOperationHandler: OperationHandler {
         if let error = errorToThrow { throw error }
     }
 
-    func gamecubeDump(config: Gamecube.DumpConfig, settings: GoddessSettings, fileSystem: StreamedFileSystem, logger: Logger) throws {
+    func gamecubeDump(config: Gamecube.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try record(.gamecubeDump(config: config), settings)
     }
 

@@ -59,7 +59,9 @@ public struct FolderMetaData {
 /// are already in memory, streamed off disk, or decrypted on demand is the
 /// tree's business, not the caller's — `StreamedFileSystem` returns a source
 /// that never materializes unless asked, and nothing downstream has to know.
-/// Callers that genuinely need the whole file say so with `.allData`.
+/// Callers that genuinely need the whole file say so with `.allData`. Writes
+/// take a `GoDReadable` for the same reason, so copying a disc image from one
+/// tree to another never has to hold it.
 /// Sizing and resizing stay here: they are file-system operations rather than
 /// ways of interpreting bytes, and padding a disc image to capacity through
 /// `readFile`/`writeFile` would move gigabytes to append zeros where
@@ -68,7 +70,7 @@ public protocol FileSystemTree {
     func inspectFile(at path: File) -> FileMetaData?
     func readFile(at path: File) -> GoDReadable?
     func moveFile(at path: File, to newPath: File, overwrite: Bool) throws
-    func writeFile(_ file: GoDData, at path: File, overwrite: Bool) throws
+    func writeFile(_ file: GoDReadable, at path: File, overwrite: Bool) throws
     func deleteFile(at path: File) throws
 
     func inspectFolder(at path: Folder) -> FolderMetaData?

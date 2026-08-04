@@ -6,7 +6,7 @@ import GoDFoundation
 public final class WiiDecryptedPartitionView: GoDReadable {
     public let byteOrder: ByteOrder = .big
 
-    private let encryptedData: GoDData
+    private let encryptedData: GoDReadable
     private let partitionDataStart: Int
     private let titleKey: [UInt8]
     private let groupSize: Int
@@ -19,7 +19,7 @@ public final class WiiDecryptedPartitionView: GoDReadable {
     private let maxCacheSize = 64
 
     public init(
-        encryptedData: GoDData,
+        encryptedData: GoDReadable,
         partitionDataStart: Int,
         dataSize: Int,
         titleKey: [UInt8],

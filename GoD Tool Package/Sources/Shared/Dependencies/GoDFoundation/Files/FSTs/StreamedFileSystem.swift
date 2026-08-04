@@ -54,22 +54,6 @@ public final class StreamedFileSystem: FileSystemTree {
         self.disk = nil
     }
 
-    /// Opens `path` for windowed reading.
-    ///
-    /// The result is a `GoDReadable` because the caller shouldn't care which
-    /// it got: a `GoDStreamedData` when the file is really on disk, the
-    /// allData bytes otherwise. Both answer `read(atAddress:length:)`
-    /// identically, including returning nil past the end.
-    public func streamFile(at path: File) -> GoDReadable? {
-        guard let disk else { return backing.readFile(at: path) }
-        if let streamed = try? GoDStreamedData(file: disk.extendPath(path)) {
-            return streamed
-        }
-        // The file may not exist, or may not be openable; either way the
-        // whole-file read gives the same answer the caller would have got.
-        return backing.readFile(at: path)
-    }
-
     /// Moves the backing file system's current directory.
     ///
     /// Only the on-disk tree has such a concept — in-memory trees resolve
@@ -88,15 +72,26 @@ public final class StreamedFileSystem: FileSystemTree {
         backing.inspectFile(at: path)
     }
 
+    /// Opens the file rather than reading it.
+    ///
+    /// This is the whole type: a caller writes `readFile` and gets back
+    /// something that reads windows off disk instead of a buffer, without
+    /// asking for it or knowing it happened. A tree with no real file behind
+    /// it falls back to the backing read, which is the same answer by a more
+    /// expensive route.
     public func readFile(at path: File) -> GoDReadable? {
-        backing.readFile(at: path)
+        guard let disk else { return backing.readFile(at: path) }
+        if let streamed = try? GoDStreamedData(file: disk.extendPath(path)) {
+            return streamed
+        }
+        return backing.readFile(at: path)
     }
 
     public func moveFile(at path: File, to newPath: File, overwrite: Bool) throws {
         try backing.moveFile(at: path, to: newPath, overwrite: overwrite)
     }
 
-    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) throws {
+    public func writeFile(_ file: GoDReadable, at path: File, overwrite: Bool) throws {
         try backing.writeFile(file, at: path, overwrite: overwrite)
     }
 

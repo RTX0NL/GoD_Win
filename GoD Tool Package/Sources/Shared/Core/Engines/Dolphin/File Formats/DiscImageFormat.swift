@@ -32,17 +32,29 @@ public enum DiscImageFormat: Equatable {
 
     /// Inspect the first 0x400 bytes and return the detected format.
     /// Returns `.unknown` if no signature matches.
-    public static func detect(in binary: GoDData) -> DiscImageFormat {
-        binary.setByteOrder(.big)
+    /// Identifies a disc image from its first 0x400 bytes.
+    ///
+    /// Takes a `GoDReadable` so setup can sniff a 4.7 GB image without
+    /// loading it — every probe here is a handful of bytes near the front.
+    public static func detect(in binary: GoDReadable) -> DiscImageFormat {
+        guard binary.byteOrder == .big else { return .unknown }
         guard binary.length >= 0x400 else { return .unknown }
 
         // 1. Compressed-format magic at file offset 0.
         if let head = binary.read(atAddress: 0, length: 4)?.rawBytes {
             if head == [0x43, 0x49, 0x53, 0x4F] {  // "CISO"
-                // Disambiguate from PSP CSO via the block-size at 0x04.
-                binary.setByteOrder(.little)
-                let blockSize: UInt32 = binary.readSafely(atAddress: 4)
-                binary.setByteOrder(.big)
+                // Disambiguate from PSP CSO via the block-size at 0x04,
+                // which CISO stores little-endian. Assembled by hand rather
+                // than by flipping the source's byte order — that mutated a
+                // buffer the caller owned, and a streamed source has no order
+                // to flip.
+                guard let sizeBytes = binary.read(atAddress: 4, length: 4)?.rawBytes else {
+                    return .unknown
+                }
+                let blockSize = UInt32(sizeBytes[0])
+                    | UInt32(sizeBytes[1]) << 8
+                    | UInt32(sizeBytes[2]) << 16
+                    | UInt32(sizeBytes[3]) << 24
                 if blockSize >= 0x8000 {
                     return .ciso
                 }
@@ -79,7 +91,7 @@ public enum DiscImageFormat: Equatable {
     /// Wii disc. NKit doesn't rewrite those bytes (apart from the
     /// encryption/hash flags at 0x60/0x61), so we can trust the
     /// original disc magic.
-    private static func isWiiDisc(_ binary: GoDData) -> Bool {
+    private static func isWiiDisc(_ binary: GoDReadable) -> Bool {
         let wiiMagic: UInt32 = binary.readSafely(atAddress: 0x18)
         return wiiMagic == 0x5D1C_9EA3
     }

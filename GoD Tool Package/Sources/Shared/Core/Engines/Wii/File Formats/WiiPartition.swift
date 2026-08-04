@@ -35,8 +35,12 @@ public final class WiiPartition: FileSystemTree {
     public func inspectFile(at path: File) -> FileMetaData? { fst.inspectFile(at: path) }
     public func readFile(at path: File) -> GoDReadable? { fst.readFile(at: path) }
     public func moveFile(at path: File, to newPath: File, overwrite: Bool) throws { try fst.moveFile(at: path, to: newPath, overwrite: overwrite) }
-    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) throws {
-        file.setByteOrder(.big)
+    /// Disc contents are big-endian, but forcing that on the way in used to
+    /// mean mutating the caller's object as a side effect of storing it —
+    /// and a source that streams has no byte order to set. The source keeps
+    /// whatever order it declares; the parsers that read it back state their
+    /// own.
+    public func writeFile(_ file: GoDReadable, at path: File, overwrite: Bool) throws {
         try fst.writeFile(file, at: path, overwrite: overwrite)
     }
     public func deleteFile(at path: File) throws { try fst.deleteFile(at: path) }
@@ -50,7 +54,7 @@ public final class WiiPartition: FileSystemTree {
     /// Parse and decrypt a partition from raw ISO data.
     /// Uses lazy decryption — groups are only decrypted when their data is accessed.
     public init(
-        data: GoDData,
+        data: GoDReadable,
         partitionOffset: Int,
         partitionType: Int,
         commonKey: [UInt8],
@@ -61,7 +65,8 @@ public final class WiiPartition: FileSystemTree {
         self.wiiEngine = wiiEngine
         self.dolphinEngine = dolphinEngine
         self.type = partitionType
-        data.setByteOrder(.big)
+        // `WiiISO` already rejected a non-big-endian disc; nothing else
+        // constructs a partition from a foreign source.
 
         let partFiles = wiiEngine.data.partitionFiles
         let partTypeName = partitionType < Self.partitionTypeNames.count ? Self.partitionTypeNames[partitionType] : "PARTITION_\(partitionType)"

@@ -21,7 +21,10 @@ extension WiiOps {
 
                 let wiiEngine = try WiiEngine(from: wiiEnginePath, in: fileSystem)
                 let dolphinEngine = try DolphinEngine(from: dolphinEnginePath, in: fileSystem)
-                guard let data = fileSystem.readFile(at: isoPath)?.allData else {
+                // No `.allData`: `WiiISO` reads the header, the partition table
+                // and then decrypted groups on demand, so a 4.7 GB image never
+                // has to be resident.
+                guard let data = fileSystem.readFile(at: isoPath) else {
                     throw FSTErrors.fileNotFound(isoPath, .init())
                 }
 

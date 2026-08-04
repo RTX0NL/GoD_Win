@@ -161,14 +161,13 @@ final class GoDStreamedDataTests: XCTestCase {
 
     // MARK: - The file system that hands one out
 
-    /// `StreamedFileSystem` over a real on-disk tree opens the file rather
-    /// than reading it. If it fell back, the streaming would silently never
+    /// `StreamedFileSystem.readFile` opens the file rather than reading it. If it fell back, the streaming would silently never
     /// happen and only a 1.4 GB disc would show it.
-    func testStreamedFileSystemOpensRatherThanReads() throws {
+    func testReadFileOpensRatherThanReads() throws {
         let url = scratch.appendingPathComponent("disc.bin")
         try Data(sequence(2048)).write(to: url)
         let fs = StreamedFileSystem()
-        let opened = fs.streamFile(at: File(nativePath: url.path))
+        let opened = fs.readFile(at: File(nativePath: url.path))
         XCTAssertTrue(opened is GoDStreamedData, "expected a streamed read")
         XCTAssertEqual(opened?.read(atAddress: 1000, length: 4)?.rawBytes, Array(sequence(2048)[1000..<1004]))
     }
@@ -181,15 +180,15 @@ final class GoDStreamedDataTests: XCTestCase {
         try backing.writeFile(GoDData(byteStream: sequence(32), byteOrder: .big), at: file, overwrite: true)
 
         let fs = StreamedFileSystem(materializing: backing)
-        let opened = try XCTUnwrap(fs.streamFile(at: file))
+        let opened = try XCTUnwrap(fs.readFile(at: file))
         XCTAssertFalse(opened is GoDStreamedData, "nothing to stream from an in-memory tree")
         XCTAssertEqual(opened.read(atAddress: 8, length: 4)?.rawBytes, Array(sequence(32)[8..<12]))
     }
 
     /// A missing file is nil, not a trap — same answer either read would give.
     func testStreamingAMissingFileIsNil() {
-        XCTAssertNil(StreamedFileSystem().streamFile(at: File(nativePath: scratch.appendingPathComponent("nope").path)))
-        XCTAssertNil(StreamedFileSystem(materializing: InMemoryFST()).streamFile(at: File("/nope")))
+        XCTAssertNil(StreamedFileSystem().readFile(at: File(nativePath: scratch.appendingPathComponent("nope").path)))
+        XCTAssertNil(StreamedFileSystem(materializing: InMemoryFST()).readFile(at: File("/nope")))
     }
 
     /// Writes, metadata and folder work go straight through: this is the same

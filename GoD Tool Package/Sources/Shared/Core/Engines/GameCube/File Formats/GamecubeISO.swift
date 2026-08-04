@@ -33,8 +33,12 @@ public final class GamecubeISO: FileSystemTree {
         try fst.moveFile(at: path, to: newPath, overwrite: overwrite)
     }
     
-    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) throws {
-        file.setByteOrder(.big)
+    /// Disc contents are big-endian, but forcing that on the way in used to
+    /// mean mutating the caller's object as a side effect of storing it —
+    /// and a source that streams has no byte order to set. The source keeps
+    /// whatever order it declares; the parsers that read it back state their
+    /// own.
+    public func writeFile(_ file: GoDReadable, at path: File, overwrite: Bool) throws {
         try fst.writeFile(file, at: path, overwrite: overwrite)
     }
     

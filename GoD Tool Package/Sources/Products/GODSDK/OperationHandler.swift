@@ -14,7 +14,7 @@ import Foundation
 import GoDFoundation
 
 protocol OperationHandler {
-    func gamecubeDump(config: Gamecube.DumpConfig, settings: GoddessSettings, fileSystem: StreamedFileSystem, logger: Logger) throws
+    func gamecubeDump(config: Gamecube.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func gamecubeBuild(config: Gamecube.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func wiiDump(config: WiiOps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func wiiBuild(config: WiiOps.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
@@ -44,7 +44,7 @@ protocol OperationHandler {
 
 /// Production handler: forwards each operation to its engine wrapper.
 struct EngineOperationHandler: OperationHandler {
-    func gamecubeDump(config: Gamecube.DumpConfig, settings: GoddessSettings, fileSystem: StreamedFileSystem, logger: Logger) throws {
+    func gamecubeDump(config: Gamecube.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try Gamecube.dump(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
     }
 

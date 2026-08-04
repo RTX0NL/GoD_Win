@@ -44,3 +44,43 @@ enum FileHandleAccess {
         }
     }
 }
+
+extension FileHandleAccess {
+
+    /// Size of each read/write hop when copying a source to disk. Big enough
+    /// that the syscall overhead is noise against a 4.7 GB disc image, small
+    /// enough that peak memory doesn't track the file.
+    static let copyChunkSize = 8 << 20   // 8 MB
+
+    /// Writes `source` to `url`, a chunk at a time.
+    ///
+    /// The point is that a `GoDStreamedData` never becomes a buffer: bytes go
+    /// window by window from one file to the other, so copying a disc image
+    /// into a project costs 8 MB rather than its own size. A `GoDData` source
+    /// takes the same path — the slices it hands back are cheap, and one code
+    /// path means the streamed case can't rot.
+    static func write(_ source: GoDReadable, to url: URL) throws {
+        let file = File(nativePath: url.path)
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        guard let handle = try? FileHandle(forWritingTo: url) else {
+            throw FSTErrors.failedToWriteFile(file, .init())
+        }
+        defer { try? handle.close() }
+        do {
+            try handle.truncate(atOffset: 0)
+            var offset = 0
+            while offset < source.length {
+                let count = min(copyChunkSize, source.length - offset)
+                guard let chunk = source.read(atAddress: offset, length: count) else {
+                    throw FSTErrors.failedToWriteFile(file, .init())
+                }
+                try handle.write(contentsOf: chunk.data)
+                offset += count
+            }
+        } catch let error as FSTErrors {
+            throw error
+        } catch {
+            throw FSTErrors.failedToWriteFile(file, .init())
+        }
+    }
+}

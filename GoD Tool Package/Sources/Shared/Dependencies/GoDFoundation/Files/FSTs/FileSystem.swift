@@ -67,7 +67,7 @@ public class FileSystem: FileSystemTree {
         }
     }
 
-    public func writeFile(_ file: GoDData, at path: File, overwrite: Bool) throws {
+    public func writeFile(_ file: GoDReadable, at path: File, overwrite: Bool) throws {
         let fullPath = extendPath(path)
         guard let parentFolder = fullPath.parentFolder else {
             throw FSTErrors.invalidPath(fullPath.path, .init())
@@ -79,7 +79,9 @@ public class FileSystem: FileSystemTree {
             throw FSTErrors.itemExists(fullPath.path, .init())
         }
         do {
-            try file.data.write(to: fullPath.url)
+            try FileHandleAccess.write(file, to: fullPath.url)
+        } catch let error as FSTErrors {
+            throw error
         } catch {
             throw FSTErrors.failedToWriteFile(fullPath, .init())
         }

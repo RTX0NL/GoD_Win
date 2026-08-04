@@ -11,7 +11,9 @@ import Pokemon
 
 enum Project {
     static func setup(iso isoInputFile: File) throws {
-        try setup(iso: isoInputFile, fileSystem: FileSystem.shared)
+        // Streamed: setup reads a few headers out of the disc image and then
+        // copies it, neither of which needs it resident.
+        try setup(iso: isoInputFile, fileSystem: StreamedFileSystem())
     }
 
     /// Testable seam: same as `setup(iso:)` but over any `FileSystemTree`,
@@ -29,7 +31,7 @@ enum Project {
         let settingsFolder = Folder("/Settings")
         let enginesFolder = Folder("/Engines")
 
-        guard let rawInput = fileSystem.readFile(at: isoInputFile)?.allData else {
+        guard let rawInput = fileSystem.readFile(at: isoInputFile) else {
             throw ProjectSetupErrors.isoNotFound(isoInputFile, .init())
         }
 
@@ -37,16 +39,24 @@ enum Project {
         // the rest of setup runs. This lets a user drop a `.ciso` /
         // `.nkit.iso` / `.rvz` at the same entry point as a raw ISO.
         let detected = DiscImageFormat.detect(in: rawInput)
-        let isoData: GoDData
+        // A raw image stays a readable and is never held; the converters
+        // decompress, so those two branches genuinely produce a buffer.
+        let isoData: GoDReadable
         switch detected {
         case .gamecubeISO, .wiiISO, .unknown:
             // Unknown falls through as "treat as raw ISO" — the game-ID
             // read below will fail with a useful error if it isn't.
             isoData = rawInput
         case .ciso:
-            isoData = try CISOConverter.dump(ciso: rawInput)
+            guard let whole = rawInput.allData else {
+                throw ProjectSetupErrors.isoNotFound(isoInputFile, .init())
+            }
+            isoData = try CISOConverter.dump(ciso: whole)
         case .nkitGC:
-            isoData = try NKitGCConverter.dump(nkit: rawInput)
+            guard let whole = rawInput.allData else {
+                throw ProjectSetupErrors.isoNotFound(isoInputFile, .init())
+            }
+            isoData = try NKitGCConverter.dump(nkit: whole)
         case .nkitWii, .wiaOrRVZ:
             // Format detected but the decoder isn't wired up yet. Fail
             // loudly rather than trying to parse the compressed bytes
@@ -56,7 +66,6 @@ enum Project {
             )
         }
 
-        isoData.setByteOrder(.big)
         guard let gameID = isoData.readString(atAddress: 0, format: .utf8, maxCharacters: 4) else {
             throw ProjectSetupErrors.invalidGameID(.init())
         }
@@ -87,7 +96,6 @@ enum Project {
             return isoInputFile.fileName.withoutExtensions + ".iso"
         }()
         let isoOutputFile = isoFolder.file(outputFilename)
-        try projectFileSystem.writeFile(isoData, at: isoOutputFile, overwrite: false)
 
         var settings = GoddessSettings.default
         if isWii {
@@ -662,6 +670,17 @@ enum Project {
         let projectFolder = Folder(isoInputFile.path.withoutExtensions + " project")
         try fileSystem.createFolder(at: projectFolder, overwrite: false)
         try fileSystem.importFST(projectFileSystem, from: Folder("/"), to: projectFolder, overwrite: false)
+
+        // The disc image is copied straight into the finished project rather
+        // than staged in `projectFileSystem`, which is an `InMemoryFST` — a
+        // 4.7 GB image put there would be resident for the whole of setup and
+        // then copied again on the way out. `writeFile` takes a `GoDReadable`,
+        // so this streams from the source file to the destination.
+        try fileSystem.writeFile(
+            isoData,
+            at: projectFolder.file(isoOutputFile.path),
+            overwrite: false
+        )
 
         try LauncherScript.write(
             for: [buildConfigFile, dumpConfigFile],
