@@ -266,10 +266,26 @@ enum Project {
                                 operations: [
                                     OperationConfig(
                                         operation: .dumpPBR(
-                                            fstFolder: contentsFolder.prefixed("."),
+                                            // Wii game files live in the DATA
+                                            // partition, so the FSYS root is
+                                            // Contents/DATA (not Contents).
+                                            fstFolder: contentsFolder.folder("DATA").prefixed("."),
                                             outputFolder: unpackedFolder.prefixed("."),
                                             overwrite: false,
                                             dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
+                                            geniusSonorityEngine: enginesFolder.folder(gsEngine.name).prefixed(".")
+                                        ),
+                                        enabled: .yes
+                                    ),
+                                    // Type common.fsys's data tables into
+                                    // editable JSON + CSV using the PBR engine.
+                                    OperationConfig(
+                                        operation: .dumpCommonTables(
+                                            fstFolder: contentsFolder.folder("DATA").prefixed("."),
+                                            outputFolder: unpackedFolder.folder("Data").folder("Common").prefixed("."),
+                                            overwrite: false,
+                                            japanese: PokemonBattleRevolution.usesJapaneseTableOrder(gameID: gameID),
+                                            pbrEngine: enginesFolder.folder(PBREngine.defaultName).prefixed("."),
                                             geniusSonorityEngine: enginesFolder.folder(gsEngine.name).prefixed(".")
                                         ),
                                         enabled: .yes

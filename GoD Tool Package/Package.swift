@@ -222,7 +222,9 @@ let package = Package(
         .target(
             name: "PBR",
             dependencies: [
+                "GoDEngine",
                 "GoDFoundation",
+                "Structs",
                 "Wii",
                 "Pokemon"
             ],
@@ -394,6 +396,10 @@ let package = Package(
             name: "XDTests",
             dependencies: ["XD", "GoDFoundation"],
             path: "Tests/Shared Tests/Engine Tests/XD Tests"),
+        .testTarget(
+            name: "PBRTests",
+            dependencies: ["PBR", "GeniusSonority", "GoDEngine", "GoDFoundation", "Structs"],
+            path: "Tests/Shared Tests/Engine Tests/PBR Tests"),
         .testTarget(
             name: "GODOpsTests",
             dependencies: [
