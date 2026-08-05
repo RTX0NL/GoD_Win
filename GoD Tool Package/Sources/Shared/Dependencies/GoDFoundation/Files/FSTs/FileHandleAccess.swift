@@ -7,19 +7,53 @@
 //  Everything here goes through Foundation, not raw syscalls, so it carries
 //  Foundation's portability rather than POSIX's: `truncate(atOffset:)` reaches
 //  `ftruncate` on Darwin and Linux and `SetEndOfFile` on Windows, and WASI
-//  exposes the same operations if Foundation is wired to it. The one thing to
-//  watch on swift-corelibs-foundation is `attributesOfItem`, whose value
-//  boxing has differed from Darwin — a failed `as? Int` there reads as "file
-//  missing" rather than as an error.
+//  exposes the same operations if Foundation is wired to it.
+//
+//  The one place that isn't uniform is measuring a file, so `fileSize` has two
+//  implementations — see it for why.
 //
 
 import Foundation
 
 enum FileHandleAccess {
 
+    /// Size of the file in bytes, or nil if there isn't a regular file there.
+    ///
+    /// Two implementations because the portable-looking one isn't.
+    /// `attributesOfItem` returns `[FileAttributeKey: Any]`, and Darwin and
+    /// swift-corelibs-foundation have not always boxed the `.size` value the
+    /// same way; where the `as? Int` fails, this returns nil, and every caller
+    /// reads nil as "no file". `GoDStreamedData.init` would then throw
+    /// *file not found* for a file that plainly exists — a wrong answer
+    /// wearing the wrong error.
+    ///
+    /// Seeking to the end asks the file itself and returns a `UInt64`, so
+    /// there is no boxing to disagree about. It costs an open, which is why
+    /// Darwin — where the attribute lookup is known-good — keeps it.
     static func fileSize(at url: URL) -> Int? {
         guard isRegularFile(url) else { return nil }
-        return (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? Int
+        #if canImport(Darwin)
+        return attributeFileSize(at: url)
+        #else
+        return seekFileSize(at: url)
+        #endif
+    }
+
+    /// Cheap: no file descriptor. Depends on how Foundation boxes the value.
+    /// Not `private` so the tests can hold it against `seekFileSize`.
+    static func attributeFileSize(at url: URL) -> Int? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? Int
+    }
+
+    /// Costs an open, answers in a concrete type. `Int(exactly:)` rather than
+    /// `Int(_:)` so a file larger than `Int.max` — impossible on a 64-bit
+    /// host, reachable on wasm32 where `Int` is 32 bits — reports "can't
+    /// measure this" instead of trapping.
+    static func seekFileSize(at url: URL) -> Int? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let end = try? handle.seekToEnd() else { return nil }
+        return Int(exactly: end)
     }
 
     static func isRegularFile(_ url: URL) -> Bool {
