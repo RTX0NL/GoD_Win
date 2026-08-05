@@ -126,6 +126,52 @@ extension GeniusSonorityEngine.Data {
         /// Checked before all other routing for exact filename matches.
         public internal(set) var archiveFileOverrides: [String: [String: Folder]] = [:]
 
+        // MARK: - Per-archive subfolder routing (PBR)
+
+        /// Routes an entire FSYS archive's contents into a per-archive
+        /// subfolder — used where one archive is a self-contained set (a
+        /// Pokémon model, a move effect, a battlefield) that should stay
+        /// grouped rather than scattered by file type.
+        public struct ArchiveSubfolderRoute: Codable, Equatable {
+            /// Archive-name prefix that selects this route (e.g. `pkx_`).
+            public var matchPrefix: String
+            /// Folder the per-archive subfolder is created under.
+            public var baseFolder: Folder
+            /// Prefix removed from the archive name to name the subfolder,
+            /// so `pkx_025` with `stripPrefix: "pkx_"` becomes `025`. Nil
+            /// keeps the whole archive name.
+            public var stripPrefix: String?
+
+            public init(matchPrefix: String, baseFolder: Folder, stripPrefix: String?) {
+                self.matchPrefix = matchPrefix
+                self.baseFolder = baseFolder
+                self.stripPrefix = stripPrefix
+            }
+        }
+
+        /// Per-archive subfolder routes, checked before type-based routing.
+        /// Optional so existing serialized Colo/XD engines still decode.
+        public internal(set) var archiveSubfolderRoutes: [ArchiveSubfolderRoute]? = nil
+
+        /// Entry filename the game writes for unnamed entries (PBR uses
+        /// `(null)` for every entry). When an entry carries this name it's
+        /// treated as unnamed, so the project name comes from the archive
+        /// and the entry's index instead. Optional for back-compatible decode.
+        public internal(set) var scrubbedFilenamePlaceholder: String? = nil
+
+        // MARK: - Message language routing (PBR)
+
+        /// When set, MSG entries route to `<base>/<language>` using the
+        /// language code embedded in the message binary rather than the
+        /// category-based `msg*Folder` routing. PBR's MESG header stores a
+        /// 4-char code at +0x0C (e.g. `USUK`); Colo/XD leave this nil and keep
+        /// their category routing.
+        public internal(set) var messagesLanguageBaseFolder: Folder? = nil
+
+        /// Maps a message-binary language code to its folder name, e.g.
+        /// `["USUK": "English"]`. An unmapped code falls back to the raw code.
+        public internal(set) var messagesLanguageCodes: [String: String]? = nil
+
         // MARK: - Default File Type Folders
 
         public static let defaultFileTypeFolders: [String: Folder] = [
@@ -153,6 +199,38 @@ extension GeniusSonorityEngine.Data {
             "gpt1": "/Assets/Models/Particles",
             "rel":  "/Data/Relocatable Modules",
             "drel": "/Data/Relocatable Modules",
+        ]
+
+        /// PBR uses a different FileTypes namespace, so it gets its own
+        /// type→folder defaults. Model archives (pkx/trainers) and effect
+        /// archives (wzx_waza) are grouped per-archive by `archiveSubfolderRoutes`
+        /// before these apply; these catch standalone entries and the
+        /// non-grouped archives (menus, decks, text).
+        public static let defaultPBRFileTypeFolders: [String: Folder] = [
+            "sdr":  "/Assets/Models/Characters",
+            "odr":  "/Assets/Models/Objects",
+            "mdr":  "/Assets/Models/Materials",
+            "gpd":  "/Assets/Effects/Particles",
+            "gfl":  "/Assets/Effects/Lighting",
+            "efsq": "/Assets/Effects",
+            "gtx":  "/Assets/Images/Misc",
+            "scd":  "/Assets/Scripts",
+            "msg":  "/Data/Text/Messages",
+            "fnt":  "/Data/Text/Fonts",
+            "mnr":  "/Assets/Menus",
+            "thh":  "/Assets/Videos",
+            "thd":  "/Assets/Videos",
+            "dckp": "/Data/Decks/Pokemon",
+            "dckt": "/Data/Decks/Trainer",
+            "dcka": "/Data/Decks/AI",
+            "bin":  "/Assets/Misc",
+            // Loose (non-FSYS) disc files under files/: PBR streams music as
+            // standalone .brstm rather than packing it, plus a few DS-style
+            // archives and Home-menu resources.
+            "brstm": "/Assets/Sounds/Streamed",
+            "brsar": "/Assets/Sounds",
+            "narc":  "/Assets/Archives",
+            "arc":   "/Assets/Archives",
         ]
     }
 }

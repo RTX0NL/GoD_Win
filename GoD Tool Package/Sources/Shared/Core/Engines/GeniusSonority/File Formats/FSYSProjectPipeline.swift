@@ -71,23 +71,36 @@ public extension GeniusSonorityEngine {
             thdStemsPaired.insert(entry.metadata.name)
         }
 
-        for entry in archive.entries {
-            let targetFolder = self.resolveFolder(
-                forFileType: entry.metadata.fileType,
+        for (entryIndex, entry) in archive.entries.enumerated() {
+            let fileType = entry.metadata.fileType
+
+            var targetFolder = self.resolveFolder(
+                forFileType: fileType,
                 entryFilename: entry.filename,
                 archiveName: archiveName
             ).resolvedFolder
 
-            let fileType = entry.metadata.fileType
+            // PBR sorts messages into per-language folders read from the MESG
+            // binary itself; nil (Colo/XD) keeps the category routing above.
+            if fileType == "msg", let langFolder = self.messageLanguageFolder(forMessageData: entry.data) {
+                targetFolder = langFolder
+            }
+            // Unnamed (PBR `(null)`) entries are named by archive + index;
+            // Colo/XD keep their derived pretty filename.
+            let projectName = self.projectFilename(
+                forEntryNamed: entry.metadata.name,
+                filename: entry.filename,
+                index: entryIndex,
+                archiveName: archiveName
+            )
 
             // THH half of a paired video — combine with its THD sibling
             // and emit a single `.thp`.
             if fileType == "thh" && thhStemsPaired.contains(entry.metadata.name),
                let thd = thdByStem[entry.metadata.name] {
-                let thpName = entry.metadata.name + ".thp"
-                let thpFile = targetFolder.file(thpName)
+                let thpFile = targetFolder.file(projectName.withoutExtensions + ".thp")
                 do {
-                    let thp = try THPFile(thh: entry.data, thd: thd.data, name: entry.metadata.name)
+                    let thp = try THPFile(thh: entry.data, thd: thd.data, name: projectName.withoutExtensions)
                     entries.append(.init(
                         metadata: entry.metadata,
                         file: thpFile,
@@ -96,7 +109,7 @@ public extension GeniusSonorityEngine {
                     extractedFiles.append((file: thpFile, data: thp.combined))
                 } catch {
                     // Fall back to extracting the THH raw if pairing failed.
-                    let targetFile = targetFolder.file(entry.filename)
+                    let targetFile = targetFolder.file(projectName)
                     entries.append(.init(metadata: entry.metadata, file: targetFile))
                     extractedFiles.append((file: targetFile, data: entry.data))
                 }
@@ -111,27 +124,27 @@ public extension GeniusSonorityEngine {
                 let texMeta = textureDecoder.parseHeader(data: entry.data)
                 if let image = textureDecoder.decode(data: entry.data),
                    let pngData = image.pngData() {
-                    let pngFile = targetFolder.file(entry.filename.withoutExtensions + ".png")
+                    let pngFile = targetFolder.file(projectName.withoutExtensions + ".png")
                     entries.append(.init(metadata: entry.metadata, file: pngFile, textureMetadata: texMeta))
                     extractedFiles.append((file: pngFile, data: pngData))
                 } else {
-                    let targetFile = targetFolder.file(entry.filename)
+                    let targetFile = targetFolder.file(projectName)
                     entries.append(.init(metadata: entry.metadata, file: targetFile, textureMetadata: texMeta))
                     extractedFiles.append((file: targetFile, data: entry.data))
                 }
             } else if fileType == "atx" {
                 if let (image, atxMeta) = textureDecoder.decodeATX(data: entry.data),
                    let pngData = image.pngData() {
-                    let pngFile = targetFolder.file(entry.filename.withoutExtensions + ".png")
+                    let pngFile = targetFolder.file(projectName.withoutExtensions + ".png")
                     entries.append(.init(metadata: entry.metadata, file: pngFile, atxMetadata: atxMeta))
                     extractedFiles.append((file: pngFile, data: pngData))
                 } else {
-                    let targetFile = targetFolder.file(entry.filename)
+                    let targetFile = targetFolder.file(projectName)
                     entries.append(.init(metadata: entry.metadata, file: targetFile))
                     extractedFiles.append((file: targetFile, data: entry.data))
                 }
             } else {
-                let targetFile = targetFolder.file(entry.filename)
+                let targetFile = targetFolder.file(projectName)
                 entries.append(.init(metadata: entry.metadata, file: targetFile))
                 extractedFiles.append((file: targetFile, data: entry.data))
             }

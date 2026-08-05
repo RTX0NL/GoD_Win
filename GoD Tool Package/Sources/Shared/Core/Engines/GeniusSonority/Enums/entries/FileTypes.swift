@@ -39,9 +39,14 @@ extension GeniusSonorityEngine.Enums.Defaults {
         propertyType: .uint8
     )
     
+    /// `allowUnknownCases` matches the ColoXD enum: real PBR archives carry
+    /// values this list doesn't name (e.g. 0x00, seen 23× in menus/mes_common),
+    /// which round-trip as `FileTypes_<raw>` rather than collapsing to type 0.
+    /// 0x14 = `efsq` (effect sequence) is confirmed by its `EFSQ` magic and the
+    /// 39 entries across `wzx_waza`/`wzx_btlintro`.
     static let fileTypesPBREnum = Enum(
         name: "FileTypes",
-        allowUnknownCases: false,
+        allowUnknownCases: true,
         values: [
             .init(name: "bin", rawValue: 0x02),
             .init(name: "sdr", rawValue: 0x04),
@@ -50,6 +55,7 @@ extension GeniusSonorityEngine.Enums.Defaults {
             .init(name: "gpd", rawValue: 0x0a),
             .init(name: "gtx", rawValue: 0x0c),
             .init(name: "scd", rawValue: 0x12),
+            .init(name: "efsq", rawValue: 0x14),
             .init(name: "fnt", rawValue: 0x16),
             .init(name: "msg", rawValue: 0x18),
             .init(name: "mnr", rawValue: 0x1a),
