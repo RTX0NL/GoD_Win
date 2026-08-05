@@ -12,6 +12,8 @@ import Foundation
 import GoDFoundation
 import Dolphin
 import Disassembler
+import GoDEngine
+import Structs
 @testable import GODOps
 
 /// Trivial registry format for tests: the artifact is the binary with
@@ -112,22 +114,33 @@ final class DolOperationTests: XCTestCase {
         in fst: InMemoryFST,
         dolphinFolder: Folder,
         typeMapPath: File? = nil,
-        registry: FileFormatRegistry = .all()
+        engines: [Folder]? = nil,
+        registry: FileFormatRegistry = .all(),
+        logger: Logger = SilentLogger()
     ) throws {
         let config = DolDisassembly.Config(
             dolPath: File("/project/main.dol"),
             outputFolder: Folder("/project/Disassembly"),
             dolphinEngine: dolphinFolder,
-            typeMapPath: typeMapPath
+            typeMapPath: typeMapPath,
+            engines: engines
         )
-        try DolDisassembly.disassemble(config: config, settings: .default, fileSystem: fst, logger: SilentLogger(), registry: registry)
+        try DolDisassembly.disassemble(config: config, settings: .default, fileSystem: fst, logger: logger, registry: registry)
     }
 
-    private func assemble(in fst: InMemoryFST, dolphinFolder: Folder, registry: FileFormatRegistry = .all()) throws {
+    private func assemble(
+        in fst: InMemoryFST,
+        dolphinFolder: Folder,
+        typeMapPath: File? = nil,
+        engines: [Folder]? = nil,
+        registry: FileFormatRegistry = .all()
+    ) throws {
         let config = DolAssembly.Config(
             codeFolder: Folder("/project/Disassembly/main"),
             outputDolPath: File("/project/rebuilt.dol"),
-            dolphinEngine: dolphinFolder
+            dolphinEngine: dolphinFolder,
+            typeMapPath: typeMapPath,
+            engines: engines
         )
         try DolAssembly.assemble(config: config, settings: .default, fileSystem: fst, logger: SilentLogger(), registry: registry)
     }
@@ -409,5 +422,187 @@ final class DolOperationTests: XCTestCase {
                 return XCTFail("Expected DolAssemblyErrors.sectionsFileNotFound, got \(error)")
             }
         }
+    }
+
+    // MARK: - Typed tables (CSV)
+
+    /// Engine holding one struct with an enum-typed field and a pointer,
+    /// so a dumped table exercises abstracted values and label columns.
+    private func installTableEngine(in fst: InMemoryFST) throws -> Folder {
+        let kind = Enum(
+            name: "Kind",
+            allowUnknownCases: false,
+            values: [.init(name: "Fire", rawValue: 0), .init(name: "Water", rawValue: 1)],
+            propertyType: .uint8
+        )
+        let entry = StructMap(
+            name: "TestEntry",
+            wordSize: 4,
+            alignmentStyle: .none,
+            properties: [
+                .uint8(name: "level"),
+                .abstraction(name: "kind", typeName: "Kind"),
+                .uint16(name: "hp"),
+                .label(name: "name_pointer"),
+            ]
+        )
+        let engine = try GenericEngine(
+            data: .init(),
+            enums: .init(unchecked: [kind]),
+            structs: .init(unchecked: [entry])
+        )
+        return installEngine(engine, under: Folder("/project/Engines"), in: fst)
+    }
+
+    /// Two 8-byte `TestEntry` values at 0x80004000.
+    ///
+    /// The first entry's pointer targets the table's own start address. That
+    /// gives the label column something to resolve *and* is what mints the
+    /// label at 0x80004000 in the first place — the type map matches chunks
+    /// by label, so with nothing pointing there the section would have no
+    /// labels and the whole thing would dump as one untyped chunk.
+    private static let tableDataBytes: [UInt8] = [
+        0x05, 0x01, 0x00, 0x64, 0x80, 0x00, 0x40, 0x00,
+        0x09, 0x00, 0x00, 0xC8, 0x00, 0x00, 0x00, 0x00,
+    ]
+
+    private func writeTableTypeMap(in fst: InMemoryFST) throws -> File {
+        let typeMap = TypeMap(chunks: [
+            .table(.init(name: "TestTable", start: "lbl_80004000", entryType: "TestEntry", count: 2))
+        ])
+        let json: GoDData = try JSONEncoder().encode(typeMap)
+        let path = File("/project/table-typemap.json")
+        try fst.writeFile(json, at: path, overwrite: true)
+        return path
+    }
+
+    func testTypedTableDumpsAsCSVWithAbstractedValues() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let engineFolder = try installTableEngine(in: fst)
+        try seedDol(in: fst, engine: engine, dataBytes: Self.tableDataBytes)
+        let typeMapPath = try writeTableTypeMap(in: fst)
+
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+
+        let csv = try XCTUnwrap(
+            fst.readFile(at: File("/project/Disassembly/main/data0/TestTable.csv"))?.allData,
+            "Expected the table to dump as CSV"
+        ).string(format: .utf8)
+        let rows = csv.split(separator: "\n").map(String.init)
+
+        XCTAssertEqual(rows.first, "level,kind,hp,name_pointer")
+        // Enum reads as its case name, not its index — the point of the format.
+        XCTAssertEqual(rows[1], "5,Water,100,lbl_80004000")
+        // A null pointer keeps the auto-label form the exporter gives it
+        // (`TypedDataExporter` names every address, zero included); it
+        // resolves straight back to 0, so the bytes still round-trip.
+        XCTAssertEqual(rows[2], "9,Fire,200,lbl_00000000")
+
+        // And no JSON artifact is left behind for the table.
+        XCTAssertNil(fst.readFile(at: File("/project/Disassembly/main/data0/TestTable.json")),
+                     "Tables are CSV only")
+
+        // Entry symbols are metadata, so they live in the manifest rather
+        // than as a column — a row is the struct's fields and nothing else.
+        let manifestData = try XCTUnwrap(
+            fst.readFile(at: File("/project/Disassembly/main/data0/manifest.json"))?.allData
+        )
+        let manifest = try JSONDecoder().decode(DataSectionManifest.self, from: manifestData)
+        let chunk = try XCTUnwrap(manifest.chunks.first { $0.type == .table })
+        XCTAssertEqual(chunk.file, "TestTable.csv")
+        XCTAssertEqual(chunk.structType, "TestEntry")
+        XCTAssertEqual(chunk.count, 2)
+        XCTAssertEqual(chunk.entryLabels, ["0": "lbl_80004000"])
+    }
+
+    func testTypedTableCSVRoundTripsByteExactly() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let engineFolder = try installTableEngine(in: fst)
+        try seedDol(in: fst, engine: engine, dataBytes: Self.tableDataBytes)
+        let typeMapPath = try writeTableTypeMap(in: fst)
+
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+        try assemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+
+        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData)
+        let rebuilt = try Dol(data: rebuiltData, dolphinEngine: engine)
+        XCTAssertEqual(rebuilt.dataSections[0].data.rawBytes, Self.tableDataBytes,
+                       "The table must rebuild byte-exactly from the CSV alone")
+    }
+
+    /// An edit to a CSV cell has to reach the rebuilt DOL — otherwise the
+    /// format is decoration.
+    func testEditingACSVCellChangesTheRebuiltBytes() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let engineFolder = try installTableEngine(in: fst)
+        try seedDol(in: fst, engine: engine, dataBytes: Self.tableDataBytes)
+        let typeMapPath = try writeTableTypeMap(in: fst)
+
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+
+        let csvFile = File("/project/Disassembly/main/data0/TestTable.csv")
+        let edited = try XCTUnwrap(fst.readFile(at: csvFile)?.allData)
+            .string(format: .utf8)
+            .replacingOccurrences(of: "5,Water,100", with: "7,Fire,999")
+        try fst.writeFile(GoDData(string: edited, format: .utf8), at: csvFile, overwrite: true)
+
+        try assemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+
+        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData)
+        let rebuilt = try Dol(data: rebuiltData, dolphinEngine: engine)
+        var expected = Self.tableDataBytes
+        expected[0] = 0x07          // level
+        expected[1] = 0x00          // kind: Fire
+        expected[2] = 0x03          // hp: 999 = 0x03E7
+        expected[3] = 0xE7
+        XCTAssertEqual(rebuilt.dataSections[0].data.rawBytes, expected)
+    }
+
+    /// A struct with a label *array* must still dump as a table. The dump's
+    /// self-check compares the pointer names it recorded against the ones the
+    /// CSV gives back, and `TypedDataExporter` names only top-level `.label`
+    /// properties — so the CSV legitimately comes back with *more* names than
+    /// went in. Treating that as a round-trip failure demoted every such
+    /// table to raw binary.
+    func testTableWithALabelArrayStaysATable() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+
+        let entry = StructMap(
+            name: "PointerPair",
+            wordSize: 4,
+            alignmentStyle: .none,
+            properties: [.array(name: "pointers", count: 2, of: .label)]
+        )
+        let engineFolder = installEngine(
+            try GenericEngine(data: .init(), enums: .init(unchecked: []), structs: .init(unchecked: [entry])),
+            under: Folder("/project/Engines"),
+            in: fst
+        )
+
+        // One entry; its first pointer targets the table start, which is what
+        // mints the label the type map matches on.
+        let dataBytes: [UInt8] = [0x80, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
+        try seedDol(in: fst, engine: engine, dataBytes: dataBytes)
+
+        let typeMap = TypeMap(chunks: [
+            .table(.init(name: "Pairs", start: "lbl_80004000", entryType: "PointerPair", count: 1))
+        ])
+        let typeMapPath = File("/project/pairs-typemap.json")
+        try fst.writeFile(try JSONEncoder().encode(typeMap) as GoDData, at: typeMapPath, overwrite: true)
+
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+
+        let csv = try XCTUnwrap(
+            fst.readFile(at: File("/project/Disassembly/main/data0/Pairs.csv"))?.allData,
+            "A label array must not demote the table to a raw binary chunk"
+        ).string(format: .utf8)
+        let rows = csv.split(separator: "\n").map(String.init)
+        XCTAssertEqual(rows.first, "pointers[1],pointers[2]")
+        XCTAssertEqual(rows[1], "lbl_80004000,")
+
+        try assemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData)
+        let rebuilt = try Dol(data: rebuiltData, dolphinEngine: engine)
+        XCTAssertEqual(rebuilt.dataSections[0].data.rawBytes, dataBytes)
     }
 }

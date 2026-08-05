@@ -118,6 +118,48 @@ Each operation has its own `Config` type and is enabled/disabled via the `Operat
 | FSYS TOC | GeniusSonority (currently) | Table of contents mapping group IDs to files |
 | DOL | Dolphin | GameCube executable (text + data sections) |
 
+#### Struct tables as CSV
+
+A table of struct entries dumps as one CSV file, not JSON: a header row of
+flattened property paths, then one row per entry. `StructCSVSchema` derives the
+columns from the `StructDefinition` and is the single source of offsets for both
+directions, so a header and an offset can't disagree.
+
+| property | columns |
+|---|---|
+| scalar primitive / enum / `.label` | `name` |
+| `.subStruct` | dotted path — `base.attack` |
+| char array | one column, the whole string |
+| other array | `name[1]`…`name[n]`, **1-indexed** |
+| padding, `.primitive(.void)` | none |
+
+Values are the *abstracted* form — an enum is its case name, a bool is
+`true`/`false`, a pointer is its label name. **A raw value the enum doesn't name
+falls back to the integer**, never a synthesized `Enum_<raw>`: every cell is
+text, so a synthesized name could only be told from a real one by rebuilding the
+enum's current name. Non-finite floats are `NaN`/`Infinity`/`-Infinity`, except a
+NaN carrying a payload, which keeps its `0x`-prefixed bit pattern because the
+spelling can't carry one.
+
+Decoding builds each entry from scratch in a zeroed buffer — the CSV plus the
+definition are sufficient, nothing is read back from the original binary — and
+matches columns **by header, not position**, so a file can be reordered or
+partially filled. Absent or blank cells leave their bytes zero.
+
+Row-level metadata stays out of the file: a row is the struct's fields and
+nothing else. Per-entry symbol names ride in the section `manifest.json` as
+`entryLabels`, keyed by entry index.
+
+Two shapes deliberately don't survive, and the dump checks for both by decoding
+its own CSV back and comparing bytes before writing it (mismatch ⇒ the chunk
+demotes to a raw `.binary` chunk): a **padding run that isn't zero** (padding has
+no column, so it rebuilds as zeroes) and a **string field with bytes after its
+terminator**. Both mean the struct definition doesn't describe the data — the fix
+is to type that run as a real field, not to special-case the codec. Label fields
+are excluded from that comparison by design: their four bytes are a pointer the
+assembler re-derives, so they are zero on the way back in and *should* change
+when the layout moves; the symbol names are compared instead.
+
 #### FSYS byte-identical rebuild
 
 FSYS is a declared 1:1 target (see Philosophy). Measured against the real US
@@ -425,7 +467,7 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 - [x] ColoXD dump ops: flash menu (GSW → PNG + metadata), message (MSG → JSON)
 - [x] MSG (Colo/XD) parse + rebuild (byte-identical on FSYS-hosted MSGs; the three DOL-embedded XD MSGs re-encode +546 bytes total — writer re-derives string layout; self-consistent, and DOL shiftability tracks the growth) and JSON roundtrip via GSString pretty tokens
 - [x] FileFormat protocol + FileFormatRegistry — inject-at-use-site; builtins registers MSG, FNT, GTX, ATX, GSW; DOL/REL disassembly `.file` chunks route through it
-- [x] DOL typed data reassembly — struct/table chunk JSON decodes via `StructData(definition:json:)`, pointers resolve through `LabelTable`; JSON edits land in the built DOL; JSON is the only source for typed chunks (no `.bin` sidecars, no legacy fallback). If JSON encoding fails the dump demotes the chunk to a raw `.binary` chunk. Table dump JSON reuses StructData's encoder (arrays/sub-structs/enums/padding round-trip)
+- [x] DOL typed data reassembly — a `.struct` chunk is JSON (`StructData(definition:json:)`), a `.table` chunk is **CSV** (see "Struct tables as CSV"). Pointers resolve through `LabelTable`; edits land in the built DOL; the dumped artifact is the only source for typed chunks (no `.bin` sidecars, no legacy fallback). A chunk that can't round-trip demotes to a raw `.binary` chunk
 - [x] Colosseum script decompiler + compiler: full binary ↔ source-text round trip byte-exact on all 142 US scripts (four verified stages; `ColoScriptSourceEmitter`/`ColoScriptTextParser`/`ColoScriptCompiler`; `ColoScriptDecomp --roundtrip` + `ColoScriptRoundTripTests`). Dialect + GS code-gen conventions in `Documentation/File Formats/Shared/SCD - Script Bytecode.md`; engine-declared builtin signatures (246, int/float/bool/string only) generated into `defaultBuiltInFunctions` with reference doc `Documentation/File Formats/Colosseum/Script Builtin Functions.md`
 
 ### In Progress

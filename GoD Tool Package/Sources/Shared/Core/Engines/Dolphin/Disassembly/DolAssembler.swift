@@ -484,10 +484,10 @@ public struct DolAssembler {
         return fileSystem.readFile(at: sectionFolder.file(chunk.file))?.allData
     }
 
-    /// Decode a `.struct` or `.table` chunk's JSON and render the
-    /// imported bytes as synthetic assembly. Returns nil when the JSON
-    /// is missing, its struct type is unresolved, or decoding fails —
-    /// the caller drops the chunk with a warning.
+    /// Decode a `.struct` chunk's JSON or a `.table` chunk's CSV and render
+    /// the imported bytes as synthetic assembly. Returns nil when the file
+    /// is missing, its struct type is unresolved, or decoding fails — the
+    /// caller drops the chunk with a warning.
     private static func renderTypedChunkAssembly(
         chunk: DataSectionManifest.Chunk,
         sectionName: String,
@@ -505,7 +505,7 @@ public struct DolAssembler {
             logger?.log(.warning("Struct type '\(structType)' for chunk '\(chunk.label)' not resolved — is typeMapPath set in the config?"))
             return nil
         }
-        guard let jsonData = fileSystem.readFile(at: sectionFolder.file(chunk.file))?.allData else {
+        guard let chunkData = fileSystem.readFile(at: sectionFolder.file(chunk.file))?.allData else {
             return nil
         }
         let importer = TypedDataImporter()
@@ -513,7 +513,7 @@ public struct DolAssembler {
         switch chunk.type {
         case .struct:
             do {
-                let structData = try StructData(definition: definition, json: jsonData, byteOrder: .big)
+                let structData = try StructData(definition: definition, json: chunkData, byteOrder: .big)
                 let bytes = importer.importStruct(structData: structData, labelTable: labelTable, byteOrder: .big)
                 return (
                     name: "\(chunk.label).synthesized.s",
@@ -529,45 +529,52 @@ public struct DolAssembler {
             }
 
         case .table:
-            guard let root = try? JSONSerialization.jsonObject(with: jsonData.data) as? [String: Any],
-                  let entryDicts = root["entries"] as? [[String: Any]] else {
-                logger?.log(.warning("Table chunk '\(chunk.label)' JSON is not in the expected {structType, entries} shape"))
+            // Tables are CSV. A `.json` here is a dump from before that
+            // change — say so rather than failing to parse it as CSV.
+            guard chunk.file.hasSuffix(".csv") else {
+                logger?.log(.warning(
+                    "Table chunk '\(chunk.label)' is '\(chunk.file)', not a .csv — "
+                    + "this disassembly predates CSV tables. Re-run the disassembly to regenerate it."
+                ))
                 return nil
             }
+
+            let decoded: StructTableCSV.DecodeResult
+            do {
+                decoded = try StructTableCSV.decode(
+                    chunkData.string(format: .utf8), definition: definition, byteOrder: .big
+                )
+            } catch {
+                logger?.log(.warning("Table chunk '\(chunk.label)' failed to decode: \(error)"))
+                return nil
+            }
+            for warning in decoded.warnings {
+                logger?.log(.warning("Table '\(chunk.label)': \(warning)"))
+            }
+
             // Pad-or-truncate to the manifest's declared count so the
-            // section layout stays stable even if the JSON was
+            // section layout stays stable even if the CSV was
             // hand-edited to add/remove rows.
-            let count = chunk.count ?? entryDicts.count
-            if entryDicts.count > count {
-                logger?.log(.warning("Table '\(chunk.label)': \(entryDicts.count - count) surplus entries dropped (manifest count is \(count))"))
-            } else if entryDicts.count < count {
-                logger?.log(.warning("Table '\(chunk.label)': \(count - entryDicts.count) missing entries zero-filled (manifest count is \(count))"))
+            let count = chunk.count ?? decoded.entries.count
+            if decoded.entries.count > count {
+                logger?.log(.warning("Table '\(chunk.label)': \(decoded.entries.count - count) surplus entries dropped (manifest count is \(count))"))
+            } else if decoded.entries.count < count {
+                logger?.log(.warning("Table '\(chunk.label)': \(count - decoded.entries.count) missing entries zero-filled (manifest count is \(count))"))
             }
 
             var blocks = [(label: String?, bytes: GoDData)]()
             for i in 0..<count {
-                guard i < entryDicts.count else {
-                    blocks.append((label: nil, bytes: GoDData(length: definition.length, byteOrder: .big)))
+                // Entry symbols live in the manifest, not in the CSV — a row
+                // holds the struct's fields and nothing else.
+                let entryLabel = chunk.entryLabels?[String(i)]
+                guard i < decoded.entries.count else {
+                    blocks.append((label: entryLabel, bytes: GoDData(length: definition.length, byteOrder: .big)))
                     continue
                 }
-                var fields = entryDicts[i]
-                let entryLabel = fields.removeValue(forKey: "_label") as? String
-                do {
-                    // Wrap the flat entry into the {type, data} shape
-                    // StructData's schema-aware decoder expects.
-                    let wrapped: [String: Any] = ["type": definition.name, "data": fields]
-                    let wrappedBytes = try JSONSerialization.data(withJSONObject: wrapped)
-                    let structData = try StructData(
-                        definition: definition,
-                        json: GoDData(byteStream: [UInt8](wrappedBytes), byteOrder: .big),
-                        byteOrder: .big
-                    )
-                    let bytes = importer.importStruct(structData: structData, labelTable: labelTable, byteOrder: .big)
-                    blocks.append((label: entryLabel, bytes: bytes))
-                } catch {
-                    logger?.log(.warning("Table '\(chunk.label)' entry \(i) failed to decode: \(error)"))
-                    return nil
-                }
+                let bytes = importer.importStruct(
+                    structData: decoded.entries[i], labelTable: labelTable, byteOrder: .big
+                )
+                blocks.append((label: entryLabel, bytes: bytes))
             }
             return (
                 name: "\(chunk.label).synthesized.s",

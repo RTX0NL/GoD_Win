@@ -30,6 +30,14 @@ public struct DataSectionManifest: Codable, Equatable {
         public let size: Int?
         /// For file chunks: the file extension (e.g. "msg")
         public let fileExtension: String?
+        /// For table chunks: symbol names of individual entries, keyed by
+        /// entry index. Sparse — most entries have no symbol of their own.
+        ///
+        /// This is metadata about the table rather than a value in it, so it
+        /// lives here rather than as a column in the CSV: a row's fields are
+        /// the struct's fields and nothing else. (Keyed by a string because
+        /// JSON object keys are strings.)
+        public let entryLabels: [String: String]?
 
         public init(
             label: String,
@@ -39,7 +47,8 @@ public struct DataSectionManifest: Codable, Equatable {
             countLabel: String? = nil,
             count: Int? = nil,
             size: Int? = nil,
-            fileExtension: String? = nil
+            fileExtension: String? = nil,
+            entryLabels: [String: String]? = nil
         ) {
             self.label = label
             self.type = type
@@ -49,6 +58,7 @@ public struct DataSectionManifest: Codable, Equatable {
             self.count = count
             self.size = size
             self.fileExtension = fileExtension
+            self.entryLabels = entryLabels
         }
     }
 

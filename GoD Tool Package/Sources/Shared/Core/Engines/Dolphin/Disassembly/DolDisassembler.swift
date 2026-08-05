@@ -409,20 +409,38 @@ public struct DolDisassembler {
                             addressToLabel: addressToLabel
                         )
 
-                        // JSON is the only artifact for typed chunks —
-                        // no byte-identical sidecar. If encoding ever
-                        // fails, demote the chunk to raw binary so the
-                        // dump still rebuilds losslessly.
+                        // CSV is the only artifact for a table — no
+                        // byte-identical sidecar. The encode is verified by
+                        // decoding it straight back and comparing bytes; if
+                        // either step fails the chunk demotes to raw binary,
+                        // so a table that can't round-trip is never silently
+                        // lossy.
                         do {
-                            let fileName = "\(table.name).json"
-                            let json = try encodeBulkTableJSON(structType: table.entryType, entries: entries)
-                            try output.writeFile(json, at: sectionFolder.file(fileName), overwrite: true)
+                            let csv = try StructTableCSV.encode(
+                                entries: entries.map(\.data), definition: definition
+                            )
+                            try verifyTableRoundTrips(
+                                csv: csv, against: entries, definition: definition, label: table.name
+                            )
+                            let fileName = "\(table.name).csv"
+                            try output.writeFile(
+                                GoDData(string: csv, format: .utf8),
+                                at: sectionFolder.file(fileName),
+                                overwrite: true
+                            )
+                            // Entry symbols are metadata, not fields, so they
+                            // ride in the manifest rather than as a column.
+                            var entryLabels = [String: String]()
+                            for (index, entry) in entries.enumerated() {
+                                if let label = entry.label { entryLabels[String(index)] = label }
+                            }
                             manifest.chunks.append(.init(
                                 label: table.start, type: .table, file: fileName,
-                                structType: table.entryType, count: count
+                                structType: table.entryType, count: count,
+                                entryLabels: entryLabels.isEmpty ? nil : entryLabels
                             ))
                         } catch {
-                            logger?.log(.warning("Failed to encode table '\(table.name)' as JSON: \(error). Emitting as raw binary chunk."))
+                            logger?.log(.warning("Table '\(table.name)' doesn't round-trip as CSV: \(error). Emitting as raw binary chunk."))
                             let binName = "\(table.name).bin"
                             try output.writeFile(tableData, at: sectionFolder.file(binName), overwrite: true)
                             manifest.chunks.append(.init(
@@ -665,35 +683,76 @@ public func resolveStructTypes(
     return resolved
 }
 
-/// Encode a table dump as `{"structType", "count", "entries": [...]}`.
+/// Throws unless `csv` decodes back to exactly the bytes it was encoded
+/// from, so a table is only written as CSV when the CSV is sufficient to
+/// rebuild it.
 ///
-/// Each entry reuses `StructData`'s own JSON field encoding — the same
-/// shape `StructData(definition:json:)` decodes on the build side —
-/// so arrays, sub-structs, char strings, enum case names, and
-/// `padding_<i>` keys all round-trip. The entry's optional `_label`
-/// is spliced into the field object.
+/// Label fields are excluded from the comparison, and must be: their four
+/// on-disk bytes are a pointer the assembler re-derives from the label
+/// table, so they are deliberately zero on the way back in and are
+/// *supposed* to change when the layout moves. The symbol names themselves
+/// are compared instead — losing one would silently drop a pointer.
 ///
-/// Built via JSONSerialization because the entries are re-shaped
-/// dictionaries; non-finite floats are already string sentinels
-/// ("NaN"/"Infinity"/"-Infinity") from the per-entry JSONEncoder pass.
-public func encodeBulkTableJSON(structType: String, entries: [LabeledData]) throws -> GoDData {
-    var entryDicts = [[String: Any]]()
-    for entry in entries {
-        let encoded: Data = try JSONEncoder.prettyPrinted.encode(entry.data)
-        guard let obj = try JSONSerialization.jsonObject(with: encoded) as? [String: Any],
-              var fields = obj["data"] as? [String: Any] else { continue }
-        if let label = entry.label {
-            fields["_label"] = label
-        }
-        entryDicts.append(fields)
+/// What this catches in practice is the two known-lossy shapes: a padding
+/// run that isn't zero (padding has no column, so it rebuilds as zeroes)
+/// and a string field with bytes after its terminator.
+func verifyTableRoundTrips(
+    csv: String,
+    against entries: [LabeledData],
+    definition: StructDefinition,
+    label: String
+) throws {
+    let decoded = try StructTableCSV.decode(csv, definition: definition, byteOrder: .big)
+    guard decoded.entries.count == entries.count else {
+        throw DolDisassemblyErrors.tableRoundTripFailed(
+            table: label,
+            reason: "re-decoded \(decoded.entries.count) entries, expected \(entries.count)",
+            .init()
+        )
     }
-    let root: [String: Any] = [
-        "structType": structType,
-        "count": entryDicts.count,
-        "entries": entryDicts,
-    ]
-    let bytes = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
-    return GoDData(byteStream: [UInt8](bytes), byteOrder: .big)
+
+    let labelOffsets = StructCSVSchema.columns(of: definition)
+        .filter { $0.labelKey != nil }
+        .map(\.offset)
+
+    for (index, original) in entries.enumerated() {
+        var expected = original.data.data.rawBytes
+        var actual = decoded.entries[index].data.rawBytes
+        guard expected.count == actual.count else {
+            throw DolDisassemblyErrors.tableRoundTripFailed(
+                table: label,
+                reason: "entry \(index) re-decoded to \(actual.count) bytes, expected \(expected.count)",
+                .init()
+            )
+        }
+        for offset in labelOffsets {
+            for byte in offset ..< min(offset + 4, expected.count) {
+                expected[byte] = 0
+                actual[byte] = 0
+            }
+        }
+        guard expected == actual else {
+            let firstDifference = zip(expected, actual).enumerated().first { $1.0 != $1.1 }?.offset
+            throw DolDisassemblyErrors.tableRoundTripFailed(
+                table: label,
+                reason: "entry \(index) differs at byte \(firstDifference.map(String.init) ?? "?")",
+                .init()
+            )
+        }
+        // Every name the exporter recorded has to come back unchanged. This
+        // is a subset check, not equality: the CSV also names pointers the
+        // exporter left unnamed (it only records top-level `.label`
+        // properties, not elements of a label array), and gaining those is
+        // an improvement rather than a round-trip failure.
+        let rebuiltLabels = decoded.entries[index].labelValues
+        for (key, name) in original.data.labelValues where rebuiltLabels[key] != name {
+            throw DolDisassemblyErrors.tableRoundTripFailed(
+                table: label,
+                reason: "entry \(index) lost or changed the pointer label '\(key)'",
+                .init()
+            )
+        }
+    }
 }
 
 private extension JSONEncoder {
@@ -712,6 +771,7 @@ private extension JSONEncoder {
 public enum DolDisassemblyErrors: Error, CustomStringConvertible {
     case dolNotFound(file: File, ErrorTrace)
     case structNotFound(name: String, ErrorTrace)
+    case tableRoundTripFailed(table: String, reason: String, ErrorTrace)
 
     public var description: String {
         switch self {
@@ -719,6 +779,10 @@ public enum DolDisassemblyErrors: Error, CustomStringConvertible {
             return "DOL file not found: \(file)\n\(trace)"
         case let .structNotFound(name, trace):
             return "Sub-struct '\(name)' not found\n\(trace)"
+        case let .tableRoundTripFailed(table, reason, trace):
+            return "Table '\(table)' does not round-trip through CSV: \(reason). "
+                + "Usually a padding run that isn't zero, or a string field with bytes after its "
+                + "terminator — both mean the struct definition doesn't describe the data.\n\(trace)"
         }
     }
 }
