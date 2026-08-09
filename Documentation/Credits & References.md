@@ -32,6 +32,26 @@ This document lists the reference implementations, specifications, and documenta
   those decisions over a hash chain instead of a linear window scan, and
   documents where it knowingly diverges.
 
+## U8 / NARC archives
+
+### Documentation
+- **WiiBrew Wiki** — U8 archive layout: the 0x20 header, the 12-byte node
+  records with their packed type/name-offset word, and the directory node's
+  parent-index / subtree-end pair.
+- **GBATEK** and the **DS homebrew documentation** — Nitro (NARC) container
+  layout: the `BTAF`/`BTNF`/`GMIF` section trio, the file-allocation table's
+  start/end pairs, and the name table's length-prefixed sub-table encoding.
+
+### Verification
+The layouts were re-derived from Battle Revolution's PAL disc rather than
+taken on trust, which is what made byte-identical repacking possible: the
+U8 data-region alignment, the no-de-duplication rule for the string table,
+and the NARC section geometry were all measured across the disc's 24 `.arc`
+and 6 `.narc` files before the writers were written. The big-endian NARC
+variant — which announces itself by spelling its own magic `CRAN` — is not
+covered by the DS documentation and was characterized from those files. See
+`NintendoArchiveRealCorpusTests`.
+
 ## PowerPC Disassembler/Assembler
 
 ### Specifications

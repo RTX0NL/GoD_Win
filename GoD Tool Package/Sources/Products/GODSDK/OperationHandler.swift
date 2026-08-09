@@ -40,6 +40,10 @@ protocol OperationHandler {
     func coloSaveDump(config: ColoSaveOps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func coloSaveBuild(config: ColoSaveOps.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func convert(config: Convert.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func nintendoArchiveDump(config: NintendoArchiveDump.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func nintendoArchiveBuild(config: NintendoArchiveBuild.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func nintendoArchivesDump(config: NintendoArchiveDump.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func nintendoArchivesBuild(config: NintendoArchiveBuild.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
 }
 
 /// Production handler: forwards each operation to its engine wrapper.
@@ -146,5 +150,21 @@ struct EngineOperationHandler: OperationHandler {
 
     func convert(config: Convert.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try Convert.run(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func nintendoArchiveDump(config: NintendoArchiveDump.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try NintendoArchiveDump.dump(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func nintendoArchiveBuild(config: NintendoArchiveBuild.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try NintendoArchiveBuild.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func nintendoArchivesDump(config: NintendoArchiveDump.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try NintendoArchiveDump.dump(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func nintendoArchivesBuild(config: NintendoArchiveBuild.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try NintendoArchiveBuild.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
     }
 }

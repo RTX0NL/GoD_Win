@@ -16,6 +16,9 @@ GoD-Tool is a CLI utility for unpacking, editing, and rebuilding GameCube and Wi
 - **Correctness, not byte-identical round-trip** (default): Rebuild recomputes/rederives everything from scratch. The goal is a *correct* rebuild, not one whose bytes match the original. Where practical, rederive native conventions (padding, alignment, ordering) so output looks native — but that is a nice-to-have, never the objective. A from-scratch rebuild that differs byte-for-byte but is functionally correct is a success. Do not add "replay original bytes for round-trip fidelity" logic; do fix genuine correctness bugs in writers (wrong values, dropped data, crashes).
 - **Byte-identical formats are the exception, declared per format.** A format is promoted to a 1:1 target only once measurement shows the gap is a small number of *nameable* divergences rather than an unmatchable re-derivation (e.g. a compressor whose output can't be reproduced). Promoted formats get a named exception here and a real-corpus fidelity test. Current 1:1 targets:
   - **FSYS** — see "FSYS byte-identical rebuild" below.
+  - **U8 / NARC** — see "Nintendo archives" below. Both formats' geometry is
+    fully derivable from the entry list plus one alignment constant, so a
+    repack that differs is a bug rather than an accepted re-derivation.
 - **CLI-first**: GUI tools are wrappers that generate configs and invoke the CLI.
 
 ## Build & Run
@@ -68,6 +71,7 @@ GoD Tool Package/
 │   │   │   ├── XD/                  # XD-specific
 │   │   │   ├── Pokemon/             # Pokemon data structures
 │   │   │   ├── Wii/                 # Wii system
+│   │   │   ├── Nintendo/            # Nintendo's own containers (U8, NARC)
 │   │   │   └── PBR/                 # Battle Revolution
 │   │   └── Dependencies/
 │   │       ├── GoDFoundation/       # Core: Data, Files, FST, Logging, Extensions
@@ -118,6 +122,7 @@ Each operation has its own `Config` type and is enabled/disabled via the `Operat
 | FSYS TOC | GeniusSonority (currently) | Table of contents mapping group IDs to files |
 | DOL | Dolphin | GameCube executable (text + data sections) |
 | Yaz0 / Yay0 | none — `GoDFoundation/Data/Compression` | Nintendo's own LZ77 codec, GameCube through Switch. Not used by Colo/XD/PBR; present for general titles and as a prerequisite for RARC/U8. See "Nintendo LZ77 compression" below. |
+| U8 (`.arc`) / NARC (`.narc`) | Nintendo | Nintendo's own containers, big **and** little endian. PBR ships both. Declared 1:1 targets — see "Nintendo archives" below. |
 
 #### Struct tables as CSV
 
@@ -235,13 +240,62 @@ the same trick `WiiDiscFixtures` uses on the Wii crypto. A round trip alone
 would pass if the encoder and decoder were wrong in matching ways. Full spec
 in `Documentation/File Formats/Shared/Yaz0 Yay0 - Nintendo LZ77 Compression.md`.
 
+#### Nintendo archives (U8 / NARC)
+
+A `Nintendo` engine, separate from the game engines, holding Nintendo's own
+container formats. It carries **no game knowledge** on purpose: an archive's
+layout is identical whichever title it came from, so per-game routing of what
+comes *out* of an archive stays in the game engines.
+
+**Byte order is read off the direction the magic is spelled.** Nintendo's
+tooling writes a four-character code as a machine word, so porting a format
+to the opposite endianness reverses its own magic. The two formats run
+opposite ways round, which is the trap:
+
+| Format | Native to | Forward | Reversed |
+|---|---|---|---|
+| U8 | GameCube (BE) | `55 AA 38 2D` → **big** | `2D 38 AA 55` → **little** |
+| NARC | DS (LE) | `NARC` → **little** | `CRAN` → **big** |
+
+So `NARC` forwards means *little*-endian, and PBR's big-endian port is the
+one reading `CRAN`. NARC's section codes flip too (`BTAF`/`BTNF`/`GMIF` ↔
+`FATB`/`FNTB`/`FIMG`). `NintendoArchiveSignature.detect` answers both
+questions from those four bytes; `ArchiveReader`/`ArchiveWriter` take the
+byte order as a parameter, so neither endianness is a bolt-on to the other.
+
+**Both are 1:1 targets, verified on the real corpus.** All 30 PBR PAL
+archives (24 U8 + 6 NARC) repack byte-identically. Geometry is fully
+derivable — U8's data region is `align32(rootOffset + headerSize)`, every
+file starts on that boundary, gaps are zero, and names are written in node
+order with no de-duplication. Only the alignment and pad byte are engine
+data.
+
+**The one exception:** a nameless NARC's 8-byte name-table body puts its two
+16-bit fields in the opposite order on the two platforms. Nothing in the
+corpus disambiguates which field is which, so the parser keeps the original
+bytes (`rawNameTable`, carried through the manifest) and replays them.
+
+**Entry order is load-bearing.** A U8's node table is a preorder walk, and a
+nameless NARC addresses files purely by index — in `waza_seq_rev.narc` the
+index is the move ID. `U8Archive` therefore models the tree as a flat ordered
+list rather than reconstructing it, and the manifest preserves order.
+
+**Project layout** follows FSYS: `<name>.json` manifest beside a `<name>/`
+folder of contents. `FSTRegistry.EntryType.nintendoArchive` points at the
+manifest, and the FST rebuild repacks from it. Four operations —
+`nintendoArchive{Dump,Build}` and `nintendoArchives{Dump,Build}` — cover
+single and bulk. One pair for both formats, because the magic already says
+which format it is; the bulk dump identifies by magic, not extension.
+
+Full spec in `Documentation/File Formats/Shared/U8 NARC - Nintendo Archives.md`.
+
 ### Nintendo Archive Formats (future support candidates)
 
 **GameCube/Wii:**
 | Format | Extension(s) | Description |
 |--------|-------------|-------------|
 | RARC | `.rarc`, `.arc`, `.szs` | JSystem resource archive (Mario Sunshine, Zelda Wind Waker). Often Yaz0-compressed. |
-| U8 | `.arc`, `.szs`, `.app` | Primary Wii archive for non-JSystem games (NSMBW, MKWii). Magic: `U\xAA8-`. |
+| U8 | `.arc`, `.szs`, `.app` | **Implemented.** Primary Wii archive for non-JSystem games (NSMBW, MKWii). Magic: `U\xAA8-`. |
 | WAD | `.wad` | Installable Wii channel/title container (ticket + TMD + content). |
 | WBFS | `.wbfs` | Sparse Wii disc image storage format. |
 | WIA/RVZ | `.wia`, `.rvz` | Compressed GC/Wii disc images. RVZ is the newer variant. |
@@ -251,7 +305,7 @@ in `Documentation/File Formats/Shared/Yaz0 Yay0 - Nintendo LZ77 Compression.md`.
 **DS/3DS:**
 | Format | Extension(s) | Description |
 |--------|-------------|-------------|
-| NARC | `.narc` | Nitro ARChive. Primary DS archive with FNTB + FATB sections. |
+| NARC | `.narc` | **Implemented** (both endiannesses). Nitro ARChive. Primary DS archive with FNTB + FATB sections. |
 | GARC | `.garc` | Game ARChive. Used heavily in Pokemon X/Y, ORAS, Sun/Moon. |
 | DARC | `.arc` | 3DS successor to NARC. |
 | SARC | `.sarc`, `.szs` | Replaced U8 on 3DS/Wii U/Switch. Often Yaz0-compressed. |
@@ -494,6 +548,23 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 - [x] LZSS compression/decompression
 - [x] Yaz0 + Yay0 compression/decompression, shared `LZ77Encoder`, and
       `CompressionFormat` magic sniffing (see "Nintendo LZ77 compression")
+- [x] Nintendo engine: U8 (`.arc`) + NARC (`.narc`) parse/rebuild, big and
+      little endian, byte-identical on all 30 real PBR archives; manifest +
+      FST `nintendoArchive` entry type + single/bulk dump & repack ops
+      (see "Nintendo archives")
+- [x] Project setup from ISO (auto-detect game, create folder structure, generate configs)
+- [x] Configuration system (JSON configs, operation chains, toggle enable/disable)
+- [x] Logging framework
+- [x] GTX texture decode + encode (all pixel formats, palette rebuild)
+- [x] ATX wrapper decode + encode (1:1 roundtrip on wrapper; texture body reuses GTX)
+- [x] GSFont parse + rebuild (byte-identical) and atlas export/import
+- [x] GSW flash menu parse + serialize (byte-identical non-texture bytes)
+- [x] ColoXD build ops: font, flash menu, FST, GSfsys TOC, message
+- [x] ColoXD dump ops: flash menu (GSW → PNG + metadata), message (MSG → JSON)
+- [x] MSG (Colo/XD) parse + rebuild (byte-identical on FSYS-hosted MSGs; the three DOL-embedded XD MSGs re-encode +546 bytes total — writer re-derives string layout; self-consistent, and DOL shiftability tracks the growth) and JSON roundtrip via GSString pretty tokens
+- [x] FileFormat protocol + FileFormatRegistry — inject-at-use-site; builtins registers MSG, FNT, GTX, ATX, GSW; DOL/REL disassembly `.file` chunks route through it
+- [x] DOL typed data reassembly — a `.struct` chunk is JSON (`StructData(definition:json:)`), a `.table` chunk is **CSV** (see "Struct tables as CSV"). Pointers resolve through `LabelTable`; edits land in the built DOL; the dumped artifact is the only source for typed chunks (no `.bin` sidecars, no legacy fallback). A chunk that can't round-trip demotes to a raw `.binary` chunk
+- [x] Colosseum script decompiler + compiler: full binary ↔ source-text round trip byte-exact on all 142 US scripts (four verified stages; `ColoScriptSourceEmitter`/`ColoScriptTextParser`/`ColoScriptCompiler`; `ColoScriptDecomp --roundtrip` + `ColoScriptRoundTripTests`). Dialect + GS code-gen conventions in `Documentation/File Formats/Shared/SCD - Script Bytecode.md`; engine-declared builtin signatures (246, int/float/bool/string only) generated into `defaultBuiltInFunctions` with reference doc `Documentation/File Formats/Colosseum/Script Builtin Functions.md`
 - [x] Project setup from ISO (auto-detect game, create folder structure, generate configs)
 - [x] Configuration system (JSON configs, operation chains, toggle enable/disable)
 - [x] Logging framework

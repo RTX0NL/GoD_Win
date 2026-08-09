@@ -128,6 +128,22 @@ final class SpyOperationHandler: OperationHandler {
         try record(.coloSaveBuild(config: config), settings)
     }
 
+    func nintendoArchiveDump(config: NintendoArchiveDump.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.nintendoArchiveDump(config: config), settings)
+    }
+
+    func nintendoArchiveBuild(config: NintendoArchiveBuild.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.nintendoArchiveBuild(config: config), settings)
+    }
+
+    func nintendoArchivesDump(config: NintendoArchiveDump.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.nintendoArchivesDump(config: config), settings)
+    }
+
+    func nintendoArchivesBuild(config: NintendoArchiveBuild.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.nintendoArchivesBuild(config: config), settings)
+    }
+
     func convert(config: Convert.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try record(.convert(config: config), settings)
     }

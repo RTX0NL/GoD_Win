@@ -35,6 +35,10 @@ struct GoddessConfig: Codable {
         case coloSaveDump(config: ColoSaveOps.DumpConfig)
         case coloSaveBuild(config: ColoSaveOps.BuildConfig)
         case convert(config: Convert.Config)
+        case nintendoArchiveDump(config: NintendoArchiveDump.SingleConfig)
+        case nintendoArchiveBuild(config: NintendoArchiveBuild.SingleConfig)
+        case nintendoArchivesDump(config: NintendoArchiveDump.BatchConfig)
+        case nintendoArchivesBuild(config: NintendoArchiveBuild.BatchConfig)
     }
     
     let name: String

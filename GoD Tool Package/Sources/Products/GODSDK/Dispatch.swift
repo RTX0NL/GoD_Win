@@ -223,6 +223,18 @@ public enum GODOps {
             try handler.coloSaveBuild(config: coloConfig, settings: settings, fileSystem: fileSystem, logger: logger)
         case .convert(let convertConfig):
             try handler.convert(config: convertConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+
+        case .nintendoArchiveDump(let cfg):
+            try handler.nintendoArchiveDump(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+
+        case .nintendoArchiveBuild(let cfg):
+            try handler.nintendoArchiveBuild(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+
+        case .nintendoArchivesDump(let cfg):
+            try handler.nintendoArchivesDump(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+
+        case .nintendoArchivesBuild(let cfg):
+            try handler.nintendoArchivesBuild(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
         }
     }
 

@@ -24,6 +24,7 @@ import GoDFoundation
 import GoDEngine
 import Structs
 import GTX
+import Nintendo
 
 public extension GeniusSonorityEngine {
     /// Result of processing a single FSYS archive
@@ -581,6 +582,28 @@ public extension GeniusSonorityEngine {
                 }
             case .failure(let error):
                 throw error
+            }
+        }
+
+        // Phase 2b: Repack Nintendo containers (U8 / NARC) from their
+        // manifests. Kept serial rather than folded into the concurrent
+        // FSYS pass above: a disc holds a handful of these against
+        // hundreds of archives, so the parallelism would buy nothing and
+        // the loop stays readable.
+        let archiveEntries = fstRegistry.entries.filter { $0.type == .nintendoArchive }
+        if !archiveEntries.isEmpty {
+            logger?.log(.info("Repacking \(archiveEntries.count) Nintendo containers"))
+            let nintendoEngine = try NintendoEngine.defaults()
+            for entry in archiveEntries {
+                let manifestFile = sourceFolder.file(entry.file.path)
+                let packed = try nintendoEngine.packArchive(
+                    manifestFile: manifestFile,
+                    fileSystem: fileSystem
+                )
+                let outputFile = outputFolder.folder("files").file(entry.rebuildPath)
+                if overwrite || fileSystem.inspectFile(at: outputFile) == nil {
+                    try fileSystem.writeFile(packed, at: outputFile, overwrite: overwrite)
+                }
             }
         }
 

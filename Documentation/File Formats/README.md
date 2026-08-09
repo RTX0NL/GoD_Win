@@ -9,6 +9,7 @@ These formats are used by both Colosseum and XD with the same or very similar st
 ### Archives & Compression
 - [FSYS - Archive Container](Shared/FSYS%20-%20Archive%20Container.md) — Main game archive with LZSS compression (type `0x90`)
 - [Yaz0/Yay0 - Nintendo LZ77 Compression](Shared/Yaz0%20Yay0%20-%20Nintendo%20LZ77%20Compression.md) — Nintendo's own codec. Not used by Colosseum/XD/PBR; support exists for general GameCube/Wii titles and as a prerequisite for RARC and U8
+- [U8/NARC - Nintendo Archives](Shared/U8%20NARC%20-%20Nintendo%20Archives.md) — Nintendo's own containers, big and little endian, discriminated by the direction their magic is spelled. PBR ships both (`.arc`/`.narc`)
 
 ### 3D Models
 - [DAT - HAL Model Format](Shared/DAT%20-%20HAL%20Model%20Format.md) — Character/room 3D models, HSD format (type `0x04`/`0x02`)

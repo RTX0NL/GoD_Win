@@ -791,6 +791,95 @@ final class DispatchRoutingTests: XCTestCase {
         XCTAssertEqual(engine, Folder("/project/Engines/Some Engine"))
     }
 
+    // MARK: - Nintendo archives (U8 / NARC)
+
+    func testNintendoArchiveDumpRouting() throws {
+        let spy = try route("""
+        { "nintendoArchiveDump": { "config": {
+            "archivePath": "/project/files/homeBtn.arc",
+            "outputFolder": "/project/Source/Archives",
+            "overwrite": true
+        } } }
+        """)
+        guard case let .nintendoArchiveDump(config) = try singleOperation(spy) else {
+            return XCTFail("Expected nintendoArchiveDump")
+        }
+        XCTAssertEqual(config.archivePath, File("/project/files/homeBtn.arc"))
+        XCTAssertEqual(config.outputFolder, Folder("/project/Source/Archives"))
+        XCTAssertTrue(config.overwrite)
+        // Absent engine folder means the built-in defaults.
+        XCTAssertNil(config.nintendoEngine)
+    }
+
+    func testNintendoArchiveBuildRouting() throws {
+        let spy = try route("""
+        { "nintendoArchiveBuild": { "config": {
+            "manifestPath": "/project/Source/Archives/homeBtn.arc.json",
+            "outputPath": "/project/Built/files/homeBtn.arc",
+            "overwrite": false
+        } } }
+        """)
+        guard case let .nintendoArchiveBuild(config) = try singleOperation(spy) else {
+            return XCTFail("Expected nintendoArchiveBuild")
+        }
+        XCTAssertEqual(config.manifestPath, File("/project/Source/Archives/homeBtn.arc.json"))
+        XCTAssertEqual(config.outputPath, File("/project/Built/files/homeBtn.arc"))
+        XCTAssertFalse(config.overwrite)
+    }
+
+    func testNintendoArchivesDumpRoutingWithFilter() throws {
+        let spy = try route("""
+        { "nintendoArchivesDump": { "config": {
+            "archivesFolder": "/project/files",
+            "outputFolder": "/project/Source/Archives",
+            "overwrite": true,
+            "filter": { "onlyFormats": { "_0": ["narc"] } },
+            "recursive": true,
+            "nintendoEngine": "/project/Engines/Nintendo Engine"
+        } } }
+        """)
+        guard case let .nintendoArchivesDump(config) = try singleOperation(spy) else {
+            return XCTFail("Expected nintendoArchivesDump")
+        }
+        XCTAssertEqual(config.archivesFolder, Folder("/project/files"))
+        XCTAssertEqual(config.filter, .onlyFormats(["narc"]))
+        XCTAssertTrue(config.recursive)
+        XCTAssertEqual(config.nintendoEngine, Folder("/project/Engines/Nintendo Engine"))
+    }
+
+    func testNintendoArchivesDumpRoutingWithExtensionFilter() throws {
+        let spy = try route("""
+        { "nintendoArchivesDump": { "config": {
+            "archivesFolder": "/project/files",
+            "outputFolder": "/project/Source/Archives",
+            "overwrite": true,
+            "filter": { "onlyExtensions": { "_0": ["arc"] } },
+            "recursive": false
+        } } }
+        """)
+        guard case let .nintendoArchivesDump(config) = try singleOperation(spy) else {
+            return XCTFail("Expected nintendoArchivesDump")
+        }
+        XCTAssertEqual(config.filter, .onlyExtensions(["arc"]))
+        XCTAssertFalse(config.recursive)
+    }
+
+    func testNintendoArchivesBuildRouting() throws {
+        let spy = try route("""
+        { "nintendoArchivesBuild": { "config": {
+            "inputFolder": "/project/Source/Archives",
+            "outputFolder": "/project/Built/files",
+            "overwrite": true,
+            "recursive": true
+        } } }
+        """)
+        guard case let .nintendoArchivesBuild(config) = try singleOperation(spy) else {
+            return XCTFail("Expected nintendoArchivesBuild")
+        }
+        XCTAssertEqual(config.inputFolder, Folder("/project/Source/Archives"))
+        XCTAssertEqual(config.outputFolder, Folder("/project/Built/files"))
+    }
+
     // MARK: - process(inputFile:) extension dispatch
 
     func testProcessRejectsUnsupportedFileType() {

@@ -65,6 +65,7 @@ let package = Package(
                 "Colosseum",
                 "Pokemon",
                 "GeniusSonority",
+                "Nintendo",
                 "GoDFoundation",
                 "Disassembler"
             ],
@@ -209,13 +210,27 @@ let package = Package(
             ],
             path: "Sources/Shared/Core/Engines/Orre"
         ),
+
+        .target(
+            name: "Nintendo",
+            dependencies: [
+                "GoDEngine",
+                "GoDFoundation",
+                "Structs"
+            ],
+            path: "Sources/Shared/Core/Engines/Nintendo"
+        ),
         .target(
             name: "GeniusSonority",
             dependencies: [
                 "GoDEngine",
                 "GoDFoundation",
                 "Structs",
-                "GTX"
+                "GTX",
+                // The disc's FST can hold Nintendo containers alongside
+                // FSYS archives, and the rebuild repacks them from their
+                // manifests — see `FSTRegistry.EntryType.nintendoArchive`.
+                "Nintendo"
             ],
             path: "Sources/Shared/Core/Engines/GeniusSonority"
         ),
@@ -396,6 +411,10 @@ let package = Package(
             name: "XDTests",
             dependencies: ["XD", "GoDFoundation"],
             path: "Tests/Shared Tests/Engine Tests/XD Tests"),
+        .testTarget(
+            name: "NintendoTests",
+            dependencies: ["Nintendo", "GoDFoundation", "TestSupport"],
+            path: "Tests/Shared Tests/Engine Tests/Nintendo Tests"),
         .testTarget(
             name: "PBRTests",
             dependencies: ["PBR", "GeniusSonority", "GoDEngine", "GoDFoundation", "Structs"],
