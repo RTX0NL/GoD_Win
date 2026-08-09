@@ -8,8 +8,11 @@
 //  project isn't present, so it's safe to keep in the suite on a machine
 //  without ROMs.
 //
-//  Point it at another dump with GODDESS_PBR_COMMON (a folder holding the
-//  extracted `common NNNN.bin` members).
+//  Reads the archive itself (`Build/Contents/DATA/files/common.fsys`) rather
+//  than the members an unpack leaves behind, because the dump replaces each
+//  typed member's `.bin` with its CSV — so a fully-dumped project no longer
+//  satisfied a test that wanted the raw bytes. Point it elsewhere with
+//  GODDESS_PBR_COMMON / GODDESS_PBR_COMMON_JP (a path to a `common.fsys`).
 //
 
 import XCTest
@@ -17,20 +20,77 @@ import Foundation
 import GoDFoundation
 import GoDEngine
 import Structs
+import GeniusSonority
 @testable import PBR
 
 final class PBRCommonTableRealCorpusTests: XCTestCase {
 
-    private var commonFolder: String? {
-        let path = ProcessInfo.processInfo.environment["GODDESS_PBR_COMMON"]
-            ?? "/Users/stars/Documents/Projects/GoD-Tool/scripts/PBR PAL project/Build/Contents/DATA/files/common"
-        return FileManager.default.fileExists(atPath: path) ? path : nil
+    /// Reads an array property as big-endian 16-bit words. Struct keypaths
+    /// don't index into arrays, so an array field comes back as its raw run
+    /// of bytes and the element width is applied here.
+    static func uint16s(in row: StructData, _ keypath: String) throws -> [UInt16] {
+        let data: GoDData = try XCTUnwrap(row.get(keypath), "missing '\(keypath)'")
+        data.setByteOrder(.big)
+        return stride(from: 0, to: data.length - 1, by: 2).map {
+            data.readSafely(atAddress: $0) as UInt16
+        }
     }
 
-    private func table(_ index: Int, in folder: String) -> GoDData? {
-        let path = folder + "/common " + String(format: "%04d", index) + ".bin"
-        guard let bytes = FileManager.default.contents(atPath: path) else { return nil }
-        return GoDData(data: bytes, byteOrder: .big)
+    /// The tables, read straight out of the disc's `common.fsys`.
+    ///
+    /// These used to read `common NNNN.bin` files left behind by an unpack,
+    /// which had two problems: the unpack's naming changed (`common 0000.bin`
+    /// → `common_0000.bin`) and these tests silently skipped for however long,
+    /// and — worse — the dump *replaces* each typed member's `.bin` with its
+    /// CSV, so the very projects these tests exist to validate stopped
+    /// satisfying them. The archive survives both, so it's the honest source:
+    /// what's tested is what a dump actually reads.
+    ///
+    /// Members come back keyed by their index within the archive, which is
+    /// what the table descriptors are keyed on.
+    struct Corpus {
+        let members: [Int: GoDData]
+        let label: String
+    }
+
+    private static func loadCorpus(_ paths: [String], label: String) -> Corpus? {
+        for path in paths {
+            guard let bytes = FileManager.default.contents(atPath: path) else { continue }
+            let engine = GeniusSonorityEngine.defaultEngine(for: .battleRevolution)
+            guard let archive = try? FSYSArchive(
+                data: GoDData(data: bytes, byteOrder: .big), engine: engine
+            ) else { continue }
+            var members = [Int: GoDData]()
+            for (index, entry) in archive.entries.enumerated() {
+                members[index] = entry.data
+            }
+            guard !members.isEmpty else { continue }
+            return Corpus(members: members, label: label)
+        }
+        return nil
+    }
+
+    /// US/PAL corpus. `GODDESS_PBR_COMMON` overrides with a path to a
+    /// `common.fsys`.
+    private var corpus: Corpus? {
+        if let override = ProcessInfo.processInfo.environment["GODDESS_PBR_COMMON"] {
+            return Self.loadCorpus([override], label: "override")
+        }
+        return Self.loadCorpus([
+            "/Users/stars/Documents/Projects/GoD-Tool/scripts/PBR PAL project/Build/Contents/DATA/files/common.fsys",
+            NSHomeDirectory() + "/Downloads/GODDESS-JP-dump/PBR PAL project/Build/Contents/DATA/files/common.fsys",
+        ], label: "PAL")
+    }
+
+    /// The Japanese disc is a separate corpus, not another path to the same
+    /// one. `GODDESS_PBR_COMMON_JP` overrides.
+    private var japaneseCorpus: Corpus? {
+        if let override = ProcessInfo.processInfo.environment["GODDESS_PBR_COMMON_JP"] {
+            return Self.loadCorpus([override], label: "override")
+        }
+        return Self.loadCorpus([
+            NSHomeDirectory() + "/Downloads/GODDESS-JP-dump/PBR JP project/Build/Contents/DATA/files/common.fsys",
+        ], label: "JP")
     }
 
     private func align(_ value: Int, to alignment: Int) -> Int {
@@ -41,16 +101,17 @@ final class PBRCommonTableRealCorpusTests: XCTestCase {
     /// Every geometry invariant the header struct documents, read through
     /// the struct itself, on all 33 tables of the disc.
     func testHeaderGeometryHoldsForEveryTable() throws {
-        guard let folder = commonFolder else {
-            throw XCTSkip("No unpacked PBR project — set GODDESS_PBR_COMMON to run.")
+        guard let corpus else {
+            throw XCTSkip("No PBR common.fsys — set GODDESS_PBR_COMMON to run.")
         }
         let engine = try PBREngine.defaults()
         let headerDefinition = try engine.getStruct("PBRCommonTableHeader")
-        let alignment = engine.data.commonTableFormat.regionAlignment
+        // The data-table region alignment lives on the GS/FSYS engine now.
+        let alignment = GeniusSonorityEngine.defaultEngine(for: .battleRevolution).data.fsys.dataTableRegionAlignmentValue
 
         var checked = 0
         for descriptor in engine.data.commonTables {
-            guard let file = table(descriptor.index, in: folder) else { continue }
+            guard let file = corpus.members[descriptor.index] else { continue }
             let header = StructData(
                 definition: headerDefinition,
                 data: try XCTUnwrap(file.read(atAddress: 0, length: headerDefinition.length))
@@ -106,10 +167,11 @@ final class PBRCommonTableRealCorpusTests: XCTestCase {
     /// a single repeated filler byte, so mislabelling a live field as padding
     /// is caught immediately.
     func testDeclaredPaddingRunsAreFillerInEveryRow() throws {
-        guard let folder = commonFolder else {
-            throw XCTSkip("No unpacked PBR project — set GODDESS_PBR_COMMON to run.")
+        guard let corpus else {
+            throw XCTSkip("No PBR common.fsys — set GODDESS_PBR_COMMON to run.")
         }
         let engine = try PBREngine.defaults()
+        let format = engine.data.commonTableFormat
 
         /// Byte ranges the definition declares as padding, flattened through
         /// arrays and sub-structs.
@@ -141,7 +203,7 @@ final class PBRCommonTableRealCorpusTests: XCTestCase {
         var checkedTables = 0, checkedRuns = 0
         for descriptor in engine.data.commonTables {
             guard let structName = descriptor.structName,
-                  let file = table(descriptor.index, in: folder) else { continue }
+                  let file = corpus.members[descriptor.index] else { continue }
             let definition = try engine.getStruct(structName)
             let ranges = paddingRanges(of: definition)
             guard !ranges.isEmpty else { continue }
@@ -161,8 +223,15 @@ final class PBRCommonTableRealCorpusTests: XCTestCase {
                     let start = entriesOffset + row * definition.length
                     observed.formUnion(bytes[(start + range.lowerBound)..<(start + range.upperBound)])
                 }
+                // Filler is whatever the engine says it is, so the constant
+                // and the disc can't drift apart: 0xD0 inside an entry, 0x00
+                // where the packer simply left the field zeroed.
+                let filler: Set<UInt8> = [
+                    UInt8(truncatingIfNeeded: format.intraEntryPaddingByte),
+                    UInt8(truncatingIfNeeded: format.interRegionPaddingByte),
+                ]
                 XCTAssertTrue(
-                    observed.isSubset(of: [0x00, 0xD0]),
+                    observed.isSubset(of: filler),
                     "\(descriptor.name).\(structName) padding at +0x\(String(range.lowerBound, radix: 16)) "
                     + "carries live data (bytes \(observed.sorted().map { String($0, radix: 16) })) — it is a field, not padding"
                 )
@@ -179,12 +248,12 @@ final class PBRCommonTableRealCorpusTests: XCTestCase {
     /// the abilities table, which is the one with a real name pool
     /// (`TOKUSEI_000`…) and 124 records.
     func testNameTableAndRelocationsResolveOnTheAbilitiesTable() throws {
-        guard let folder = commonFolder else {
-            throw XCTSkip("No unpacked PBR project — set GODDESS_PBR_COMMON to run.")
+        guard let corpus else {
+            throw XCTSkip("No PBR common.fsys — set GODDESS_PBR_COMMON to run.")
         }
         let engine = try PBREngine.defaults()
         let descriptor = try XCTUnwrap(engine.commonTable(named: "Abilities"))
-        let file = try XCTUnwrap(table(descriptor.index, in: folder))
+        let file = try XCTUnwrap(corpus.members[descriptor.index])
 
         let headerDefinition = try engine.getStruct("PBRCommonTableHeader")
         let header = StructData(
@@ -243,12 +312,12 @@ final class PBRCommonTableRealCorpusTests: XCTestCase {
     /// checks the facts the struct's field layout claims. If any field were
     /// at the wrong offset these would drift immediately.
     func testPokemonModelRowsDecodeAcrossTheWholeTable() throws {
-        guard let folder = commonFolder else {
-            throw XCTSkip("No unpacked PBR project — set GODDESS_PBR_COMMON to run.")
+        guard let corpus else {
+            throw XCTSkip("No PBR common.fsys — set GODDESS_PBR_COMMON to run.")
         }
         let engine = try PBREngine.defaults()
         let descriptor = try XCTUnwrap(engine.commonTable(named: "PokemonModels"))
-        let file = try XCTUnwrap(table(descriptor.index, in: folder))
+        let file = try XCTUnwrap(corpus.members[descriptor.index])
 
         let headerDefinition = try engine.getStruct("PBRCommonTableHeader")
         let header = StructData(
@@ -315,5 +384,88 @@ final class PBRCommonTableRealCorpusTests: XCTestCase {
         XCTAssertEqual(count, 670, "PAL model table row count")
         XCTAssertEqual(femaleRows, 93, "rows flagged as the female-specific model")
         XCTAssertGreaterThan(noAnimationSlots, 0, "some models have no blink animation")
+    }
+
+    // MARK: - Japanese disc
+
+    /// The JP disc lays two tables out differently, and the engine binds a
+    /// separate struct to each. Both differ from US/PAL only by the width of
+    /// a per-language array, so the test that matters is that every *other*
+    /// field still lands where the struct says — which is what the
+    /// cross-field relations below check.
+    func testJapaneseCountriesUseTheJapaneseRecord() throws {
+        guard let corpus = japaneseCorpus else {
+            throw XCTSkip("No Japanese PBR common.fsys — set GODDESS_PBR_COMMON_JP to run.")
+        }
+        let engine = try PBREngine.defaults()
+        let descriptor = try XCTUnwrap(engine.commonTable(fileIndex: 7, japanese: true))
+        XCTAssertEqual(descriptor.name, "Countries")
+        XCTAssertEqual(descriptor.structName, "PBRCountryJP")
+        XCTAssertEqual(descriptor.entrySize, 0x6C)
+
+        let binary = try XCTUnwrap(corpus.members[7], "JP common.fsys member 7")
+        let typed = try XCTUnwrap(engine.typeCommonTable(descriptor, binary: binary))
+        XCTAssertEqual(typed.entries.count, 234, "the JP disc ships the same 234 countries")
+
+        // Name ids are one per country and contiguous, exactly as on PAL.
+        let names: [Int] = try typed.entries.map { try XCTUnwrap($0.get("name_message_id")) }
+        XCTAssertEqual(names.first, 5705)
+        XCTAssertEqual(names.last, 5938)
+        XCTAssertEqual(names, names.sorted(), "name ids ascend with the row")
+
+        // `subregion_count` counting the populated ids is the relation that
+        // proves the array is at the right offset and the right length: if
+        // the record were misaligned these would not agree on any row.
+        var populated = 0
+        for (index, row) in typed.entries.enumerated() {
+            let ids = try Self.uint16s(in: row, "subregion_name_message_ids")
+            XCTAssertEqual(ids.count, 52, "row \(index): sub-region slot count")
+            let nonZero = ids.filter { $0 != 0 }.count
+            XCTAssertEqual(try XCTUnwrap(row.get("subregion_count") as Int?), nonZero,
+                           "row \(index): subregion_count must match the populated ids")
+            if nonZero > 0 { populated += 1 }
+        }
+        XCTAssertEqual(populated, 18, "the same 18 countries carry sub-regions as on PAL")
+    }
+
+    func testJapaneseIndexNineIsColosseumsUnknownNotTutorialData() throws {
+        guard let corpus = japaneseCorpus else {
+            throw XCTSkip("No Japanese PBR common.fsys — set GODDESS_PBR_COMMON_JP to run.")
+        }
+        let engine = try PBREngine.defaults()
+
+        // The mapping itself is the claim under test: JP index 9 used to be
+        // bound to TutorialData, which the JP disc doesn't ship at all.
+        let descriptor = try XCTUnwrap(engine.commonTable(fileIndex: 9, japanese: true))
+        XCTAssertEqual(descriptor.name, "ColosseumsUnknown")
+        XCTAssertEqual(descriptor.structName, "PBRColosseumsUnknownJP")
+        XCTAssertEqual(descriptor.entrySize, 0x3A)
+        XCTAssertNil(engine.commonTable(named: "TutorialData")?.japaneseIndex,
+                     "TutorialData is absent from the JP disc")
+
+        let binary = try XCTUnwrap(corpus.members[9], "JP common.fsys member 9")
+        let typed = try XCTUnwrap(engine.typeCommonTable(descriptor, binary: binary))
+        XCTAssertEqual(typed.entries.count, 106, "same row count as the PAL table")
+
+        var groupIndices = Set<Int>()
+        var flagValues = Set<Int>()
+        for (offset, row) in typed.entries.enumerated() {
+            let context = "row \(offset)"
+            // `index` running 182 + row is what ties these rows to the PAL
+            // table's, and pins the record's start.
+            XCTAssertEqual(try XCTUnwrap(row.get("index") as Int?, context), 182 + offset, context)
+            // One quote set of 16 ids, not PAL's five — the whole of the
+            // stride difference.
+            let ids = try Self.uint16s(in: row, "quote_sets")
+            XCTAssertEqual(ids.count, 16, "\(context): the JP disc carries a single quote set")
+            groupIndices.insert(try XCTUnwrap(row.get("group_index"), context))
+            flagValues.insert(try XCTUnwrap(row.get("flags"), context))
+        }
+        // The same ranges the PAL record documents — these sit at the very
+        // end of the entry, so they only land correctly if everything before
+        // them is the right width.
+        XCTAssertEqual(groupIndices.min(), 17)
+        XCTAssertEqual(groupIndices.max(), 54)
+        XCTAssertEqual(flagValues, [0x81, 0x82])
     }
 }

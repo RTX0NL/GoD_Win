@@ -57,7 +57,6 @@ final class PBRCommonTableStructTests: XCTestCase {
             XCTAssertNoThrow(try length(name), "format references unregistered struct \(name)")
         }
         XCTAssertEqual(format.headerSize, 0x30)
-        XCTAssertEqual(format.regionAlignment, 0x10)
     }
 
     // MARK: - Pokémon model body map
@@ -141,7 +140,7 @@ final class PBRCommonTableStructTests: XCTestCase {
         let jpTables = tables.compactMap { table in
             table.japaneseIndex.map { (index: $0, name: table.name) }
         }
-        XCTAssertEqual(jpTables.count, tables.count - 1, "ColosseumsUnknown is US/PAL only")
+        XCTAssertEqual(jpTables.count, tables.count - 1, "TutorialData is US/PAL only")
         XCTAssertEqual(
             jp.values.map { ($0.rawValue, $0.name) }.sorted { $0.0 < $1.0 }.map(\.1),
             jpTables.sorted { $0.index < $1.index }.map(\.name)
@@ -160,8 +159,15 @@ final class PBRCommonTableStructTests: XCTestCase {
         XCTAssertEqual(engine.commonTable(fileIndex: 12, japanese: true)?.name, "PokemonModels")
         // Index 6 means a different table on a JP disc.
         XCTAssertEqual(engine.commonTable(fileIndex: 6, japanese: true)?.name, "PokemonIcons")
-        // ColosseumsUnknown has no JP counterpart.
-        XCTAssertNil(engine.commonTable(named: "ColosseumsUnknown")?.japaneseIndex)
+        // TutorialData was added for the international release, so it has no
+        // JP counterpart; JP index 9 is ColosseumsUnknown instead.
+        XCTAssertNil(engine.commonTable(named: "TutorialData")?.japaneseIndex)
+        XCTAssertEqual(engine.commonTable(fileIndex: 9, japanese: true)?.name, "ColosseumsUnknown")
+        // …and on a JP disc it binds the JP record.
+        XCTAssertEqual(engine.commonTable(fileIndex: 9, japanese: true)?.structName,
+                       "PBRColosseumsUnknownJP")
+        XCTAssertEqual(engine.commonTable(fileIndex: 3, japanese: false)?.structName,
+                       "PBRColosseumsUnknown")
     }
 
     func testGameIDsSelectTheRightTableOrdering() {

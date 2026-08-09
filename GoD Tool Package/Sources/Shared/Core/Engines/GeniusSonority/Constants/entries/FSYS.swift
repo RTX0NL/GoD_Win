@@ -24,6 +24,18 @@ extension GeniusSonorityEngine.Data {
         public private(set) var magicBytes = "FSYS"
         public internal(set) var fileMetaDataPadding = 0x40 // 0x20 in Colosseum
 
+        /// Alignment of the regions inside a struct-typed data-table entry
+        /// (see `FSYSRegistry.DataTableMetadata`). The entry array is padded
+        /// up to this before the trailing name/relocation tables. A property
+        /// of the FSYS layer since the reassembly lives here, not per-entry.
+        /// Optional so older serialized engines still decode; `nil` means the
+        /// `dataTableRegionAlignmentValue` fallback.
+        public internal(set) var dataTableRegionAlignment: Int? = nil
+
+        /// The effective region alignment, with the format's default when the
+        /// engine doesn't pin one.
+        public var dataTableRegionAlignmentValue: Int { dataTableRegionAlignment ?? 0x10 }
+
         /// Filler the game's packer leaves in each entry-metadata block.
         /// Colosseum writes 12 bytes of `0x11` at +0x34 (verified constant
         /// across 1028 entries in 299 US archives); XD zeroes the whole
@@ -171,6 +183,12 @@ extension GeniusSonorityEngine.Data {
         /// Maps a message-binary language code to its folder name, e.g.
         /// `["USUK": "English"]`. An unmapped code falls back to the raw code.
         public internal(set) var messagesLanguageCodes: [String: String]? = nil
+
+        /// When set, an image (`gtx`/`atx`) that matched no more specific route
+        /// lands in `<base>/<archive name>` instead of a single shared folder,
+        /// so each archive's images stay grouped. Optional — Colo/XD leave it
+        /// nil and keep the flat `fileTypeFolders` image folder.
+        public internal(set) var imagesFallbackBaseFolder: Folder? = nil
 
         // MARK: - Default File Type Folders
 

@@ -14,10 +14,18 @@ import GoDFoundation
 public extension PBREngine.Data {
     static let defaultCommonTables: [CommonTable] = [
         .init(name: "PokemonIcons",           index: 0,  japaneseIndex: 6,   structName: "PBRPokemonIcon",              entrySize: 0x10),
-        .init(name: "Countries",              index: 1,  japaneseIndex: 7,   structName: "PBRCountry",                  entrySize: 0x76),
+        // The JP disc drops PAL's per-language block from this record, so it
+        // is the same table 10 bytes shorter.
+        .init(name: "Countries",              index: 1,  japaneseIndex: 7,   structName: "PBRCountry",                  entrySize: 0x76,
+              japaneseStructName: "PBRCountryJP", japaneseEntrySize: 0x6C),
         .init(name: "PokeCouponShop",         index: 2,  japaneseIndex: 8,   structName: "PBRPokeCouponReward",         entrySize: 0x0C),
-        // Absent from the JP disc — it has 32 tables to US/PAL's 33.
-        .init(name: "ColosseumsUnknown",      index: 3,  japaneseIndex: nil, structName: "PBRColosseumsUnknown",        entrySize: 0xBA),
+        // Present on the JP disc after all, at index 9, carrying one quote
+        // set instead of five (PAL's five are one per PAL language and hold
+        // identical ids). Confirmed by matching all 106 rows against the PAL
+        // table: same `index` sequence from 182, same message ids, same
+        // 17…54 group indices and 0x81/0x82 flags.
+        .init(name: "ColosseumsUnknown",      index: 3,  japaneseIndex: 9,   structName: "PBRColosseumsUnknown",        entrySize: 0xBA,
+              japaneseStructName: "PBRColosseumsUnknownJP", japaneseEntrySize: 0x3A),
         .init(name: "TypeMatchups",           index: 4,  japaneseIndex: 10,  structName: "PBRTypeMatchup",              entrySize: 0x12),
         .init(name: "ExperienceTables",       index: 5,  japaneseIndex: 11,  structName: "PBRExperienceTable",          entrySize: 0x194),
         .init(name: "PokemonModels",          index: 6,  japaneseIndex: 12,  structName: "PBRPokemonModel",             entrySize: 0x48),
@@ -47,7 +55,11 @@ public extension PBREngine.Data {
         .init(name: "TrainerTitles",          index: 28, japaneseIndex: 22,  structName: "PBRTrainerTitle",             entrySize: 0x0E),
         .init(name: "TMs",                    index: 29, japaneseIndex: 30,  structName: "PBRTM",                       entrySize: 0x04),
         .init(name: "Moves",                  index: 30, japaneseIndex: 31,  structName: "PBRMove",                     entrySize: 0x18),
-        .init(name: "TutorialData",           index: 31, japaneseIndex: 9,   structName: "PBRTutorialData",             entrySize: 0x1C),
+        // Absent from the JP disc — the international release added it, which
+        // is why JP ships 32 tables to US/PAL's 33. JP index 9 (previously
+        // mapped here) is `ColosseumsUnknown`; nothing on the JP disc has
+        // TutorialData's 0x1C stride and 266-row shape.
+        .init(name: "TutorialData",           index: 31, japaneseIndex: nil, structName: "PBRTutorialData",             entrySize: 0x1C),
         .init(name: "LevelUpMoves",           index: 32, japaneseIndex: 16,  structName: "PBRLevelUpMoves",             entrySize: 0x50),
     ]
 }
@@ -64,6 +76,6 @@ public extension PBREngine {
     func commonTable(fileIndex: Int, japanese: Bool) -> Data.CommonTable? {
         data.commonTables.first {
             japanese ? $0.japaneseIndex == fileIndex : $0.index == fileIndex
-        }
+        }?.resolved(japanese: japanese)
     }
 }

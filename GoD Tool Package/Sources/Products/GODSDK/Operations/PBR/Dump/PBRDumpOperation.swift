@@ -7,23 +7,6 @@ import Structs
 
 extension PBROps {
 
-    /// Rebuild manifest for the typed `common.fsys` tables. Records, per
-    /// table, the files a dump produced and the struct that binds them, so a
-    /// future pack can reconstruct each table binary.
-    struct CommonTablesRegistry: Codable {
-        struct Entry: Codable {
-            let name: String
-            let fileIndex: Int
-            let structName: String?
-            let headerFile: String?
-            let csvFile: String?
-            let leadingExtraFile: String?
-            let trailingExtraFile: String?
-            let rawFile: String?
-        }
-        let entries: [Entry]
-    }
-
     static func dump(
         config: DumpConfig,
         settings: GoddessSettings,
@@ -50,83 +33,185 @@ extension PBROps {
 
                 try fileSystem.importFST(output, from: "/", to: outputFolder, overwrite: overwrite, logger: logger)
 
-            case let .dumpCommonTables(fstFolder, outputFolder, overwrite, japanese, pbrPath, geniusPath):
+            case let .dumpCommonTables(unpackedFolder, overwrite, japanese, pbrPath):
                 try dumpCommonTables(
-                    fstFolder: fstFolder, outputFolder: outputFolder, overwrite: overwrite,
-                    japanese: japanese, pbrPath: pbrPath, geniusPath: geniusPath,
-                    fileSystem: fileSystem, logger: logger
+                    unpackedFolder: unpackedFolder, overwrite: overwrite,
+                    japanese: japanese, pbrPath: pbrPath, fileSystem: fileSystem, logger: logger
                 )
             }
         }
     }
 
+    /// Types the raw `common.fsys` `.bin` entries an unpack produced into
+    /// header JSON + row CSV, and rewrites the archive's registry so each
+    /// typed entry carries its reassembly metadata (struct names + files)
+    /// directly — no separate manifest. The raw `.bin` is removed.
     private static func dumpCommonTables(
-        fstFolder: Folder, outputFolder: Folder, overwrite: Bool, japanese: Bool,
-        pbrPath: Folder, geniusPath: Folder, fileSystem: FileSystemTree, logger: Logger?
+        unpackedFolder: Folder, overwrite: Bool, japanese: Bool,
+        pbrPath: Folder, fileSystem: FileSystemTree, logger: Logger?
     ) throws {
         let taskName = "Dump PBR common tables"
         logger?.log(.taskStatus(taskName: taskName, status: .started))
 
-        let geniusEngine = try GeniusSonorityEngine(from: geniusPath, in: fileSystem)
         let pbrEngine = try PBREngine(from: pbrPath, in: fileSystem)
+        let format = pbrEngine.data.commonTableFormat
 
-        let commonFile = fstFolder.folder("files").file("common.fsys")
-        guard let commonData = fileSystem.readFile(at: commonFile)?.allData else {
-            throw FSTErrors.fileNotFound(commonFile, .init())
+        let registryFile = unpackedFolder.folder("Archives").file("common.fsys.json")
+        let registry: FSYSRegistry = try fileSystem.decodeJSON(from: registryFile)
+        // Registry paths are rooted at the unpack root (e.g. `/Data/Common/…`),
+        // matching the entries the FSYS unpack wrote; disk writes prefix the
+        // real `unpackedFolder`.
+        let commonRoot = Folder("/Data/Common")
+        func write(_ data: GoDData, to rooted: File) throws {
+            try fileSystem.writeFile(data, at: unpackedFolder.file(rooted.path), overwrite: overwrite)
         }
-        let archive = try FSYSArchive(data: commonData, engine: geniusEngine)
 
-        var registryEntries = [CommonTablesRegistry.Entry]()
+        var newEntries = [FSYSRegistry.Entry]()
+        var typedCount = 0
+        var demotedCount = 0
 
-        for table in pbrEngine.data.commonTables {
-            guard let entryIndex = japanese ? table.japaneseIndex : table.index,
-                  entryIndex < archive.entries.count else { continue }
-            let binary = archive.entries[entryIndex].data
-            let tableFolder = outputFolder.folder(table.name)
-
-            guard let typed = try pbrEngine.typeCommonTable(table, binary: binary) else {
-                // Undocumented layout — keep the raw table binary.
-                let rawFile = tableFolder.file(table.name + ".bin")
-                try fileSystem.writeFile(binary, at: rawFile, overwrite: overwrite)
-                registryEntries.append(.init(
-                    name: table.name, fileIndex: entryIndex, structName: nil,
-                    headerFile: nil, csvFile: nil, leadingExtraFile: nil,
-                    trailingExtraFile: nil, rawFile: rawFile.path
-                ))
+        for (index, entry) in registry.entries.enumerated() {
+            // Registry entries are in archive order, so the entry index is the
+            // common.fsys file index the table descriptors are keyed on.
+            guard let table = pbrEngine.commonTable(fileIndex: index, japanese: japanese),
+                  table.structName != nil,
+                  let binData = fileSystem.readFile(at: unpackedFolder.file(entry.file.path))?.allData else {
+                newEntries.append(entry)
                 continue
             }
 
+            // A table this build lays out differently keeps its raw `.bin`
+            // rather than aborting the dump. One undocumented table used to
+            // cost every table after it plus the operations chained behind
+            // this one — the JP disc types 7 of 32 before `Countries` throws.
+            // Decode *and* serialize before touching the tree, so a table
+            // that fails halfway leaves no partial artifacts behind.
+            let decoded: (typed: PBREngine.TypedCommonTable, csv: String)?
+            do {
+                guard let typed = try pbrEngine.typeCommonTable(table, binary: binData) else {
+                    newEntries.append(entry)
+                    continue
+                }
+                decoded = (typed, try StructTableCSV.encode(
+                    entries: typed.entries, definition: typed.entryDefinition
+                ))
+            } catch {
+                logger?.log(.warning(
+                    "common.fsys table '\(table.name)' (index \(index)) didn't type: \(error) "
+                    + "Keeping it as a raw binary entry."
+                ))
+                demotedCount += 1
+                newEntries.append(entry)
+                continue
+            }
+            guard let (typed, csv) = decoded else {
+                newEntries.append(entry)
+                continue
+            }
+
+            let tableFolder = commonRoot.folder(table.name)
             let headerFile = tableFolder.file(table.name + ".header.json")
-            try fileSystem.encodeJSON(typed.header, to: headerFile, overwrite: overwrite)
+            try fileSystem.encodeJSON(typed.header, to: unpackedFolder.file(headerFile.path), overwrite: overwrite)
 
-            let csv = try StructTableCSV.encode(entries: typed.entries, definition: typed.entryDefinition)
             let csvFile = tableFolder.file(table.name + ".csv")
-            try fileSystem.writeFile(GoDData(byteStream: [UInt8](csv.utf8), byteOrder: .big), at: csvFile, overwrite: overwrite)
+            try write(GoDData(byteStream: [UInt8](csv.utf8), byteOrder: .big), to: csvFile)
 
-            var leadingPath: String?
+            var leadingFile: File?
             if let leading = typed.leadingExtra {
                 let f = tableFolder.file(table.name + ".string_pool.bin")
-                try fileSystem.writeFile(leading, at: f, overwrite: overwrite)
-                leadingPath = f.path
+                try write(leading, to: f)
+                leadingFile = f
             }
-            var trailingPath: String?
+            var trailingFile: File?
             if let trailing = typed.trailingExtra {
                 let f = tableFolder.file(table.name + ".name_table.bin")
-                try fileSystem.writeFile(trailing, at: f, overwrite: overwrite)
-                trailingPath = f.path
+                try write(trailing, to: f)
+                trailingFile = f
             }
 
-            registryEntries.append(.init(
-                name: table.name, fileIndex: entryIndex, structName: table.structName,
-                headerFile: headerFile.path, csvFile: csvFile.path,
-                leadingExtraFile: leadingPath, trailingExtraFile: trailingPath, rawFile: nil
+            // Replace the raw table binary with the typed files.
+            try? fileSystem.deleteFile(at: unpackedFolder.file(entry.file.path))
+
+            newEntries.append(FSYSRegistry.Entry(
+                metadata: entry.metadata,
+                file: csvFile,
+                dataTable: .init(
+                    tableName: table.name,
+                    entryStructName: typed.entryDefinition.name,
+                    headerStructName: format.headerStructName,
+                    headerFile: headerFile,
+                    leadingExtraFile: leadingFile,
+                    trailingExtraFile: trailingFile
+                )
             ))
+            typedCount += 1
         }
 
-        let registry = CommonTablesRegistry(entries: registryEntries)
-        try fileSystem.encodeJSON(registry, to: outputFolder.file("CommonTables.json"), overwrite: overwrite)
+        let updated = FSYSRegistry(groupID: registry.groupID, metaData: registry.metaData, entries: newEntries)
+        try fileSystem.encodeJSON(updated, to: registryFile, overwrite: true)
 
-        logger?.log(.info("  Dumped \(registryEntries.count) common tables (\(registryEntries.filter { $0.structName != nil }.count) typed)"))
+        // deck.fsys: same treatment, keyed by entry file type (no extras).
+        let deckRegistryFile = unpackedFolder.folder("Archives").file("deck.fsys.json")
+        var deckCount = 0
+        if let deckRegistry: FSYSRegistry = try? fileSystem.decodeJSON(from: deckRegistryFile) {
+            var deckEntries = [FSYSRegistry.Entry]()
+            for entry in deckRegistry.entries {
+                guard let deck = pbrEngine.deckTable(forType: entry.metadata.fileType),
+                      let binData = fileSystem.readFile(at: unpackedFolder.file(entry.file.path))?.allData else {
+                    deckEntries.append(entry)
+                    continue
+                }
+                // Same policy as common.fsys: an undecodable deck keeps its
+                // raw `.bin` instead of failing the whole dump.
+                let decoded: (typed: (header: StructData, entries: [StructData], entryDefinition: StructDefinition), csv: String)
+                do {
+                    let typed = try pbrEngine.typeDeckTable(deck, binary: binData)
+                    decoded = (typed, try StructTableCSV.encode(
+                        entries: typed.entries, definition: typed.entryDefinition
+                    ))
+                } catch {
+                    logger?.log(.warning(
+                        "deck.fsys table '\(deck.fileType)' didn't type: \(error) "
+                        + "Keeping it as a raw binary entry."
+                    ))
+                    demotedCount += 1
+                    deckEntries.append(entry)
+                    continue
+                }
+                let (typed, csv) = decoded
+                // Typed files sit next to the raw bin, sharing its base name.
+                let stem = entry.file.path.withoutExtensions
+                let headerFile = File(stem + ".header.json")
+                let csvFile = File(stem + ".csv")
+                try fileSystem.encodeJSON(typed.header, to: unpackedFolder.file(headerFile.path), overwrite: overwrite)
+                try write(GoDData(byteStream: [UInt8](csv.utf8), byteOrder: .big), to: csvFile)
+                try? fileSystem.deleteFile(at: unpackedFolder.file(entry.file.path))
+
+                deckEntries.append(FSYSRegistry.Entry(
+                    metadata: entry.metadata,
+                    file: csvFile,
+                    dataTable: .init(
+                        tableName: deck.fileType,
+                        entryStructName: typed.entryDefinition.name,
+                        headerStructName: pbrEngine.data.deckHeaderStructName,
+                        headerFile: headerFile,
+                        leadingExtraFile: nil,
+                        trailingExtraFile: nil
+                    )
+                ))
+                deckCount += 1
+            }
+            let updatedDecks = FSYSRegistry(groupID: deckRegistry.groupID, metaData: deckRegistry.metaData, entries: deckEntries)
+            try fileSystem.encodeJSON(updatedDecks, to: deckRegistryFile, overwrite: true)
+        }
+
+        logger?.log(.info("  Typed \(typedCount) common.fsys + \(deckCount) deck.fsys data tables"))
+        if demotedCount > 0 {
+            logger?.log(.warning(
+                "  \(demotedCount) table\(demotedCount == 1 ? "" : "s") kept as raw binary "
+                + "because the struct didn't match this build."
+            ))
+        }
         logger?.log(.taskStatus(taskName: taskName, status: .completed(true)))
     }
 }

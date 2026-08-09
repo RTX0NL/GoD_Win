@@ -68,7 +68,12 @@ public extension PBRStructDefaults {
             // up to 0x10. Zero when there are no named entries.
             .uint32(name: "name_table_offset"),
 
-            // 0x24: Unused. Zero on every table of the PAL disc.
+            // 0x24: Zero on every table of the PAL disc, but not unused at
+            // runtime — the loader treats the halfword at +0x2E as an
+            // "already relocated" guard and sets it once it has converted
+            // the four offset fields above into absolute pointers. On disc
+            // it is always zero, so it round-trips as padding; a rebuild
+            // must keep it zero or the table would be skipped on load.
             .padding(length: 12)
         ],
         description: "Header of a common.fsys data table: entry array geometry plus the optional name-lookup regions. Verified against all 33 tables of the PAL disc."

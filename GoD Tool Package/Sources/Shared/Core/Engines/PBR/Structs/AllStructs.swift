@@ -61,6 +61,14 @@ public extension PBREngine {
                 PBRStructDefaults.countryStruct,
                 PBRStructDefaults.colosseumQuoteSetStruct,
                 PBRStructDefaults.colosseumsUnknownStruct,
+
+                // Japanese-disc variants of the two tables whose layout the
+                // international release changed. Both differ only by the
+                // width of a per-language array, so they sit beside their
+                // US/PAL counterparts rather than replacing them.
+                PBRStructDefaults.countryJapaneseStruct,
+                PBRStructDefaults.colosseumsUnknownJapaneseStruct,
+
                 PBRStructDefaults.pokemonModelEffectStruct,
                 PBRStructDefaults.ballModelStruct,
                 PBRStructDefaults.fightAIBattlePassStruct,
@@ -74,6 +82,17 @@ public extension PBREngine {
                 PBRStructDefaults.trainerCustomTableEntryStruct,
                 PBRStructDefaults.trainerEventStruct,
                 PBRStructDefaults.tutorialDataStruct,
+
+                // deck.fsys tables (dckp / dckt / dcka) and their sub-structs
+                PBRStructDefaults.deckHeaderStruct,
+                PBRStructDefaults.trainerDeckMessagesStruct,
+                PBRStructDefaults.trainerDeckAppearanceStruct,
+                PBRStructDefaults.trainerDeckPoolStruct,
+                PBRStructDefaults.trainerDeckStruct,
+                PBRStructDefaults.pokemonDeckStatsStruct,
+                PBRStructDefaults.pokemonDeckEVsStruct,
+                PBRStructDefaults.pokemonDeckStruct,
+                PBRStructDefaults.aiDeckStruct,
             ]
         }
     }

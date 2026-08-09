@@ -64,6 +64,37 @@ public extension PBRStructDefaults {
         description: "One country: its name, its states/provinces, and per-language values. Sub-region list is populated for only 18 of 234 countries."
     )
 
+    /// The Japanese disc's country entry (0x6C / 108 bytes) — the same
+    /// record without the per-language block.
+    ///
+    /// PAL's `per_language_values` is 5 slots × 2 bytes, one per PAL
+    /// language; a single-language disc has nothing to put there and drops
+    /// the field, which is the whole of the 10-byte difference. Everything
+    /// else is identical, and measurably so on the JP disc: the same 234
+    /// rows, the same contiguous name ids (5705…5938), `subregion_count`
+    /// equal to the number of non-zero sub-region ids on every row, the
+    /// same 18 countries carrying sub-regions, and 0xD0 filler throughout.
+    static let countryJapaneseStruct = StructMap(
+        name: "PBRCountryJP",
+        wordSize: 2,
+        alignmentStyle: .none,
+        properties: [
+            // 0x00: Message id of the country's name.
+            .uint16(name: "name_message_id"),
+
+            // 0x02: Message ids for the country's states / provinces /
+            // prefectures, packed from the front and zero-filled.
+            .array(name: "subregion_name_message_ids", count: 52, of: .uint16),
+
+            // 0x6A: Number of populated entries in the sub-region array.
+            .uint8(name: "subregion_count"),
+
+            // 0x6B: Alignment filler (0xD0).
+            .padding(length: 1),
+        ],
+        description: "Japanese-disc country entry: name and sub-regions, without PAL's per-language block."
+    )
+
     // MARK: - Colosseum quote table (table 3)
 
     /// One group of alternative lines (0x20 / 32 bytes).
@@ -110,6 +141,44 @@ public extension PBRStructDefaults {
             .uint8(name: "flags"),
         ],
         description: "Five groups of alternative message ids keyed by a group index — dialogue sets. Legacy tool left this table untyped."
+    )
+
+    /// The Japanese disc's dialogue-set entry (0x3A / 58 bytes) — the same
+    /// record carrying one quote set instead of five.
+    ///
+    /// PAL's five sets hold *identical* message ids as each other on a given
+    /// row, one slot per PAL language; the JP disc ships one language and so
+    /// one set. Every other field keeps its offset relative to the shrunken
+    /// array, and the JP disc agrees on all 106 rows: `index` is 182 + row,
+    /// both padding runs are zero, `group_index` spans the same 17…54, and
+    /// `flags` is the same 0x81/0x82 pair.
+    ///
+    /// This is the table the JP disc carries at common.fsys index 9 — not
+    /// `TutorialData`, which the JP disc doesn't ship at all.
+    static let colosseumsUnknownJapaneseStruct = StructMap(
+        name: "PBRColosseumsUnknownJP",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: [
+            // 0x00: Contiguous entry index.
+            .uint16(name: "index"),
+            // 0x02: A message id.
+            .uint16(name: "message_id"),
+            // 0x04: Zero on every row.
+            .padding(length: 4),
+
+            // 0x08: One group of alternative lines.
+            .array(name: "quote_sets", count: 1, of: .subStruct(name: "PBRColosseumQuoteSet")),
+
+            // 0x28: Zero on every row.
+            .padding(length: 16),
+
+            // 0x38: Group index (17…54).
+            .uint8(name: "group_index"),
+            // 0x39: 0x81 on all but a few rows, which use 0x82.
+            .uint8(name: "flags"),
+        ],
+        description: "Japanese-disc dialogue set: one group of alternative message ids keyed by a group index."
     )
 
     // MARK: - Model bindings (tables 7, 10, 26, 31)

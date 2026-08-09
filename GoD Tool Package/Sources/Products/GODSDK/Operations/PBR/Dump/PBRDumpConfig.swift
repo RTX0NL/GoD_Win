@@ -10,16 +10,15 @@ extension PBROps {
                 dolphinEngine: Folder,
                 geniusSonorityEngine: Folder
             )
-            /// Decodes each documented `common.fsys` data table into an
-            /// editable header JSON + entry CSV (+ raw extras for byte-exact
-            /// rebuild), driven by the PBR engine's table descriptors.
+            /// Types the raw `common.fsys` data-table entries in an already
+            /// unpacked project into editable header JSON + row CSV, folding
+            /// the reassembly metadata into each entry of the archive's
+            /// `common.fsys.json` registry. Runs after `dumpPBR`.
             case dumpCommonTables(
-                fstFolder: Folder,
-                outputFolder: Folder,
+                unpackedFolder: Folder,
                 overwrite: Bool,
                 japanese: Bool,
-                pbrEngine: Folder,
-                geniusSonorityEngine: Folder
+                pbrEngine: Folder
             )
         }
         let operations: [OperationConfig<Operations>]

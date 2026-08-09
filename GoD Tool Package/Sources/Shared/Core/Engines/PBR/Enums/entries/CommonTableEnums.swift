@@ -55,9 +55,13 @@ public extension PBREnumDefaults {
     )
 
     /// `common.fsys` member index → table, on Japanese (RPBJ) discs. Same
-    /// 33 tables minus `ColosseumsUnknown`, in a different order — so an
-    /// index means a different table depending on the build, and nothing
-    /// may assume the US/PAL numbering.
+    /// 33 tables minus `TutorialData`, in a different order — so an index
+    /// means a different table depending on the build, and nothing may
+    /// assume the US/PAL numbering.
+    ///
+    /// The absent table is `TutorialData`, added for the international
+    /// release; index 9 is `ColosseumsUnknown`, which the JP disc does ship
+    /// (with one quote set rather than five).
     static let commonTableIndexJP = Enum(
         name: "PBRCommonTableIndexJP",
         allowUnknownCases: true,
@@ -71,7 +75,7 @@ public extension PBREnumDefaults {
             .init(name: "PokemonIcons",           rawValue: 6),
             .init(name: "Countries",              rawValue: 7),
             .init(name: "PokeCouponShop",         rawValue: 8),
-            .init(name: "TutorialData",           rawValue: 9),
+            .init(name: "ColosseumsUnknown",      rawValue: 9),
             .init(name: "TypeMatchups",           rawValue: 10),
             .init(name: "ExperienceTables",       rawValue: 11),
             .init(name: "PokemonModels",          rawValue: 12),

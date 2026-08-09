@@ -11,6 +11,12 @@ public extension PBREngine {
         /// a dump can type its rows without hardcoding the mapping.
         public var commonTables: [CommonTable] = Self.defaultCommonTables
 
+        /// `deck.fsys` table typing, keyed by the entry's FSYS file type.
+        public var deckTables: [DeckTable] = Self.defaultDeckTables
+
+        /// Struct describing the shared 0x10 `deck.fsys` header.
+        public var deckHeaderStructName = "PBRDeckHeader"
+
         public init() {}
     }
 }
@@ -24,11 +30,22 @@ public extension PBREngine.Data {
         /// every table's `string_pool_offset` field holds exactly this.
         public var headerSize = 0x30
 
-        /// Regions inside a table are padded up to a multiple of this.
-        /// `entries_offset == align(string_pool_offset + string_pool_size)`
-        /// and `name_table_offset == align(entries_offset + entries_size)`
-        /// hold on all 33 tables.
-        public var regionAlignment = 0x10
+        /// Byte the packer writes into alignment gaps *inside* an entry.
+        ///
+        /// Genius Sonority's table compiler fills intra-entry gaps with
+        /// `0xD0` rather than zero — 14 of the 33 PAL tables contain such
+        /// runs. That is load-bearing knowledge, not trivia: it's what
+        /// separates a live-but-unidentified field from a hole, and several
+        /// fields the legacy tool called "Unknown" are padding on this
+        /// evidence (and one it called padding turned out to be a field).
+        /// A rebuild has to re-emit it, or the output differs from the disc
+        /// everywhere a struct declares padding.
+        public var intraEntryPaddingByte = 0xD0
+
+        /// Byte written *between* a table's regions to reach the next
+        /// alignment boundary — pool → entries → name table → relocation
+        /// list. Zero on every PAL table, i.e. deliberately not `0xD0`.
+        public var interRegionPaddingByte = 0x00
 
         /// Registered struct describing the leading header.
         public var headerStructName = "PBRCommonTableHeader"
@@ -48,6 +65,30 @@ public extension PBREngine.Data {
 
         public init() {}
     }
+
+    /// Binds a `deck.fsys` entry type to the struct describing one entry.
+    /// Decks are addressed by FSYS file type (all `dckp` entries share a
+    /// struct), not by index.
+    struct DeckTable: Codable, Equatable {
+        /// FSYS file type of the deck entries (`dckp`/`dckt`/`dcka`).
+        public var fileType: String
+        /// Registered struct describing a single deck entry.
+        public var structName: String
+        /// Entry stride observed on the PAL disc.
+        public var entrySize: Int
+
+        public init(fileType: String, structName: String, entrySize: Int) {
+            self.fileType = fileType
+            self.structName = structName
+            self.entrySize = entrySize
+        }
+    }
+
+    static let defaultDeckTables: [DeckTable] = [
+        .init(fileType: "dckp", structName: "PBRPokemonDeck", entrySize: 0x38),
+        .init(fileType: "dckt", structName: "PBRTrainerDeck", entrySize: 0x98),
+        .init(fileType: "dcka", structName: "PBRAIDeck",      entrySize: 0x24),
+    ]
 
     /// Describes one member of `common.fsys`.
     struct CommonTable: Codable, Equatable {
@@ -70,18 +111,48 @@ public extension PBREngine.Data {
         /// which is what `PBRCommonTableStructTests` pins.
         public var entrySize: Int
 
+        /// Struct describing an entry *on the Japanese disc*, when that
+        /// build lays the table out differently. `nil` — the common case —
+        /// means the JP disc uses the same record as US/PAL, which held for
+        /// 30 of the JP disc's 32 tables when measured.
+        ///
+        /// Optional so engines serialized before this existed still decode.
+        public var japaneseStructName: String?
+
+        /// Entry stride on the Japanese disc, paired with
+        /// `japaneseStructName`. Both are set together or neither is.
+        public var japaneseEntrySize: Int?
+
         public init(
             name: String,
             index: Int,
             japaneseIndex: Int?,
             structName: String?,
-            entrySize: Int
+            entrySize: Int,
+            japaneseStructName: String? = nil,
+            japaneseEntrySize: Int? = nil
         ) {
             self.name = name
             self.index = index
             self.japaneseIndex = japaneseIndex
             self.structName = structName
             self.entrySize = entrySize
+            self.japaneseStructName = japaneseStructName
+            self.japaneseEntrySize = japaneseEntrySize
+        }
+
+        /// This descriptor with the region's record bound, so callers read
+        /// `structName`/`entrySize` without repeating the region test — and
+        /// so a table that only *some* builds lay out differently can't be
+        /// half-resolved at a call site.
+        public func resolved(japanese: Bool) -> CommonTable {
+            guard japanese, let name = japaneseStructName, let size = japaneseEntrySize else {
+                return self
+            }
+            var copy = self
+            copy.structName = name
+            copy.entrySize = size
+            return copy
         }
     }
 }
