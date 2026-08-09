@@ -117,6 +117,7 @@ Each operation has its own `Config` type and is enabled/disabled via the `Operat
 | FSYS Archive | GeniusSonority (currently) | Proprietary archive with LZSS compression. Confirmed to be Genius Sonority-specific (not a Nintendo or middleware format). Used in Colosseum, XD, and PBR. May need its own engine or a more general home if non-GS games are found to use it. |
 | FSYS TOC | GeniusSonority (currently) | Table of contents mapping group IDs to files |
 | DOL | Dolphin | GameCube executable (text + data sections) |
+| Yaz0 / Yay0 | none — `GoDFoundation/Data/Compression` | Nintendo's own LZ77 codec, GameCube through Switch. Not used by Colo/XD/PBR; present for general titles and as a prerequisite for RARC/U8. See "Nintendo LZ77 compression" below. |
 
 #### Struct tables as CSV
 
@@ -199,6 +200,41 @@ at other dumps). 500 archives across both games currently repack byte-identicall
 When adding FSYS behaviour, keep the pretty/raw split: derived names are for the
 project filesystem, the stored raw string is what gets written back.
 
+#### Nintendo LZ77 compression (Yaz0 / Yay0)
+
+Lives beside LZSS in `GoDFoundation/Data/Compression/`, because a codec is a
+pure byte-level algorithm with no game knowledge — same reasoning that puts
+AES and SHA-1 in `Data/Crypto/`.
+
+The two formats make **identical compression decisions** and differ only in
+how the operations are written down: Yaz0 interleaves them into one stream,
+Yay0 splits them across a mask/link/chunk table trio. So the search lives
+once in `LZ77Encoder`, which emits a format-neutral `[LZ77Token]`, and each
+codec is reduced to serializing that list. The CX family (`0x10`/`0x11`, for
+NARC/GARC) is the same shape with different bounds and can reuse it.
+
+`CompressionFormat` sniffs a stream by magic and hands back its codec. It is
+a closed enum, not a registry: unlike file formats — which engines extend
+with game-specific handlers — the set of compressed stream formats is fixed
+knowledge about Nintendo's tooling, so there is no mutable state to inject.
+Only self-describing formats belong in it; FSYS's LZSS does not qualify,
+because its magic lives in the archive's entry header rather than in the
+stream the codec is handed.
+
+**Not a 1:1 target,** and deliberately so — see Philosophy. Yaz0 is a
+plausible future candidate (the reference encoder is known to reproduce many
+retail `.szs` files exactly), but nothing is measured, because no game this
+tool currently opens uses the format. Promoting it means acquiring a corpus
+first, exactly as FSYS did. `LZ77Encoder` documents the one place it
+knowingly diverges from the reference encoder.
+
+Validation is by cross-check rather than round-trip: `ReferenceLZ77Decoders`
+in the test target is a deliberately independent decoder pair written from
+the spec, and every round-trip test also decodes its stream through those —
+the same trick `WiiDiscFixtures` uses on the Wii crypto. A round trip alone
+would pass if the encoder and decoder were wrong in matching ways. Full spec
+in `Documentation/File Formats/Shared/Yaz0 Yay0 - Nintendo LZ77 Compression.md`.
+
 ### Nintendo Archive Formats (future support candidates)
 
 **GameCube/Wii:**
@@ -232,8 +268,8 @@ project filesystem, the stored raw string is what gets written back.
 **Cross-platform compression:**
 | Format | Platforms | Description |
 |--------|-----------|-------------|
-| Yaz0 | GC, Wii, 3DS, Wii U, Switch | LZ77 variant, wraps archives as `.szs`. Nintendo's standard for 20+ years. |
-| Yay0 | GC (early) | Predecessor to Yaz0. |
+| Yaz0 | GC, Wii, 3DS, Wii U, Switch | **Implemented.** LZ77 variant, wraps archives as `.szs`. Nintendo's standard for 20+ years. |
+| Yay0 | GC (early) | **Implemented.** Predecessor to Yaz0. |
 | LZ10/LZ11 | DS, 3DS | Nintendo SDK LZ variants. |
 | ZSTD | Switch (newer) | Replaces Yaz0 in newer titles (e.g., TotK). |
 
@@ -456,6 +492,8 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 - [x] GameCube ISO rebuild
 - [x] FSYS archive parsing and extraction
 - [x] LZSS compression/decompression
+- [x] Yaz0 + Yay0 compression/decompression, shared `LZ77Encoder`, and
+      `CompressionFormat` magic sniffing (see "Nintendo LZ77 compression")
 - [x] Project setup from ISO (auto-detect game, create folder structure, generate configs)
 - [x] Configuration system (JSON configs, operation chains, toggle enable/disable)
 - [x] Logging framework

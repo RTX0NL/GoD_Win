@@ -50,6 +50,7 @@ public enum FixtureCatalog {
         files += try FSYSFixtures.files()
         files += try FsysTOCFixtures.files()
         files += LZSSFixtures.files()
+        files += NintendoCompressionFixtures.files()
         files += SectionLayoutFixtures.files()
         return files
     }

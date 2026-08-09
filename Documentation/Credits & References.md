@@ -15,6 +15,23 @@ This document lists the reference implementations, specifications, and documenta
 ### Documentation
 - **WiiBrew Wiki** — Wii disc format documentation including partition table layout, ticket/TMD structures, and encryption scheme.
 
+## Yaz0 / Yay0 compression
+
+### Documentation
+- **WiiBrew Wiki** and **CloudModding Wiki** — Yaz0 and Yay0 stream layouts:
+  header fields, the flag/group structure, the three-table Yay0 split, and
+  the two- and three-byte back-reference encodings.
+
+### Reference Implementations
+- **`simpleEnc` / `nintendoEnc`** — the widely-mirrored community reference
+  encoder for Yaz0, carried by many GameCube/Wii toolchains. Referenced for
+  encoder *semantics* rather than code: longest-match-wins with the furthest
+  back winning a tie, two-byte matches degrading to literals, and the
+  one-byte deferral heuristic (take a literal here if the next position can
+  then take a match at least two bytes longer). `LZ77Encoder` reproduces
+  those decisions over a hash chain instead of a linear window scan, and
+  documents where it knowingly diverges.
+
 ## PowerPC Disassembler/Assembler
 
 ### Specifications
