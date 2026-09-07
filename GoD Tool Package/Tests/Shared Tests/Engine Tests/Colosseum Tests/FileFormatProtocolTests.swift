@@ -186,7 +186,7 @@ final class FileFormatProtocolTests: XCTestCase {
         XCTAssertEqual(parsed.glyphs.count, font.glyphs.count)
     }
 
-    func testGSFont_outputs_emitsJSONAndPGMUnderName() throws {
+    func testGSFont_outputs_emitsJSONAndGreyscalePNGUnderName() throws {
         guard let raw = realFontBytes else { throw XCTSkip("pda_menu.fnt not available") }
         var font = try GSFont(binary: GoDData(byteStream: raw, byteOrder: .big))
         font.name = "pda_menu"
@@ -195,10 +195,15 @@ final class FileFormatProtocolTests: XCTestCase {
         XCTAssertEqual(artifacts.count, 2)
         let byFile = artifacts.byFile
         XCTAssertNotNil(byFile[File("pda_menu.fnt.json")])
-        XCTAssertNotNil(byFile[File("pda_menu.fnt.pgm")])
-        // PGM header starts with "P5\n".
-        let pgmBytes = byFile[File("pda_menu.fnt.pgm")]!.rawBytes
-        XCTAssertEqual(Array(pgmBytes[0..<3]), [0x50, 0x35, 0x0A])
+        let atlas = try XCTUnwrap(byFile[File("pda_menu.fnt.png")])
+        // The atlas is a greyscale PNG. It was a binary PGM, which opens
+        // nowhere on Windows without extra software and is an order of
+        // magnitude larger for a sheet that is mostly empty.
+        let bytes = atlas.rawBytes
+        XCTAssertEqual(Array(bytes[0..<8]), [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        // IHDR colour type at +25: 0 = greyscale, 8 bits per sample at +24.
+        XCTAssertEqual(bytes[25], 0, "intensity-only data should not be stored as RGB/RGBA")
+        XCTAssertEqual(bytes[24], 8)
     }
 
     // MARK: - GTXFile

@@ -232,6 +232,31 @@ final class DispatchRoutingTests: XCTestCase {
         XCTAssertFalse(overwrite)
     }
 
+    func testPBRBuildRouting() throws {
+        let spy = try route("""
+        { "pbrBuild": { "config": { "operations": [ { "operation": { "packPBR": {
+            "unpackedFolder": "/project/Unpacked",
+            "fstFolder": "/project/Build/Contents/DATA",
+            "overwrite": true,
+            "geniusSonorityEngine": "/project/Engines/GeniusSonority Engine",
+            "pbrEngine": "/project/Engines/PBR Engine",
+            "engines": [ "/project/Engines/Pokemon Engine" ]
+        } }, "enabled": "YES" } ] } } }
+        """)
+        guard case let .pbrBuild(config) = try singleOperation(spy) else {
+            return XCTFail("Expected pbrBuild")
+        }
+        guard case let .packPBR(unpackedFolder, fstFolder, overwrite, genius, pbr, engines) = config.operations.enabledEntries.first else {
+            return XCTFail("Expected packPBR")
+        }
+        XCTAssertEqual(unpackedFolder, Folder("/project/Unpacked"))
+        XCTAssertEqual(fstFolder, Folder("/project/Build/Contents/DATA"))
+        XCTAssertTrue(overwrite)
+        XCTAssertEqual(genius, Folder("/project/Engines/GeniusSonority Engine"))
+        XCTAssertEqual(pbr, Folder("/project/Engines/PBR Engine"))
+        XCTAssertEqual(engines, [Folder("/project/Engines/Pokemon Engine")])
+    }
+
     // MARK: - DOL
 
     func testDolDisassemblyRouting() throws {
@@ -894,5 +919,70 @@ final class DispatchRoutingTests: XCTestCase {
     func testProcessIgnoresFilesWithoutExtension() throws {
         // No file type → silently skipped, never dispatched.
         try GODOps.process(inputFile: File("/tmp/no-extension"))
+    }
+
+    // MARK: - PBR fonts
+
+    func testPBRFontDumpRouting() throws {
+        let spy = try route("""
+        { "pbrFontDump": { "config": {
+            "fontPath": "/project/Unpacked/Data/Text/Fonts/common_0033.FNT",
+            "outputFolder": "/project/Source/Fonts",
+            "overwrite": true
+        } } }
+        """)
+        guard case let .pbrFontDump(config) = try singleOperation(spy) else {
+            return XCTFail("Expected pbrFontDump")
+        }
+        XCTAssertEqual(config.fontPath, File("/project/Unpacked/Data/Text/Fonts/common_0033.FNT"))
+        XCTAssertEqual(config.outputFolder, Folder("/project/Source/Fonts"))
+        XCTAssertTrue(config.overwrite)
+    }
+
+    func testPBRFontsDumpRouting() throws {
+        let spy = try route("""
+        { "pbrFontsDump": { "config": {
+            "fontsFolder": "/project/Unpacked/Data/Text/Fonts",
+            "outputFolder": "/project/Source/Fonts",
+            "overwrite": false
+        } } }
+        """)
+        guard case let .pbrFontsDump(config) = try singleOperation(spy) else {
+            return XCTFail("Expected pbrFontsDump")
+        }
+        XCTAssertEqual(config.fontsFolder, Folder("/project/Unpacked/Data/Text/Fonts"))
+        XCTAssertEqual(config.outputFolder, Folder("/project/Source/Fonts"))
+        XCTAssertFalse(config.overwrite)
+    }
+
+    func testPBRFontBuildRouting() throws {
+        let spy = try route("""
+        { "pbrFontBuild": { "config": {
+            "fontFolder": "/project/Source/Fonts/common_0033",
+            "outputFolder": "/project/Unpacked/Data/Text/Fonts",
+            "overwrite": true
+        } } }
+        """)
+        guard case let .pbrFontBuild(config) = try singleOperation(spy) else {
+            return XCTFail("Expected pbrFontBuild")
+        }
+        XCTAssertEqual(config.fontFolder, Folder("/project/Source/Fonts/common_0033"))
+        XCTAssertEqual(config.outputFolder, Folder("/project/Unpacked/Data/Text/Fonts"))
+        XCTAssertTrue(config.overwrite)
+    }
+
+    func testPBRFontsBuildRouting() throws {
+        let spy = try route("""
+        { "pbrFontsBuild": { "config": {
+            "fontsFolder": "/project/Source/Fonts",
+            "outputFolder": "/project/Unpacked/Data/Text/Fonts",
+            "overwrite": true
+        } } }
+        """)
+        guard case let .pbrFontsBuild(config) = try singleOperation(spy) else {
+            return XCTFail("Expected pbrFontsBuild")
+        }
+        XCTAssertEqual(config.fontsFolder, Folder("/project/Source/Fonts"))
+        XCTAssertEqual(config.outputFolder, Folder("/project/Unpacked/Data/Text/Fonts"))
     }
 }

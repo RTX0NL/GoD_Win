@@ -56,6 +56,10 @@ final class SpyOperationHandler: OperationHandler {
         try record(.pbrDump(config: config), settings)
     }
 
+    func pbrBuild(config: PBROps.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.pbrBuild(config: config), settings)
+    }
+
     func dolDisassembly(config: DolDisassembly.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try record(.dolDisassembly(config: config), settings)
     }
@@ -142,6 +146,23 @@ final class SpyOperationHandler: OperationHandler {
 
     func nintendoArchivesBuild(config: NintendoArchiveBuild.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try record(.nintendoArchivesBuild(config: config), settings)
+    }
+
+
+    func pbrFontDump(config: PBRFontDump.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.pbrFontDump(config: config), settings)
+    }
+
+    func pbrFontsDump(config: PBRFontDump.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.pbrFontsDump(config: config), settings)
+    }
+
+    func pbrFontBuild(config: PBRFontBuild.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.pbrFontBuild(config: config), settings)
+    }
+
+    func pbrFontsBuild(config: PBRFontBuild.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.pbrFontsBuild(config: config), settings)
     }
 
     func convert(config: Convert.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {

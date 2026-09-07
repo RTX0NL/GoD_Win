@@ -1,0 +1,52 @@
+{
+ "chunks": [
+  {
+   "file": {
+    "label": "sym_3",
+    "extension": "fnt"
+   }
+  },
+  {
+   "file": {
+    "label": "sym_4",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "sym_5",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "sym_6",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "sym_7",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "sym_8",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "sym_9",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "sym_10",
+    "extension": "msg"
+   }
+  }
+ ]
+}

@@ -28,6 +28,13 @@ final class BundledTypeMapTests: XCTestCase {
         return try JSONDecoder().decode(TypeMap.self, from: Data(bytes.rawBytes))
     }
 
+    private func fileChunks(_ map: TypeMap) -> [TypeMap.Chunk.EmbeddedFile] {
+        map.chunks.compactMap {
+            if case .file(let f) = $0 { return f }
+            return nil
+        }
+    }
+
     private func tableEntryTypes(_ map: TypeMap) -> [(name: String, type: String)] {
         map.chunks.compactMap {
             if case .table(let t) = $0 { return (t.name, t.entryType) }
@@ -47,30 +54,88 @@ final class BundledTypeMapTests: XCTestCase {
         }
     }
 
-    func testXDDolTypeMap() throws {
-        let map = try decode(PokemonXD.bundledResource(named: "dol_typemap.json"), "XD dol_typemap.json")
+    /// Every bundled map, for every region, must decode and name structs the
+    /// engine defines. The maps are region-keyed because each chunk is
+    /// identified by position — the DOL map by address, the REL maps by
+    /// pointer-index symbol — and both move between builds.
+    private static let regions = ["us", "eu", "jp"]
+
+    func testXDDolTypeMapsDecodeForEveryRegion() throws {
         let defined = Set(XDEngine.Structs.allItems.map(\.name))
-        // The XD DOL map's tables all have ported structs — full coverage.
-        for table in tableEntryTypes(map) {
-            XCTAssertTrue(defined.contains(table.type), "XD DOL: unresolved struct \(table.type) for \(table.name)")
+        for region in Self.regions {
+            let name = "dol_typemap_\(region).json"
+            let map = try decode(PokemonXD.bundledResource(named: name), "XD \(name)")
+            for table in tableEntryTypes(map) {
+                XCTAssertTrue(defined.contains(table.type),
+                              "XD DOL \(region): unresolved struct \(table.type) for \(table.name)")
+            }
+            // Every region embeds at least a font and a message table in the DOL.
+            let files = fileChunks(map)
+            XCTAssertFalse(files.isEmpty, "XD DOL \(region) should carry embedded file chunks")
+            XCTAssertTrue(files.contains { $0.extension == "fnt" },
+                          "XD DOL \(region) should carry the embedded font")
+            assertResolvable(map, definedTypes: defined, label: "XD DOL \(region)")
         }
-        // And it carries the embedded MSG file chunks.
-        let files = map.chunks.filter { if case .file = $0 { return true }; return false }
-        XCTAssertGreaterThanOrEqual(files.count, 3, "XD DOL map should include embedded MSG files")
-        assertResolvable(map, definedTypes: defined, label: "XD DOL")
     }
 
-    func testXDCommonRelTypeMap() throws {
-        let map = try decode(PokemonXD.bundledResource(named: "common_rel_typemap.json"), "XD common_rel_typemap.json")
-        assertResolvable(map, definedTypes: Set(XDEngine.Structs.allItems.map(\.name)), label: "XD common.rel")
+    func testXDCommonRelTypeMapsDecodeForEveryRegion() throws {
+        let defined = Set(XDEngine.Structs.allItems.map(\.name))
+        for region in Self.regions {
+            let name = "common_rel_typemap_\(region).json"
+            let map = try decode(PokemonXD.bundledResource(named: name), "XD \(name)")
+            assertResolvable(map, definedTypes: defined, label: "XD common.rel \(region)")
+        }
     }
 
-    func testColosseumCommonRelTypeMap() throws {
-        let map = try decode(PokemonColosseum.bundledResource(named: "common_rel_typemap.json"), "Colo common_rel_typemap.json")
+    /// The US and PAL discs carry the six-language species/move tables in
+    /// common.rel; the JP disc carries one. Losing those entries would mean
+    /// the biggest string tables in the game dump as anonymous bytes.
+    func testXDCommonRelTypeMapsCarryTheEmbeddedMessageTables() throws {
+        for (region, expected) in [("us", 6), ("eu", 6), ("jp", 0)] {
+            let map = try decode(
+                PokemonXD.bundledResource(named: "common_rel_typemap_\(region).json"),
+                "XD common_rel_typemap_\(region).json"
+            )
+            let msgs = fileChunks(map).filter { $0.extension == "msg" }
+            XCTAssertEqual(msgs.count, expected, "XD common.rel \(region): embedded MSG count")
+        }
+    }
+
+    func testColosseumTypeMapsDecodeForEveryRegion() throws {
         let defined = Set(ColosseumEngine.Structs.allItems.map(\.name))
-        assertResolvable(map, definedTypes: defined, label: "Colo common.rel")
-        // The one ported Colo struct must resolve so at least one table is typed.
-        XCTAssertTrue(tableEntryTypes(map).contains { $0.type == "CharacterModel" && defined.contains("CharacterModel") })
+        for region in Self.regions {
+            let dol = try decode(
+                PokemonColosseum.bundledResource(named: "dol_typemap_\(region).json"),
+                "Colo dol_typemap_\(region).json"
+            )
+            XCTAssertTrue(fileChunks(dol).contains { $0.extension == "fnt" },
+                          "Colo DOL \(region) should carry the embedded font")
+
+            let rel = try decode(
+                PokemonColosseum.bundledResource(named: "common_rel_typemap_\(region).json"),
+                "Colo common_rel_typemap_\(region).json"
+            )
+            assertResolvable(rel, definedTypes: defined, label: "Colo common.rel \(region)")
+            // The one ported Colo struct must resolve so at least one table is typed.
+            XCTAssertTrue(tableEntryTypes(rel).contains {
+                $0.type == "CharacterModel" && defined.contains("CharacterModel")
+            }, "Colo common.rel \(region): CharacterModel table")
+        }
+    }
+
+    /// `tableres2.rel` lives inside `common_dvdeth.fsys` on the US and PAL
+    /// discs (JP has no such archive) and is byte-identical between them, so
+    /// it gets one map rather than a region-keyed set.
+    func testTableres2TypeMap() throws {
+        let map = try decode(
+            PokemonXD.bundledResource(named: "tableres2_typemap.json"),
+            "XD tableres2_typemap.json"
+        )
+        let files = fileChunks(map)
+        XCTAssertEqual(files.filter { $0.extension == "fnt" }.count, 1,
+                       "tableres2 carries exactly one font")
+        XCTAssertEqual(files.filter { $0.extension == "msg" }.count, 7,
+                       "tableres2 carries seven language message tables")
     }
 
     /// The engine folders that resolve a map's struct types come from the

@@ -33,10 +33,11 @@ extension PBROps {
 
                 try fileSystem.importFST(output, from: "/", to: outputFolder, overwrite: overwrite, logger: logger)
 
-            case let .dumpCommonTables(unpackedFolder, overwrite, japanese, pbrPath):
+            case let .dumpCommonTables(unpackedFolder, overwrite, japanese, pbrPath, engines):
                 try dumpCommonTables(
                     unpackedFolder: unpackedFolder, overwrite: overwrite,
-                    japanese: japanese, pbrPath: pbrPath, fileSystem: fileSystem, logger: logger
+                    japanese: japanese, pbrPath: pbrPath, engines: engines,
+                    fileSystem: fileSystem, logger: logger
                 )
             }
         }
@@ -48,13 +49,19 @@ extension PBROps {
     /// directly — no separate manifest. The raw `.bin` is removed.
     private static func dumpCommonTables(
         unpackedFolder: Folder, overwrite: Bool, japanese: Bool,
-        pbrPath: Folder, fileSystem: FileSystemTree, logger: Logger?
+        pbrPath: Folder, engines: [Folder]?, fileSystem: FileSystemTree, logger: Logger?
     ) throws {
         let taskName = "Dump PBR common tables"
         logger?.log(.taskStatus(taskName: taskName, status: .started))
 
         let pbrEngine = try PBREngine(from: pbrPath, in: fileSystem)
         let format = pbrEngine.data.commonTableFormat
+
+        // Entry structs resolve against PBR's definitions first, then any
+        // engine the config adds — a struct naming a species/move/item enum
+        // needs the Pokemon engine in the list, since `getStruct` only ever
+        // consults one engine's own enums.
+        let structEngine = try GenericEngine(combining: [pbrPath] + (engines ?? []), in: fileSystem)
 
         let registryFile = unpackedFolder.folder("Archives").file("common.fsys.json")
         let registry: FSYSRegistry = try fileSystem.decodeJSON(from: registryFile)
@@ -88,7 +95,7 @@ extension PBROps {
             // that fails halfway leaves no partial artifacts behind.
             let decoded: (typed: PBREngine.TypedCommonTable, csv: String)?
             do {
-                guard let typed = try pbrEngine.typeCommonTable(table, binary: binData) else {
+                guard let typed = try pbrEngine.typeCommonTable(table, binary: binData, structs: structEngine) else {
                     newEntries.append(entry)
                     continue
                 }
@@ -165,7 +172,7 @@ extension PBROps {
                 // raw `.bin` instead of failing the whole dump.
                 let decoded: (typed: (header: StructData, entries: [StructData], entryDefinition: StructDefinition), csv: String)
                 do {
-                    let typed = try pbrEngine.typeDeckTable(deck, binary: binData)
+                    let typed = try pbrEngine.typeDeckTable(deck, binary: binData, structs: structEngine)
                     decoded = (typed, try StructTableCSV.encode(
                         entries: typed.entries, definition: typed.entryDefinition
                     ))

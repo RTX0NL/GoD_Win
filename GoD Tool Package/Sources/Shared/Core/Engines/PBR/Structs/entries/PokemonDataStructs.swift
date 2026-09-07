@@ -24,8 +24,8 @@ public extension PBRStructDefaults {
             .array(name: "tm_hm_flags", count: 16, of: .uint8),
 
             // 0x10: Items the species may hold when caught in the wild.
-            .uint16(name: "wild_item_1"),
-            .uint16(name: "wild_item_2"),
+            .abstraction(name: "wild_item_1", typeName: "Items"),
+            .abstraction(name: "wild_item_2", typeName: "Items"),
 
             // 0x14: Height in decimetres, weight in hectograms — both the
             // real value × 10.
@@ -50,8 +50,8 @@ public extension PBRStructDefaults {
 
             // 0x24: Typing. Both bytes hold the same value for a
             // single-typed species.
-            .uint8(name: "type_1"),
-            .uint8(name: "type_2"),
+            .abstraction(name: "type_1", typeName: "Type"),
+            .abstraction(name: "type_2", typeName: "Type"),
 
             // 0x26
             .uint8(name: "catch_rate"),
@@ -72,8 +72,8 @@ public extension PBRStructDefaults {
             .uint8(name: "egg_group_2"),
 
             // 0x30
-            .uint8(name: "ability_1"),
-            .uint8(name: "ability_2"),
+            .abstraction(name: "ability_1", typeName: "Abilities"),
+            .abstraction(name: "ability_2", typeName: "Abilities"),
             .uint8(name: "safari_zone_flee_rate"),
 
             // 0x33: Pokédex color category. The lowest bit is used for
@@ -95,7 +95,7 @@ public extension PBRStructDefaults {
             // the item id for evolution stones, and so on.
             .uint16(name: "condition"),
             // 0x04: Species evolved into.
-            .uint16(name: "evolved_species"),
+            .abstraction(name: "evolved_species", typeName: "PokemonSpecies"),
         ],
         description: "One evolution branch: trigger, its parameter, and the resulting species."
     )
@@ -117,7 +117,7 @@ public extension PBRStructDefaults {
         wordSize: 2,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "move"),
+            .abstraction(name: "move", typeName: "Moves"),
             .uint8(name: "level"),
             // 0x03: Alignment filler (0xD0 on every slot of every row), not
             // the unknown field the legacy tool declared here.

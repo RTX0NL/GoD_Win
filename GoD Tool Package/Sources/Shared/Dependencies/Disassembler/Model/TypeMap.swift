@@ -65,10 +65,23 @@ public struct TypeMap: Codable, Equatable {
             public let label: String
             /// File extension (e.g. "msg", "scd")
             public let `extension`: String
-            /// Size in bytes
-            public let size: Int
 
-            public init(label: String, extension ext: String, size: Int) {
+            /// Optional explicit byte length.
+            ///
+            /// Normally absent, and normally should be: by the time a chunk
+            /// is type-matched it has already been *split*, and the split
+            /// knows the real bounds — a REL section's chunks run from one
+            /// symbol to the next, and a DOL is only chunked at all when a
+            /// symbol map says where the labels are. Restating the length in
+            /// the map just gives it a second chance to disagree, and it made
+            /// every new entry require measuring a file by hand.
+            ///
+            /// Kept for the rare case where a declared file is genuinely
+            /// shorter than the gap to the next label and the remainder must
+            /// stay a separate chunk.
+            public let size: Int?
+
+            public init(label: String, extension ext: String, size: Int? = nil) {
                 self.label = label
                 self.extension = ext
                 self.size = size

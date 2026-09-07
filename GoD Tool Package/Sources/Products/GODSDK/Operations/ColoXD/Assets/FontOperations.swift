@@ -2,7 +2,7 @@
 //  FontOperations.swift
 //  GODOps
 //
-//  GSFont (`.fnt`) <-> PGM atlas + JSON metadata.
+//  GSFont (`.fnt`) <-> greyscale PNG atlas + JSON metadata.
 //
 
 import Foundation
@@ -49,7 +49,8 @@ extension ColoXD {
             fileSystem: fileSystem,
             logger: logger,
             binaries: { manifest, stem in
-                try fontBinary(manifest: manifest, stem: stem, fileSystem: fileSystem)
+                try fontBinary(manifest: manifest, stem: stem,
+                               fileSystem: fileSystem, logger: logger)
             }
         )
     }
@@ -65,7 +66,7 @@ extension ColoXD {
             throw FSTErrors.fileNotFound(file, .init())
         }
         let font = try GSFont(data: data)
-        let atlasName = "\(stem)_atlas.pgm"
+        let atlasName = "\(stem)_atlas.png"
         let (imageData, metadata) = GSFontAtlas.exportAtlas(font: font, atlasPath: atlasName)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
@@ -78,7 +79,8 @@ extension ColoXD {
     private static func fontBinary(
         manifest: File,
         stem: String,
-        fileSystem: FileSystemTree
+        fileSystem: FileSystemTree,
+        logger: Logger?
     ) throws -> [FileData] {
         guard let baseFolder = manifest.parentFolder else {
             throw FSTErrors.fileNotFound(manifest, .init())
@@ -88,7 +90,13 @@ extension ColoXD {
         guard let imageData = fileSystem.readFile(at: atlas)?.allData else {
             throw FSTErrors.fileNotFound(atlas, .init())
         }
-        let font = try GSFontAtlas.importAtlas(imageData: imageData, metadata: metadata)
-        return [FileData(fileName: "\(stem).fnt", data: try font.data)]
+        // The atlas is a greyscale PNG, and an image editor may hand one back
+        // as RGB or with anti-aliased values a 4bpp font can't hold. Those are
+        // reported rather than rejected — the font still builds, quantised.
+        let imported = try GSFontAtlas.importAtlas(imageData: imageData, metadata: metadata)
+        for warning in imported.warnings {
+            logger?.log(.warning("\(atlas.path): \(warning)"))
+        }
+        return [FileData(fileName: "\(stem).fnt", data: try imported.font.data)]
     }
 }

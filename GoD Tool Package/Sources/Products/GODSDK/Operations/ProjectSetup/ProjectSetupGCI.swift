@@ -81,7 +81,11 @@ extension Project {
         } else if isColosseum {
             engines.append(try ColosseumEngine.defaults())
         }
-        engines.append(try PokemonEngine.defaults())
+        // Species/move/item ids are per-game, so key the engine to the save's
+        // own title rather than shipping one game's numbering to both.
+        engines.append(try PokemonEngine.defaultEngine(
+            for: PokemonEngine.Game(rawValue: gsGame.rawValue) ?? .galeOfDarkness
+        ))
 
         try engines.forEach { engine in
             try engine.write(to: projectFileSystem, in: enginesFolder, overwrite: false)

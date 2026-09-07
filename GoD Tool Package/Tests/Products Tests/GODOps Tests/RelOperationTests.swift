@@ -2,11 +2,16 @@
 //  RelOperationTests.swift
 //  GODOpsTests
 //
-//  The REL operation family is temporarily disabled via RelOperationsGate
-//  (enabled = false): every op throws RelOperationsGate.DisabledError, either
-//  immediately or after its pre-gate setup (engine resolution, folder scans).
-//  These tests document the gate — REPLACE them with real coverage when the
-//  gate lifts.
+//  The REL operation family used to be disabled behind `RelOperationsGate`
+//  and these tests only documented that. The gate is open, so they now cover
+//  the real behaviour: a disassembly writes per-section artifacts and a
+//  lossless `<name>.rel.json`, an assembly rebuilds the binary from that JSON
+//  byte-for-byte, and the batch wrappers keep going when one member fails.
+//
+//  What deliberately isn't asserted: that edits to the per-chunk artifacts
+//  reach the rebuilt binary. `RelAssembly` reads only the `.rel.json`, so the
+//  chunk files are a read-only view until `.s` parsing lands — see
+//  `RelOperationsGate`.
 //
 
 import XCTest
@@ -19,65 +24,116 @@ import FixtureCatalog
 
 final class RelOperationTests: XCTestCase {
 
-    private func assertDisabled(
-        _ body: @autoclosure () throws -> Void,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        XCTAssertThrowsError(try body(), file: file, line: line) { error in
-            XCTAssertTrue(
-                error is RelOperationsGate.DisabledError,
-                "Expected RelOperationsGate.DisabledError, got \(error)",
-                file: file,
-                line: line
-            )
-        }
-    }
-
     private func installXDEngine(in fst: InMemoryFST) throws -> Folder {
         installEngine(try XDEngine.defaults(), under: Folder("/project/Engines"), in: fst)
     }
 
-    // MARK: - relDisassembly / relAssembly (gate is the first statement)
+    /// Writes the shared REL fixture and returns its bytes.
+    @discardableResult
+    private func writeSampleRel(
+        at path: File,
+        in fst: InMemoryFST
+    ) throws -> GoDData {
+        let bytes = try RELFixtures.model().binaryData
+        try fst.writeFile(bytes, at: path, overwrite: true)
+        return bytes
+    }
 
-    func testRelDisassemblyIsGated() {
+    // MARK: - relDisassembly
+
+    func testRelDisassemblyWritesManifestAndSections() throws {
+        let fst = InMemoryFST()
+        try writeSampleRel(at: File("/project/sample.rel"), in: fst)
+
         let config = RelDisassembly.Config(
             relPath: File("/project/sample.rel"),
             outputFolder: Folder("/project/Out"),
-            dolphinEngine: Folder("/project/Engines/Dolphin")
+            dolphinEngine: installEngine(try DolphinEngine.defaults(), under: Folder("/project/Engines"), in: fst)
         )
-        assertDisabled(
-            try RelDisassembly.disassemble(config: config, settings: .default, fileSystem: InMemoryFST(), logger: SilentLogger())
+        try RelDisassembly.disassemble(
+            config: config, settings: .default, fileSystem: fst, logger: SilentLogger()
+        )
+
+        // The lossless whole-file manifest is what the assembler consumes.
+        XCTAssertNotNil(
+            fst.readFile(at: File("/project/Out/sample.rel.json")),
+            "disassembly must emit the canonical <name>.rel.json"
+        )
+        // At least one text section came out as assembly source.
+        XCTAssertNotNil(
+            fst.readFile(at: File("/project/Out/text1.s")),
+            "the fixture's text section should disassemble to text1.s"
         )
     }
 
-    func testRelAssemblyIsGated() {
-        let config = RelAssembly.Config(
-            inputFolder: Folder("/project/In"),
-            relName: "sample",
-            outputPath: File("/project/sample.rel")
-        )
-        assertDisabled(
-            try RelAssembly.assemble(config: config, settings: .default, fileSystem: InMemoryFST(), logger: SilentLogger())
-        )
-    }
-
-    // MARK: - commonRelDump (game-engine resolution runs BEFORE the gate)
-
-    func testCommonRelDumpWithValidEngineIsGated() throws {
+    func testRelDisassemblyThrowsWhenRelMissing() throws {
         let fst = InMemoryFST()
-        let gameEngine = try installXDEngine(in: fst)
-        let config = CommonRelDump.Config(
-            relPath: File("/project/common.rel"),
+        let config = RelDisassembly.Config(
+            relPath: File("/project/nope.rel"),
             outputFolder: Folder("/project/Out"),
-            overwrite: true,
-            dolphinEngine: Folder("/project/Engines/Dolphin"),
-            gameEngine: gameEngine
+            dolphinEngine: installEngine(try DolphinEngine.defaults(), under: Folder("/project/Engines"), in: fst)
         )
-        assertDisabled(
-            try CommonRelDump.dump(config: config, settings: .default, fileSystem: fst, logger: SilentLogger())
+        XCTAssertThrowsError(
+            try RelDisassembly.disassemble(
+                config: config, settings: .default, fileSystem: fst, logger: SilentLogger()
+            )
+        ) { error in
+            guard case RelDisassemblyErrors.relNotFound = error else {
+                return XCTFail("Expected relNotFound, got \(error)")
+            }
+        }
+    }
+
+    // MARK: - relAssembly
+
+    func testRelDisassemblyThenAssemblyRoundTripsBytes() throws {
+        let fst = InMemoryFST()
+        let original = try writeSampleRel(at: File("/project/sample.rel"), in: fst)
+
+        try RelDisassembly.disassemble(
+            config: .init(
+                relPath: File("/project/sample.rel"),
+                outputFolder: Folder("/project/Out"),
+                dolphinEngine: installEngine(try DolphinEngine.defaults(), under: Folder("/project/Engines"), in: fst)
+            ),
+            settings: .default, fileSystem: fst, logger: SilentLogger()
+        )
+
+        try RelAssembly.assemble(
+            config: .init(
+                inputFolder: Folder("/project/Out"),
+                relName: "sample",
+                outputPath: File("/project/rebuilt.rel")
+            ),
+            settings: .default, fileSystem: fst, logger: SilentLogger()
+        )
+
+        let rebuilt = fst.readFile(at: File("/project/rebuilt.rel"))?.allData
+        XCTAssertNotNil(rebuilt, "assembly must write the rebuilt REL")
+        XCTAssertEqual(
+            rebuilt?.rawBytes, original.rawBytes,
+            "REL rebuilt from its own manifest must be byte-identical"
         )
     }
+
+    func testRelAssemblyThrowsWhenManifestMissing() {
+        XCTAssertThrowsError(
+            try RelAssembly.assemble(
+                config: .init(
+                    inputFolder: Folder("/project/In"),
+                    relName: "sample",
+                    outputPath: File("/project/sample.rel")
+                ),
+                settings: .default, fileSystem: InMemoryFST(), logger: SilentLogger()
+            )
+        ) { error in
+            guard case RelAssemblyErrors.manifestNotFound = error else {
+                return XCTFail("Expected manifestNotFound, got \(error)")
+            }
+        }
+    }
+
+    // MARK: - commonRelDump (game-engine resolution runs before anything else)
 
     func testCommonRelDumpWithBogusEngineThrowsUnknownGameEngine() {
         let config = CommonRelDump.Config(
@@ -96,66 +152,56 @@ final class RelOperationTests: XCTestCase {
         }
     }
 
-    func testCommonRelBuildIsGated() {
-        let config = CommonRelBuild.Config(
-            inputFolder: Folder("/project/In"),
-            outputPath: File("/project/common.rel")
-        )
-        assertDisabled(
-            try CommonRelBuild.build(config: config, settings: .default, fileSystem: InMemoryFST(), logger: SilentLogger())
-        )
-    }
-
-    // MARK: - mapRelDump / mapRelBuild (single)
-
-    func testMapRelDumpSingleIsGated() throws {
+    func testCommonRelDumpWritesManifestForAValidEngine() throws {
         let fst = InMemoryFST()
         let gameEngine = try installXDEngine(in: fst)
-        let config = MapRelDump.SingleConfig(
-            relPath: File("/project/M1_1.rel"),
-            outputFolder: Folder("/project/Out"),
-            overwrite: true,
-            typeMapPath: File("/project/typemap.json"),
-            dolphinEngine: Folder("/project/Engines/Dolphin"),
-            gameEngine: gameEngine
+        try writeSampleRel(at: File("/project/common.rel"), in: fst)
+
+        try CommonRelDump.dump(
+            config: .init(
+                relPath: File("/project/common.rel"),
+                outputFolder: Folder("/project/Out"),
+                overwrite: true,
+                dolphinEngine: installEngine(try DolphinEngine.defaults(), under: Folder("/project/Engines"), in: fst),
+                gameEngine: gameEngine
+            ),
+            settings: .default, fileSystem: fst, logger: SilentLogger()
         )
-        assertDisabled(
-            try MapRelDump.dump(config: config, settings: .default, fileSystem: fst, logger: SilentLogger())
+
+        XCTAssertNotNil(
+            fst.readFile(at: File("/project/Out/common.rel.json")),
+            "common.rel dump must emit the canonical manifest"
         )
     }
 
-    func testMapRelBuildSingleIsGated() {
-        let config = MapRelBuild.SingleConfig(
-            inputFolder: Folder("/project/In"),
-            relName: "M1_1",
-            outputPath: File("/project/M1_1.rel")
-        )
-        assertDisabled(
-            try MapRelBuild.build(config: config, settings: .default, fileSystem: InMemoryFST(), logger: SilentLogger())
-        )
-    }
+    // MARK: - mapRels batch behaviour
 
-    // MARK: - mapRelsDump (batch)
-
-    func testMapRelsDumpBatchIsGatedOnFirstFile() throws {
+    func testMapRelsDumpBatchProcessesEveryRel() throws {
         let fst = InMemoryFST()
         let gameEngine = try installXDEngine(in: fst)
-        let relBytes = try RELFixtures.model().binaryData
-        try fst.writeFile(relBytes, at: File("/project/Rels/sample.rel"), overwrite: true)
+        try writeSampleRel(at: File("/project/Rels/M1_1.rel"), in: fst)
+        try writeSampleRel(at: File("/project/Rels/M1_2.rel"), in: fst)
         writeText("{\"chunks\": [], \"engines\": []}", at: File("/project/typemap.json"), in: fst)
 
-        let config = MapRelDump.BatchConfig(
-            relsFolder: Folder("/project/Rels"),
-            outputFolder: Folder("/project/Out"),
-            overwrite: true,
-            typeMapPath: File("/project/typemap.json"),
-            dolphinEngine: Folder("/project/Engines/Dolphin"),
-            gameEngine: gameEngine,
-            filter: .all
+        try MapRelDump.dump(
+            config: .init(
+                relsFolder: Folder("/project/Rels"),
+                outputFolder: Folder("/project/Out"),
+                overwrite: true,
+                typeMapPath: File("/project/typemap.json"),
+                dolphinEngine: installEngine(try DolphinEngine.defaults(), under: Folder("/project/Engines"), in: fst),
+                gameEngine: gameEngine,
+                filter: .all
+            ),
+            settings: .default, fileSystem: fst, logger: SilentLogger()
         )
-        assertDisabled(
-            try MapRelDump.dump(config: config, settings: .default, fileSystem: fst, logger: SilentLogger())
-        )
+
+        for name in ["M1_1", "M1_2"] {
+            XCTAssertNotNil(
+                fst.readFile(at: File("/project/Out/\(name)/\(name).rel.json")),
+                "batch dump should produce a manifest for \(name)"
+            )
+        }
     }
 
     func testMapRelsDumpBatchMissingFolderReturnsWithoutThrowing() {
@@ -177,11 +223,9 @@ final class RelOperationTests: XCTestCase {
         XCTAssertTrue(logger.warnings[0].contains("folder not found"))
     }
 
-    // MARK: - mapRelsBuild (batch)
-
-    func testMapRelsBuildBatchCatchesPerSubfolderGateErrors() {
-        // Each subfolder's assemble hits the gate; the batch op catches the
-        // error, logs a warning, and keeps going — no throw.
+    func testMapRelsBuildBatchKeepsGoingAfterAFailedSubfolder() {
+        // A subfolder with no manifest can't assemble; the batch op catches
+        // that, logs a warning naming the subfolder, and does not throw.
         let fst = InMemoryFST()
         try? fst.writeFile(
             GoDData(byteStream: [0x00], byteOrder: .big),

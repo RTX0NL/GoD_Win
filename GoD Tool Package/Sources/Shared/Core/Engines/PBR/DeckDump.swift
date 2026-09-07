@@ -15,12 +15,19 @@ public extension PBREngine {
     }
 
     /// Decode one `deck.fsys` table binary into its header and typed rows.
-    func typeDeckTable(_ deck: Data.DeckTable, binary: GoDData) throws
-        -> (header: StructData, entries: [StructData], entryDefinition: StructDefinition) {
+    ///
+    /// - Parameter structs: the engine the entry struct resolves against —
+    ///   see `typeCommonTable`. Deck entries name species, held items and
+    ///   moves, so this is the same cross-engine case.
+    func typeDeckTable(
+        _ deck: Data.DeckTable,
+        binary: GoDData,
+        structs: any Engine
+    ) throws -> (header: StructData, entries: [StructData], entryDefinition: StructDefinition) {
         binary.setByteOrder(.big)
 
-        let headerDefinition = try getStruct(data.deckHeaderStructName)
-        let entryDefinition = try getStruct(deck.structName)
+        let headerDefinition = try structs.getStruct(data.deckHeaderStructName)
+        let entryDefinition = try structs.getStruct(deck.structName)
 
         guard entryDefinition.length == deck.entrySize else {
             throw CommonTableError.entryStrideMismatch(

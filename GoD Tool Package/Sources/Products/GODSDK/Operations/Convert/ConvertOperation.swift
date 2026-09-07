@@ -57,8 +57,10 @@ extension Convert {
         guard let bytes = fileSystem.readFile(at: inputFile)?.allData else {
             throw ConvertErrors.inputFileNotFound(file: inputFile, .init())
         }
-        let engine = try GeniusSonorityEngine(from: format.geniusSonorityEngine, in: fileSystem)
-        let registry = engine.fileFormats()
+        // Which engine owns the codec decides the registry. `.fnt` names two
+        // unrelated formats, so this is the one place the choice is made —
+        // from the config's declared game, never from the bytes.
+        let registry = try format.registry(in: fileSystem)
         let stemCandidate = inputFile.fileName.withoutExtensions
         let stem = stemCandidate.isEmpty ? format.fileExtension : stemCandidate
 
@@ -68,7 +70,7 @@ extension Convert {
             // The registry's `.msg` handler always decodes as XD; go direct
             // so the requested variant drives the string rendering.
             artifacts = try MSGFile(binary: bytes, variant: variant, name: stem).outputs
-        case .gtx, .atx, .fnt, .gsw, .ish, .thh:
+        case .gtx, .atx, .fnt, .pbrFont, .pbrFont3D, .gsw, .ish, .thh:
             guard let handler = registry.handler(for: format.fileExtension) else {
                 throw FileFormatRegistry.RegistryError.unregistered(ext: format.fileExtension)
             }
@@ -95,8 +97,7 @@ extension Convert {
         format: FileFormatSelection,
         fileSystem: FileSystemTree
     ) throws {
-        let engine = try GeniusSonorityEngine(from: format.geniusSonorityEngine, in: fileSystem)
-        let registry = engine.fileFormats()
+        let registry = try format.registry(in: fileSystem)
         // Rebuild reads the whole artifact bundle (JSON manifest + companions)
         // and reconstructs the format's binaries; the msg variant is recovered
         // from its JSON so no selection variant is needed here.

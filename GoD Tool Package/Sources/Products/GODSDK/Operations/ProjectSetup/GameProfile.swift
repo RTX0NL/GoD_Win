@@ -104,10 +104,21 @@ struct GameProfile {
             dolTypeMapResource: resources.dolTypeMap,
             dolSymbolMapResource: resources.dolSymbolMap,
             regionalResources: { gameID in
-                // XD's common.rel layout is region-stable, so only the DOL
-                // symbol map varies.
-                guard let map = PokemonXD.symbolMapData(for: gameID) else { return [] }
-                return [(resources.dolSymbolMap, map)]
+                var result = [(path: File, data: GoDData)]()
+                if let map = PokemonXD.symbolMapData(for: gameID) {
+                    result.append((resources.dolSymbolMap, map))
+                }
+                // Both type maps identify chunks by position — the DOL map by
+                // address, the common.rel map by pointer-index symbol — and
+                // both move between builds, so the region's own map is copied
+                // to the region-neutral path the ops read.
+                if let dolTypes = PokemonXD.dolTypeMapData(for: gameID) {
+                    result.append((resources.dolTypeMap, dolTypes))
+                }
+                if let relTypes = PokemonXD.commonRelTypeMapData(for: gameID) {
+                    result.append((resources.commonRelTypeMap, relTypes))
+                }
+                return result
             },
             makeEngine: { try XDEngine.defaults() }
         )
@@ -137,7 +148,7 @@ struct GameProfile {
                     filter: .coloType2
                 ),
             ],
-            dolTypeMapResource: nil,
+            dolTypeMapResource: resources.dolTypeMap,
             dolSymbolMapResource: resources.dolSymbolMap,
             regionalResources: { gameID in
                 var result = [(path: File, data: GoDData)]()
@@ -149,6 +160,15 @@ struct GameProfile {
                 // so the matching map is chosen here.
                 if let symbols = PokemonColosseum.commonRelSymbolMapData(for: gameID) {
                     result.append((resources.commonRelSymbolMap, symbols))
+                }
+                // Same reasoning for the type maps, which name embedded
+                // `.fnt`/`.msg` chunks by address (DOL) and by pointer-index
+                // symbol (common.rel).
+                if let dolTypes = PokemonColosseum.dolTypeMapData(for: gameID) {
+                    result.append((resources.dolTypeMap, dolTypes))
+                }
+                if let relTypes = PokemonColosseum.commonRelTypeMapData(for: gameID) {
+                    result.append((resources.commonRelTypeMap, relTypes))
                 }
                 return result
             },

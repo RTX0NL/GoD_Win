@@ -18,7 +18,12 @@ extension PBROps {
                 unpackedFolder: Folder,
                 overwrite: Bool,
                 japanese: Bool,
-                pbrEngine: Folder
+                pbrEngine: Folder,
+                /// Extra engine folders the entry structs resolve against,
+                /// combined with `pbrEngine` in order. A table entry naming a
+                /// species/move/item enum needs the Pokemon engine here —
+                /// `getStruct` only consults one engine's own enums.
+                engines: [Folder]? = nil
             )
         }
         let operations: [OperationConfig<Operations>]

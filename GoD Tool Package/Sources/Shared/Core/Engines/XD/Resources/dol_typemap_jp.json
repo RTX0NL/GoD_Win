@@ -1,0 +1,52 @@
+{
+ "chunks": [
+  {
+   "file": {
+    "label": "lbl_803647D0",
+    "extension": "fnt"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_8038E0B0",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_8039FDC0",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803B2920",
+    "extension": "gtx"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803B3000",
+    "extension": "gtx"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803D7E20",
+    "extension": "gtx"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803D94A0",
+    "extension": "gtx"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_804CADD0",
+    "extension": "scd"
+   }
+  }
+ ]
+}

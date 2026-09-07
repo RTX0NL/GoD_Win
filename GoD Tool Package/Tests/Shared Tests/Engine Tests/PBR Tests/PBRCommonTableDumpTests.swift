@@ -38,7 +38,7 @@ final class PBRCommonTableDumpTests: XCTestCase {
 
         for table in pbr.data.commonTables where table.structName != nil {
             let binary = archive.entries[table.index].data
-            let typed = try XCTUnwrap(try pbr.typeCommonTable(table, binary: binary), table.name)
+            let typed = try XCTUnwrap(try pbr.typeCommonTable(table, binary: binary, structs: pbr), table.name)
             typedCount += 1
 
             // Row count matches the header.

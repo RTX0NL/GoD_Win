@@ -10,6 +10,7 @@
 
 import GoDFoundation
 import GeniusSonority
+import PBR
 
 enum Convert {}
 
@@ -32,6 +33,22 @@ extension Convert {
         case gtx(geniusSonorityEngine: Folder)
         case atx(geniusSonorityEngine: Folder)
         case fnt(geniusSonorityEngine: Folder)
+        /// Battle Revolution's font, which shares the `.fnt` extension with
+        /// the Colosseum/XD one above and nothing else. A separate case
+        /// rather than a flag on `fnt`, because the *file* doesn't say which
+        /// it is — the game does, and a config that names the game is the
+        /// honest way to record that.
+        ///
+        /// Carries no engine folder, unlike its siblings: the codec reads no
+        /// engine data, and demanding a folder would mean a project whose
+        /// serialized engine predates some unrelated struct couldn't convert
+        /// a font at all.
+        case pbrFont
+        /// Battle Revolution's 3D display font. Vector outlines, so its
+        /// artifacts are an SVG specimen sheet plus a JSON manifest rather
+        /// than an atlas image. Payload-free for the same reason as
+        /// `pbrFont`: the codec reads no engine data.
+        case pbrFont3D
         case gsw(geniusSonorityEngine: Folder)
         case ish(geniusSonorityEngine: Folder)
         case thh(geniusSonorityEngine: Folder)
@@ -43,7 +60,8 @@ extension Convert {
             case .msg: return "msg"
             case .gtx: return "gtx"
             case .atx: return "atx"
-            case .fnt: return "fnt"
+            case .fnt, .pbrFont: return "fnt"
+            case .pbrFont3D: return "f3d"
             case .gsw: return "gsw"
             case .ish: return "ish"
             case .thh: return "thh"
@@ -56,12 +74,13 @@ extension Convert {
             switch self {
             case .ish: return "isd"
             case .thh: return "thd"
-            case .msg, .gtx, .atx, .fnt, .gsw: return nil
+            case .msg, .gtx, .atx, .fnt, .pbrFont, .pbrFont3D, .gsw: return nil
             }
         }
 
-        /// The Genius Sonority engine folder supplied for this format.
-        var geniusSonorityEngine: Folder {
+        /// The Genius Sonority engine folder supplied for this format, or
+        /// `nil` for a format whose codec that engine doesn't own.
+        var geniusSonorityEngine: Folder? {
             switch self {
             case let .msg(folder, _),
                  let .gtx(folder),
@@ -71,7 +90,34 @@ extension Convert {
                  let .ish(folder),
                  let .thh(folder):
                 return folder
+            case .pbrFont, .pbrFont3D:
+                return nil
             }
+        }
+
+        /// The PBR engine folder, for the formats that engine owns.
+        /// True for the formats the PBR engine's registry owns.
+        var usesPBRRegistry: Bool {
+            switch self {
+            case .pbrFont, .pbrFont3D: return true
+            default: return false
+            }
+        }
+
+        /// The file-format registry that owns this format's codec.
+        ///
+        /// The engine folders are loaded because a registry is an engine's
+        /// statement about what it can read — and for `.fnt` the two engines
+        /// disagree, which is the whole reason this isn't a single builtin
+        /// registry shared by everything.
+        func registry(in fileSystem: FileSystemTree) throws -> FileFormatRegistry {
+            if usesPBRRegistry {
+                return PBREngine.fileFormats()
+            }
+            guard let geniusSonorityEngine else {
+                throw ConvertErrors.missingEngine(format: fileExtension, .init())
+            }
+            return try GeniusSonorityEngine(from: geniusSonorityEngine, in: fileSystem).fileFormats()
         }
     }
 }

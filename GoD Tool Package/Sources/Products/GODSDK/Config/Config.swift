@@ -16,6 +16,7 @@ struct GoddessConfig: Codable {
         case coloXDDump(config: ColoXD.DumpConfig)
         case coloXDBuild(config: ColoXD.BuildConfig)
         case pbrDump(config: PBROps.DumpConfig)
+        case pbrBuild(config: PBROps.BuildConfig)
         case dolDisassembly(config: DolDisassembly.Config)
         case dolAssembly(config: DolAssembly.Config)
         case relDisassembly(config: RelDisassembly.Config)
@@ -39,6 +40,10 @@ struct GoddessConfig: Codable {
         case nintendoArchiveBuild(config: NintendoArchiveBuild.SingleConfig)
         case nintendoArchivesDump(config: NintendoArchiveDump.BatchConfig)
         case nintendoArchivesBuild(config: NintendoArchiveBuild.BatchConfig)
+        case pbrFontDump(config: PBRFontDump.SingleConfig)
+        case pbrFontsDump(config: PBRFontDump.BatchConfig)
+        case pbrFontBuild(config: PBRFontBuild.SingleConfig)
+        case pbrFontsBuild(config: PBRFontBuild.BatchConfig)
     }
     
     let name: String

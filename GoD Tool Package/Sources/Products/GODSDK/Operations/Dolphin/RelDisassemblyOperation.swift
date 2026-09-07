@@ -68,14 +68,27 @@ extension RelDisassembly {
         }
 
         var typeChunkBySymbol: [String: TypeMap.Chunk] = [:]
+        var unsupportedSingles = [String]()
         if let tm = typeMap {
             for chunk in tm.chunks {
                 switch chunk {
                 case .table(let t): typeChunkBySymbol[t.start] = chunk
-                case .single(let s): typeChunkBySymbol[s.label] = chunk
+                case .single(let s):
+                    // The data-section walk below handles `.table` and
+                    // `.file`; a lone struct has no branch yet, so say so
+                    // rather than letting the chunk quietly come out untyped.
+                    unsupportedSingles.append(s.label)
                 case .file(let f): typeChunkBySymbol[f.label] = chunk
                 }
             }
+        }
+        if !unsupportedSingles.isEmpty {
+            logger?.log(.warning(
+                "Type map declares \(unsupportedSingles.count) single-struct chunk(s) "
+                + "(\(unsupportedSingles.prefix(3).joined(separator: ", "))"
+                + "\(unsupportedSingles.count > 3 ? ", …" : "")) — the REL path only types "
+                + "tables and files, so these will be emitted as raw chunks."
+            ))
         }
 
         // ---- Derive the canonical pointer-index map ----
@@ -342,7 +355,10 @@ extension RelDisassembly {
                         .reduce(into: [Int: UInt32]()) { $0[$1.key - labelOffset] = $1.value }
 
                     if case .file(let embeddedFile) = typeChunkBySymbol[labelName] {
-                        let fileSize = min(embeddedFile.size, chunkBytes.count)
+                        // A REL data chunk already runs from this symbol to
+                        // the next, so that span is the file's length unless
+                        // the map deliberately declares a shorter one.
+                        let fileSize = min(embeddedFile.size ?? chunkBytes.count, chunkBytes.count)
                         let fileData = GoDData(byteStream: Array(chunkBytes.prefix(fileSize)), byteOrder: .big)
                         let ext = embeddedFile.extension
                         if registry.isRegistered(ext) {
@@ -355,7 +371,7 @@ extension RelDisassembly {
                                 let primary = written.first?.fileName ?? "\(embeddedFile.label).\(ext)"
                                 manifest.chunks.append(.init(
                                     label: embeddedFile.label, type: .file, file: primary,
-                                    size: embeddedFile.size, fileExtension: ext
+                                    size: fileSize, fileExtension: ext
                                 ))
                             } catch {
                                 logger?.log(.warning("Registry dump failed for '\(embeddedFile.label)' (.\(ext)): \(error). Falling back to raw bytes."))
@@ -363,7 +379,7 @@ extension RelDisassembly {
                                 try output.writeFile(fileData, at: sectionFolder.file(fileName), overwrite: true)
                                 manifest.chunks.append(.init(
                                     label: embeddedFile.label, type: .file, file: fileName,
-                                    size: embeddedFile.size, fileExtension: ext
+                                    size: fileSize, fileExtension: ext
                                 ))
                             }
                         } else {
@@ -371,44 +387,70 @@ extension RelDisassembly {
                             try output.writeFile(fileData, at: sectionFolder.file(fileName), overwrite: true)
                             manifest.chunks.append(.init(
                                 label: embeddedFile.label, type: .file, file: fileName,
-                                size: embeddedFile.size, fileExtension: ext
+                                size: fileSize, fileExtension: ext
                             ))
                         }
                     } else if case .table(let tableDef) = typeChunkBySymbol[labelName],
                               let structDef = resolvedStructs[tableDef.entryType] {
+                        // Same policy as the DOL side: CSV is the only
+                        // artifact, verified by decoding it straight back and
+                        // comparing bytes. A table that can't round-trip
+                        // demotes to a raw binary chunk rather than being
+                        // written out lossily beside a `.bin` nobody reads.
                         let entrySize = structDef.length
                         let count = tableDef.count ?? (chunkSize / entrySize)
-                        let chunkData = GoDData(byteStream: chunkBytes, byteOrder: .big)
-                        var entries: [[String: Any]] = []
-                        for j in 0..<count {
-                            let off = j * entrySize
-                            guard off + entrySize <= chunkData.length else { break }
-                            if let structData = chunkData.read(struct: structDef, atAddress: off) {
-                                var entry: [String: Any] = [:]
-                                for prop in structDef.properties where prop.name != "padding" {
-                                    if let value = readStructProperty(prop, from: structData) {
-                                        entry[prop.name] = value
-                                    }
-                                }
-                                entries.append(entry)
-                            }
-                        }
-                        let fileName = "\(labelName).json"
-                        let tableJSON: [String: Any] = [
-                            "type": tableDef.entryType,
-                            "count": count,
-                            "entrySize": entrySize,
-                            "entries": entries.map(sanitizeForJSON),
-                        ]
-                        if let jsonData = try? JSONSerialization.data(withJSONObject: tableJSON, options: [.prettyPrinted, .sortedKeys]) {
-                            try output.writeFile(GoDData(data: jsonData, byteOrder: .big), at: sectionFolder.file(fileName), overwrite: true)
-                        }
-                        try output.writeFile(
-                            GoDData(byteStream: chunkBytes, byteOrder: .big),
-                            at: sectionFolder.file("\(labelName).bin"),
-                            overwrite: true
+                        let tableSize = min(entrySize * count, chunkBytes.count)
+                        let tableBytes = Array(chunkBytes.prefix(tableSize))
+                        let tableData = GoDData(byteStream: tableBytes, byteOrder: .big)
+
+                        let entryLabels = sectionLabels
+                            .filter { $0.key >= labelOffset && $0.key < labelOffset + tableSize }
+                            .map { (offset: $0.key - labelOffset, name: $0.value) }
+                            .sorted(by: { $0.offset < $1.offset })
+
+                        let entries = TypedDataExporter().exportTable(
+                            data: tableData,
+                            definition: structDef,
+                            count: count,
+                            entryLabels: entryLabels,
+                            addressToLabel: addressToLabel
                         )
-                        manifest.chunks.append(.init(label: labelName, type: .table, file: fileName, structType: tableDef.entryType, count: count, size: chunkSize))
+
+                        do {
+                            let csv = try StructTableCSV.encode(
+                                entries: entries.map(\.data), definition: structDef
+                            )
+                            try verifyTableRoundTrips(
+                                csv: csv, against: entries, definition: structDef, label: labelName
+                            )
+                            let fileName = "\(labelName).csv"
+                            try output.writeFile(
+                                GoDData(string: csv, format: .utf8),
+                                at: sectionFolder.file(fileName),
+                                overwrite: true
+                            )
+                            var namesByIndex = [String: String]()
+                            for (index, entry) in entries.enumerated() {
+                                if let label = entry.label { namesByIndex[String(index)] = label }
+                            }
+                            manifest.chunks.append(.init(
+                                label: labelName, type: .table, file: fileName,
+                                structType: tableDef.entryType, count: count,
+                                entryLabels: namesByIndex.isEmpty ? nil : namesByIndex
+                            ))
+                        } catch {
+                            logger?.log(.warning(
+                                "Table '\(labelName)' doesn't round-trip as CSV: \(error). "
+                                + "Emitting as raw binary chunk."
+                            ))
+                            let binName = "\(labelName).bin"
+                            try output.writeFile(
+                                tableData, at: sectionFolder.file(binName), overwrite: true
+                            )
+                            manifest.chunks.append(.init(
+                                label: labelName, type: .binary, file: binName, size: tableSize
+                            ))
+                        }
                     } else if !chunkPointers.isEmpty {
                         let fileName = "\(labelName).s"
                         let chunkLabels: [Int: String] = [0: labelName]
@@ -504,87 +546,6 @@ extension RelDisassembly {
 
         try fileSystem.importFST(output, from: outputFolder, to: config.outputFolder, overwrite: true)
         logger?.log(.taskStatus(taskName: "Disassemble REL", status: .completed(true)))
-    }
-}
-
-/// Read a struct property value in a JSON-serializable format,
-/// handling each type correctly (floats as Float, arrays as [Any], etc.)
-private func readStructProperty(
-    _ prop: StructDefinition.Property,
-    from structData: StructData
-) -> Any? {
-    switch prop.type {
-    case .primitive(.float), .primitive(.lossless_float):
-        return (try? structData[dynamicMember: prop.name]) as Float?
-    case .primitive(.double), .primitive(.lossless_double):
-        return (try? structData[dynamicMember: prop.name]) as Double?
-    case .primitive(.boolean):
-        return (try? structData[dynamicMember: prop.name]) as Bool?
-    case .primitive(.character):
-        return (try? structData[dynamicMember: prop.name]) as String?
-    case .primitive(.integer), .primitive(.void):
-        return (try? structData[dynamicMember: prop.name]) as Int?
-    case .array(let elementType, let count):
-        guard let fieldOffset = structData.definition.offset(for: prop.name) else { return nil }
-        switch elementType {
-        case .primitive(.integer(let intType)):
-            var values: [Int] = []
-            for i in 0..<count {
-                switch intType {
-                case .uint8, .int8:
-                    let addr = fieldOffset + i
-                    values.append(structData.data.readTypeAsInt(UInt8.self, atAddress: addr))
-                case .uint16, .int16:
-                    let addr = fieldOffset + i * 2
-                    if let val: UInt16 = structData.data.readValue(atAddress: addr) { values.append(Int(val)) }
-                case .uint32, .int32:
-                    let addr = fieldOffset + i * 4
-                    if let val: UInt32 = structData.data.readValue(atAddress: addr) { values.append(Int(val)) }
-                default:
-                    break
-                }
-            }
-            return values
-        case .primitive(.float):
-            var values: [Float] = []
-            for i in 0..<count {
-                if let val: Float = structData.data.readValue(atAddress: fieldOffset + i * 4) {
-                    values.append(val)
-                }
-            }
-            return values
-        case .primitive(.character):
-            return (try? structData[dynamicMember: prop.name]) as String?
-        default:
-            return nil
-        }
-    case .padding:
-        return nil
-    case .subStruct, .enumeration, .label:
-        return (try? structData[dynamicMember: prop.name]) as Int?
-    }
-}
-
-/// JSONSerialization throws an uncatchable NSException on NaN /
-/// Infinity floats. Struct dumps occasionally contain those (raw bytes
-/// from data sections aren't always valid IEEE-754) — replace them with
-/// strings so the JSON file still serializes deterministically.
-private func sanitizeForJSON(_ value: Any) -> Any {
-    switch value {
-    case let f as Float:
-        if f.isNaN { return "NaN" }
-        if f.isInfinite { return f > 0 ? "Infinity" : "-Infinity" }
-        return f
-    case let d as Double:
-        if d.isNaN { return "NaN" }
-        if d.isInfinite { return d > 0 ? "Infinity" : "-Infinity" }
-        return d
-    case let arr as [Any]:
-        return arr.map(sanitizeForJSON)
-    case let dict as [String: Any]:
-        return dict.mapValues(sanitizeForJSON)
-    default:
-        return value
     }
 }
 

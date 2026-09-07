@@ -11,8 +11,8 @@ public extension XDStructDefaults {
         properties: [
             .int8(name: "priority"),
             .uint8(name: "base_pp"),
-            .uint8(name: "type"),
-            .uint8(name: "targets"),
+            .abstraction(name: "type", typeName: "Type"),
+            .abstraction(name: "targets", typeName: "MoveTarget"),
             .uint8(name: "base_accuracy"),
             .uint8(name: "effect_accuracy"),
             .uint8(name: "makes_contact"),
@@ -28,11 +28,11 @@ public extension XDStructDefaults {
             .uint8(name: "is_sound_based"),
             .uint8(name: "has_unspecified_target"),
             .uint8(name: "is_hm_move"),
-            .uint8(name: "category"),
+            .abstraction(name: "category", typeName: "MoveCategory"),
             .uint8(name: "has_risk_flag"),
             .uint8(name: "match_up_chart_type"),
             .uint8(name: "contest_appeal_jam_index"),
-            .uint8(name: "contest_appeal_type"),
+            .abstraction(name: "contest_appeal_type", typeName: "ContestCategory"),
             .uint16(name: "base_power"),
             .padding(length: 2),
             .uint16(name: "effect"),
@@ -42,7 +42,7 @@ public extension XDStructDefaults {
             .uint32(name: "exclamation_string_id"),
             .uint32(name: "description_id"),
             .uint32(name: "animation_id_2"),
-            .uint8(name: "move_effect_type"),
+            .abstraction(name: "move_effect_type", typeName: "MoveEffectType"),
         ],
         description: "Move properties (XD, 0x39 bytes per entry)"
     )
@@ -52,7 +52,7 @@ public extension XDStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "bag_slot"),
+            .abstraction(name: "bag_slot", typeName: "ItemPocket"),
             .uint8(name: "cannot_be_held"),
             .padding(length: 2),
             .uint8(name: "in_battle_use_id"),
@@ -103,6 +103,10 @@ public extension XDStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
+            // A *type's* damage class (Gen III types are wholly physical or
+            // special), not a move's category — different value set, and no
+            // corpus to check it against while Colo/XD type tables live in
+            // the gated common.rel path. Left as an integer deliberately.
             .uint8(name: "category"),
             .padding(length: 1),
             .uint16(name: "icon_big_id"),
@@ -145,7 +149,7 @@ public extension XDStructDefaults {
         properties: [
             .uint16(name: "room_id"),
             .uint16(name: "flag_id"),
-            .uint16(name: "item_id"),
+            .abstraction(name: "item_id", typeName: "Items"),
             .uint16(name: "quantity"),
             .uint32(name: "model_id"),
             .uint32(name: "unknown_1"),
@@ -274,7 +278,7 @@ public extension XDStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "move_id"),
+            .abstraction(name: "move_id", typeName: "Moves"),
             .padding(length: 5),
             .uint8(name: "availability_flag"),
             .uint32(name: "already_taught_flag"),
@@ -287,7 +291,7 @@ public extension XDStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "item_id"),
+            .abstraction(name: "item_id", typeName: "Items"),
         ],
         description: "Valid item ID (2 bytes)"
     )
@@ -364,7 +368,7 @@ public extension XDStructDefaults {
         alignmentStyle: .none,
         properties: [
             .uint8(name: "animation_id"),
-            .uint16(name: "species_id"),
+            .abstraction(name: "species_id", typeName: "PokemonSpecies"),
         ],
         description: "Pokemon summary screen animation override (3 bytes)"
     )

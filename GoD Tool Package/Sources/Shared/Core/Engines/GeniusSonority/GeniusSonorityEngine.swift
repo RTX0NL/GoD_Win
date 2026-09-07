@@ -2,7 +2,15 @@
 import GoDFoundation
 import Structs
 
-public enum GSGame {
+/// Which Genius Sonority title an engine instance serves.
+///
+/// Codable and stored on the engine's `Data` because the engine is
+/// serialized into a project and reloaded later — `defaultEngine(for:)` is
+/// not re-run at that point, so anything that varies per game has to survive
+/// the round trip. The `.fnt` extension is the reason this matters: Colo/XD
+/// and PBR use entirely different font formats under the same name, and the
+/// only thing that distinguishes them is which game's archive they came from.
+public enum GSGame: String, Codable, CaseIterable {
     case colosseum, galeOfDarkness, battleRevolution
 }
 
@@ -46,6 +54,7 @@ public struct GeniusSonorityEngine: Engine {
 
     public static func defaultEngine(for game: GSGame, fsysTOC: FsysTOC?) -> GeniusSonorityEngine {
         var data = GeniusSonorityEngine.Data()
+        data.game = game
         var structsList = GeniusSonorityEngine.Structs.allItems
         var enumList = GeniusSonorityEngine.Enums.allItems
 
@@ -73,6 +82,9 @@ public struct GeniusSonorityEngine: Engine {
         case .galeOfDarkness:
             data.fsys.fileMetaDataPadding = 0x40
             data.toc.unknown = 0x201
+            // XD is the only game that ships an extra typed REL
+            // (`tableres2.rel`, inside `common_dvdeth.fsys`).
+            data.chunkTypeMapRoutes = Data.defaultXDChunkTypeMapRoutes
             structsList.append(Structs.Defaults.fsysTOCEntryStructFull)
             enumList.append(Enums.Defaults.fileTypesColoXDEnum)
             enumList.append(fsysTOC?.enumeration ?? Enums.Defaults.fsysGroupIDsXDEnum)
@@ -155,6 +167,11 @@ public struct GeniusSonorityEngine: Engine {
                 "menu_face":    ["gtx": "/Assets/Images/Pokemon/Faces"],
                 "menu_pokemon": ["gtx": "/Assets/Images/Pokemon/Sprites"],
             ]
+            // Images that match no specific route group under their archive
+            // name, e.g. common's textures → /Assets/Images/common.
+            data.fsys.imagesFallbackBaseFolder = "/Assets/Images"
+            // common.fsys (and deck.fsys) tables pad their regions to 0x10.
+            data.fsys.dataTableRegionAlignment = 0x10
             // Messages sort by the language code in each MESG binary (+0x0C).
             data.fsys.messagesLanguageBaseFolder = "/Data/Text/Messages"
             data.fsys.messagesLanguageCodes = [
@@ -295,6 +312,12 @@ public struct GeniusSonorityEngine: Engine {
             if let entryExtension, entryExtension != fileType, let folder = archiveOverrides[entryExtension] {
                 return FolderResolution(folder: folder, languageSubfolder: language)
             }
+        }
+
+        // 6b. Image fallback: an image that matched no specific route groups
+        // under its archive name rather than a single shared folder.
+        if isImage, !baseName.isEmpty, let base = fsys.imagesFallbackBaseFolder {
+            return FolderResolution(folder: base.folder(baseName), languageSubfolder: language)
         }
 
         // 7. Standard file type mapping

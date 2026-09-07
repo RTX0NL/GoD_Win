@@ -44,7 +44,7 @@ public extension XDStructDefaults {
         properties: [
             .uint8(name: "is_hm"),
             .padding(length: 5),
-            .uint16(name: "move_id"),
+            .abstraction(name: "move_id", typeName: "Moves"),
         ],
         description: "TM/HM to move ID mapping (58 entries)"
     )
@@ -88,7 +88,7 @@ public extension XDStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "species_id"),
+            .abstraction(name: "species_id", typeName: "PokemonSpecies"),
             .uint32(name: "fsys_id"),
             .uint32(name: "file_identifier"),
         ],

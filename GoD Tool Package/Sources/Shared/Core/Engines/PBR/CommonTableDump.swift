@@ -55,13 +55,24 @@ public extension PBREngine {
     /// Decode one `common.fsys` table binary. Returns nil for a table whose
     /// entry layout hasn't been documented (`structName == nil`) — the caller
     /// keeps those as raw `.bin`.
-    func typeCommonTable(_ table: Data.CommonTable, binary: GoDData) throws -> TypedCommonTable? {
+    ///
+    /// - Parameter structs: the engine the entry struct resolves against.
+    ///   Supplied rather than taken as `self` because these tables are a
+    ///   *mapping* surface: an entry struct names a species, move or item
+    ///   enum that lives in the Pokemon engine, and `getStruct` only ever
+    ///   consults one engine's own enums. Callers pass a `GenericEngine`
+    ///   combining this one with whatever else the definitions reference.
+    func typeCommonTable(
+        _ table: Data.CommonTable,
+        binary: GoDData,
+        structs: any Engine
+    ) throws -> TypedCommonTable? {
         guard let structName = table.structName else { return nil }
         binary.setByteOrder(.big)
 
         let format = data.commonTableFormat
-        let headerDefinition = try getStruct(format.headerStructName)
-        let entryDefinition = try getStruct(structName)
+        let headerDefinition = try structs.getStruct(format.headerStructName)
+        let entryDefinition = try structs.getStruct(structName)
 
         guard entryDefinition.length == table.entrySize else {
             throw CommonTableError.declaredStrideMismatch(

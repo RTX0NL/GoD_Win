@@ -85,6 +85,11 @@ public extension ColosseumEngine {
             /// yet for Colosseum; `ProjectSetup` writes a region-matched
             /// map here once one lands in the bundle.
             public var dolSymbolMap: File = "Resources/dol.map"
+            /// Typed regions within the main.dol data sections. Region-neutral
+            /// path; `ProjectSetup` writes the ROM's own map here, because
+            /// every chunk is identified by address and the data sections move
+            /// between builds.
+            public var dolTypeMap: File = "Resources/dol_typemap.json"
 
             public init(
                 commonRelSymbolMap: File = "Resources/common_rel_symbols.json",
@@ -93,7 +98,8 @@ public extension ColosseumEngine {
                 mapRelTypeMapType1: File = "Resources/map_rel_typemap_type1.json",
                 mapRelTypeMapType2: File = "Resources/map_rel_typemap_type2.json",
                 pocketMenuSymbolMap: File = "Resources/pocket_menu_symbols.json",
-                dolSymbolMap: File = "Resources/dol.map"
+                dolSymbolMap: File = "Resources/dol.map",
+                dolTypeMap: File = "Resources/dol_typemap.json"
             ) {
                 self.commonRelSymbolMap = commonRelSymbolMap
                 self.commonRelTypeMap = commonRelTypeMap
@@ -102,6 +108,7 @@ public extension ColosseumEngine {
                 self.mapRelTypeMapType2 = mapRelTypeMapType2
                 self.pocketMenuSymbolMap = pocketMenuSymbolMap
                 self.dolSymbolMap = dolSymbolMap
+                self.dolTypeMap = dolTypeMap
             }
         }
 

@@ -109,6 +109,11 @@ enum Project {
 
         var engines: [any Engine] = [dolphinEngine]
 
+        // Files the Genius Sonority engine says carry typed data sections,
+        // beyond the DOL and common.rel (which have their own ops). Captured
+        // here because the engine is scoped to the disc-type branch below.
+        var chunkTypeMapRoutes: [GeniusSonorityEngine.Data.ChunkTypeMapRoute] = []
+
         if isWii {
             let wiiEngine = try WiiEngine.defaults()
             engines.append(wiiEngine)
@@ -124,6 +129,7 @@ enum Project {
 
             if isGeniusSonority, let game = gsGame {
                 var gsEngine = GeniusSonorityEngine.defaultEngine(for: game)
+                chunkTypeMapRoutes = gsEngine.data.chunkTypeMapRoutes
                 let gsfsysFile = gsEngine.data.fsys.GSfsysFile
 
                 let isoFileSystem = try? GamecubeISO(data: isoData, dolphinEngine: dolphinEngine, gamecubeEngine: gamecubeEngine)
@@ -148,10 +154,17 @@ enum Project {
             engines.append(try PBREngine.defaults())
         }
 
-        // The Pokémon engine ships canonical species/move/item/ability/
-        // nature/type enums plus the combined Trainer struct. Every GS
-        // game (Colo/XD/PBR) consumes it for name↔id resolution.
-        if isGeniusSonority {
+        // The Pokémon engine ships the species/move/item/nature/type enums
+        // plus the combined Trainer struct. Every GS game (Colo/XD/PBR)
+        // consumes it for name↔id resolution.
+        //
+        // Keyed to the disc's game, because the three numbered lists differ
+        // per title — Deoxys is species 410 in Colosseum and XD but 386 in
+        // Battle Revolution. Installing the wrong one would put confident,
+        // wrong names in every abstracted column.
+        if let game = gsGame.flatMap({ PokemonEngine.Game(rawValue: $0.rawValue) }) {
+            engines.append(try PokemonEngine.defaultEngine(for: game))
+        } else if isGeniusSonority {
             engines.append(try PokemonEngine.defaults())
         }
 
@@ -200,30 +213,51 @@ enum Project {
             let wiiEngine = try WiiEngine.defaults()
             let wiiEngineName = wiiEngine.name
 
-            buildConfig = GoddessConfig(
-                name: "Build ISO",
-                description: "Config for encrypting and building Wii ISO from Contents folder",
-                settingsFile: settingsFile.prefixed("."),
-                rootFolder: "..",
-                operations: [
+            // Where the FSYS unpack drops PBR's fonts, and where their
+            // editable artifacts live. Both `.FNT` and `.f3d` land here.
+            let pbrFontsFolder = unpackedFolder.folder("Data").folder("Text").folder("Fonts")
+            let pbrFontsSourceFolder = sourceFolder.folder("Text").folder("Fonts")
+
+            var buildOperations: [OperationConfig<GoddessConfig.Operations>] = []
+
+            // PBR fonts, rebuilt from their editable artifacts *before* the
+            // FSYS repack below, so an edited font is what gets packed.
+            // Disabled by default like every other asset step — a user opts
+            // in once they've actually edited something.
+            if isPBR {
+                buildOperations.append(
                     OperationConfig(
-                        operation: .wiiBuild(
-                            config: WiiOps.BuildConfig(
+                        operation: .pbrFontsBuild(
+                            config: PBRFontBuild.BatchConfig(
+                                fontsFolder: pbrFontsSourceFolder.prefixed("."),
+                                outputFolder: pbrFontsFolder.prefixed("."),
+                                overwrite: true
+                            )
+                        ),
+                        enabled: .no
+                    )
+                )
+            }
+
+            // PBR: repack the unpacked project tree (FSYS archives, including
+            // the typed common.fsys/deck.fsys tables) back into the DATA
+            // partition's files before the disc is re-encrypted below.
+            if isPBR, let game = gsGame {
+                let gsEngine = GeniusSonorityEngine.defaultEngine(for: game)
+                buildOperations.append(
+                    OperationConfig(
+                        operation: .pbrBuild(
+                            config: PBROps.BuildConfig(
                                 operations: [
                                     OperationConfig(
-                                        operation: .encryptISO(
-                                            fstPath: contentsFolder.prefixed("."),
-                                            isoPath: isoOutputFile.prefixed("."),
+                                        operation: .packPBR(
+                                            unpackedFolder: unpackedFolder.prefixed("."),
+                                            // Same FSYS root the dump read from.
+                                            fstFolder: contentsFolder.folder("DATA").prefixed("."),
                                             overwrite: true,
-                                            wiiEngine: enginesFolder.folder(wiiEngineName).prefixed("."),
-                                            dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed(".")
-                                        ),
-                                        enabled: .yes
-                                    ),
-                                    OperationConfig(
-                                        operation: .fillISO(
-                                            isoPath: isoOutputFile.prefixed("."),
-                                            size: wiiEngine.data.disc.maxDiscCapacity
+                                            geniusSonorityEngine: enginesFolder.folder(gsEngine.name).prefixed("."),
+                                            pbrEngine: enginesFolder.folder(PBREngine.defaultName).prefixed("."),
+                                            engines: []
                                         ),
                                         enabled: .yes
                                     )
@@ -232,7 +266,44 @@ enum Project {
                         ),
                         enabled: .yes
                     )
-                ]
+                )
+            }
+
+            buildOperations.append(
+                OperationConfig(
+                    operation: .wiiBuild(
+                        config: WiiOps.BuildConfig(
+                            operations: [
+                                OperationConfig(
+                                    operation: .encryptISO(
+                                        fstPath: contentsFolder.prefixed("."),
+                                        isoPath: isoOutputFile.prefixed("."),
+                                        overwrite: true,
+                                        wiiEngine: enginesFolder.folder(wiiEngineName).prefixed("."),
+                                        dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed(".")
+                                    ),
+                                    enabled: .yes
+                                ),
+                                OperationConfig(
+                                    operation: .fillISO(
+                                        isoPath: isoOutputFile.prefixed("."),
+                                        size: wiiEngine.data.disc.maxDiscCapacity
+                                    ),
+                                    enabled: .yes
+                                )
+                            ]
+                        )
+                    ),
+                    enabled: .yes
+                )
+            )
+
+            buildConfig = GoddessConfig(
+                name: "Build ISO",
+                description: "Config for encrypting and building Wii ISO from Contents folder",
+                settingsFile: settingsFile.prefixed("."),
+                rootFolder: "..",
+                operations: buildOperations
             )
 
             var dumpOperations: [OperationConfig<GoddessConfig.Operations>] = [
@@ -278,15 +349,14 @@ enum Project {
                                         enabled: .yes
                                     ),
                                     // Type common.fsys's data tables into
-                                    // editable JSON + CSV using the PBR engine.
+                                    // editable JSON + CSV, folding the rebuild
+                                    // metadata into the archive registry.
                                     OperationConfig(
                                         operation: .dumpCommonTables(
-                                            fstFolder: contentsFolder.folder("DATA").prefixed("."),
-                                            outputFolder: unpackedFolder.folder("Data").folder("Common").prefixed("."),
+                                            unpackedFolder: unpackedFolder.prefixed("."),
                                             overwrite: false,
                                             japanese: PokemonBattleRevolution.usesJapaneseTableOrder(gameID: gameID),
-                                            pbrEngine: enginesFolder.folder(PBREngine.defaultName).prefixed("."),
-                                            geniusSonorityEngine: enginesFolder.folder(gsEngine.name).prefixed(".")
+                                            pbrEngine: enginesFolder.folder(PBREngine.defaultName).prefixed(".")
                                         ),
                                         enabled: .yes
                                     )
@@ -294,6 +364,23 @@ enum Project {
                             )
                         ),
                         enabled: .yes
+                    )
+                )
+
+                // PBR fonts to editable artifacts. Ships disabled: the unpack
+                // above has to run first, and a user opts in when they want
+                // to edit fonts rather than paying for ~150 atlas encodes on
+                // every dump.
+                dumpOperations.append(
+                    OperationConfig(
+                        operation: .pbrFontsDump(
+                            config: PBRFontDump.BatchConfig(
+                                fontsFolder: pbrFontsFolder.prefixed("."),
+                                outputFolder: pbrFontsSourceFolder.prefixed("."),
+                                overwrite: false
+                            )
+                        ),
+                        enabled: .no
                     )
                 )
             }
@@ -536,6 +623,30 @@ enum Project {
             // `.conditionalAppend(...)` builder is too deep for Swift's
             // type-checker to handle inline alongside the surrounding
             // `GoddessConfig(...)` literal.
+            // One step per file the Genius Sonority engine says carries typed
+            // data sections. `common.rel` and the DOL have their own ops (they
+            // need a symbol index and cross-module resolution); everything else
+            // is a plain REL plus a type map, so covering another file is a
+            // line of engine data rather than another branch here.
+            //
+            // Built before the config literal because the type-checker can't
+            // handle it inline alongside the rest of the chain.
+            let typedChunkFileSteps: [OperationConfig<GoddessConfig.Operations>] = profile.map { profile in
+                chunkTypeMapRoutes.map { route in
+                    let config = RelDisassembly.Config(
+                        relPath: unpackedFolder.file(route.file.path).prefixed("."),
+                        outputFolder: sourceFolder.folder("Code").folder(route.sourceFolderName).prefixed("."),
+                        dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
+                        typeMapPath: enginesFolder.folder(profile.engineName).file(route.typeMap.path).prefixed("."),
+                        engines: typedDataEngines
+                    )
+                    return OperationConfig(
+                        operation: GoddessConfig.Operations.relDisassembly(config: config),
+                        enabled: route.enabledByDefault ? .yes : .no
+                    )
+                }
+            } ?? []
+
             let dumpOps: [OperationConfig<GoddessConfig.Operations>] = [
                     OperationConfig(
                         operation: .gamecubeDump(
@@ -613,6 +724,7 @@ enum Project {
                         )]
                     } ?? []
                 )
+                .conditionalAppend(!typedChunkFileSteps.isEmpty, contents: typedChunkFileSteps)
                 .conditionalAppend(
                     profile != nil,
                     // One dump op per map plan. Colosseum's two layouts and

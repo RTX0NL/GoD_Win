@@ -17,7 +17,7 @@ public extension PBRStructDefaults {
             // 0x00: Secondary effect id.
             .uint16(name: "effect"),
             // 0x02: Which battlers the move may target.
-            .uint16(name: "targets"),
+            .abstraction(name: "targets", typeName: "MoveTarget"),
             // 0x04: Unused as far as the legacy tool could tell.
             .uint16(name: "unknown"),
             // 0x06: Contest appeal category, carried over from the handheld
@@ -33,9 +33,9 @@ public extension PBRStructDefaults {
             .uint16(name: "description_message_id_2"),
 
             // 0x0E: Physical / special / status.
-            .uint8(name: "category"),
+            .abstraction(name: "category", typeName: "MoveCategory"),
             .uint8(name: "base_power"),
-            .uint8(name: "type"),
+            .abstraction(name: "type", typeName: "Type"),
             .uint8(name: "base_accuracy"),
             .uint8(name: "base_pp"),
             // 0x13: Probability the secondary effect fires.
@@ -51,7 +51,7 @@ public extension PBRStructDefaults {
 
             // 0x16: Broad effect category — damaging, stat boost and so on.
             // Believed to be what the AI strategises on.
-            .uint8(name: "effect_type"),
+            .abstraction(name: "effect_type", typeName: "MoveEffectType"),
             // 0x17: Alignment filler (0xD0 on every row), not the unknown
             // field the legacy tool declared here.
             .padding(length: 1),
@@ -135,7 +135,7 @@ public extension PBRStructDefaults {
         wordSize: 2,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "move"),
+            .abstraction(name: "move", typeName: "Moves"),
             // 0x02: Weight for random move selection on generated NPC
             // Pokémon; 0 means never selected.
             .uint8(name: "random_selection_chance"),

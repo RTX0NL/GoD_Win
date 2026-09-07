@@ -1,0 +1,40 @@
+{
+ "chunks": [
+  {
+   "file": {
+    "label": "lbl_802C1F30",
+    "extension": "fnt"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_802C4B20",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_802D6FA0",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_802EA3B0",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_802FD2D8",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_80310714",
+    "extension": "msg"
+   }
+  }
+ ]
+}

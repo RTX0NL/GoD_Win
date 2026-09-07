@@ -185,6 +185,8 @@ public enum GODOps {
             try handler.coloXDBuild(config: buildConfig, settings: settings, fileSystem: fileSystem, logger: logger)
         case .pbrDump(let dumpConfig):
             try handler.pbrDump(config: dumpConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .pbrBuild(let buildConfig):
+            try handler.pbrBuild(config: buildConfig, settings: settings, fileSystem: fileSystem, logger: logger)
         case .dolDisassembly(let disasmConfig):
             try handler.dolDisassembly(config: disasmConfig, settings: settings, fileSystem: fileSystem, logger: logger)
         case .dolAssembly(let asmConfig):
@@ -235,6 +237,14 @@ public enum GODOps {
 
         case .nintendoArchivesBuild(let cfg):
             try handler.nintendoArchivesBuild(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .pbrFontDump(let cfg):
+            try handler.pbrFontDump(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .pbrFontsDump(let cfg):
+            try handler.pbrFontsDump(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .pbrFontBuild(let cfg):
+            try handler.pbrFontBuild(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .pbrFontsBuild(let cfg):
+            try handler.pbrFontsBuild(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
         }
     }
 

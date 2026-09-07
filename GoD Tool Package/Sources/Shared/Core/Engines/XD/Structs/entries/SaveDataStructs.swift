@@ -24,7 +24,7 @@ public extension XDStructDefaults {
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "moveId"),        // +0x0 wazaDataId
+            .abstraction(name: "moveId", typeName: "Moves"),        // +0x0 wazaDataId
             .uint8(name: "pp"),             // +0x2 current PP
             .uint8(name: "ppUpCount"),      // +0x3 PP Ups applied (0..3)
         ]
@@ -36,7 +36,7 @@ public extension XDStructDefaults {
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "itemId"),        // +0x0 itemDataId
+            .abstraction(name: "itemId", typeName: "Items"),        // +0x0 itemDataId
             .uint16(name: "count"),         // +0x2 quantity
         ]
     )
@@ -51,8 +51,8 @@ public extension XDStructDefaults {
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "species"),               // +0x00 pokemonDataId
-            .uint16(name: "heldItem"),              // +0x02 itemDataId
+            .abstraction(name: "species", typeName: "PokemonSpecies"),               // +0x00 pokemonDataId
+            .abstraction(name: "heldItem", typeName: "Items"),              // +0x02 itemDataId
             .uint16(name: "hp"),                    // +0x04 current HP
             .uint16(name: "friendship"),            // +0x06 friendLevel
             .uint16(name: "catchFloorId"),          // +0x08

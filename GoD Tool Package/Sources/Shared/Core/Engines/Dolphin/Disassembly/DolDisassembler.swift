@@ -489,7 +489,11 @@ public struct DolDisassembler {
                         consumedUpTo = labelOffset + structSize
 
                     case .file(let embeddedFile):
-                        let fileSize = min(embeddedFile.size, bytes.count - labelOffset)
+                        // The chunk was already split at label boundaries, so
+                        // its extent is the answer; the map only overrides when
+                        // a file is deliberately shorter than the gap.
+                        let available = min(nextOffset, bytes.count) - labelOffset
+                        let fileSize = min(embeddedFile.size ?? available, available)
                         let fileBytes = Array(bytes[labelOffset..<(labelOffset + fileSize)])
                         let fileData = GoDData(byteStream: fileBytes, byteOrder: .big)
                         let ext = embeddedFile.extension
@@ -512,7 +516,7 @@ public struct DolDisassembler {
                                     ?? "\(embeddedFile.label).\(ext)"
                                 manifest.chunks.append(.init(
                                     label: embeddedFile.label, type: .file, file: primary,
-                                    size: embeddedFile.size, fileExtension: ext
+                                    size: fileSize, fileExtension: ext
                                 ))
                             } catch {
                                 logger?.log(.warning("Registry dump failed for '\(embeddedFile.label)' (.\(ext)): \(error). Falling back to raw bytes."))
@@ -520,7 +524,7 @@ public struct DolDisassembler {
                                 try output.writeFile(fileData, at: sectionFolder.file(fileName), overwrite: true)
                                 manifest.chunks.append(.init(
                                     label: embeddedFile.label, type: .file, file: fileName,
-                                    size: embeddedFile.size, fileExtension: ext
+                                    size: fileSize, fileExtension: ext
                                 ))
                             }
                         } else {
@@ -528,7 +532,7 @@ public struct DolDisassembler {
                             try output.writeFile(fileData, at: sectionFolder.file(fileName), overwrite: true)
                             manifest.chunks.append(.init(
                                 label: embeddedFile.label, type: .file, file: fileName,
-                                size: embeddedFile.size, fileExtension: ext
+                                size: fileSize, fileExtension: ext
                             ))
                         }
                         consumedUpTo = labelOffset + fileSize
@@ -696,7 +700,10 @@ public func resolveStructTypes(
 /// What this catches in practice is the two known-lossy shapes: a padding
 /// run that isn't zero (padding has no column, so it rebuilds as zeroes)
 /// and a string field with bytes after its terminator.
-func verifyTableRoundTrips(
+/// Public because the REL disassembly emits typed tables through the same
+/// policy — a table that can't be rebuilt from its CSV demotes to raw bytes
+/// rather than being written out lossily.
+public func verifyTableRoundTrips(
     csv: String,
     against entries: [LabeledData],
     definition: StructDefinition,

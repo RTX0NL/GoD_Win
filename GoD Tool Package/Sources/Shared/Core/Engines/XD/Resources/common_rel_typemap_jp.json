@@ -1,0 +1,193 @@
+{
+ "chunks": [
+  {
+   "table": {
+    "name": "PeopleIDs",
+    "start": "PeopleIDs",
+    "entryType": "PeopleID"
+   }
+  },
+  {
+   "table": {
+    "name": "Pokespots",
+    "start": "Pokespots",
+    "entryType": "Pokespot"
+   }
+  },
+  {
+   "table": {
+    "name": "Battles",
+    "start": "Battles",
+    "entryType": "Battle"
+   }
+  },
+  {
+   "table": {
+    "name": "BattleFields",
+    "start": "BattleFields",
+    "entryType": "BattleField"
+   }
+  },
+  {
+   "table": {
+    "name": "BattleTypes",
+    "start": "BattleTypes",
+    "entryType": "BattleType"
+   }
+  },
+  {
+   "table": {
+    "name": "AIWeightEffects",
+    "start": "AIWeightEffects",
+    "entryType": "AIWeightEffect"
+   }
+  },
+  {
+   "table": {
+    "name": "TrainerClasses",
+    "start": "TrainerClasses",
+    "entryType": "TrainerClass"
+   }
+  },
+  {
+   "table": {
+    "name": "AIPokemonRoles",
+    "start": "AIPokemonRoles",
+    "entryType": "PokemonAIRole"
+   }
+  },
+  {
+   "table": {
+    "name": "BattleLayouts",
+    "start": "BattleLayouts",
+    "entryType": "BattleLayout"
+   }
+  },
+  {
+   "table": {
+    "name": "Rooms",
+    "start": "Rooms",
+    "entryType": "Room"
+   }
+  },
+  {
+   "table": {
+    "name": "Doors",
+    "start": "Doors",
+    "entryType": "Door"
+   }
+  },
+  {
+   "table": {
+    "name": "InteractionPoints",
+    "start": "InteractionPoints",
+    "entryType": "InteractionPoint"
+   }
+  },
+  {
+   "table": {
+    "name": "TreasureBoxData",
+    "start": "TreasureBoxData",
+    "entryType": "Treasure"
+   }
+  },
+  {
+   "table": {
+    "name": "ValidItems",
+    "start": "ValidItems",
+    "entryType": "ValidItem"
+   }
+  },
+  {
+   "table": {
+    "name": "Items",
+    "start": "Items",
+    "entryType": "Item"
+   }
+  },
+  {
+   "table": {
+    "name": "PokefaceTextures",
+    "start": "PokefaceTextures",
+    "entryType": "Pokeface"
+   }
+  },
+  {
+   "table": {
+    "name": "CharacterModels",
+    "start": "CharacterModels",
+    "entryType": "CharacterModel"
+   }
+  },
+  {
+   "table": {
+    "name": "PokemonStats",
+    "start": "PokemonStats",
+    "entryType": "PokemonStat"
+   }
+  },
+  {
+   "table": {
+    "name": "PokemonMenuAnimations",
+    "start": "PokemonMenuAnimations",
+    "entryType": "PokemonMenuAnimation"
+   }
+  },
+  {
+   "table": {
+    "name": "Natures",
+    "start": "Natures",
+    "entryType": "Nature"
+   }
+  },
+  {
+   "table": {
+    "name": "NatureMultipliers",
+    "start": "NatureMultipliers",
+    "entryType": "Multiplier"
+   }
+  },
+  {
+   "table": {
+    "name": "SoundsMetaData",
+    "start": "SoundsMetaData",
+    "entryType": "SoundMetadata"
+   }
+  },
+  {
+   "table": {
+    "name": "SoundFiles",
+    "start": "SoundFiles",
+    "entryType": "SoundFile"
+   }
+  },
+  {
+   "table": {
+    "name": "Moves",
+    "start": "Moves",
+    "entryType": "Move"
+   }
+  },
+  {
+   "table": {
+    "name": "TutorMoves",
+    "start": "TutorMoves",
+    "entryType": "TutorMove"
+   }
+  },
+  {
+   "table": {
+    "name": "Types",
+    "start": "Types",
+    "entryType": "Type"
+   }
+  },
+  {
+   "table": {
+    "name": "MsgPalettes",
+    "start": "MsgPalettes",
+    "entryType": "RGBAColor"
+   }
+  }
+ ]
+}

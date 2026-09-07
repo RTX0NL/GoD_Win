@@ -79,3 +79,68 @@ from the PAL disc (RPBP01) rather than taken on trust: header invariants
 across all 33 tables, and every bone/animation slot of 321 model rows
 resolved against the bone and action names inside the `.sdr` each row points
 at. See `PBRCommonTableRealCorpusTests`.
+
+## Species / move / item enums (Colosseum, XD, Battle Revolution)
+
+### Data Sources
+- **PDA (Pokémon Discord Assistant)** by Stars Momodu — the bot's per-game
+  JSON dumps (`json/data CM.json`, `data XD.json`, `data PBR.json`), which
+  were themselves generated from each game's own data tables. Each entry
+  carries the raw in-game `index` alongside its display name, which is what
+  the generated `PokemonSpecies` / `Moves` / `Items` enums are built from.
+  `js_modules/info.js` supplies the file ↔ game mapping (the other three
+  dumps — XG, Grand Colosseum, Remix — are romhacks, not base games).
+
+### Notes
+The three lists are per-game and cannot be shared: Deoxys is species 410 in
+Colosseum and XD but 386 in Battle Revolution, and the item lists diverge
+wholesale. Entries the games ship with no usable name (`????`, `-----`,
+`???`) and names that collide (Colosseum's 18 `DNA SAMPLE` items, the Deoxys
+and Wormadam forms) are given `<Name>_<index>` case names so every raw value
+stays addressable.
+
+### Abilities
+Ability ids come from neither source above: PDA carries ability *names* with
+no index, and the legacy tool's `XGAbilities` is `case index(Int)` that reads
+names out of the ROM at run time. They were instead derived from the games'
+own data — each game's ability table stores a **message id** per ability, so
+the table was dumped and joined against the game's message table:
+
+| | ability ids | message ids | table |
+|---|---|---|---|
+| Colosseum / XD | 1–77 | 3101–3177 | XD DOL `Abilities` |
+| Battle Revolution | 0–123 | 2990–3113 | `common.fsys` index 23 |
+
+Colosseum and XD share one definition because their ability names occupy the
+same message ids in the same order, verified run-for-run — not merely because
+both are Generation III. Two things the derivation corrected: the list runs to
+**77 (`AIR LOCK`)**, not 76 — PDA omits `CACOPHONY`, which no Pokémon has —
+and XD's table is 123 rows of which only 1–77 hold real entries, the remainder
+carrying uninitialised `name_id`s.
+
+### Behaviour enums (move target / category / effect type, contest category, item pocket)
+Ported from the legacy tool's `enums/XG*.swift` and
+`Revolution Tool CL/enums/PBR*.swift`, then checked against the discs where
+the two generations disagree — which they do more than the names suggest:
+
+- **Move targets** are sequential in Colosseum/XD (0...7) but a 16-bit
+  *bitmask* in Battle Revolution (0x001...0x400). Every move on the PAL disc
+  carries exactly one flag (12 distinct values over 468 rows), so an enum
+  reads correctly there.
+- **Move categories** renumber entirely. Colosseum/XD are None/Physical/
+  Special (0/1/2); Battle Revolution is Physical/Special/**Status** (0/1/2).
+  The legacy `PBRMoveCategory` declares only the first two, but the PAL disc
+  uses a third value 170 times and named moves settle it — Tackle, Body Slam
+  and Earthquake are 0; Ember, Surf and Thunderbolt are 1; Growl and Swords
+  Dance are 2. The enum here adds the missing case.
+- **Item pockets** are one list: Colosseum has seven (0...6) and XD adds
+  Battle CDs at 7, so the extra case simply never occurs in Colosseum data.
+
+### Reference Implementations
+- **Legacy GoD Tool** ([PekanMmd/Pokemon-XD-Code](https://github.com/PekanMmd/Pokemon-XD-Code)) —
+  `Objects/struct tables/*.swift`. Used to decide *which* struct fields are
+  enumerable rather than plain integers: its `.moveID` / `.itemID` /
+  `.pokemonID` / `.typeID` property types are the mapping the
+  `.abstraction` backfill follows. `AbilitiesTable.swift` supplied the
+  ability entry layout (`Name ID` / `Description ID` as `common.rel` message
+  ids) that made the join above possible.

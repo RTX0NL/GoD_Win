@@ -63,7 +63,7 @@ public extension PBRStructDefaults {
             // number, but the 26 rows at the end of the table use ids above
             // 493 (494, 601, 1000…1011) for non-species models, so it is a
             // model id rather than strictly a dex number.
-            .uint16(name: "species"),
+            .abstraction(name: "species", typeName: "PokemonSpecies"),
 
             // 0x16: Zero in all 670 rows.
             .padding(length: 2),

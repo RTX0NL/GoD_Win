@@ -210,7 +210,6 @@ let package = Package(
             ],
             path: "Sources/Shared/Core/Engines/Orre"
         ),
-
         .target(
             name: "Nintendo",
             dependencies: [
@@ -241,7 +240,13 @@ let package = Package(
                 "GoDFoundation",
                 "Structs",
                 "Wii",
-                "Pokemon"
+                "Pokemon",
+                // PBR is a Genius Sonority title: it ships FSYS archives and
+                // reuses most of the shared file formats. It depends on that
+                // engine so it can specialise the parts that differ — most
+                // visibly `.fnt`, which names a different format here than it
+                // does in Colosseum/XD. GeniusSonority does not depend back.
+                "GeniusSonority"
             ],
             path: "Sources/Shared/Core/Engines/PBR"
         ),
@@ -404,9 +409,13 @@ let package = Package(
             exclude: ["Fixtures"]),
         .testTarget(
             name: "ColosseumTests",
-            dependencies: ["Colosseum", "GeniusSonority", "GoDFoundation", "ScriptDecompiler", "GTX", "TestSupport", "FixtureCatalog"],
+            dependencies: ["Colosseum", "GeniusSonority", "Nintendo", "GoDFoundation", "ScriptDecompiler", "GTX", "TestSupport", "FixtureCatalog"],
             path: "Tests/Shared Tests/Engine Tests/Colosseum Tests",
             exclude: ["Fixtures"]),
+        .testTarget(
+            name: "PokemonTests",
+            dependencies: ["Pokemon", "GoDEngine", "GoDFoundation", "Structs"],
+            path: "Tests/Shared Tests/Engine Tests/Pokemon Tests"),
         .testTarget(
             name: "XDTests",
             dependencies: ["XD", "GoDFoundation"],

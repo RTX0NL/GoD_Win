@@ -1,0 +1,100 @@
+{
+ "chunks": [
+  {
+   "file": {
+    "label": "lbl_803757C8",
+    "extension": "fnt"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_80375AD8",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_8038D410",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803A56F4",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803BD0C8",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803D5654",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803ED5A4",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803ED908",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803EDCD8",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803EE07C",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803EE40C",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803EE754",
+    "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_80434960",
+    "extension": "gtx"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_80435040",
+    "extension": "gtx"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_804366C0",
+    "extension": "gtx"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_80527F28",
+    "extension": "scd"
+   }
+  }
+ ]
+}

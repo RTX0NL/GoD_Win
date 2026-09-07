@@ -2,6 +2,7 @@ import GoDFoundation
 
 enum ConvertErrors: Error, CustomStringConvertible {
     case inputFileNotFound(file: File, ErrorTrace)
+    case missingEngine(format: String, ErrorTrace)
     case writeFailed(file: File, ErrorTrace)
     case emptyStruct(structName: String, ErrorTrace)
     case structSizeMismatch(structName: String, structSize: Int, dataSize: Int, ErrorTrace)
@@ -12,6 +13,8 @@ enum ConvertErrors: Error, CustomStringConvertible {
         switch self {
         case let .inputFileNotFound(file, trace):
             return "Convert: input file not found at \(file.path)\n\(trace)"
+        case let .missingEngine(format, trace):
+            return "No engine folder supplied for format '\(format)'.\n\(trace)"
         case let .writeFailed(file, trace):
             return "Convert: failed to write output at \(file.path)\n\(trace)"
         case let .emptyStruct(name, trace):

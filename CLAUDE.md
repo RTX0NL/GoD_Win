@@ -124,6 +124,43 @@ Each operation has its own `Config` type and is enabled/disabled via the `Operat
 | Yaz0 / Yay0 | none — `GoDFoundation/Data/Compression` | Nintendo's own LZ77 codec, GameCube through Switch. Not used by Colo/XD/PBR; present for general titles and as a prerequisite for RARC/U8. See "Nintendo LZ77 compression" below. |
 | U8 (`.arc`) / NARC (`.narc`) | Nintendo | Nintendo's own containers, big **and** little endian. PBR ships both. Declared 1:1 targets — see "Nintendo archives" below. |
 
+#### Species / move / item enums are per-game
+
+`PokemonSpecies`, `Moves` and `Items` are generated per title into the Pokemon
+engine (`Colosseum/Xd/PbrPokemonEnums.swift`) from the games' own data tables —
+see `Documentation/Credits & References.md`. They cannot be shared: Deoxys is
+species 410 in Colosseum and XD but 386 in Battle Revolution, and the item
+lists diverge wholesale. `PokemonEngine.defaultEngine(for:)` picks the set, and
+ProjectSetup keys it off the disc's game, so installing the wrong one — which
+would put confident, wrong names in every abstracted column — isn't possible
+through the normal path.
+
+`Abilities` is generated the same way but grouped differently: Colosseum and XD
+share one list (their ability names sit at the same message ids in the same
+order), Battle Revolution has its own. It is `uint8`, matching the fields that
+hold it.
+
+The behaviour enums — `MoveTarget`, `MoveCategory`, `MoveEffectType`,
+`ContestCategory`, `ItemPocket` — split the same way, and genuinely differ:
+Colosseum/XD number move targets sequentially where PBR uses a bitmask, and
+the two move-category schemes don't line up (0 is "no damage" in Colo/XD,
+"Physical" in PBR).
+
+The fixed cross-game enums (`Type`, `Nature`, `Gender`, `EggGroup`, `ExpRate`)
+stay shared in `PokemonEnums.swift`.
+
+**A game engine carries every enum its own structs reference.** XD's and
+Colosseum's `Enums.allItems` include their species/moves/items, because the
+save structs resolve through that engine alone rather than through the combined
+engine the typed-data path builds. Adding an `.abstraction` to a struct means
+checking its engine can resolve the enum standalone.
+
+**An `.abstraction` must match the field's width.** The enum's `propertyType`
+decides how many bytes the field occupies, so swapping a `uint8` field for a
+`uint16` enum silently moves every later offset. The numbered enums are
+`uint16`; `Type` and friends are `uint8`. Only convert where they already
+agree.
+
 #### Struct tables as CSV
 
 A table of struct entries dumps as one CSV file, not JSON: a header row of
@@ -565,19 +602,10 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 - [x] FileFormat protocol + FileFormatRegistry — inject-at-use-site; builtins registers MSG, FNT, GTX, ATX, GSW; DOL/REL disassembly `.file` chunks route through it
 - [x] DOL typed data reassembly — a `.struct` chunk is JSON (`StructData(definition:json:)`), a `.table` chunk is **CSV** (see "Struct tables as CSV"). Pointers resolve through `LabelTable`; edits land in the built DOL; the dumped artifact is the only source for typed chunks (no `.bin` sidecars, no legacy fallback). A chunk that can't round-trip demotes to a raw `.binary` chunk
 - [x] Colosseum script decompiler + compiler: full binary ↔ source-text round trip byte-exact on all 142 US scripts (four verified stages; `ColoScriptSourceEmitter`/`ColoScriptTextParser`/`ColoScriptCompiler`; `ColoScriptDecomp --roundtrip` + `ColoScriptRoundTripTests`). Dialect + GS code-gen conventions in `Documentation/File Formats/Shared/SCD - Script Bytecode.md`; engine-declared builtin signatures (246, int/float/bool/string only) generated into `defaultBuiltInFunctions` with reference doc `Documentation/File Formats/Colosseum/Script Builtin Functions.md`
-- [x] Project setup from ISO (auto-detect game, create folder structure, generate configs)
-- [x] Configuration system (JSON configs, operation chains, toggle enable/disable)
-- [x] Logging framework
-- [x] GTX texture decode + encode (all pixel formats, palette rebuild)
-- [x] ATX wrapper decode + encode (1:1 roundtrip on wrapper; texture body reuses GTX)
-- [x] GSFont parse + rebuild (byte-identical) and atlas export/import
-- [x] GSW flash menu parse + serialize (byte-identical non-texture bytes)
-- [x] ColoXD build ops: font, flash menu, FST, GSfsys TOC, message
-- [x] ColoXD dump ops: flash menu (GSW → PNG + metadata), message (MSG → JSON)
-- [x] MSG (Colo/XD) parse + rebuild (byte-identical on FSYS-hosted MSGs; the three DOL-embedded XD MSGs re-encode +546 bytes total — writer re-derives string layout; self-consistent, and DOL shiftability tracks the growth) and JSON roundtrip via GSString pretty tokens
-- [x] FileFormat protocol + FileFormatRegistry — inject-at-use-site; builtins registers MSG, FNT, GTX, ATX, GSW; DOL/REL disassembly `.file` chunks route through it
-- [x] DOL typed data reassembly — a `.struct` chunk is JSON (`StructData(definition:json:)`), a `.table` chunk is **CSV** (see "Struct tables as CSV"). Pointers resolve through `LabelTable`; edits land in the built DOL; the dumped artifact is the only source for typed chunks (no `.bin` sidecars, no legacy fallback). A chunk that can't round-trip demotes to a raw `.binary` chunk
-- [x] Colosseum script decompiler + compiler: full binary ↔ source-text round trip byte-exact on all 142 US scripts (four verified stages; `ColoScriptSourceEmitter`/`ColoScriptTextParser`/`ColoScriptCompiler`; `ColoScriptDecomp --roundtrip` + `ColoScriptRoundTripTests`). Dialect + GS code-gen conventions in `Documentation/File Formats/Shared/SCD - Script Bytecode.md`; engine-declared builtin signatures (246, int/float/bool/string only) generated into `defaultBuiltInFunctions` with reference doc `Documentation/File Formats/Colosseum/Script Builtin Functions.md`
+- [x] REL disassembly + reassembly re-enabled (`RelOperationsGate.enabled` is `true`) — a REL's data sections emit typed tables the same way the DOL does (CSV, decoded straight back to check, demoting to a raw `.binary` chunk when they can't round-trip). The gate is kept as the one place that turns the whole family off if a regression appears
+- [x] Per-region type maps — the DOL and `common.rel` maps ship as `_us`/`_eu`/`_jp` variants for both XD and Colosseum, and `ProjectSetup` installs the disc's own region under a single fixed name, so operations stay region-blind. `GeniusSonorityEngine.Data.chunkTypeMapRoutes` adds any further typed file (`tableres2.rel`) as data rather than a new branch
+- [x] PBR fonts — `.FNT` bitmap glyphs (byte-identical on all 21 shipped fonts / 20,898 glyphs) and the `.f3d` 3D font (contours are the only stored geometry; strips and bounding boxes are re-derived on write), plus atlas/SVG artifacts and `pbrFont{,s}{Dump,Build}` operations
+- [x] PBR dump + build operations (`pbrDump` / `pbrBuild`)
 
 ### In Progress
 - [ ] ColoXD FSYS dump (organizing extracted files by type into asset folders)
@@ -643,7 +671,7 @@ existing rows round-trips; inventing a new *named* row does not, until the
 hash function is recovered.
 
 ### TODO
-- [ ] REL disassembly and reassembly — **temporarily disabled** via `RelOperationsGate` (all REL ops throw on entry, incl. common.rel/map.rel wrappers) until migrated to the same typed-data import flow as DOL
+- [ ] REL per-chunk artifacts are read-only — `RelAssembly` rebuilds from the lossless `<relName>.rel.json` alone, so edits to the typed chunks a disassembly emits don't reach the binary until `.s` parsing lands (the DOL's typed-import flow is the template)
 
 ### Planned (in order)
 - [ ] Game data table export (custom human-readable format for StructData)

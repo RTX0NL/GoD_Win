@@ -44,7 +44,7 @@ public extension ColosseumStructDefaults {
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "moveId"),        // +0x0
+            .abstraction(name: "moveId", typeName: "Moves"),        // +0x0
             .uint8(name: "pp"),             // +0x2 current PP
             .uint8(name: "ppUpCount"),      // +0x3 PP Ups applied (0..3)
         ]
@@ -63,7 +63,7 @@ public extension ColosseumStructDefaults {
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "species"),                   // +0x00 internal species index
+            .abstraction(name: "species", typeName: "PokemonSpecies"),                   // +0x00 internal species index
             .array(name: "unknown1", count: 2, of: .uint8),  // +0x02..0x04 undocumented (non-zero leftover, not alignment)
             .uint32(name: "pid"),                       // +0x04 personality value
             .abstraction(name: "version", typeName: "GameVersion"),  // +0x08 origin version
@@ -85,7 +85,7 @@ public extension ColosseumStructDefaults {
             .uint8(name: "level"),                      // +0x60
             .array(name: "unknown4", count: 0x17, of: .uint8),  // +0x61..0x78 status-condition block (undocumented)
             .array(name: "moves", count: 4, of: .subStruct(name: "ColoWaza")),  // +0x78..0x88
-            .uint16(name: "heldItem"),                  // +0x88 itemDataId
+            .abstraction(name: "heldItem", typeName: "Items"),                  // +0x88 itemDataId
             .uint16(name: "currentHp"),                 // +0x8A
             .uint16(name: "maxHp"),                     // +0x8C computed stats
             .uint16(name: "phyAtk"),                    // +0x8E
@@ -251,7 +251,7 @@ public extension ColosseumStructDefaults {
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "itemId"),        // +0x0 itemDataId
+            .abstraction(name: "itemId", typeName: "Items"),        // +0x0 itemDataId
             .uint16(name: "count"),         // +0x2 quantity
         ]
     )

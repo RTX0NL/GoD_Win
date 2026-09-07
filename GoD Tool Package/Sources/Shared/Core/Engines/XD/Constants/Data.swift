@@ -210,6 +210,12 @@ public extension XDEngine {
             /// Typed regions within the main.dol data sections (struct tables
             /// and embedded MSG files). US addresses; regenerate per region.
             public var dolTypeMap: File = "Resources/dol_typemap.json"
+            /// Typed regions within `tableres2.rel` — the REL inside
+            /// `common_dvdeth.fsys`, which carries an embedded font (the only
+            /// one in either game with a 13x13 block) and seven language
+            /// message tables. US and PAL ship byte-identical copies, so one
+            /// map serves both; the JP disc has no `common_dvdeth.fsys`.
+            public var tableres2TypeMap: File = "Resources/tableres2_typemap.json"
 
             public init(
                 commonRelSymbolMap: File = "Resources/common_rel_symbols.json",
@@ -218,7 +224,8 @@ public extension XDEngine {
                 mapRelTypeMap: File = "Resources/map_rel_typemap.json",
                 pocketMenuSymbolMap: File = "Resources/pocket_menu_symbols.json",
                 dolSymbolMap: File = "Resources/dol.map",
-                dolTypeMap: File = "Resources/dol_typemap.json"
+                dolTypeMap: File = "Resources/dol_typemap.json",
+                tableres2TypeMap: File = "Resources/tableres2_typemap.json"
             ) {
                 self.commonRelSymbolMap = commonRelSymbolMap
                 self.commonRelTypeMap = commonRelTypeMap
@@ -227,6 +234,7 @@ public extension XDEngine {
                 self.pocketMenuSymbolMap = pocketMenuSymbolMap
                 self.dolSymbolMap = dolSymbolMap
                 self.dolTypeMap = dolTypeMap
+                self.tableres2TypeMap = tableres2TypeMap
             }
         }
 

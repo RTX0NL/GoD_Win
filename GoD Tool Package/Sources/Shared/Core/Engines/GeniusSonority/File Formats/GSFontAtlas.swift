@@ -12,7 +12,7 @@ public struct GSFontAtlas {
 
     /// Metadata sidecar for the atlas image
     public struct Metadata: Codable {
-        /// Path to the atlas `.pgm` image file, relative to this metadata
+        /// Path to the atlas image file, relative to this metadata
         /// file's directory. Lets the build op locate the atlas without
         /// having to specify it separately in the config.
         public let atlasPath: String
@@ -171,42 +171,62 @@ public struct GSFontAtlas {
             yCursor += blockGrids[i].height
         }
 
-        // Build PGM (P5 binary format) — universally supported
-        let pgmHeader = "P5\n\(imgWidth) \(imgHeight)\n255\n"
-        var pgmData = [UInt8](pgmHeader.utf8)
-        pgmData.append(contentsOf: pixels)
-        let imageData = GoDData(byteStream: pgmData, byteOrder: .big)
+        // Greyscale PNG. This was a binary PGM: trivial to write, but it
+        // opens nowhere on Windows without extra software and is an order of
+        // magnitude larger, since these sheets are mostly empty. Every other
+        // image artifact the tool emits is already PNG.
+        let imageData = GreyscaleImage(width: imgWidth, height: imgHeight, pixels: pixels)
+            .pngData() ?? GoDData(byteStream: [UInt8](), byteOrder: .big)
 
         let metadata = Metadata(atlasPath: atlasPath, columns: columns, blocks: metaBlocks)
         return (imageData: imageData, metadata: metadata)
     }
 
     /// Import a font (chain of blocks) from atlas image + metadata JSON.
+    /// Preconditions the atlas should meet, checked rather than assumed.
+    ///
+    /// A PGM could only ever be 8-bit greyscale; a PNG can come back as RGB,
+    /// 16-bit or colour-managed, and `GreyscaleImage` will quietly collapse
+    /// all of it. These are the two ways that collapse loses information, so
+    /// they are named explicitly instead of silently rounded away.
+    private static func verify(_ image: GreyscaleImage) -> [String] {
+        var out = [String]()
+        if !image.wasNeutral {
+            out.append(
+                "Font atlas contains coloured pixels; it was converted to greyscale by "
+                + "luminance. Save it as a greyscale image to keep intensities exact."
+            )
+        }
+        // The font is 4bpp, so every pixel must be one of 16 levels
+        // (nibble x 0x11). Anything else came from an editor — anti-aliasing,
+        // resampling or a colour profile — and is rounded to the nearest.
+        var offGrid = 0
+        for value in image.pixels where value % 0x11 != 0 { offGrid += 1 }
+        if offGrid > 0 {
+            let percent = Double(offGrid) * 100 / Double(max(1, image.pixels.count))
+            out.append(String(
+                format: "Font atlas has %d pixels (%.2f%%) that aren't one of the 16 levels "
+                      + "a 4bpp font can store; they will be rounded to the nearest.",
+                offGrid, percent
+            ))
+        }
+        return out
+    }
+
+    /// Imports the atlas, plus anything questionable about the image that the
+    /// caller should surface. Warnings rather than errors: an atlas that came
+    /// back from an image editor slightly off-spec should still load, with
+    /// the drift reported.
     public static func importAtlas(
         imageData: GoDData,
         metadata: Metadata
-    ) throws -> GSFont {
-        let imgBytes = imageData.rawBytes
-        guard imgBytes.count > 10, imgBytes[0] == 0x50, imgBytes[1] == 0x35 else {
+    ) throws -> (font: GSFont, warnings: [String]) {
+        guard let image = GreyscaleImage.fromPNG(imageData) else {
             throw GSFontError.invalidAtlas
         }
-        var headerEnd = 0
-        var newlineCount = 0
-        for i in 0..<imgBytes.count {
-            if imgBytes[i] == 0x0A {
-                newlineCount += 1
-                if newlineCount == 3 { headerEnd = i + 1; break }
-            }
-        }
-        guard headerEnd > 0 else { throw GSFontError.invalidAtlas }
-        let pixels = Array(imgBytes[headerEnd...])
-
-        // Parse image width from header: "P5\n<W> <H>\n255\n"
-        let headerStr = String(bytes: imgBytes[..<headerEnd], encoding: .ascii) ?? ""
-        let lines = headerStr.split(separator: "\n")
-        guard lines.count >= 2 else { throw GSFontError.invalidAtlas }
-        let dims = lines[1].split(separator: " ")
-        guard dims.count >= 1, let imgWidth = Int(dims[0]) else { throw GSFontError.invalidAtlas }
+        let imgWidth = image.width
+        let pixels = image.pixels
+        let warnings = verify(image)
 
         // Reconstruct each block, then chain via nextFont.
         var blocks = [GSFont]()
@@ -264,7 +284,7 @@ public struct GSFontAtlas {
             )
         }
         guard let root = head else { throw GSFontError.invalidAtlas }
-        return root
+        return (root, warnings)
     }
 
     private static func decodeHex(_ hex: String) -> [UInt8]? {

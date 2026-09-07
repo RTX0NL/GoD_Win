@@ -404,7 +404,7 @@ final class PBRCommonTableRealCorpusTests: XCTestCase {
         XCTAssertEqual(descriptor.entrySize, 0x6C)
 
         let binary = try XCTUnwrap(corpus.members[7], "JP common.fsys member 7")
-        let typed = try XCTUnwrap(engine.typeCommonTable(descriptor, binary: binary))
+        let typed = try XCTUnwrap(engine.typeCommonTable(descriptor, binary: binary, structs: engine))
         XCTAssertEqual(typed.entries.count, 234, "the JP disc ships the same 234 countries")
 
         // Name ids are one per country and contiguous, exactly as on PAL.
@@ -444,7 +444,7 @@ final class PBRCommonTableRealCorpusTests: XCTestCase {
                      "TutorialData is absent from the JP disc")
 
         let binary = try XCTUnwrap(corpus.members[9], "JP common.fsys member 9")
-        let typed = try XCTUnwrap(engine.typeCommonTable(descriptor, binary: binary))
+        let typed = try XCTUnwrap(engine.typeCommonTable(descriptor, binary: binary, structs: engine))
         XCTAssertEqual(typed.entries.count, 106, "same row count as the PAL table")
 
         var groupIndices = Set<Int>()

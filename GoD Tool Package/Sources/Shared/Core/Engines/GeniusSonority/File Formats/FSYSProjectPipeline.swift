@@ -35,6 +35,11 @@ public extension GeniusSonorityEngine {
         /// rebuild can put it back where it came from.
         let discPath: String
         let extractedFiles: [(file: File, data: GoDData)]
+        /// Entries whose declared file type didn't parse, so they were
+        /// extracted as raw bytes instead. Carried out rather than logged
+        /// in place because `processFsys` runs concurrently and stays pure;
+        /// `unpackProject` emits them once the parallel pass has joined.
+        let warnings: [String]
     }
 
     /// Processes a single FSYS archive (parsing + LZSS decompression).
@@ -51,6 +56,17 @@ public extension GeniusSonorityEngine {
 
         var entries = [FSYSRegistry.Entry]()
         var extractedFiles = [(file: File, data: GoDData)]()
+        var warnings = [String]()
+
+        /// An entry whose declared type didn't parse falls back to raw bytes.
+        /// The archive says what the entry *is*; when the decoder disagrees
+        /// the honest artifact is the bytes, not a silently-missing file.
+        func noteFallback(_ entry: FSYSArchive.Entry, _ reason: String) {
+            warnings.append(
+                "\(archiveName): entry '\(entry.metadata.name).\(entry.metadata.fileType)' "
+                + "\(reason) — extracted as raw bytes."
+            )
+        }
 
         let textureDecoder = GXTextureDecoder()
 
@@ -110,6 +126,7 @@ public extension GeniusSonorityEngine {
                     extractedFiles.append((file: thpFile, data: thp.combined))
                 } catch {
                     // Fall back to extracting the THH raw if pairing failed.
+                    noteFallback(entry, "failed to pair with its THD half (\(error))")
                     let targetFile = targetFolder.file(projectName)
                     entries.append(.init(metadata: entry.metadata, file: targetFile))
                     extractedFiles.append((file: targetFile, data: entry.data))
@@ -129,6 +146,9 @@ public extension GeniusSonorityEngine {
                     entries.append(.init(metadata: entry.metadata, file: pngFile, textureMetadata: texMeta))
                     extractedFiles.append((file: pngFile, data: pngData))
                 } else {
+                    noteFallback(entry, texMeta == nil
+                        ? "has no readable GTX header"
+                        : "has a GTX header but its pixels didn't decode")
                     let targetFile = targetFolder.file(projectName)
                     entries.append(.init(metadata: entry.metadata, file: targetFile, textureMetadata: texMeta))
                     extractedFiles.append((file: targetFile, data: entry.data))
@@ -140,6 +160,7 @@ public extension GeniusSonorityEngine {
                     entries.append(.init(metadata: entry.metadata, file: pngFile, atxMetadata: atxMeta))
                     extractedFiles.append((file: pngFile, data: pngData))
                 } else {
+                    noteFallback(entry, "didn't decode as ATX")
                     let targetFile = targetFolder.file(projectName)
                     entries.append(.init(metadata: entry.metadata, file: targetFile))
                     extractedFiles.append((file: targetFile, data: entry.data))
@@ -162,7 +183,8 @@ public extension GeniusSonorityEngine {
             registry: registry,
             registryFile: registryFile,
             discPath: discPath,
-            extractedFiles: extractedFiles
+            extractedFiles: extractedFiles,
+            warnings: warnings
         )
     }
 
@@ -197,7 +219,15 @@ public extension GeniusSonorityEngine {
         // relative path travels with each entry and is what the rebuild
         // writes back.
         var fsysPaths = [(path: File, discPath: String, data: GoDData)]()
+        var archivePaths = [(path: File, discPath: String, data: GoDData)]()
         var otherPaths = [(path: File, discPath: String, data: GoDData)]()
+
+        // Nintendo containers are picked out by extension, not by sniffing
+        // every file's magic: the discs name these consistently, so an
+        // extension check avoids probing files that are neither. Which of
+        // the two formats it is — and which way round its scalars read —
+        // still comes from the magic, inside the parser.
+        let archiveExtensions = Set(NintendoArchiveFormat.allCases.map(\.fileExtension))
 
         func discRelativePath(_ path: File) -> String {
             guard path.path.startsWith(filesFolder.path + "/") else {
@@ -215,6 +245,8 @@ public extension GeniusSonorityEngine {
                 let entry = (path: path, discPath: discRelativePath(path), data: data)
                 if path.fileType == "fsys" {
                     fsysPaths.append(entry)
+                } else if let fileType = path.fileType, archiveExtensions.contains(fileType) {
+                    archivePaths.append(entry)
                 } else {
                     otherPaths.append(entry)
                 }
@@ -226,8 +258,36 @@ public extension GeniusSonorityEngine {
 
         try collectPaths(folder: filesFolder)
 
-        let totalCount = fsysPaths.count + otherPaths.count
+        let totalCount = fsysPaths.count + archivePaths.count + otherPaths.count
         var fstEntries = [FSTRegistry.Entry]()
+
+        /// Where an archive's unpacked artifacts go: under the archives
+        /// folder, mirroring the directory it sat in on the disc. PBR ships
+        /// the same `homeBtn.arc` under both `hb/HomeButton2` and
+        /// `hb/HomeButton3`, so a flat layout would have them overwrite
+        /// each other.
+        func archiveFolder(forDiscPath discPath: String) -> Folder {
+            var parts = discPath.split(separator: "/")
+            guard parts.count > 1 else { return fsysConfig.archivesFolder }
+            parts.removeLast()
+            return fsysConfig.archivesFolder.folder(parts.joined(separator: "/"))
+        }
+
+        /// Falls an archive back to its raw bytes.
+        ///
+        /// An archive the tool can't read is still a file the disc needs, so
+        /// it is extracted verbatim and its FST entry becomes `.binary` —
+        /// the rebuild writes those bytes straight back. Losing the ability
+        /// to edit one archive is a much smaller failure than refusing to
+        /// dump the disc. It lands beside where its unpacked form would
+        /// have, so two failures that share a filename can't collide.
+        func extractRaw(
+            _ item: (path: File, discPath: String, data: GoDData)
+        ) throws -> FSTRegistry.Entry {
+            let outputFile = archiveFolder(forDiscPath: item.discPath).file(item.path.fileName)
+            try projectFileSystem.writeFile(item.data, at: outputFile, overwrite: true)
+            return .init(type: .binary, file: outputFile, discPath: item.discPath)
+        }
 
         // Phase 2: Write non-FSYS game files, routing by file type
         let gsfsysFileName = self.data.fsys.GSfsysFile.fileName
@@ -243,6 +303,42 @@ public extension GeniusSonorityEngine {
             let outputFile = targetFolder.file(other.path.fileName)
             try projectFileSystem.writeFile(other.data, at: outputFile, overwrite: true)
             fstEntries.append(.init(type: .binary, file: outputFile, discPath: other.discPath))
+        }
+
+        // Phase 2b: Unpack Nintendo containers (U8 `.arc`, NARC `.narc`).
+        //
+        // Serial rather than folded into the concurrent FSYS pass below: a
+        // disc holds a handful of these against hundreds of FSYS archives,
+        // so the parallelism would buy nothing.
+        var archiveFallbacks = 0
+        if !archivePaths.isEmpty {
+            let nintendoEngine = try NintendoEngine.defaults()
+            for archive in archivePaths {
+                do {
+                    let unpacked = try nintendoEngine.unpackArchive(
+                        data: archive.data,
+                        archiveName: archive.path.fileName,
+                        into: archiveFolder(forDiscPath: archive.discPath),
+                        fileSystem: projectFileSystem,
+                        overwrite: true
+                    )
+                    fstEntries.append(.init(
+                        type: .nintendoArchive,
+                        file: unpacked.manifestFile,
+                        discPath: archive.discPath
+                    ))
+                } catch {
+                    archiveFallbacks += 1
+                    logger?.log(.warning(
+                        "\(archive.discPath) didn't unpack as an archive (\(error)) "
+                        + "— extracted as raw bytes."
+                    ))
+                    fstEntries.append(try extractRaw(archive))
+                }
+            }
+            logger?.log(.info(
+                "Unpacked \(archivePaths.count - archiveFallbacks)/\(archivePaths.count) Nintendo containers"
+            ))
         }
 
         // Phase 3: Process all FSYS archives concurrently.
@@ -294,6 +390,22 @@ public extension GeniusSonorityEngine {
         var fontFileMapping = [String: File]()
         let fontsFolder: Folder = fsysConfig.fileTypeFolders["fnt"] ?? "/Data/Text/Fonts"
 
+        // Entries whose declared type didn't parse were extracted raw. Report
+        // them once here rather than from inside the concurrent pass.
+        var fallbackCount = 0
+        for case .success(let r) in fsysResults.compactMap({ $0 }) {
+            for warning in r.warnings {
+                logger?.log(.warning(warning))
+                fallbackCount += 1
+            }
+        }
+        if fallbackCount > 0 {
+            logger?.log(.warning(
+                "\(fallbackCount) FSYS entr\(fallbackCount == 1 ? "y" : "ies") didn't parse as "
+                + "their declared file type and were extracted as raw bytes."
+            ))
+        }
+
         for case .success(let r) in fsysResults.compactMap({ $0 }) {
             for extracted in r.extractedFiles where extracted.file.fileType == "fnt" {
                 if let existing = uniqueFonts.first(where: { $0.data == extracted.data }) {
@@ -311,7 +423,8 @@ public extension GeniusSonorityEngine {
         }
 
         // Merge results into the InMemoryFST, remapping font paths
-        for result in fsysResults {
+        var fsysFallbacks = 0
+        for (source, result) in zip(fsysPaths, fsysResults) {
             guard let result else { continue }
             switch result {
             case .success(let fsysResult):
@@ -347,8 +460,23 @@ public extension GeniusSonorityEngine {
                     discPath: fsysResult.discPath
                 ))
             case .failure(let error):
-                throw error
+                // Same policy as an unreadable Nintendo container: keep the
+                // bytes and mark the entry `.binary` so the rebuild puts
+                // them back, rather than failing the whole dump over one
+                // archive.
+                fsysFallbacks += 1
+                logger?.log(.warning(
+                    "\(source.discPath) didn't unpack as FSYS (\(error)) — extracted as raw bytes."
+                ))
+                fstEntries.append(try extractRaw(source))
             }
+        }
+
+        if fsysFallbacks > 0 {
+            logger?.log(.warning(
+                "\(fsysFallbacks) FSYS archive\(fsysFallbacks == 1 ? "" : "s") didn't unpack "
+                + "and \(fsysFallbacks == 1 ? "was" : "were") extracted as raw bytes."
+            ))
         }
 
         logger?.log(.taskStatus(taskName: "Decode Colosseum/XD File System", status: .completed(true)))
@@ -369,11 +497,27 @@ public extension GeniusSonorityEngine {
     func resolveArchiveEntries(
         registryEntry: FSYSRegistry.Entry,
         sourceFolder: Folder,
-        fileSystem: FileSystemTree
+        fileSystem: FileSystemTree,
+        structDefinitions: [String: StructDefinition] = [:]
     ) throws -> [FSYSArchive.Entry] {
         let filePath = sourceFolder.file(registryEntry.file.path)
         guard let data = fileSystem.readFile(at: filePath)?.allData else {
             throw FSTErrors.fileNotFound(filePath, .init())
+        }
+
+        // Struct-typed data table: reassemble the table binary from its
+        // header JSON, row CSV, and raw string-pool/name-table extras. The
+        // struct definitions come from the caller's game engine.
+        if let dataTable = registryEntry.dataTable {
+            let bytes = try reassembleDataTable(
+                registryEntry: registryEntry, dataTable: dataTable, csv: data,
+                sourceFolder: sourceFolder, fileSystem: fileSystem, structDefinitions: structDefinitions
+            )
+            return [FSYSArchive.Entry(
+                metadata: registryEntry.metadata,
+                filename: registryEntry.metadata.name + "." + registryEntry.metadata.fileType,
+                data: bytes
+            )]
         }
 
         // THP pair: split the combined `.thp` back into THH + THD and
@@ -429,7 +573,8 @@ public extension GeniusSonorityEngine {
         registryFile: File,
         sourceFolder: Folder,
         discPath: String? = nil,
-                fileSystem: FileSystemTree
+                fileSystem: FileSystemTree,
+        structDefinitions: [String: StructDefinition] = [:]
     ) throws -> FileData {
         let registry: FSYSRegistry = try fileSystem.decodeJSON(from: registryFile)
 
@@ -438,7 +583,8 @@ public extension GeniusSonorityEngine {
             archiveEntries.append(contentsOf: try resolveArchiveEntries(
                 registryEntry: registryEntry,
                 sourceFolder: sourceFolder,
-                fileSystem: fileSystem
+                fileSystem: fileSystem,
+                structDefinitions: structDefinitions
             ))
         }
 
@@ -490,6 +636,7 @@ public extension GeniusSonorityEngine {
         outputFolder: Folder,
         overwrite: Bool,
         fileSystem: FileSystemTree,
+        structDefinitions: [String: StructDefinition] = [:],
         logger: Logger? = nil
     ) throws {
         guard let sourceFolder = fstRegistryFile.parentFolder else {
@@ -502,7 +649,11 @@ public extension GeniusSonorityEngine {
 
         let fsysEntries = fstRegistry.entries.filter { $0.type == .fsys }
         let binaryEntries = fstRegistry.entries.filter { $0.type == .binary }
-        let totalCount = fsysEntries.count + binaryEntries.count
+        let archiveEntries = fstRegistry.entries.filter { $0.type == .nintendoArchive }
+        // `max(1, …)` because this divides: a disc whose FST holds only
+        // Nintendo containers has no FSYS and no binary entries, and 0/0 is
+        // a NaN that traps on the way to Int.
+        let totalCount = max(1, fsysEntries.count + binaryEntries.count + archiveEntries.count)
 
         // Phase 1: Copy non-FSYS binary files to output
         for (i, entry) in binaryEntries.enumerated() {
@@ -551,7 +702,8 @@ public extension GeniusSonorityEngine {
                         registryFile: registryFile,
                         sourceFolder: sourceFolder,
                         discPath: entry.rebuildPath,
-                                                fileSystem: fileSystem
+                                                fileSystem: fileSystem,
+                        structDefinitions: structDefinitions
                     ))
                 } catch {
                     results[i] = .failure(error)
@@ -590,7 +742,6 @@ public extension GeniusSonorityEngine {
         // FSYS pass above: a disc holds a handful of these against
         // hundreds of archives, so the parallelism would buy nothing and
         // the loop stays readable.
-        let archiveEntries = fstRegistry.entries.filter { $0.type == .nintendoArchive }
         if !archiveEntries.isEmpty {
             logger?.log(.info("Repacking \(archiveEntries.count) Nintendo containers"))
             let nintendoEngine = try NintendoEngine.defaults()
@@ -626,11 +777,64 @@ public enum FSYSPipelineError: GoDError {
     /// The disc's FSYS table of contents is missing, so nothing can be
     /// matched to a group ID.
     case missingTableOfContents(File, ErrorTrace)
+    /// A data-table entry names a struct the pack wasn't given a definition
+    /// for. The caller has to supply the game engine's struct definitions.
+    case missingStructDefinition(String, ErrorTrace)
 
     public var description: String {
         switch self {
         case let .missingTableOfContents(file, errorTrace):
             return "Error: Couldn't read the FSYS table of contents at \(file)\n\(errorTrace)"
+        case let .missingStructDefinition(name, errorTrace):
+            return "Error: No struct definition '\(name)' supplied to reassemble a data-table entry.\n\(errorTrace)"
         }
+    }
+}
+
+public extension GeniusSonorityEngine {
+    /// Reassemble a typed data-table binary from its dumped header JSON, row
+    /// CSV, and raw string-pool/name-table extras. Header + string pool +
+    /// entries + (0x10 pad) + name/relocation tables, matching the layout the
+    /// dump split apart.
+    func reassembleDataTable(
+        registryEntry: FSYSRegistry.Entry,
+        dataTable: FSYSRegistry.DataTableMetadata,
+        csv: GoDData,
+        sourceFolder: Folder,
+        fileSystem: FileSystemTree,
+        structDefinitions: [String: StructDefinition]
+    ) throws -> GoDData {
+        guard let entryDefinition = structDefinitions[dataTable.entryStructName] else {
+            throw FSYSPipelineError.missingStructDefinition(dataTable.entryStructName, .init())
+        }
+        guard let headerDefinition = structDefinitions[dataTable.headerStructName] else {
+            throw FSYSPipelineError.missingStructDefinition(dataTable.headerStructName, .init())
+        }
+
+        let csvText = String(decoding: csv.rawBytes, as: UTF8.self)
+        let rows = try StructTableCSV.decode(csvText, definition: entryDefinition, byteOrder: .big).entries
+
+        let headerFile = sourceFolder.file(dataTable.headerFile.path)
+        guard let headerJSON = fileSystem.readFile(at: headerFile)?.allData else {
+            throw FSTErrors.fileNotFound(headerFile, .init())
+        }
+        let header = try StructData(definition: headerDefinition, json: headerJSON, byteOrder: .big)
+
+        func extra(_ file: File?) throws -> GoDData? {
+            guard let file else { return nil }
+            let path = sourceFolder.file(file.path)
+            guard let bytes = fileSystem.readFile(at: path)?.allData else {
+                throw FSTErrors.fileNotFound(path, .init())
+            }
+            return bytes
+        }
+
+        let result = GoDData(byteOrder: .big)
+        result.append(header.data)
+        if let leading = try extra(dataTable.leadingExtraFile) { result.append(leading) }
+        for row in rows { result.append(row.data) }
+        result.align(to: data.fsys.dataTableRegionAlignmentValue)
+        if let trailing = try extra(dataTable.trailingExtraFile) { result.append(trailing) }
+        return result
     }
 }

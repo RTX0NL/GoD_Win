@@ -21,6 +21,7 @@ protocol OperationHandler {
     func coloXDDump(config: ColoXD.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func coloXDBuild(config: ColoXD.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func pbrDump(config: PBROps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func pbrBuild(config: PBROps.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func dolDisassembly(config: DolDisassembly.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func dolAssembly(config: DolAssembly.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func relDisassembly(config: RelDisassembly.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
@@ -44,6 +45,10 @@ protocol OperationHandler {
     func nintendoArchiveBuild(config: NintendoArchiveBuild.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func nintendoArchivesDump(config: NintendoArchiveDump.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func nintendoArchivesBuild(config: NintendoArchiveBuild.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func pbrFontDump(config: PBRFontDump.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func pbrFontsDump(config: PBRFontDump.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func pbrFontBuild(config: PBRFontBuild.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func pbrFontsBuild(config: PBRFontBuild.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
 }
 
 /// Production handler: forwards each operation to its engine wrapper.
@@ -74,6 +79,10 @@ struct EngineOperationHandler: OperationHandler {
 
     func pbrDump(config: PBROps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try PBROps.dump(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func pbrBuild(config: PBROps.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try PBROps.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
     }
 
     func dolDisassembly(config: DolDisassembly.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
@@ -166,5 +175,21 @@ struct EngineOperationHandler: OperationHandler {
 
     func nintendoArchivesBuild(config: NintendoArchiveBuild.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try NintendoArchiveBuild.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func pbrFontDump(config: PBRFontDump.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try PBRFontDump.dump(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func pbrFontsDump(config: PBRFontDump.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try PBRFontDump.dump(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func pbrFontBuild(config: PBRFontBuild.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try PBRFontBuild.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func pbrFontsBuild(config: PBRFontBuild.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try PBRFontBuild.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
     }
 }

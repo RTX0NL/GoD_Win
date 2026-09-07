@@ -177,6 +177,47 @@ final class ProjectSetupTests: XCTestCase {
         XCTAssertTrue(names.contains("dolDisassembly"), "got \(names)")
     }
 
+    /// Files that carry typed data sections beyond the DOL and common.rel
+    /// come from `GeniusSonorityEngine.Data.chunkTypeMapRoutes`, so covering
+    /// another one is a line of engine data. XD declares `tableres2.rel`;
+    /// Colosseum declares none, and must not gain a step it can't run.
+    func testTypedChunkFileStepsComeFromTheEngineRoutes() throws {
+        let (fst, project) = try runSetup(gameID: PokemonXD.gameIDUS)
+        let dump = try decodeConfig(project.folder("Config").file("Dump-Config.json"), in: fst)
+
+        let routes = GeniusSonorityEngine.defaultEngine(for: .galeOfDarkness).data.chunkTypeMapRoutes
+        XCTAssertFalse(routes.isEmpty, "XD should declare at least tableres2.rel")
+
+        let steps = dump.operations.filter {
+            if case .relDisassembly = $0.operation { return true }
+            return false
+        }
+        XCTAssertEqual(steps.count, routes.count, "one step per declared route")
+
+        // The route that only US and PAL can run ships disabled, so a JP
+        // project's chain isn't broken by a file that isn't on the disc.
+        for (step, route) in zip(steps, routes) {
+            XCTAssertEqual(step.enabled == .yes, route.enabledByDefault,
+                           "\(route.file.path): enabled state should follow the route")
+            guard case .relDisassembly(let config) = step.operation else {
+                return XCTFail("expected a relDisassembly config")
+            }
+            XCTAssertTrue(config.relPath.path.hasSuffix(route.file.path),
+                          "\(config.relPath.path) should target \(route.file.path)")
+            XCTAssertEqual(config.typeMapPath?.path.hasSuffix(route.typeMap.path), true,
+                           "the step should point at the route's type map")
+        }
+    }
+
+    func testColosseumDeclaresNoExtraTypedChunkFiles() throws {
+        XCTAssertTrue(
+            GeniusSonorityEngine.defaultEngine(for: .colosseum).data.chunkTypeMapRoutes.isEmpty
+        )
+        let (fst, project) = try runSetup(gameID: PokemonColosseum.gameIDUS)
+        let dump = try decodeConfig(project.folder("Config").file("Dump-Config.json"), in: fst)
+        XCTAssertFalse(operationNames(dump).contains("relDisassembly"))
+    }
+
     func testXDBuildConfigEndsWithTheGamecubeBuild() throws {
         let (fst, project) = try runSetup(gameID: PokemonXD.gameIDUS)
         let build = try decodeConfig(project.folder("Config").file("Build-Config.json"), in: fst)

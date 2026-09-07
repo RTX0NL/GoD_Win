@@ -3,14 +3,14 @@
 //
 //  Bridges GSFont's existing binary init / atlas export+import onto the
 //  FileFormat contract. Artifact filenames follow the project-wide
-//  pattern: `<name>.fnt.json` + `<name>.fnt.pgm` (default `name = "fnt"`).
+//  pattern: `<name>.fnt.json` + `<name>.fnt.png` (default `name = "fnt"`).
 //
 
 import Foundation
 import GoDFoundation
 
 extension GSFont: FileFormat {
-    public func atlasPGMFilename() -> File { File("\(name).\(GSFont.formatName).pgm") }
+    public func atlasImageFilename() -> File { File("\(name).\(GSFont.formatName).png") }
 
     public init(binaries: [FileData]) throws {
         guard let first = binaries.first else {
@@ -37,17 +37,17 @@ extension GSFont: FileFormat {
     public init(outputs: [FileData]) throws {
         let dict = outputs.byFile
         let jsonSuffix = ".\(GSFont.formatName).json"
-        let pgmSuffix = ".\(GSFont.formatName).pgm"
+        let pngSuffix = ".\(GSFont.formatName).png"
         guard let jsonKey = dict.keys.first(where: { $0.path.hasSuffix(jsonSuffix) }) else {
             throw GSFont.missingOutputError(key: "*\(jsonSuffix)")
         }
         let stem = String(jsonKey.path.dropLast(jsonSuffix.count))
-        let pgmKey = File("\(stem)\(pgmSuffix)")
+        let pngKey = File("\(stem)\(pngSuffix)")
         guard let metaData = dict[jsonKey] else {
             throw GSFont.missingOutputError(key: jsonKey.path)
         }
-        guard let pgm = dict[pgmKey] else {
-            throw GSFont.missingOutputError(key: pgmKey.path)
+        guard let atlas = dict[pngKey] else {
+            throw GSFont.missingOutputError(key: pngKey.path)
         }
         let metadata: GSFontAtlas.Metadata
         do {
@@ -55,20 +55,23 @@ extension GSFont: FileFormat {
         } catch {
             throw GSFont.invalidFileError
         }
-        self = try GSFontAtlas.importAtlas(imageData: pgm, metadata: metadata)
+        // `FileFormat` has nowhere to surface warnings, so the atlas checks
+        // are dropped here and reported by the operation layer, which holds a
+        // logger. The font loads either way.
+        self = try GSFontAtlas.importAtlas(imageData: atlas, metadata: metadata).font
         self.name = stem.isEmpty ? "fnt" : stem
     }
 
     public var outputs: [FileData] {
         get throws {
-            let pgm = atlasPGMFilename()
-            let result = GSFontAtlas.exportAtlas(font: self, atlasPath: pgm.path)
+            let atlas = atlasImageFilename()
+            let result = GSFontAtlas.exportAtlas(font: self, atlasPath: atlas.path)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let jsonData: Data = try encoder.encode(result.metadata)
             return [
                 FileData(file: jsonFilename, data: GoDData(data: jsonData, byteOrder: .big)),
-                FileData(file: pgm, data: result.imageData)
+                FileData(file: atlas, data: result.imageData)
             ]
         }
     }

@@ -127,7 +127,7 @@ public extension PBRStructDefaults {
             .uint16(name: "id"),
             .uint16(name: "flags"),
             .uint16(name: "minimum_level"),
-            .uint16(name: "species"),
+            .abstraction(name: "species", typeName: "PokemonSpecies"),
             .array(name: "types", count: 2, of: .uint8),
             .uint8(name: "pokeball"),
             .uint8(name: "gender"),

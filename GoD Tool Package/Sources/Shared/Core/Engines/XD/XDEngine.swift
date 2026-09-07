@@ -47,11 +47,17 @@ public struct XDEngine: Engine {
         }
 
         add(data.resources.commonRelSymbolMap, named: "common_rel_symbols.json")
-        add(data.resources.commonRelTypeMap, named: "common_rel_typemap.json")
+        // The US variants are the defaults so the files are never empty;
+        // `ProjectSetup` overwrites both with the ROM's own region via
+        // `regionalResources`. One path, one file — ops stay region-blind.
+        add(data.resources.commonRelTypeMap, named: "common_rel_typemap_us.json")
         add(data.resources.mapRelSymbolMap, named: "map_rel_symbols.json")
         add(data.resources.mapRelTypeMap, named: "map_rel_typemap.json")
         add(data.resources.pocketMenuSymbolMap, named: "pocket_menu_symbols.json")
-        add(data.resources.dolTypeMap, named: "dol_typemap.json")
+        add(data.resources.dolTypeMap, named: "dol_typemap_us.json")
+        // tableres2.rel is identical on US and PAL and absent on JP, so its
+        // map isn't region-keyed.
+        add(data.resources.tableres2TypeMap, named: "tableres2_typemap.json")
         // DOL symbol map is region-specific — written by `ProjectSetup`
         // once the ROM's game ID is known, not bundled at engine-write
         // time.
@@ -75,6 +81,38 @@ public enum PokemonXD {
     public static func symbolMapData(for gameID: String) -> GoDData? {
         guard gameIDs.contains(gameID) else { return nil }
         return bundledResource(named: gameID + ".map")
+    }
+
+
+    /// Region suffix used by the bundled per-region resources.
+    /// Nil for a game ID this engine doesn't own.
+    static func regionSuffix(for gameID: String) -> String? {
+        switch gameID {
+        case gameIDUS: return "us"
+        case gameIDEU: return "eu"
+        case gameIDJP: return "jp"
+        default: return nil
+        }
+    }
+
+    /// Typed regions within `main.dol` for a specific build.
+    ///
+    /// Keyed by region because every chunk in it is identified by address,
+    /// and the data sections move between builds — a US map applied to a PAL
+    /// disc names nothing at best and mistypes bytes at worst. The project
+    /// copy is always written to the engine's region-neutral
+    /// `dolTypeMap` path, so downstream ops never learn about regions.
+    public static func dolTypeMapData(for gameID: String) -> GoDData? {
+        guard let suffix = regionSuffix(for: gameID) else { return nil }
+        return bundledResource(named: "dol_typemap_\(suffix).json")
+    }
+
+    /// Typed regions within `common.rel` for a specific build. Same
+    /// reasoning as the DOL map: chunks are keyed by pointer-index symbol,
+    /// and those indices differ per build.
+    public static func commonRelTypeMapData(for gameID: String) -> GoDData? {
+        guard let suffix = regionSuffix(for: gameID) else { return nil }
+        return bundledResource(named: "common_rel_typemap_\(suffix).json")
     }
 
     /// Returns the REL symbol index data for a given REL name (e.g. "common_rel", "pocket_menu", "map_rel")

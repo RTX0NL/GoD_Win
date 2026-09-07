@@ -51,10 +51,10 @@ public extension XDStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "species"),
+            .abstraction(name: "species", typeName: "PokemonSpecies"),
             .uint8(name: "level"),
             .uint8(name: "happiness"),
-            .uint16(name: "item"),
+            .abstraction(name: "item", typeName: "Items"),
             .uint8(name: "aiRole",
                    description: "Index into common.rel AIPokemonRoles."),
             .uint8(name: "isKeyStrategicPokemon"),
