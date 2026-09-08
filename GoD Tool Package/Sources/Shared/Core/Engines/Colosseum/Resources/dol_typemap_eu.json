@@ -35,6 +35,24 @@
     "label": "lbl_80310714",
     "extension": "msg"
    }
+  },
+  {
+   "file": {
+    "label": "lbl_803627A0",
+    "extension": "gtx"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803725A0",
+    "extension": "gtx"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803828A0",
+    "extension": "gtx"
+   }
   }
  ]
 }

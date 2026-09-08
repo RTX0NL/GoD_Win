@@ -11,6 +11,24 @@
     "label": "lbl_802B18E0",
     "extension": "fnt"
    }
+  },
+  {
+   "file": {
+    "label": "lbl_80301E20",
+    "extension": "gtx"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_80311C20",
+    "extension": "gtx"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_80321F20",
+    "extension": "gtx"
+   }
   }
  ]
 }

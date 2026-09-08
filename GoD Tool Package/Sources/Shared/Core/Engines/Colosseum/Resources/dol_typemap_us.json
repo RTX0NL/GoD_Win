@@ -11,6 +11,24 @@
     "label": "lbl_802CF810",
     "extension": "msg"
    }
+  },
+  {
+   "file": {
+    "label": "lbl_803156E0",
+    "extension": "gtx"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803254E0",
+    "extension": "gtx"
+   }
+  },
+  {
+   "file": {
+    "label": "lbl_803357E0",
+    "extension": "gtx"
+   }
   }
  ]
 }
