@@ -507,7 +507,9 @@ dual-layer disc would need streaming.
   whole disc needs a release build, and tests must stay near the one-group
   (2 MB) minimum
 
-### ISH/ISD Audio Format Spec (for future implementation)
+### ISH/ISD Audio Format Spec
+
+Implemented: `ISFFile` + `ISFDSPADPCM` (decode and encode), reachable as `dumpAudio{,s}` / `buildAudio{,s}` in the ColoXD chains and as `convert` format `ish`. The spec below is what they implement.
 
 The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4-bit ADPCM with linear prediction). Magic bytes: `I_SF`. Already registered as file types in the GeniusSonority engine (ISD = 0x28, ISH = 0x2A).
 
@@ -536,7 +538,7 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 
 **ISD data:** Raw interleaved DSP ADPCM frames. Channels alternate in blocks of `interleave_size` bytes.
 
-**Current conversion workflow** (what we want to replace): extract from FSYS -> use vgmstream CLI or Audacity with vgmstream plugin -> WAV. The "Audacity fork with Nintendo support" is actually standard Audacity + the vgmstream input plugin.
+**The workflow this replaced:** extract from FSYS -> use vgmstream CLI or Audacity with vgmstream plugin -> WAV. The "Audacity fork with Nintendo support" is actually standard Audacity + the vgmstream input plugin.
 
 **Reference implementations:**
 - vgmstream `src/coding/ngc_dsp_decoder.c` + `src/meta/ish_isd.c` (decode, MIT-like)
@@ -660,8 +662,10 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 - [x] ATX wrapper decode + encode (1:1 roundtrip on wrapper; texture body reuses GTX)
 - [x] GSFont parse + rebuild (byte-identical) and atlas export/import
 - [x] GSW flash menu parse + serialize (byte-identical non-texture bytes)
-- [x] ColoXD build ops: font, flash menu, FST, GSfsys TOC, message
-- [x] ColoXD dump ops: flash menu (GSW → PNG + metadata), message (MSG → JSON)
+- [x] ColoXD dump ops: `dumpXD` / `dumpColosseum` (FSYS unpack, every member routed by type into the asset folders `GeniusSonorityEngine.Data.FSYS` names), fonts, flash menus (GSW → PNG + metadata), messages (MSG → JSON), ATX, audio (ISH/ISD → WAV), Colosseum scripts
+- [x] ColoXD build ops: `buildXD` / `buildColosseum` (FSYS repack from the FST registry), FST, GSfsys TOC, fonts, flash menus, messages, ATX, audio
+- [x] ISH/ISD audio decode + encode (DSP ADPCM ↔ WAV) and THP video (THH + THD joined into a standard playable `.thp`, bit-identical both ways)
+- [x] WBFS read — setup restores a `.wbfs` as a lazy block-mapped view, validated byte-for-byte on a real container (see the format table)
 - [x] MSG (Colo/XD) parse + rebuild (byte-identical on FSYS-hosted MSGs; the three DOL-embedded XD MSGs re-encode +546 bytes total — writer re-derives string layout; self-consistent, and DOL shiftability tracks the growth) and JSON roundtrip via GSString pretty tokens
 - [x] FileFormat protocol + FileFormatRegistry — inject-at-use-site; builtins registers MSG, FNT, GTX, ATX, GSW; DOL/REL disassembly `.file` chunks route through it
 - [x] DOL typed data reassembly — a `.struct` chunk is JSON (`StructData(definition:json:)`), a `.table` chunk is **CSV** (see "Struct tables as CSV"). Pointers resolve through `LabelTable`; edits land in the built DOL; the dumped artifact is the only source for typed chunks (no `.bin` sidecars, no legacy fallback). A chunk that can't round-trip demotes to a raw `.binary` chunk. `ProjectSetup` emits a disabled `dolAssembly` ahead of the disc build on both platforms, mirroring the dump's symbol and type maps
@@ -674,8 +678,6 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 - [x] PBR dump + build operations (`pbrDump` / `pbrBuild`)
 
 ### In Progress
-- [ ] ColoXD FSYS dump (organizing extracted files by type into asset folders)
-- [ ] ColoXD FSYS rebuild — 1:1 achieved on 500 real archives across both games (see "FSYS byte-identical rebuild"); remaining work is the dump/pack *operation* layer, not the format
 - [ ] Validate font dump + rebuild end-to-end on full ROM (unit tests pass; need project-level validation)
 - [ ] Validate GSW rebuild end-to-end on full ROM (unit tests pass; need project-level validation)
 - [ ] MSG — PBR variant (Colo/XD done)
@@ -707,7 +709,8 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
       unknown field from a hole, and it corrected several fields the legacy
       tool had mislabelled), and inter-region padding is zero.
 
-      Remaining: a dump/build *operation*; the name-pool 16-bit hash is
+      The dump/build operations exist (`dumpCommonTables` under `pbrDump`,
+      repacked by `pbrBuild`). Remaining: the name-pool 16-bit hash is
       unidentified (see below); `PokemonModelEffects`, `FightAIBattlePass`,
       `FightAIPokemonPartData` and `FightAIExpectData` have no field
       accessors so their interiors stay byte arrays. See
@@ -739,12 +742,8 @@ hash function is recovered.
 ### TODO
 
 ### Planned (in order)
-- [ ] Game data table export (custom human-readable format for StructData)
-- [ ] Image/texture export (GTX format)
-- [ ] Model file export
-- [ ] Script decompiler/compiler (XD format needs tweaks; Colosseum format not fully figured out)
-- [ ] DOL disassembly (split into sections, PowerPC disassembly, symbol map support for XD, shiftable output)
-- [ ] REL (relocatable module) handling
+- [ ] XD script compiler — `XD/Script` has the parser and expression builder only; no source emitter, compiler or operation. The Colosseum pipeline (`ColoScriptSourceEmitter` / `ColoScriptTextParser` / `ColoScriptCompiler`) is the template
+- [ ] Model file export (DAT/PKX)
 - [ ] WAD and RARC containers. WBFS and U8 are done.
 - [ ] WIA/RVZ restore — the header, partition and group tables and the
       RVZ packing codec parse, but the payload is zstd/bzip2/LZMA and the
@@ -756,7 +755,6 @@ hash function is recovered.
       top of the GameCube decoder's junk regeneration (`WiiCrypto` now
       exists), and a Wii `.nkit.iso` sample to validate against. Setup
       names this in its error.
-- [ ] ISH/ISD audio decode/encode (DSP ADPCM ↔ WAV, replaces vgmstream/Audacity workflow)
 
 ### Separate Tools (planned)
 - Randomizer — wrapper around CLI
