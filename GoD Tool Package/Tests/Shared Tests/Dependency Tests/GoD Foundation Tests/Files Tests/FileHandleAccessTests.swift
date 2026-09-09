@@ -70,6 +70,17 @@ final class FileHandleAccessTests: XCTestCase {
 
     /// A directory has a size on disk but isn't a file anyone can read, so
     /// `fileSize` rejects it before either implementation runs.
+    /// A symlink measures as its target. `attributesOfItem` alone reports
+    /// the link — the length of the path it holds — which is how a linked
+    /// disc image once set up a project around a few dozen bytes.
+    func testSymlinkMeasuresAsItsTarget() throws {
+        let target = try write(1234)
+        let link = scratch.appendingPathComponent("link.bin")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        XCTAssertEqual(FileHandleAccess.fileSize(at: link), 1234)
+        XCTAssertEqual(try GoDStreamedData(file: File(nativePath: link.path)).length, 1234)
+    }
+
     func testDirectoryIsNotAFileSize() throws {
         let folder = scratch.appendingPathComponent("sub", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

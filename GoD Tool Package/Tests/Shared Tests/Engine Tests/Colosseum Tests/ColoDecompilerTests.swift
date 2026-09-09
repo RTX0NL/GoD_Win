@@ -87,11 +87,13 @@ final class ColoDecompilerTests: XCTestCase {
 
     // MARK: - Real Script Test
 
+    /// `GODDESS_COLO_SCRIPT_SAMPLE` points at any Colosseum `.scd`; the
+    /// default is one from the unpacked US project.
     func testDecompileRealScript() throws {
-        let path = "/Users/stars/Documents/Projects/GoD-Tool/scripts/Colo US project/Build/Unpacked/Assets/Scripts/M1_out.scd"
+        let path = ProcessInfo.processInfo.environment["GODDESS_COLO_SCRIPT_SAMPLE"]
+            ?? "/Users/stars/Documents/Projects/GoD-Tool/scripts/Colo US project/Build/Unpacked/Assets/Scripts/M1_out.scd"
         guard let rawData = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
-            print("Skipping real script test — file not found")
-            return
+            throw XCTSkip("no Colosseum script sample at \(path)")
         }
 
         let data = GoDData(data: rawData, byteOrder: .big)

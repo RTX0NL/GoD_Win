@@ -80,10 +80,12 @@ final class RegisterExportsPatternTests: XCTestCase {
     func testRegisterExports_corpusPrologRoundtrips() throws {
         var covered = 0
         var exportsSeen = 0
+        var relsSeen = 0
         var mismatches: [String] = []
         for dir in Self.corpusSearchPaths {
             guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir) else { continue }
             for name in names where name.hasSuffix(".rel") {
+                relsSeen += 1
                 let path = "\(dir)/\(name)"
                 guard let raw = try? Data(contentsOf: URL(fileURLWithPath: path)),
                       let rel = try? RELFile(binary: GoDData(byteStream: [UInt8](raw), byteOrder: .big),
@@ -114,7 +116,13 @@ final class RegisterExportsPatternTests: XCTestCase {
                 exportsSeen += match.exports.count
             }
         }
-        XCTAssertTrue(covered > 0, "corpus had no matching prologs — check search paths")
+        // No RELs at all means the projects aren't unpacked on this machine —
+        // skip, like every other corpus test. RELs present but none matching
+        // is a real failure: the pattern stopped recognizing the corpus.
+        if relsSeen == 0 {
+            throw XCTSkip("no REL corpus at \(Self.corpusSearchPaths.joined(separator: ", ")) — unpack a project or set GODDESS_REL_CORPUS")
+        }
+        XCTAssertTrue(covered > 0, "corpus had \(relsSeen) RELs but no matching prologs")
         XCTAssertTrue(mismatches.isEmpty, "codegen didn't round-trip on: \(mismatches.prefix(5))")
         // Informational: how many RELs had a register-exports prolog and
         // how many total exports the pattern collapsed.

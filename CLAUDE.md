@@ -633,6 +633,7 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 ### Testing
 - Tests in `Tests/Shared Tests/` (dependency + engine targets) and `Tests/Products Tests/` (GODOps)
 - Target: as close to 100% coverage as possible
+- **Corpus tests** (anything reading a real ROM, dump or sample from disk) must `throw XCTSkip` when the file isn't there, never `return` silently or assert — a vacuous pass hides a broken corpus and a failure blocks every other machine. Each takes a `GODDESS_*` environment override for the path (`GODDESS_FSYS_CORPUS`, `GODDESS_REL_CORPUS`, `GODDESS_WBFS_SAMPLE`, …) with the on-disk default as fallback.
 - **Operation tests** (`GODOpsTests`): two layers, both required when adding an operation.
   1. *Routing*: `DispatchRoutingTests` feeds a JSON config through `GODOps.runConfig` with a `SpyOperationHandler` (the `OperationHandler` seam in `Dispatch.swift`) and asserts the case + decoded parameters. Adding a `GoddessConfig.Operations` case means extending the handler protocol, `EngineOperationHandler`, the spy, and adding a routing test.
   2. *Operation body*: `<Domain>OperationTests` runs the real operation against an `InMemoryFST` (absolute paths only) with synthetic inputs — engines serialized via `installEngine` (`Helpers/OperationTestSupport.swift`), input bytes built in-memory or from `FixtureCatalog` models — and asserts output tree contents byte-exactly where guaranteed.

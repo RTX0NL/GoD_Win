@@ -46,11 +46,16 @@ final class XDScriptTests: XCTestCase {
         XCTAssertEqual(encoded[1], word2)
     }
 
+    /// `GODDESS_XD_SCRIPT_SAMPLE` points at any XD `.scd`; the default is one
+    /// from the unpacked US project (the FSYS unpack routes scripts to
+    /// `/Assets/Scripts`).
+    private static let samplePath = ProcessInfo.processInfo.environment["GODDESS_XD_SCRIPT_SAMPLE"]
+        ?? "/Users/stars/Documents/Projects/GoD-Tool/scripts/XD project/Build/Unpacked/Assets/Scripts/M2_windmill_1F.scd"
+
     func testParseRealScript() throws {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/M2_windmill_1F/M2_windmill_1F.scd"
+        let path = Self.samplePath
         guard let rawData = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
-            print("Skipping real XD script test — file not found")
-            return
+            throw XCTSkip("no XD script sample at \(path)")
         }
 
         let data = GoDData(data: rawData, byteOrder: .big)
@@ -69,10 +74,9 @@ final class XDScriptTests: XCTestCase {
     }
 
     func testDecompileRealScript() throws {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/M2_windmill_1F/M2_windmill_1F.scd"
+        let path = Self.samplePath
         guard let rawData = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
-            print("Skipping real XD decompile test — file not found")
-            return
+            throw XCTSkip("no XD script sample at \(path)")
         }
 
         let data = GoDData(data: rawData, byteOrder: .big)

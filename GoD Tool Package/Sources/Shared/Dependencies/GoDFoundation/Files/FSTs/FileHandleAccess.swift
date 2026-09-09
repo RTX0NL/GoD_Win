@@ -31,6 +31,11 @@ enum FileHandleAccess {
     /// there is no boxing to disagree about. It costs an open, which is why
     /// Darwin — where the attribute lookup is known-good — keeps it.
     static func fileSize(at url: URL) -> Int? {
+        // `attributesOfItem` describes a symlink itself — 75 bytes of path —
+        // where `fileExists` and `FileHandle` both follow it. Resolve first so
+        // an image reached through a link is measured as the image; without
+        // this, setup on a linked `.wbfs` "succeeded" around the link text.
+        let url = url.resolvingSymlinksInPath()
         guard isRegularFile(url) else { return nil }
         #if canImport(Darwin)
         return attributeFileSize(at: url)
