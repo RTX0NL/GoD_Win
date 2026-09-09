@@ -2,9 +2,10 @@
 //  RELFile.swift
 //
 //  GameCube/Wii Relocatable Module (.rel) file format — parsed into a
-//  fully semantic model. No raw bytes are stored for non-BSS sections;
-//  every field the on-disc format encodes is recoverable from the
-//  in-memory state alone.
+//  fully semantic model; every field the on-disc format encodes is
+//  recoverable from the in-memory state alone. The editable form
+//  (`outputs`) is the source tree `RelDisassembler` writes and
+//  `RelAssembler` reads back — a manifest plus assembly/chunk files.
 //
 //    - Text sections → [TextInstruction] (raw word + optional SymbolRef
 //      for any relocated immediate field)
@@ -734,112 +735,47 @@ public struct RELFile: FileFormat {
         return out
     }
 
-    // MARK: - FileFormat outputs / inputs (JSON + section sidecars)
-    //
-    // The JSON captures the full semantic model; no binary sidecars are
-    // needed because no section stores raw bytes. Future work can split
-    // heavy data (e.g. large .binary chunks) into sidecars for humans,
-    // but the default single-JSON form keeps roundtrip trivial.
+    // MARK: - FileFormat outputs / inputs (source tree)
 
+    /// The editable source tree `RelDisassembler` writes with no type map:
+    /// the `<name>.rel.json` manifest first, then `textN.s`, `dataN.s` and
+    /// `dataN/…` chunk files. The manifest carries header, imports, chunk
+    /// list and symbol table but no bytes — every byte of the module lives
+    /// in one of the other files. See `RelManifest`.
+    public var outputs: [FileData] {
+        get throws { try RelDisassembler().artifacts(for: self) }
+    }
+
+    /// Rebuilds the module from the artifact bundle `outputs` produced, or an
+    /// edited copy of it. Every path is read relative to the manifest's
+    /// folder, so a bundle can be handed over with or without a common
+    /// prefix.
     public init(outputs: [FileData]) throws {
         let suffix = ".\(RELFile.formatName).json"
-        guard let jsonEntry = outputs.first(where: { $0.file.path.hasSuffix(suffix) }) else {
+        guard let manifestEntry = outputs.first(where: { $0.file.path.hasSuffix(suffix) }) else {
             throw RELFile.missingOutputError(key: "*\(suffix)")
         }
-        let stem = String(jsonEntry.file.path.dropLast(suffix.count))
-        let decoded: DTO
-        do {
-            decoded = try JSONDecoder().decode(DTO.self, from: jsonEntry.data.data)
-        } catch {
-            throw RELFile.invalidFileError
+        let stem = String(manifestEntry.file.name.dropLast(suffix.count))
+        let prefix: String? = manifestEntry.file.parentFolder.map { $0.path == "/" ? "/" : $0.path + "/" }
+
+        let fst = InMemoryFST()
+        let root = Folder("/")
+        for entry in outputs {
+            var relative = entry.file.path
+            if let prefix, relative.hasPrefix(prefix) {
+                relative.removeFirst(prefix.count)
+            }
+            try fst.writeFile(entry.data, at: root.file(relative), overwrite: true)
         }
-
-        self.name = stem.isEmpty ? "rel" : stem
-        self.moduleID = decoded.moduleID.uint32
-        self.version = decoded.version
-        self.nextLink = decoded.nextLink.uint32
-        self.prevLink = decoded.prevLink.uint32
-        self.nameStringOffset = decoded.nameStringOffset.uint32
-        self.nameStringSize = decoded.nameStringSize.uint32
-        self.prologSection = decoded.prologSection
-        self.epilogSection = decoded.epilogSection
-        self.unresolvedSection = decoded.unresolvedSection
-        self.headerPadByte = decoded.headerPadByte
-        self.prologOffset = decoded.prologOffset.uint32
-        self.epilogOffset = decoded.epilogOffset.uint32
-        self.unresolvedOffset = decoded.unresolvedOffset.uint32
-        self.sectionAlign = decoded.sectionAlign.uint32
-        self.bssAlign = decoded.bssAlign.uint32
-        self.fixSize = decoded.fixSize.uint32
-        self.sections = decoded.sections
-        self.importedModules = decoded.importedModules.map(\.uint32)
-    }
-
-    public var outputs: [FileData] {
-        get throws {
-            let dto = DTO(
-                moduleID: HexInt(moduleID),
-                version: version,
-                nextLink: HexInt(nextLink),
-                prevLink: HexInt(prevLink),
-                nameStringOffset: HexInt(nameStringOffset),
-                nameStringSize: HexInt(nameStringSize),
-                prologSection: prologSection,
-                epilogSection: epilogSection,
-                unresolvedSection: unresolvedSection,
-                headerPadByte: headerPadByte,
-                prologOffset: HexInt(prologOffset),
-                epilogOffset: HexInt(epilogOffset),
-                unresolvedOffset: HexInt(unresolvedOffset),
-                sectionAlign: HexInt(sectionAlign),
-                bssAlign: HexInt(bssAlign),
-                fixSize: HexInt(fixSize),
-                sections: sections,
-                importedModules: importedModules.map(HexInt.init)
-            )
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let jsonData: Data = try encoder.encode(dto)
-            return [FileData(file: jsonFilename, data: GoDData(data: jsonData, byteOrder: .big))]
-        }
-    }
-
-    // MARK: - DTO
-    //
-    // Bit-pattern fields (IDs, addresses, offsets, raw instruction
-    // words, at-rest pointer values) use `HexInt` so the emitted JSON
-    // is readable. Decimal stays for quantitative counts (`version`,
-    // byte-size of BSS, section indices, array element sizes).
-
-    private struct DTO: Codable {
-        let moduleID: HexInt
-        let version: UInt32
-        let nextLink: HexInt
-        let prevLink: HexInt
-        let nameStringOffset: HexInt
-        let nameStringSize: HexInt
-        let prologSection: UInt8
-        let epilogSection: UInt8
-        let unresolvedSection: UInt8
-        let headerPadByte: UInt8
-        let prologOffset: HexInt
-        let epilogOffset: HexInt
-        let unresolvedOffset: HexInt
-        let sectionAlign: HexInt
-        let bssAlign: HexInt
-        let fixSize: HexInt
-        let sections: [Section]
-        let importedModules: [HexInt]
+        self = try RelAssembler().assemble(relName: stem.isEmpty ? "rel" : stem, in: root, fileSystem: fst)
     }
 }
 
-// MARK: - Codable for nested types
+// MARK: - Codable for SymbolRef
 //
-// Each type serializes via a private "wire" layer so the public Swift
-// API keeps native integer types (UInt32/UInt8/Int) while the JSON
-// routes addressy fields through `HexInt`. Shape matches the original
-// Swift-synthesised Codable (so historic JSON parses), just with hex
-// strings where decimal numbers used to live.
+// The one nested type that still needs a JSON form: `RegisterExportsPattern`
+// records symbol pairs with it. Addressy fields go through `HexInt` so the
+// output reads as hex.
 
 extension RELFile.SymbolRef: Codable {
     private struct Wire: Codable {
@@ -853,107 +789,6 @@ extension RELFile.SymbolRef: Codable {
     }
     public func encode(to encoder: Encoder) throws {
         try Wire(moduleID: HexInt(moduleID), section: section, offset: HexInt(offset)).encode(to: encoder)
-    }
-}
-
-extension RELFile.TextInstruction: Codable {
-    private struct Wire: Codable {
-        let raw: HexInt
-        let ref: RELFile.SymbolRef?
-        let fixup: RELFile.RelocationFixup?
-    }
-    public init(from decoder: Decoder) throws {
-        let w = try Wire(from: decoder)
-        self.init(raw: w.raw.uint32, ref: w.ref, fixup: w.fixup)
-    }
-    public func encode(to encoder: Encoder) throws {
-        try Wire(raw: HexInt(raw), ref: ref, fixup: fixup).encode(to: encoder)
-    }
-}
-
-extension RELFile.DataChunk: Codable {
-    private enum CaseKey: String, CodingKey { case binary, pointer }
-    private struct BinaryWire: Codable { let bytes: [UInt8] }
-    private struct PointerWire: Codable {
-        let ref: RELFile.SymbolRef
-        let restValue: HexInt
-    }
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CaseKey.self)
-        if let bin = try container.decodeIfPresent(BinaryWire.self, forKey: .binary) {
-            self = .binary(bytes: bin.bytes); return
-        }
-        if let ptr = try container.decodeIfPresent(PointerWire.self, forKey: .pointer) {
-            self = .pointer(ref: ptr.ref, restValue: ptr.restValue.uint32); return
-        }
-        throw DecodingError.dataCorrupted(.init(
-            codingPath: decoder.codingPath,
-            debugDescription: "DataChunk must have a `binary` or `pointer` case"
-        ))
-    }
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CaseKey.self)
-        switch self {
-        case .binary(let bytes):
-            try container.encode(BinaryWire(bytes: bytes), forKey: .binary)
-        case .pointer(let ref, let restValue):
-            try container.encode(PointerWire(ref: ref, restValue: HexInt(restValue)), forKey: .pointer)
-        }
-    }
-}
-
-extension RELFile.Body: Codable {
-    private enum CaseKey: String, CodingKey { case empty, text, data, bss }
-    private struct EmptyWire: Codable { let fileOffset: HexInt }
-    private struct TextWire: Codable { let instructions: [RELFile.TextInstruction] }
-    private struct DataWire: Codable { let chunks: [RELFile.DataChunk] }
-    private struct BSSWire: Codable { let size: UInt32 }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CaseKey.self)
-        if let w = try container.decodeIfPresent(EmptyWire.self, forKey: .empty) {
-            self = .empty(fileOffset: w.fileOffset.uint32); return
-        }
-        if let w = try container.decodeIfPresent(TextWire.self, forKey: .text) {
-            self = .text(w.instructions); return
-        }
-        if let w = try container.decodeIfPresent(DataWire.self, forKey: .data) {
-            self = .data(w.chunks); return
-        }
-        if let w = try container.decodeIfPresent(BSSWire.self, forKey: .bss) {
-            self = .bss(size: w.size); return
-        }
-        throw DecodingError.dataCorrupted(.init(
-            codingPath: decoder.codingPath,
-            debugDescription: "Body must have one of: empty, text, data, bss"
-        ))
-    }
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CaseKey.self)
-        switch self {
-        case .empty(let fileOffset):
-            try container.encode(EmptyWire(fileOffset: HexInt(fileOffset)), forKey: .empty)
-        case .text(let ins):
-            try container.encode(TextWire(instructions: ins), forKey: .text)
-        case .data(let chunks):
-            try container.encode(DataWire(chunks: chunks), forKey: .data)
-        case .bss(let size):
-            try container.encode(BSSWire(size: size), forKey: .bss)
-        }
-    }
-}
-
-extension RELFile.Section: Codable {
-    private struct Wire: Codable {
-        let index: Int
-        let body: RELFile.Body
-    }
-    public init(from decoder: Decoder) throws {
-        let w = try Wire(from: decoder)
-        self.init(index: w.index, body: w.body)
-    }
-    public func encode(to encoder: Encoder) throws {
-        try Wire(index: index, body: body).encode(to: encoder)
     }
 }
 

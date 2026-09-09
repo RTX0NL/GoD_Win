@@ -225,6 +225,26 @@ final class ProjectSetupTests: XCTestCase {
         XCTAssertEqual(names.last, "gamecubeBuild", "the ISO must be assembled after every asset step; got \(names)")
     }
 
+    /// The DOL rebuild is part of the generated chain on both platforms —
+    /// disabled, like the REL rebuilds, and ahead of the disc build that
+    /// packs its output. Before this the dump disassembled the DOL but the
+    /// build never reassembled it, so an edited `.s` changed nothing.
+    func testBuildConfigsCarryADisabledDolAssemblyAheadOfTheDiscBuild() throws {
+        let cases: [(gameID: String, wii: Bool, discBuild: String)] = [
+            (PokemonXD.gameIDUS, false, "gamecubeBuild"),
+            ("RPBE", true, "wiiBuild"),
+        ]
+        for c in cases {
+            let (fst, project) = try runSetup(gameID: c.gameID, wii: c.wii)
+            let build = try decodeConfig(project.folder("Config").file("Build-Config.json"), in: fst)
+            let names = operationNames(build)
+            let dol = try XCTUnwrap(names.firstIndex(of: "dolAssembly"), "\(c.gameID): got \(names)")
+            let disc = try XCTUnwrap(names.firstIndex(of: c.discBuild), "\(c.gameID): got \(names)")
+            XCTAssertLessThan(dol, disc, "\(c.gameID): the DOL must be rebuilt before the disc is packed")
+            XCTAssertEqual(build.operations[dol].enabled, .no, "\(c.gameID): ships disabled until the user opts in")
+        }
+    }
+
     func testNonPokemonProjectHasNoGameSpecificOperations() throws {
         let (fst, project) = try runSetup(gameID: "GZZE")
         let dump = try decodeConfig(project.folder("Config").file("Dump-Config.json"), in: fst)

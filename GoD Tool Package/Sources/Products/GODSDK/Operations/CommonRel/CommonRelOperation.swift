@@ -54,7 +54,8 @@ extension CommonRelBuild {
             inputFolder: config.inputFolder,
             relName: config.relName,
             outputPath: config.outputPath,
-            overwrite: config.overwrite
+            overwrite: config.overwrite,
+            engines: config.engines
         )
         logger?.log(.info("Building common.rel → \(config.outputPath.path)"))
         try RelAssembly.assemble(

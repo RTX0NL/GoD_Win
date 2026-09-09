@@ -18,124 +18,39 @@
   "sectionAlign" : "0x4",
   "sections" : [
     {
-      "body" : {
-        "empty" : {
-          "fileOffset" : "0x0"
-        }
-      },
-      "index" : 0
+      "fileOffset" : "0x0",
+      "index" : 0,
+      "kind" : "empty"
     },
     {
-      "body" : {
-        "text" : {
-          "instructions" : [
-            {
-              "raw" : "0x4e800020"
-            },
-            {
-              "raw" : "0x60000000"
-            },
-            {
-              "fixup" : 6,
-              "raw" : "0x3c600000",
-              "ref" : {
-                "moduleID" : "0x0",
-                "offset" : "0x1234",
-                "section" : 2
-              }
-            },
-            {
-              "fixup" : 4,
-              "raw" : "0x38630000",
-              "ref" : {
-                "moduleID" : "0x0",
-                "offset" : "0x1234",
-                "section" : 2
-              }
-            },
-            {
-              "raw" : "0x90610008"
-            },
-            {
-              "raw" : "0x38000001"
-            },
-            {
-              "fixup" : 1,
-              "raw" : "0x0",
-              "ref" : {
-                "moduleID" : "0x2a",
-                "offset" : "0x0",
-                "section" : 1
-              }
-            },
-            {
-              "raw" : "0x4e800020"
-            }
-          ]
-        }
-      },
-      "index" : 1
+      "file" : "text1.s",
+      "index" : 1,
+      "kind" : "text"
     },
     {
-      "body" : {
-        "data" : {
-          "chunks" : [
-            {
-              "binary" : {
-                "bytes" : [
-                  42,
-                  128,
-                  120,
-                  148,
-                  49,
-                  47,
-                  18,
-                  63
-                ]
-              }
-            },
-            {
-              "pointer" : {
-                "ref" : {
-                  "moduleID" : "0x2a",
-                  "offset" : "0x8",
-                  "section" : 1
-                },
-                "restValue" : "0x0"
-              }
-            },
-            {
-              "binary" : {
-                "bytes" : [
-                  147,
-                  45,
-                  192,
-                  39,
-                  226,
-                  20,
-                  213,
-                  126,
-                  211,
-                  254,
-                  221,
-                  55
-                ]
-              }
-            }
-          ]
+      "chunks" : [
+        {
+          "file" : "data2.s",
+          "label" : "data2",
+          "type" : "assembly"
         }
-      },
-      "index" : 2
+      ],
+      "index" : 2,
+      "kind" : "data"
     },
     {
-      "body" : {
-        "bss" : {
-          "size" : 32
-        }
-      },
-      "index" : 3
+      "index" : 3,
+      "kind" : "bss",
+      "size" : 32
     }
   ],
+  "symbols" : {
+    "dol_00001234" : {
+      "moduleID" : "0x0",
+      "offset" : "0x1234",
+      "section" : 2
+    }
+  },
   "unresolvedOffset" : "0x0",
   "unresolvedSection" : 0,
   "version" : 3

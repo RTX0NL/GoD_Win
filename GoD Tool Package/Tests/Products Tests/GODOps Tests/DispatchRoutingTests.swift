@@ -772,10 +772,7 @@ final class DispatchRoutingTests: XCTestCase {
             "inputFile": "/project/in/common.msg",
             "outputFolder": "/project/out",
             "overwrite": true,
-            "format": { "msg": {
-                "geniusSonorityEngine": "/project/Engines/GeniusSonority Engine",
-                "variant": "colo"
-            } }
+            "format": "msgColo"
         } }, "enabled": "YES" } ] } } }
         """)
         guard case let .convert(config) = try singleOperation(spy) else {
@@ -789,7 +786,7 @@ final class DispatchRoutingTests: XCTestCase {
         XCTAssertEqual(inputFile, File("/project/in/common.msg"))
         XCTAssertEqual(outputFolder, Folder("/project/out"))
         XCTAssertTrue(overwrite)
-        XCTAssertEqual(format, .msg(geniusSonorityEngine: Folder("/project/Engines/GeniusSonority Engine"), variant: .colo))
+        XCTAssertEqual(format, .msgColo)
         XCTAssertEqual(format.fileExtension, "msg")
     }
 
@@ -800,20 +797,20 @@ final class DispatchRoutingTests: XCTestCase {
             "outputFolder": "/project/out",
             "overwrite": false,
             "structName": "TestRecord",
-            "engine": "/project/Engines/Some Engine"
+            "engines": ["/project/Engines/Some Engine", "/project/Engines/Other Engine"]
         } }, "enabled": "YES" } ] } } }
         """)
         guard case let .convert(config) = try singleOperation(spy) else {
             return XCTFail("Expected convert")
         }
-        guard case let .decodeStructTable(inputFile, outputFolder, overwrite, structName, engine) = config.operations.enabledEntries.first else {
+        guard case let .decodeStructTable(inputFile, outputFolder, overwrite, structName, engines) = config.operations.enabledEntries.first else {
             return XCTFail("Expected decodeStructTable")
         }
         XCTAssertEqual(inputFile, File("/project/in/table.bin"))
         XCTAssertEqual(outputFolder, Folder("/project/out"))
         XCTAssertFalse(overwrite)
         XCTAssertEqual(structName, "TestRecord")
-        XCTAssertEqual(engine, Folder("/project/Engines/Some Engine"))
+        XCTAssertEqual(engines, [Folder("/project/Engines/Some Engine"), Folder("/project/Engines/Other Engine")])
     }
 
     // MARK: - Nintendo archives (U8 / NARC)

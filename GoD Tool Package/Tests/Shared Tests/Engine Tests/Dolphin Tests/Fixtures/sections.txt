@@ -1,0 +1,12 @@
+# REL Section Layout
+# Module ID: 42
+# REL Version: 3
+# Prolog: section 1 offset 0x0
+# Epilog: section 0 offset 0x0
+# Unresolved: section 0 offset 0x0
+# BSS: 32 bytes total
+# Unique relocation targets: 3
+# Imports: module 42, DOL
+
+text1: offset 0x6C (32 bytes)
+data2: offset 0x8C (24 bytes)

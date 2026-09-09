@@ -89,10 +89,14 @@ public extension XDStructDefaults {
         alignmentStyle: .none,
         properties: [
             .abstraction(name: "species_id", typeName: "PokemonSpecies"),
+            // The species id is followed by two zero bytes so the two ids
+            // stay word-aligned — 35 entries of 12 bytes on every build.
+            // Without this the rows after the first read two bytes late.
+            .padding(length: 2),
             .uint32(name: "fsys_id"),
             .uint32(name: "file_identifier"),
         ],
-        description: "Shiny PKX model reference with species ID"
+        description: "Shiny PKX model reference with species ID (12 bytes per entry)"
     )
 
     static let wzxAnimationStruct = StructMap(

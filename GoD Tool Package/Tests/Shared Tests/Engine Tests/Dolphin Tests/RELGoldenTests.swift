@@ -13,22 +13,34 @@ import TestSupport
 /// multiple imported modules), serialized with the current writer and
 /// frozen in its reader-canonical form.
 ///
+/// The artifact side is the source tree `RelDisassembler` writes: the
+/// manifest, one `.s` per text and data section, and `sections.txt`. The
+/// manifest carries no bytes, so the `.s` files are part of the golden set.
+///
 /// Regenerate: `swift run FixtureGen`
 final class RELGoldenTests: XCTestCase {
 
     private static let fixtureName = "rel_sample"
 
-    /// DECODE: the golden `.rel` binary decodes to the golden JSON.
+    private static let artifactNames = [
+        "\(fixtureName).rel.json",
+        "text1.s",
+        "data2.s",
+        "sections.txt",
+    ]
+
+    /// DECODE: the golden `.rel` binary decodes to the golden source tree.
     func testREL_decode_producesGoldenArtifacts() throws {
         let binary = try Fixtures.fileData("\(Self.fixtureName).rel")
-        let expected = try Fixtures.artifacts(["\(Self.fixtureName).rel.json"])
+        let expected = try Fixtures.artifacts(Self.artifactNames)
         try assertDecodes(RELFile.self, from: binary, producesArtifacts: expected)
     }
 
-    /// ENCODE: the golden JSON encodes back to the golden `.rel` binary,
-    /// byte-for-byte (REL rebuild is a hard byte-identical requirement).
+    /// ENCODE: the golden source tree assembles back to the golden `.rel`
+    /// binary, byte-for-byte (REL rebuild is a hard byte-identical
+    /// requirement).
     func testREL_encode_producesGoldenBinary() throws {
-        let artifacts = try Fixtures.artifacts(["\(Self.fixtureName).rel.json"])
+        let artifacts = try Fixtures.artifacts(Self.artifactNames)
         let expected = try Fixtures.fileData("\(Self.fixtureName).rel")
         try assertEncodes(RELFile.self, from: artifacts, producesBinary: expected)
     }

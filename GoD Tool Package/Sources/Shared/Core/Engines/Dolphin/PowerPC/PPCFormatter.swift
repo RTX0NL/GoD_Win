@@ -322,7 +322,9 @@ public struct PPCFormatter {
 
 // MARK: - Operand formatting
 
-private extension PPCFormatter {
+// Internal rather than private: `RelDisassembler` renders a relocated branch
+// by swapping the target operand for a symbol and formatting the rest here.
+extension PPCFormatter {
     func formatOperand(_ operand: PPCInstruction.Operand) -> String {
         switch operand {
         case .gpr(let reg):

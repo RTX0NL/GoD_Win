@@ -24,6 +24,8 @@ public extension PokemonEngine {
                 PokemonEnumDefaults.eggGroupsEnum,
                 PokemonEnumDefaults.expRatesEnum,
                 PokemonEnumDefaults.shadowAggressionEnum,
+                PokemonEnumDefaults.genderRatiosEnum,
+                PokemonEnumDefaults.evolutionMethodsEnum,
             ]
         }
     }

@@ -15,12 +15,16 @@ import PBR
 enum Convert {}
 
 extension Convert {
-    /// A strongly-typed pairing of a supported file type with the engine(s)
-    /// that type's decoder/encoder requires. The file formats currently
-    /// covered are all Genius Sonority formats, so every case carries the
-    /// Genius Sonority engine folder; the message format additionally needs
-    /// a variant because the binary layout is shared between Colosseum and
-    /// XD but the string rendering differs.
+    /// The file format a `decodeFile` / `encodeFile` converts, as one plain
+    /// name in the config (`"format": "msgColo"`).
+    ///
+    /// Where one extension is shared by unrelated layouts, or one layout is
+    /// rendered differently per game, each variant is its own case named
+    /// `<format><Game>`: the *file* doesn't say which it is, the game does,
+    /// and a config that names the game records that honestly. A format
+    /// with a single layout keeps its bare extension. Nothing here carries
+    /// an engine folder: every codec in both registries is self-contained,
+    /// so the format name alone picks the registry.
     ///
     /// `ish` (ISF audio) and `thh` (THP video) are *paired* formats: the
     /// `inputFile` given to `decodeFile` is the header half (`.ish` / `.thh`)
@@ -28,40 +32,35 @@ extension Convert {
     /// swapping the extension — the naming convention FSYS extraction
     /// produces. Encoding reads the whole artifact folder, so both halves
     /// come back out together.
-    enum FileFormatSelection: Codable, Equatable {
-        case msg(geniusSonorityEngine: Folder, variant: MSGFile.Variant)
-        case gtx(geniusSonorityEngine: Folder)
-        case atx(geniusSonorityEngine: Folder)
-        case fnt(geniusSonorityEngine: Folder)
-        /// Battle Revolution's font, which shares the `.fnt` extension with
-        /// the Colosseum/XD one above and nothing else. A separate case
-        /// rather than a flag on `fnt`, because the *file* doesn't say which
-        /// it is — the game does, and a config that names the game is the
-        /// honest way to record that.
-        ///
-        /// Carries no engine folder, unlike its siblings: the codec reads no
-        /// engine data, and demanding a folder would mean a project whose
-        /// serialized engine predates some unrelated struct couldn't convert
-        /// a font at all.
-        case pbrFont
+    enum FileFormatSelection: String, Codable {
+        /// Colosseum/XD string table. One binary layout, but the string
+        /// rendering differs per game, so decode has to be told which.
+        case msgColo
+        case msgXD
+        case gtx
+        case atx
+        /// The Colosseum/XD bitmap font.
+        case fntColoXD
+        /// Battle Revolution's bitmap font — the same `.fnt` extension as
+        /// `fntColoXD` and nothing else in common.
+        case fntPBR
         /// Battle Revolution's 3D display font. Vector outlines, so its
         /// artifacts are an SVG specimen sheet plus a JSON manifest rather
-        /// than an atlas image. Payload-free for the same reason as
-        /// `pbrFont`: the codec reads no engine data.
-        case pbrFont3D
-        case gsw(geniusSonorityEngine: Folder)
-        case ish(geniusSonorityEngine: Folder)
-        case thh(geniusSonorityEngine: Folder)
+        /// than an atlas image.
+        case f3d
+        case gsw
+        case ish
+        case thh
 
         /// The lowercased file extension the registry keys this format under.
         /// For paired formats this is the header half's extension.
         var fileExtension: String {
             switch self {
-            case .msg: return "msg"
+            case .msgColo, .msgXD: return "msg"
             case .gtx: return "gtx"
             case .atx: return "atx"
-            case .fnt, .pbrFont: return "fnt"
-            case .pbrFont3D: return "f3d"
+            case .fntColoXD, .fntPBR: return "fnt"
+            case .f3d: return "f3d"
             case .gsw: return "gsw"
             case .ish: return "ish"
             case .thh: return "thh"
@@ -74,50 +73,33 @@ extension Convert {
             switch self {
             case .ish: return "isd"
             case .thh: return "thd"
-            case .msg, .gtx, .atx, .fnt, .pbrFont, .pbrFont3D, .gsw: return nil
+            case .msgColo, .msgXD, .gtx, .atx, .fntColoXD, .fntPBR, .f3d, .gsw: return nil
             }
         }
 
-        /// The Genius Sonority engine folder supplied for this format, or
-        /// `nil` for a format whose codec that engine doesn't own.
-        var geniusSonorityEngine: Folder? {
+        /// The string-rendering variant for a message table; `nil` for every
+        /// other format.
+        var msgVariant: MSGFile.Variant? {
             switch self {
-            case let .msg(folder, _),
-                 let .gtx(folder),
-                 let .atx(folder),
-                 let .fnt(folder),
-                 let .gsw(folder),
-                 let .ish(folder),
-                 let .thh(folder):
-                return folder
-            case .pbrFont, .pbrFont3D:
-                return nil
-            }
-        }
-
-        /// The PBR engine folder, for the formats that engine owns.
-        /// True for the formats the PBR engine's registry owns.
-        var usesPBRRegistry: Bool {
-            switch self {
-            case .pbrFont, .pbrFont3D: return true
-            default: return false
+            case .msgColo: return .colo
+            case .msgXD: return .xd
+            case .gtx, .atx, .fntColoXD, .fntPBR, .f3d, .gsw, .ish, .thh: return nil
             }
         }
 
         /// The file-format registry that owns this format's codec.
         ///
-        /// The engine folders are loaded because a registry is an engine's
-        /// statement about what it can read — and for `.fnt` the two engines
-        /// disagree, which is the whole reason this isn't a single builtin
-        /// registry shared by everything.
-        func registry(in fileSystem: FileSystemTree) throws -> FileFormatRegistry {
-            if usesPBRRegistry {
+        /// A registry is an engine's statement about what it can read, and
+        /// for `.fnt` the two engines disagree — which is why the selection
+        /// is per format rather than one shared registry. Both registries
+        /// are static: no codec reads engine data, so no folder is loaded.
+        var registry: FileFormatRegistry {
+            switch self {
+            case .fntPBR, .f3d:
                 return PBREngine.fileFormats()
+            case .msgColo, .msgXD, .gtx, .atx, .fntColoXD, .gsw, .ish, .thh:
+                return GeniusSonorityEngine.fileFormats()
             }
-            guard let geniusSonorityEngine else {
-                throw ConvertErrors.missingEngine(format: fileExtension, .init())
-            }
-            return try GeniusSonorityEngine(from: geniusSonorityEngine, in: fileSystem).fileFormats()
         }
     }
 }

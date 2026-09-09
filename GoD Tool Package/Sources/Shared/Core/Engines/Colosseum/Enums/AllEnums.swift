@@ -41,6 +41,18 @@ public extension ColosseumEngine {
                 PokemonEnumDefaults.coloXdMoveEffectTypeEnum,
                 PokemonEnumDefaults.coloXdContestCategoryEnum,
                 PokemonEnumDefaults.coloXdItemPocketEnum,
+                // Species-data and trainer-Pokemon fields — shared encodings,
+                // declared in the Pokemon module for the same reason.
+                PokemonEnumDefaults.naturesEnum,
+                PokemonEnumDefaults.eggGroupsEnum,
+                PokemonEnumDefaults.expRatesEnum,
+                PokemonEnumDefaults.genderRatiosEnum,
+                PokemonEnumDefaults.evolutionMethodsEnum,
+                // Battle table — Colosseum's own value sets.
+                ColoCommonRelEnumDefaults.battleKind,
+                ColoCommonRelEnumDefaults.battleStyle,
+                ColoCommonRelEnumDefaults.battleController,
+                ColoCommonRelEnumDefaults.roomKind,
             ]
         }
     }

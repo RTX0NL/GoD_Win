@@ -11,10 +11,9 @@ import GoDFoundation
 /// turns the whole REL family off if a regression shows up mid-migration, and
 /// the disabled path is still covered by `RelOperationTests`.
 ///
-/// Known limitation, not a reason to re-disable: `RelAssembly` rebuilds from
-/// the lossless `<relName>.rel.json` alone, so edits to the per-chunk
-/// artifacts a disassembly emits do not yet feed back into the binary. The
-/// chunk artifacts are a read-only view until `.s` parsing lands.
+/// `RelAssembly` rebuilds from the manifest plus the per-chunk files it points
+/// at — `.s`, `.bin`, `.csv`, embedded-file artifacts — so edits to any of
+/// them land in the binary. The manifest itself carries no bytes.
 enum RelOperationsGate {
     static let enabled = true
 

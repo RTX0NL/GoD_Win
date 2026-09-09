@@ -2,42 +2,43 @@ import GoDFoundation
 import Dolphin
 
 extension RelAssembly {
-    /// Reconstruct a `.rel` binary from disassembly artifacts. First
-    /// iteration reads only the canonical `<relName>.rel.json` emitted by
-    /// `RelDisassembly`; that file is lossless, so byte-identical output
-    /// is achievable without parsing the human-editable `.s` / chunk
-    /// files. Those will feed in once `.s` parsing lands.
+    /// Thin wrapper around `RelAssembler`: rebuilds `<relName>.rel` from the
+    /// manifest and the chunk files it points at, so edits to the `.s`, `.csv`
+    /// and embedded-file artifacts land in the binary.
     static func assemble(
         config: Config,
         settings: GoddessSettings,
         fileSystem: FileSystemTree,
-        logger: Logger? = nil
+        logger: Logger? = nil,
+        registry: FileFormatRegistry = .all()
     ) throws {
         guard RelOperationsGate.enabled else {
             throw RelOperationsGate.DisabledError(operation: "relAssembly", trace: .init())
         }
 
-        logger?.log(.taskStatus(taskName: "Assemble REL", status: .started))
-
-        let jsonFile = config.inputFolder.file("\(config.relName).rel.json")
-        guard let jsonData = fileSystem.readFile(at: jsonFile)?.allData else {
-            throw RelAssemblyErrors.manifestNotFound(file: jsonFile, .init())
-        }
-
         let rel: RELFile
         do {
-            rel = try RELFile(outputs: [
-                FileData(file: File("\(config.relName).rel.json"), data: jsonData)
-            ])
-        } catch {
-            throw RelAssemblyErrors.invalidManifest(file: jsonFile, underlying: error, .init())
+            rel = try RelAssembler(registry: registry, engineFolders: config.engines ?? []).assemble(
+                relName: config.relName,
+                in: config.inputFolder,
+                fileSystem: fileSystem,
+                logger: logger
+            )
+        } catch let error as RelAssemblerErrors {
+            switch error {
+            case let .manifestNotFound(file, trace):
+                throw RelAssemblyErrors.manifestNotFound(file: file, trace)
+            case let .invalidManifest(file, underlying, trace):
+                throw RelAssemblyErrors.invalidManifest(file: file, underlying: underlying, trace)
+            default:
+                throw error
+            }
         }
 
         let bytes = try rel.binaryData
         try fileSystem.writeFile(bytes, at: config.outputPath, overwrite: config.overwrite)
 
         logger?.log(.info("Wrote \(bytes.length) bytes to \(config.outputPath.path)"))
-        logger?.log(.taskStatus(taskName: "Assemble REL", status: .completed(true)))
     }
 }
 

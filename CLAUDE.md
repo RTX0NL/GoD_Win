@@ -193,6 +193,16 @@ Row-level metadata stays out of the file: a row is the struct's fields and
 nothing else. Per-entry symbol names ride in the section `manifest.json` as
 `entryLabels`, keyed by entry index.
 
+A pointer field in a REL table is a **relocation, not a stored address**: the
+word on disc is 0 and the target lives in the relocation table. A `.label`
+column therefore resolves through the relocations that fall inside the table
+(`TypedDataExporter`'s `pointerLabels`), and a word with no relocation is a
+null pointer that gets an empty cell rather than `lbl_00000000`. XD's `Rooms`
+is the motivating case — 785 relocations over nine pointer fields, all to DOL
+addresses, so the CSV names the room's pre/main/post functions and data
+blocks — and `Pokespots` the small one. The DOL path is unchanged: there the
+stored word is the address and names it.
+
 Two shapes deliberately don't survive, and the dump checks for both by decoding
 its own CSV back and comparing bytes before writing it (mismatch ⇒ the chunk
 demotes to a raw `.binary` chunk): a **padding run that isn't zero** (padding has
@@ -202,6 +212,59 @@ is to type that run as a real field, not to special-case the codec. Label fields
 are excluded from that comparison by design: their four bytes are a pointer the
 assembler re-derives, so they are zero on the way back in and *should* change
 when the layout moves; the symbol names are compared instead.
+
+#### REL source tree
+
+A disassembled REL is a folder the assembler reads back in full. The
+`<name>.rel.json` manifest (`RelManifest`) carries the header scalars, the
+import order, one chunk list per data section — each chunk's file path,
+relative to the module folder, and the type it was mapped to (`table` +
+`structType`, `file` + `fileExtension`, `assembly`, `binary`) — a symbol
+table, and at-rest words. It carries **no bytes**: every byte of the module
+lives in a file it points at, so editing that file is editing the module.
+There is no per-section `manifest.json`; the REL's one list spans every
+section.
+
+| section | on disk |
+|---|---|
+| text | `textN.s`, PPC assembly with relocations spelled as `sym@ha` / `sym@l` / `.4byte sym` |
+| data, nothing points into it | `dataN.s` |
+| data, with self symbols | `dataN/` — one file per chunk, cut at every symbol the module's relocations target: `<sym>.bin` (no pointers inside), `<sym>.s` (pointers, as `.4byte sym`), `<sym>.csv` (a typed table), `<sym>/…` (a typed file, through the format registry), `<sym>_tail.bin` (bytes after a table or file, before the next symbol), `dataN_start.bin` |
+
+**Relocations are re-derived from the source, not stored.** `RelAssembler`
+assembles each section with `PPCSectionAssembler.assembleRelocatable`, which
+leaves every `@ha`/`@h`/`@l`/`.4byte sym` field at rest and reports the
+site, then resolves the symbol: a label defined in any section of the module
+first, the manifest's `symbols` table second. So moving a definition moves
+its references, and only targets the source cannot define — the DOL, other
+modules, this module's BSS — need the table. A branch to a label in the same
+section is PC-relative and never relocated; `_prolog`/`_epilog`/`_unresolved`
+labels set the entry points. The one thing that is positional is
+`restWords`: the at-rest word at a relocation site when it isn't zero-field
+(87 pointer slots in Colosseum's `common.rel`, nothing else in either game).
+An `lbl_XXXXXXXX` name that is not a known symbol is a literal word, which is
+how a typed exporter spells a pointer slot it could not name.
+
+**Typing policy.** A table becomes CSV only if every relocation inside it
+lands on a field the struct declares as a `.label`, and the CSV decodes
+back to the same bytes; otherwise it is written as assembly, with a warning,
+so no relocation is lost. A pointer cell holds the relocation target's name;
+a slot with no relocation is a null pointer and stays empty (a non-zero
+unrelocated word keeps an `lbl_` literal). A typed file is dumped through
+the registry only if no relocation lands inside it. A table with an explicit
+`count` may run across later symbols, which become its `entryLabels`; one
+without ends at the next symbol like any other chunk. The assembler needs the
+same `engines` list the dump used to resolve `structType` names —
+`commonRelBuild`/`mapRelsBuild` carry it, and `ProjectSetup` fills it in.
+
+`RELFile.outputs`/`init(outputs:)` are this same layout with no type map, so
+the format-level round trip and the golden fixture exercise the real
+disassembler and assembler. Verified byte-identical on all 430 XD US +
+Colosseum US RELs (every map, `common.rel`, `mail.rel`, `tableres2.rel`)
+untyped, and on typed `common.rel` dumps across XD US/PAL/JP — exact on JP;
+US and PAL come out 10 and 8 bytes short only where the MSG writer
+re-encodes the five embedded string tables, which is the MSG codec's known
+re-derivation, not the REL layout.
 
 #### FSYS byte-identical rebuild
 
@@ -600,10 +663,12 @@ The `.ish` (header) + `.isd` (data) pair uses **Nintendo GameCube DSP ADPCM** (4
 - [x] ColoXD dump ops: flash menu (GSW → PNG + metadata), message (MSG → JSON)
 - [x] MSG (Colo/XD) parse + rebuild (byte-identical on FSYS-hosted MSGs; the three DOL-embedded XD MSGs re-encode +546 bytes total — writer re-derives string layout; self-consistent, and DOL shiftability tracks the growth) and JSON roundtrip via GSString pretty tokens
 - [x] FileFormat protocol + FileFormatRegistry — inject-at-use-site; builtins registers MSG, FNT, GTX, ATX, GSW; DOL/REL disassembly `.file` chunks route through it
-- [x] DOL typed data reassembly — a `.struct` chunk is JSON (`StructData(definition:json:)`), a `.table` chunk is **CSV** (see "Struct tables as CSV"). Pointers resolve through `LabelTable`; edits land in the built DOL; the dumped artifact is the only source for typed chunks (no `.bin` sidecars, no legacy fallback). A chunk that can't round-trip demotes to a raw `.binary` chunk
+- [x] DOL typed data reassembly — a `.struct` chunk is JSON (`StructData(definition:json:)`), a `.table` chunk is **CSV** (see "Struct tables as CSV"). Pointers resolve through `LabelTable`; edits land in the built DOL; the dumped artifact is the only source for typed chunks (no `.bin` sidecars, no legacy fallback). A chunk that can't round-trip demotes to a raw `.binary` chunk. `ProjectSetup` emits a disabled `dolAssembly` ahead of the disc build on both platforms, mirroring the dump's symbol and type maps
 - [x] Colosseum script decompiler + compiler: full binary ↔ source-text round trip byte-exact on all 142 US scripts (four verified stages; `ColoScriptSourceEmitter`/`ColoScriptTextParser`/`ColoScriptCompiler`; `ColoScriptDecomp --roundtrip` + `ColoScriptRoundTripTests`). Dialect + GS code-gen conventions in `Documentation/File Formats/Shared/SCD - Script Bytecode.md`; engine-declared builtin signatures (246, int/float/bool/string only) generated into `defaultBuiltInFunctions` with reference doc `Documentation/File Formats/Colosseum/Script Builtin Functions.md`
-- [x] REL disassembly + reassembly re-enabled (`RelOperationsGate.enabled` is `true`) — a REL's data sections emit typed tables the same way the DOL does (CSV, decoded straight back to check, demoting to a raw `.binary` chunk when they can't round-trip). The gate is kept as the one place that turns the whole family off if a regression appears
-- [x] Per-region type maps — the DOL and `common.rel` maps ship as `_us`/`_eu`/`_jp` variants for both XD and Colosseum, and `ProjectSetup` installs the disc's own region under a single fixed name, so operations stay region-blind. `GeniusSonorityEngine.Data.chunkTypeMapRoutes` adds any further typed file (`tableres2.rel`) as data rather than a new branch
+- [x] REL disassembly + reassembly — a module dumps to a source tree the assembler reads back in full (see "REL source tree"): the `<name>.rel.json` manifest carries header, imports, per-section chunk lists with each file's path and mapped type, a symbol table and at-rest words, but **no bytes**; text is `textN.s` with symbolic relocations, data is per-chunk `.bin`/`.s`/`.csv`/embedded-file artifacts, and relocations are re-derived from the source. Edits to any chunk file land in the rebuilt `.rel`. `RelOperationsGate` is kept as the one place that turns the whole family off if a regression appears
+- [x] Per-region type maps — the DOL and `common.rel` maps ship as `_us`/`_eu`/`_jp` variants for both XD and Colosseum, and `ProjectSetup` installs the disc's own region under a single fixed name, so operations stay region-blind. `GeniusSonorityEngine.Data.chunkTypeMapRoutes` adds any further typed file (`tableres2.rel`) as data rather than a new branch. PBR has no DOL type map on purpose: the same header scan over its US/PAL/JP `main.dol` (`scripts/analysis/scan_dol_textures.py`) finds no embedded textures — the Wii System Menu draws the health warning and the disc is readable from boot, so PBR loads everything from FSYS
+- [x] XD `common.rel` fully typed — the last four tables (`PokemonStats`, `Battles`, `Pokespots`, `Rooms`) have struct definitions taken from the game's own accessors (`pokemonDataBios*`, `fightEncountDataBios*`, `esaba*`, `floorDataBios*`; docs under `Documentation/Assembly Analysis/Data Structures/`), and the four Pokespot encounter lists are typed too. Two tables change stride between builds, so the region maps name distinct structs: PAL `Battles` → `BattleEU` (four extra per-language intro ids, 0x4C not 0x3C) and JP `Rooms` → `RoomJP` (one fsys id up front, 0x30 not 0x40). Verified on the real US/PAL/JP discs: all 31 declared tables dump as CSV with the row count the REL's own `NumberOf*` word declares (`CommonRelTableCSVCorpusTests`, skips without a dump; `GODDESS_COMMON_REL_CORPUS` points it at a project). The five legacy-derived definitions that used to demote — `Items`, `Moves`, `Natures`, `Types`, `TreasureBoxData` — were re-derived from the accessors: `Treasure` is 0x1C not 0x28, `Nature` 0x28 not 0x20, `Move` carries a `fightKoukaDataId` word and three effect-type bytes, `Item` has two flag bytes and a 32-bit parameter where padding was declared, and `Type`'s matchup array starts at +0x0C. The DOL's `ShinyPKXModel` is 12 bytes (two pad bytes after the species), which is why its CSV read `VENUSAUR` then nonsense
+- [x] Colosseum `common.rel` fully typed — all 28 tables have struct definitions (`Colosseum/Structs/entries/CommonRelStructs.swift`; reference in `Documentation/File Formats/Colosseum/common.rel Tables.md`), derived from byte scans of all three discs against the legacy layouts, with the Colosseum disassembly used only where a routine's stride identified it (its function names are positional matches from XD's map). Colosseum keeps its trainers here rather than in deck files. PAL widens three records by per-language copies of one field, so its map names `RoomEU`, `BattleEU` and `BattleFieldEU`; `Trainers` and `Keyboard3Characters` declare explicit counts because the next symbol isn't their end. `CharacterModel` is 0x2C, not the 0xDC an earlier derivation claimed (150 × 0x2C is exactly the chunk). Verified on the real US/PAL/JP discs: 28/28 tables dump as CSV with the row counts the count words declare (`CommonRelTableCSVCorpusTests`, env `GODDESS_COLO_COMMON_REL_CORPUS`). Two findings worth knowing: the US disc stores species height and weight in feet/inches and tenths of a pound where PAL and JP are metric, and a room's shadow cutoff distance is not a table field — the room's floor kind selects one of three constants (0, 70, 80 units) and the shadow-map size at load. Both games' `Room` structs type that kind as the `RoomKind` enum (None, Field, Battle, MoveViewer, Scene, SystemMenu…, named from the rooms that carry each value); Colosseum keeps it in the top three bits of the record's first byte, and since the low five bits are zero on every room of every disc the whole byte is the enum with raw values kind × 32 — there is no sub-byte field support in `StructData`, and this case doesn't need it
 - [x] PBR fonts — `.FNT` bitmap glyphs (byte-identical on all 21 shipped fonts / 20,898 glyphs) and the `.f3d` 3D font (contours are the only stored geometry; strips and bounding boxes are re-derived on write), plus atlas/SVG artifacts and `pbrFont{,s}{Dump,Build}` operations
 - [x] PBR dump + build operations (`pbrDump` / `pbrBuild`)
 
@@ -671,7 +736,6 @@ existing rows round-trips; inventing a new *named* row does not, until the
 hash function is recovered.
 
 ### TODO
-- [ ] REL per-chunk artifacts are read-only — `RelAssembly` rebuilds from the lossless `<relName>.rel.json` alone, so edits to the typed chunks a disassembly emits don't reach the binary until `.s` parsing lands (the DOL's typed-import flow is the template)
 
 ### Planned (in order)
 - [ ] Game data table export (custom human-readable format for StructData)

@@ -74,7 +74,8 @@
    "table": {
     "name": "Keyboard3Characters",
     "start": "Keyboard3Characters",
-    "entryType": "KeyboardCharacter"
+    "entryType": "KeyboardCharacter",
+    "count": 386
    }
   },
   {
@@ -88,7 +89,8 @@
    "table": {
     "name": "Trainers",
     "start": "Trainers",
-    "entryType": "Trainer"
+    "entryType": "Trainer",
+    "count": 820
    }
   },
   {
@@ -194,6 +196,12 @@
     "name": "InteractionPoints",
     "start": "InteractionPoints",
     "entryType": "InteractionPoint"
+   }
+  },
+  {
+   "file": {
+    "label": "Script",
+    "extension": "scd"
    }
   }
  ]

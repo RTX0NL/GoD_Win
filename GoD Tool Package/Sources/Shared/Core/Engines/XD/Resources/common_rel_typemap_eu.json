@@ -16,9 +16,37 @@
   },
   {
    "table": {
+    "name": "PokespotRock",
+    "start": "PokespotRock",
+    "entryType": "PokespotEncounter"
+   }
+  },
+  {
+   "table": {
+    "name": "PokespotOasis",
+    "start": "PokespotOasis",
+    "entryType": "PokespotEncounter"
+   }
+  },
+  {
+   "table": {
+    "name": "PokespotCave",
+    "start": "PokespotCave",
+    "entryType": "PokespotEncounter"
+   }
+  },
+  {
+   "table": {
+    "name": "PokespotAll",
+    "start": "PokespotAll",
+    "entryType": "PokespotEncounter"
+   }
+  },
+  {
+   "table": {
     "name": "Battles",
     "start": "Battles",
-    "entryType": "Battle"
+    "entryType": "BattleEU"
    }
   },
   {
@@ -191,13 +219,13 @@
   },
   {
    "file": {
-    "label": "sym_136",
+    "label": "StringTable1",
     "extension": "msg"
    }
   },
   {
    "file": {
-    "label": "sym_137",
+    "label": "Script",
     "extension": "scd"
    }
   },

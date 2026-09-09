@@ -25,7 +25,7 @@
    "table": {
     "name": "Rooms",
     "start": "Rooms",
-    "entryType": "Room"
+    "entryType": "RoomEU"
    }
   },
   {
@@ -39,7 +39,7 @@
    "table": {
     "name": "BattleFields",
     "start": "BattleFields",
-    "entryType": "BattleField"
+    "entryType": "BattleFieldEU"
    }
   },
   {
@@ -74,7 +74,8 @@
    "table": {
     "name": "Keyboard3Characters",
     "start": "Keyboard3Characters",
-    "entryType": "KeyboardCharacter"
+    "entryType": "KeyboardCharacter",
+    "count": 386
    }
   },
   {
@@ -88,7 +89,8 @@
    "table": {
     "name": "Trainers",
     "start": "Trainers",
-    "entryType": "Trainer"
+    "entryType": "Trainer",
+    "count": 820
    }
   },
   {
@@ -109,7 +111,7 @@
    "table": {
     "name": "Battles",
     "start": "Battles",
-    "entryType": "Battle"
+    "entryType": "BattleEU"
    }
   },
   {
@@ -210,7 +212,7 @@
   },
   {
    "file": {
-    "label": "sym_99",
+    "label": "StringTable1",
     "extension": "msg"
    }
   },
@@ -296,6 +298,12 @@
    "file": {
     "label": "sym_113",
     "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "Script",
+    "extension": "scd"
    }
   }
  ]

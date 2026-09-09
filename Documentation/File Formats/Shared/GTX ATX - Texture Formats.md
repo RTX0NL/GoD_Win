@@ -24,7 +24,7 @@ Each texture (or each frame in an ATX) has a header of approximately 0x80 bytes.
 | 0x00 | 2 | u16 | Width | Texture width in pixels |
 | 0x02 | 2 | u16 | Height | Texture height in pixels |
 | 0x04 | 1 | u8 | Bits per pixel | See BPP column in format table |
-| 0x05 | 1 | u8 | Indexed flag | Non-zero if texture uses a color palette |
+| 0x05 | 1 | u8 | Unknown, always 1 | Previously documented as an indexed flag, but it is 1 on every retail texture measured — all 22 embedded in the six Colo/XD DOLs and all 2480 standalone GTX entries in PBR's US archives, indexed or not (1022 of those are non-indexed). Likely an image or mip count. The encoder still writes `isIndexed ? 1 : 0` here |
 | 0x06 | 5 | — | Reserved | |
 | 0x0B | 1 | u8 | Texture format | GS texture format ID (see table below) |
 | 0x0C | 3 | — | Reserved | |
@@ -33,7 +33,7 @@ Each texture (or each frame in an ATX) has a header of approximately 0x80 bytes.
 | 0x28 | 4 | u32 | Texture data offset | Relative offset from header start to pixel data |
 | 0x2C | 28 | — | Reserved | |
 | 0x48 | 4 | u32 | Palette data offset | Relative offset to palette (0 if non-indexed) |
-| 0x4C | 4 | u32 | Texture data length | Used in PBR only; not reliable in Colo/XD |
+| 0x4C | 4 | u32 | Texture data length | Zero in every standalone GTX measured, including all 2480 in PBR's US archives; do not rely on it (the length is derived from dimensions and format) |
 
 Texture data typically starts at offset **0x80** from the header start, but always use the pointer at 0x28 for the actual offset.
 

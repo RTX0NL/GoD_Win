@@ -2,8 +2,9 @@
 //  GeniusSonorityEngine+FileFormats.swift
 //
 //  The engine is the authority on which self-contained file formats it can
-//  dump and rebuild. Callers that hold a loaded engine ask it for the
-//  registry rather than reaching for the static `builtins()` directly.
+//  dump and rebuild. Callers ask it for the registry — through a loaded
+//  engine, or the static form when none is needed — rather than reaching
+//  for `builtins()` directly.
 //
 //  This registry covers the formats the *shared* Genius Sonority layer owns,
 //  which for `.fnt` means the Colosseum/XD font. Battle Revolution uses an
@@ -23,6 +24,12 @@ public extension GeniusSonorityEngine {
     /// This binds `fnt` to the Colosseum/XD format; a PBR project must not
     /// use it for fonts.
     func fileFormats() -> FileFormatRegistry {
+        Self.fileFormats()
+    }
+
+    /// Static form, for callers that need the registry without loading an
+    /// engine — the binding doesn't depend on any engine data.
+    static func fileFormats() -> FileFormatRegistry {
         .builtins()
     }
 }

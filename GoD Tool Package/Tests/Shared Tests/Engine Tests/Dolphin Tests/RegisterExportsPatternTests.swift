@@ -8,10 +8,18 @@ import Dolphin
 /// matching prolog in the corpus.
 final class RegisterExportsPatternTests: XCTestCase {
 
-    private static let corpusSearchPaths = [
-        "/Users/stars/Documents/Projects/GoD-Tool/scripts/XD project/Build/Unpacked/Data/Relocatable Modules",
-        "/Users/stars/Documents/Projects/GoD-Tool/scripts/Colo US project/Build/Unpacked/Data/Relocatable Modules",
-    ]
+    /// The two project dumps, plus whatever `GODDESS_REL_CORPUS` names (a
+    /// colon-separated list) — the same knob `RELFileTests` uses.
+    private static let corpusSearchPaths: [String] = {
+        var paths = [
+            "/Users/stars/Documents/Projects/GoD-Tool/scripts/XD project/Build/Unpacked/Data/Relocatable Modules",
+            "/Users/stars/Documents/Projects/GoD-Tool/scripts/Colo US project/Build/Unpacked/Data/Relocatable Modules",
+        ]
+        if let extra = ProcessInfo.processInfo.environment["GODDESS_REL_CORPUS"] {
+            paths += extra.split(separator: ":").map(String.init)
+        }
+        return paths
+    }()
 
     // MARK: - Hand-built micro fixture
 

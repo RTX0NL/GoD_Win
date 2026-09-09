@@ -74,7 +74,8 @@
    "table": {
     "name": "Keyboard3Characters",
     "start": "Keyboard3Characters",
-    "entryType": "KeyboardCharacter"
+    "entryType": "KeyboardCharacter",
+    "count": 386
    }
   },
   {
@@ -88,7 +89,8 @@
    "table": {
     "name": "Trainers",
     "start": "Trainers",
-    "entryType": "Trainer"
+    "entryType": "Trainer",
+    "count": 820
    }
   },
   {
@@ -204,20 +206,26 @@
   },
   {
    "file": {
-    "label": "sym_98",
+    "label": "StringTable1",
     "extension": "msg"
    }
   },
   {
    "file": {
-    "label": "sym_99",
+    "label": "StringTable2",
     "extension": "msg"
    }
   },
   {
    "file": {
-    "label": "sym_100",
+    "label": "StringTable3",
     "extension": "msg"
+   }
+  },
+  {
+   "file": {
+    "label": "Script",
+    "extension": "scd"
    }
   }
  ]

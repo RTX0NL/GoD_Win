@@ -26,21 +26,21 @@ extension Convert {
                 try encodeFile(inputFolder: inputFolder, outputFolder: outputFolder,
                                overwrite: overwrite, format: format, fileSystem: fileSystem)
 
-            case let .decodeStruct(inputFile, outputFolder, overwrite, structName, engine):
+            case let .decodeStruct(inputFile, outputFolder, overwrite, structName, engines):
                 try decodeStruct(inputFile: inputFile, outputFolder: outputFolder, overwrite: overwrite,
-                                 structName: structName, engineFolder: engine, fileSystem: fileSystem)
+                                 structName: structName, engineFolders: engines, fileSystem: fileSystem, logger: logger)
 
-            case let .encodeStruct(inputFile, outputFolder, overwrite, structName, engine):
+            case let .encodeStruct(inputFile, outputFolder, overwrite, structName, engines):
                 try encodeStruct(inputFile: inputFile, outputFolder: outputFolder, overwrite: overwrite,
-                                 structName: structName, engineFolder: engine, fileSystem: fileSystem)
+                                 structName: structName, engineFolders: engines, fileSystem: fileSystem, logger: logger)
 
-            case let .decodeStructTable(inputFile, outputFolder, overwrite, structName, engine):
+            case let .decodeStructTable(inputFile, outputFolder, overwrite, structName, engines):
                 try decodeStructTable(inputFile: inputFile, outputFolder: outputFolder, overwrite: overwrite,
-                                      structName: structName, engineFolder: engine, fileSystem: fileSystem)
+                                      structName: structName, engineFolders: engines, fileSystem: fileSystem, logger: logger)
 
-            case let .encodeStructTable(inputFile, outputFolder, overwrite, structName, engine):
+            case let .encodeStructTable(inputFile, outputFolder, overwrite, structName, engines):
                 try encodeStructTable(inputFile: inputFile, outputFolder: outputFolder, overwrite: overwrite,
-                                      structName: structName, engineFolder: engine, fileSystem: fileSystem)
+                                      structName: structName, engineFolders: engines, fileSystem: fileSystem, logger: logger)
             }
         }
     }
@@ -57,20 +57,19 @@ extension Convert {
         guard let bytes = fileSystem.readFile(at: inputFile)?.allData else {
             throw ConvertErrors.inputFileNotFound(file: inputFile, .init())
         }
-        // Which engine owns the codec decides the registry. `.fnt` names two
-        // unrelated formats, so this is the one place the choice is made —
-        // from the config's declared game, never from the bytes.
-        let registry = try format.registry(in: fileSystem)
+        // The format names the game where the extension alone is ambiguous
+        // (`.fnt`), so it also decides which engine's registry serves it —
+        // never the bytes.
+        let registry = format.registry
         let stemCandidate = inputFile.fileName.withoutExtensions
         let stem = stemCandidate.isEmpty ? format.fileExtension : stemCandidate
 
         let artifacts: [FileData]
-        switch format {
-        case let .msg(_, variant):
+        if let variant = format.msgVariant {
             // The registry's `.msg` handler always decodes as XD; go direct
             // so the requested variant drives the string rendering.
             artifacts = try MSGFile(binary: bytes, variant: variant, name: stem).outputs
-        case .gtx, .atx, .fnt, .pbrFont, .pbrFont3D, .gsw, .ish, .thh:
+        } else {
             guard let handler = registry.handler(for: format.fileExtension) else {
                 throw FileFormatRegistry.RegistryError.unregistered(ext: format.fileExtension)
             }
@@ -97,7 +96,7 @@ extension Convert {
         format: FileFormatSelection,
         fileSystem: FileSystemTree
     ) throws {
-        let registry = try format.registry(in: fileSystem)
+        let registry = format.registry
         // Rebuild reads the whole artifact bundle (JSON manifest + companions)
         // and reconstructs the format's binaries; the msg variant is recovered
         // from its JSON so no selection variant is needed here.
@@ -112,13 +111,14 @@ extension Convert {
         outputFolder: Folder,
         overwrite: Bool,
         structName: String,
-        engineFolder: Folder,
-        fileSystem: FileSystemTree
+        engineFolders: [Folder],
+        fileSystem: FileSystemTree,
+        logger: Logger?
     ) throws {
         guard let bytes = fileSystem.readFile(at: inputFile)?.allData else {
             throw ConvertErrors.inputFileNotFound(file: inputFile, .init())
         }
-        let engine = try GenericEngine(from: engineFolder, in: fileSystem)
+        let engine = try structEngine(combining: engineFolders, structName: structName, fileSystem: fileSystem, logger: logger)
         let definition: StructDefinition = try engine.getStruct(structName)
         guard definition.length > 0 else {
             throw ConvertErrors.emptyStruct(structName: structName, .init())
@@ -137,13 +137,14 @@ extension Convert {
         outputFolder: Folder,
         overwrite: Bool,
         structName: String,
-        engineFolder: Folder,
-        fileSystem: FileSystemTree
+        engineFolders: [Folder],
+        fileSystem: FileSystemTree,
+        logger: Logger?
     ) throws {
         guard let jsonBytes = fileSystem.readFile(at: inputFile)?.allData else {
             throw ConvertErrors.inputFileNotFound(file: inputFile, .init())
         }
-        let engine = try GenericEngine(from: engineFolder, in: fileSystem)
+        let engine = try structEngine(combining: engineFolders, structName: structName, fileSystem: fileSystem, logger: logger)
         let definition: StructDefinition = try engine.getStruct(structName)
         let parsed = try StructData(definition: definition, json: jsonBytes)
         let binary = GoDData(byteStream: parsed.data.rawBytes, byteOrder: .big)
@@ -156,13 +157,14 @@ extension Convert {
         outputFolder: Folder,
         overwrite: Bool,
         structName: String,
-        engineFolder: Folder,
-        fileSystem: FileSystemTree
+        engineFolders: [Folder],
+        fileSystem: FileSystemTree,
+        logger: Logger?
     ) throws {
         guard let bytes = fileSystem.readFile(at: inputFile)?.allData else {
             throw ConvertErrors.inputFileNotFound(file: inputFile, .init())
         }
-        let engine = try GenericEngine(from: engineFolder, in: fileSystem)
+        let engine = try structEngine(combining: engineFolders, structName: structName, fileSystem: fileSystem, logger: logger)
         let definition: StructDefinition = try engine.getStruct(structName)
         let entrySize = definition.length
         guard entrySize > 0 else {
@@ -191,13 +193,14 @@ extension Convert {
         outputFolder: Folder,
         overwrite: Bool,
         structName: String,
-        engineFolder: Folder,
-        fileSystem: FileSystemTree
+        engineFolders: [Folder],
+        fileSystem: FileSystemTree,
+        logger: Logger?
     ) throws {
         guard let jsonBytes = fileSystem.readFile(at: inputFile)?.allData else {
             throw ConvertErrors.inputFileNotFound(file: inputFile, .init())
         }
-        let engine = try GenericEngine(from: engineFolder, in: fileSystem)
+        let engine = try structEngine(combining: engineFolders, structName: structName, fileSystem: fileSystem, logger: logger)
         let definition: StructDefinition = try engine.getStruct(structName)
         let root = try JSONSerialization.jsonObject(with: jsonBytes.data)
         guard let elements = root as? [Any] else {
@@ -215,6 +218,37 @@ extension Convert {
         let binary = GoDData(byteStream: out, byteOrder: .big)
         let outFile = outputFolder.file("\(inputFile.fileName.withoutExtensions).bin")
         try fileSystem.writeFile(binary, at: outFile, overwrite: overwrite)
+    }
+
+    /// The engine a struct name resolves against: every listed folder,
+    /// combined in order. Mirrors the DOL/REL type-map path so a struct can
+    /// reference an enum or sub-struct another engine declares, and so a
+    /// name two engines both declare is called out rather than silently
+    /// resolving to the first one.
+    private static func structEngine(
+        combining engineFolders: [Folder],
+        structName: String,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws -> GenericEngine {
+        guard !engineFolders.isEmpty else {
+            throw ConvertErrors.noEngines(structName: structName, .init())
+        }
+        let engine = try GenericEngine(combining: engineFolders, in: fileSystem)
+        let shadowed = engine.shadowedNames
+        if !shadowed.structs.isEmpty {
+            logger?.log(.warning(
+                "Struct name(s) declared by more than one engine; the earliest listed engine wins: "
+                + shadowed.structs.joined(separator: ", ")
+            ))
+        }
+        if !shadowed.enums.isEmpty {
+            logger?.log(.warning(
+                "Enum name(s) declared by more than one engine; the earliest listed engine wins: "
+                + shadowed.enums.joined(separator: ", ")
+            ))
+        }
+        return engine
     }
 
     // MARK: - Helpers

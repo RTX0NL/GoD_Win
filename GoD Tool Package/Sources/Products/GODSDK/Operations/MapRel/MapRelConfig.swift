@@ -102,17 +102,22 @@ enum MapRelBuild {
         let relName: String
         let outputPath: File
         let overwrite: Bool
+        /// Engine folders whose structs resolve typed chunks in the
+        /// disassembly, game definitions first. Absent = none.
+        let engines: [Folder]?
 
         init(
             inputFolder: Folder,
             relName: String,
             outputPath: File,
-            overwrite: Bool = true
+            overwrite: Bool = true,
+            engines: [Folder]? = nil
         ) {
             self.inputFolder = inputFolder
             self.relName = relName
             self.outputPath = outputPath
             self.overwrite = overwrite
+            self.engines = engines
         }
     }
 
@@ -123,15 +128,19 @@ enum MapRelBuild {
         let inputFolder: Folder
         let outputFolder: Folder
         let overwrite: Bool
+        /// See `SingleConfig.engines`.
+        let engines: [Folder]?
 
         init(
             inputFolder: Folder,
             outputFolder: Folder,
-            overwrite: Bool = true
+            overwrite: Bool = true,
+            engines: [Folder]? = nil
         ) {
             self.inputFolder = inputFolder
             self.outputFolder = outputFolder
             self.overwrite = overwrite
+            self.engines = engines
         }
     }
 }

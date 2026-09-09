@@ -34,17 +34,22 @@ public extension XDStructDefaults {
             .uint8(name: "contest_appeal_jam_index"),
             .abstraction(name: "contest_appeal_type", typeName: "ContestCategory"),
             .uint16(name: "base_power"),
-            .padding(length: 2),
-            .uint16(name: "effect"),
-            .uint16(name: "animation_id"),
+            .uint16(name: "battle_effect_id", description: "fightKoukaDataId; 0 for every move on disc"),
+            .uint16(name: "effect", description: "seqId — the battle sequence that implements the move"),
+            .uint16(name: "animation_id", description: "wazaFuncDataId — the move's function set (WZX type and variation, AI value/hit/damage)"),
             .uint32(name: "name_id"),
             .uint32(name: "unused_string_id"),
             .uint32(name: "exclamation_string_id"),
             .uint32(name: "description_id"),
-            .uint32(name: "animation_id_2"),
+            .uint32(name: "wzx_data_id", description: "FSYS id of the move's animation data"),
+            // wazaDataBiosGetTypeId(waza, i) reads 0x34 + i for i in 0…2:
+            // three effect-type slots, most moves using only the first.
             .abstraction(name: "move_effect_type", typeName: "MoveEffectType"),
+            .abstraction(name: "move_effect_type_2", typeName: "MoveEffectType"),
+            .abstraction(name: "move_effect_type_3", typeName: "MoveEffectType"),
+            .padding(length: 1),
         ],
-        description: "Move properties (XD, 0x39 bytes per entry)"
+        description: "Move properties (0x38 bytes per entry; wazaDataBiosGetPtr)"
     )
 
     static let itemStruct = StructMap(
@@ -53,27 +58,27 @@ public extension XDStructDefaults {
         alignmentStyle: .none,
         properties: [
             .abstraction(name: "bag_slot", typeName: "ItemPocket"),
-            .uint8(name: "cannot_be_held"),
-            .padding(length: 2),
-            .uint8(name: "in_battle_use_id"),
+            .boolean(name: "cannot_be_held", description: "itemDataBiosGetImportant — key items"),
+            .boolean(name: "useful_flag", description: "itemDataBiosGetUseful; set for 7 items on the US disc"),
+            .boolean(name: "can_be_deposited", description: "itemDataBiosGetDeposit — may go into the PC"),
+            .uint8(name: "in_battle_use_id", description: "itemDataBiosGetItemEffectParam"),
             .padding(length: 1),
             .uint16(name: "price"),
             .uint16(name: "coupon_price"),
-            .padding(length: 1),
-            .uint8(name: "battle_hold_item_id"),
-            .padding(length: 4),
+            .uint16(name: "hold_effect_id", description: "itemDataBiosGetItemSoubiDataId — effect while held in battle"),
+            .uint16(name: "battle_use_effect_id", description: "itemDataBiosGetFightUseKoukaDataId; 0 for every item on disc"),
+            .padding(length: 2),
             .uint32(name: "name_id"),
             .uint32(name: "description_id"),
-            .padding(length: 3),
-            .uint8(name: "parameter"),
-            .label(name: "function_pointer_1"),
-            .label(name: "function_pointer_2"),
-            .uint8(name: "friendship_effect_1"),
-            .uint8(name: "friendship_effect_2"),
-            .uint8(name: "friendship_effect_3"),
+            .uint32(name: "parameter", description: "itemDataBiosGetBuff — effect strength"),
+            .label(name: "field_use_function", description: "Relocated to the DOL routine run when used from the bag"),
+            .label(name: "battle_use_function", description: "Relocated to the DOL routine run when used in battle"),
+            .int8(name: "friendship_effect_1", description: "Friendship change below 100"),
+            .int8(name: "friendship_effect_2", description: "Friendship change from 100 to 199"),
+            .int8(name: "friendship_effect_3", description: "Friendship change at 200 and above"),
             .padding(length: 1),
         ],
-        description: "Item properties (0x28 bytes per entry)"
+        description: "Item properties (0x28 bytes per entry; itemDataBiosGetPtr)"
     )
 
     static let natureStruct = StructMap(
@@ -91,11 +96,15 @@ public extension XDStructDefaults {
             .uint8(name: "stat_multiplier_spa"),
             .uint8(name: "stat_multiplier_spd"),
             .uint8(name: "stat_multiplier_spe"),
-            .padding(length: 9),
+            .uint8(name: "unknown_1", description: "100 on every nature"),
+            .array(name: "unknown_2", count: 8, of: .uint8, description: "Values of 5, 10 and 20 — per-nature percentages of something"),
+            .padding(length: 1),
             .uint32(name: "name_id"),
-            .padding(length: 12),
+            .array(name: "unknown_3", count: 7, of: .uint8, description: "Values of 5…70 — per-nature percentages, likely flavor preferences"),
+            .array(name: "unknown_4", count: 7, of: .uint8, description: "100 on every nature"),
+            .padding(length: 2),
         ],
-        description: "Nature stat multipliers and purification data (0x20 bytes)"
+        description: "Nature stat multipliers and purification data (0x28 bytes per entry; pokemonSeikakuDataBiosGetPtr)"
     )
 
     static let typeStruct = StructMap(
@@ -113,10 +122,9 @@ public extension XDStructDefaults {
             .uint16(name: "icon_small_id"),
             .padding(length: 2),
             .uint32(name: "name_id"),
-            .padding(length: 1),
-            .array(name: "effectiveness", count: 18, of: .uint16),
+            .array(name: "effectiveness", count: 18, of: .uint16, description: "One entry per defending type, in type order; on disc 0x3F is neutral, 0x41 super effective, 0x42 not very effective, 0x43 no effect"),
         ],
-        description: "Type matchup and properties (0x30 bytes)"
+        description: "Type matchup and properties (0x30 bytes per entry)"
     )
 
     static let trainerClassStruct = StructMap(
@@ -147,19 +155,18 @@ public extension XDStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "room_id"),
-            .uint16(name: "flag_id"),
-            .abstraction(name: "item_id", typeName: "Items"),
-            .uint16(name: "quantity"),
-            .uint32(name: "model_id"),
-            .uint32(name: "unknown_1"),
-            .int32(name: "x_position"),
-            .int32(name: "y_position"),
-            .int32(name: "z_position"),
+            .uint8(name: "model_id"),
+            .uint8(name: "quantity"),
             .int16(name: "angle"),
-            .padding(length: 10),
+            .uint16(name: "room_id"),
+            .uint16(name: "flag_id", description: "Set once the item has been collected"),
+            .padding(length: 4),
+            .uint32(name: "item_id"),
+            .float(name: "x_position"),
+            .float(name: "y_position"),
+            .float(name: "z_position"),
         ],
-        description: "Treasure box location and contents (0x28 bytes)"
+        description: "Treasure box location and contents (0x1C bytes per entry; NumberOfTreasureBoxes)"
     )
 
     static let doorStruct = StructMap(
@@ -371,5 +378,271 @@ public extension XDStructDefaults {
             .abstraction(name: "species_id", typeName: "PokemonSpecies"),
         ],
         description: "Pokemon summary screen animation override (3 bytes)"
+    )
+
+    // MARK: - Species data (PokemonStats)
+    //
+    // Layout from the `pokemonDataBiosGet*` accessors in
+    // `text1/pokemonBios/` — stride 0x124 (`pokemonDataBiosGetPtr`), every
+    // field offset below is the one an accessor reads. See
+    // `Documentation/Assembly Analysis/Data Structures/PokemonData.md`.
+
+    static let pokemonBaseStatsStruct = StructMap(
+        name: "PokemonBaseStats",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: [
+            .uint16(name: "hp"),
+            .uint16(name: "attack"),
+            .uint16(name: "defense"),
+            .uint16(name: "special_attack"),
+            .uint16(name: "special_defense"),
+            .uint16(name: "speed"),
+        ],
+        description: "Six stat values in HP/Atk/Def/SpA/SpD/Spe order (0x0C bytes; pokemonDataBiosGetBasisStatusPtr)"
+    )
+
+    static let pokemonEvolutionStruct = StructMap(
+        name: "PokemonEvolution",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: [
+            .abstraction(name: "method", typeName: "EvolutionMethod"),
+            .padding(length: 1),
+            .uint16(name: "condition", description: "Level or item ID, depending on the method"),
+            .abstraction(name: "evolved_species", typeName: "PokemonSpecies"),
+        ],
+        description: "One evolution slot (6 bytes; pokemonDataBiosGetSinkaPtr)"
+    )
+
+    static let pokemonLevelUpMoveStruct = StructMap(
+        name: "PokemonLevelUpMove",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: [
+            .uint8(name: "level"),
+            .padding(length: 1),
+            .abstraction(name: "move", typeName: "Moves"),
+        ],
+        description: "One level-up move slot (4 bytes; pokemonDataBiosGetGetWazaPtr)"
+    )
+
+    static let pokemonSpriteStruct = StructMap(
+        name: "PokemonSprite",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: [
+            .uint8(name: "pokedex_color"),
+            .padding(length: 1),
+            .uint16(name: "face_index", description: "Index into the PokefaceTextures table"),
+            .uint32(name: "body_file_id", description: "File identifier of the animated body texture in poke_dance.fsys"),
+        ],
+        description: "Portrait and body art references for one coloration (8 bytes; pokemonDataBiosGetCgDataPtr)"
+    )
+
+    static let pokemonStatStruct = StructMap(
+        name: "PokemonStat",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: [
+            .abstraction(name: "exp_rate", typeName: "ExpRate"),
+            .uint8(name: "catch_rate"),
+            .abstraction(name: "gender_ratio", typeName: "GenderRatio"),
+            .padding(length: 1),
+            .uint16(name: "base_exp_yield"),
+            .uint16(name: "base_friendship"),
+            .uint16(name: "height", description: "Meters × 10"),
+            .uint16(name: "weight", description: "Kilograms × 10"),
+            .uint16(name: "cry_id"),
+            .uint16(name: "national_dex_index"),
+            .uint16(name: "unknown_1", description: "Sound related; 1356–1360 on the US disc"),
+            .uint16(name: "pokemon_number", description: "National number again, 0 for the entries without a Strategy Memo page (pokemonDataBiosGetNumPokemon)"),
+            .uint16(name: "pokedex_number", description: "Hoenn Pokédex order; species outside it are listed after Deoxys (pokemonDataBiosGetNumZukan)"),
+            .padding(length: 2),
+            .uint32(name: "name_id"),
+            .uint32(name: "species_name_id", description: "The \"Seed Pokémon\" category string, in pda_menu"),
+            .uint32(name: "description_id", description: "Always 0 on disc; read by pokemonDataBiosGetDoc"),
+            .uint32(name: "seen_flag_id"),
+            .uint32(name: "caught_flag_id"),
+            .uint32(name: "model_index", description: "Index into the DOL's PKXModel table"),
+            .abstraction(name: "type_1", typeName: "Type"),
+            .abstraction(name: "type_2", typeName: "Type"),
+            .abstraction(name: "ability_1", typeName: "Abilities"),
+            .abstraction(name: "ability_2", typeName: "Abilities"),
+            .array(name: "learnable_tms", count: 50, of: .boolean, description: "TM01…TM50"),
+            .array(name: "learnable_hms", count: 8, of: .boolean, description: "HM01…HM08"),
+            .array(
+                name: "learnable_tutor_moves", count: 12, of: .boolean,
+                description: "In the game's internal tutor order, not the TutorMoves table's: "
+                    + "1 Mimic, 2 Thunder Wave, 3 Seismic Toss, 4 Icy Wind, 5 Substitute, 6 Dream Eater, "
+                    + "7 Swagger, 8 Body Slam, 9 Nightmare, 10 Sky Attack, 11 Double-Edge, 12 Self-Destruct "
+                    + "(pokemonDB_GetTeachWaza)"
+            ),
+            .abstraction(name: "wild_item_1", typeName: "Items"),
+            .abstraction(name: "wild_item_2", typeName: "Items"),
+            .array(name: "egg_moves", count: 8, of: .enumeration(name: "Moves")),
+            .subStruct(name: "base_stats", typeName: "PokemonBaseStats"),
+            .subStruct(name: "ev_yields", typeName: "PokemonBaseStats"),
+            .array(name: "evolutions", count: 5, of: .subStruct(name: "PokemonEvolution")),
+            .array(name: "level_up_moves", count: 20, of: .subStruct(name: "PokemonLevelUpMove"), description: "The accessor allows 20 slots; no species on disc uses more than 18"),
+            .subStruct(name: "sprites", typeName: "PokemonSprite"),
+            .subStruct(name: "shiny_sprites", typeName: "PokemonSprite"),
+        ],
+        description: "Species data (0x124 bytes per entry; pokemonDataBiosGetPtr)"
+    )
+
+    // MARK: - Battles
+    //
+    // `fightEncountData`: layout from `text1/fightEncountBios/`, stride 0x3C
+    // (`fightEncountDataBiosGetPtr`). The PAL build inserts four words of
+    // per-language intro ids after the English one, so it is a separate
+    // definition that the PAL type map names. See
+    // `Documentation/Assembly Analysis/Data Structures/FightEncountData.md`.
+
+    static let battlePlayerStruct = StructMap(
+        name: "BattlePlayer",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: [
+            .abstraction(name: "deck", typeName: "Deck"),
+            .uint16(name: "trainer_id", description: "Index into the deck's trainer table; 5000 with deck DarkPokemon is the player"),
+            .abstraction(name: "controller", typeName: "BattleController"),
+        ],
+        description: "One of a battle's four participant slots (8 bytes; fightEncountDataBiosGetFightTrainerInfoPtr)"
+    )
+
+    private static var battleHeadProperties: [StructMap.Property] {
+        [
+            .abstraction(name: "battle_kind", typeName: "BattleKind"),
+            .uint8(name: "trainers_per_side"),
+            .abstraction(name: "battle_style", typeName: "BattleStyle"),
+            .uint8(name: "pokemon_per_trainer"),
+            .boolean(name: "blackout_on_loss", description: "Losing ends the game rather than the encounter (fightEncountDataBiosGetZenmetuFlag)"),
+            .padding(length: 1),
+            .uint16(name: "battle_field_index", description: "Index into the BattleFields table"),
+            .uint16(name: "battle_cd_id", description: "Set at run time; 0 on disc"),
+            .padding(length: 2),
+            .uint32(name: "name_id"),
+            .uint32(name: "bgm_id"),
+            .uint32(name: "wipe_id", description: "Screen transition into the battle"),
+            .uint32(name: "intro_wzx_id", description: "Colosseum round announcement: 0x95 round 1, 0x96 round 2, 0x9B semifinal, 0x9C final, 0 otherwise"),
+        ]
+    }
+
+    static let battleStruct = StructMap(
+        name: "Battle",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: battleHeadProperties + [
+            .array(name: "players", count: 4, of: .subStruct(name: "BattlePlayer")),
+        ],
+        description: "Battle setup, US and JP layout (0x3C bytes per entry; fightEncountDataBiosGetPtr)"
+    )
+
+    static let battleEUStruct = StructMap(
+        name: "BattleEU",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: battleHeadProperties + [
+            .uint32(name: "intro_wzx_id_german"),
+            .uint32(name: "intro_wzx_id_french"),
+            .uint32(name: "intro_wzx_id_italian"),
+            .uint32(name: "intro_wzx_id_spanish"),
+            .array(name: "players", count: 4, of: .subStruct(name: "BattlePlayer")),
+        ],
+        description: "Battle setup, PAL layout: four more intro ids, one per extra language (0x4C bytes per entry)"
+    )
+
+    // MARK: - Pokespots
+    //
+    // `esaba` (餌場, "feeding ground"): the descriptor's fields are all
+    // flag ids, read through GSflagGet with a stride of 0x1C; the encounter
+    // entries are the 0xC-byte records `_esabaAppearPokemonSub2` walks. See
+    // `Documentation/Assembly Analysis/Data Structures/EsabaData.md`.
+
+    static let pokespotStruct = StructMap(
+        name: "Pokespot",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: [
+            .uint32(name: "snack_count_flag_id", description: "Flag holding the number of snacks on the ground"),
+            .uint32(name: "unknown_flag_id_1", description: "Cleared when the snacks run out"),
+            .uint32(name: "unknown_flag_id_2", description: "Cleared when the snacks run out or a Pokémon appears"),
+            .uint32(name: "spawned_species_flag_id", description: "Flag holding the species currently at the spot"),
+            .uint32(name: "spawned_pid_flag_id", description: "Flag holding that Pokémon's personality value"),
+            .uint32(name: "unknown_flag_id_3"),
+            .label(name: "encounter_table_pointer", description: "Relocated to the DOL's encounter list for this spot"),
+        ],
+        description: "Pokespot save-flag bindings (0x1C bytes per entry; esabaGet*)"
+    )
+
+    static let pokespotEncounterStruct = StructMap(
+        name: "PokespotEncounter",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: [
+            .uint8(name: "min_level"),
+            .uint8(name: "max_level"),
+            .abstraction(name: "species", typeName: "PokemonSpecies"),
+            .uint32(name: "encounter_rate", description: "Percent; a spot's entries sum to 100"),
+            .uint32(name: "steps_per_snack", description: "Steps the Pokémon takes to eat one snack (esabaGetDigestRate)"),
+        ],
+        description: "One Pokespot encounter (0x0C bytes per entry; PokespotRock/Oasis/Cave/All)"
+    )
+
+    // MARK: - Rooms
+    //
+    // `FloorData`: layout from `text1/floorDataBios/`, stride 0x40
+    // (`floorDataBiosGetPtr`). The pointer fields are 0 on disc and carry a
+    // relocation to a DOL address where set. The JP build has a single
+    // fsys id at +0x04 instead of five at the end, so it is a separate
+    // definition that the JP type map names. See
+    // `Documentation/Assembly Analysis/Data Structures/FloorData.md`.
+
+    private static var roomHeadProperties: [StructMap.Property] {
+        [
+            .uint8(name: "area_id"),
+            .abstraction(name: "kind", typeName: "RoomKind", description: "floorKind — which lifecycle, shadow, fog and control path the floor code takes"),
+            .uint16(name: "room_id"),
+        ]
+    }
+
+    private static var roomRuntimeProperties: [StructMap.Property] {
+        [
+            .uint32(name: "map_file_id", description: "Set at run time; 0 on disc"),
+            .label(name: "render_data_pointer", description: "Lighting, shadow and fog setup"),
+            .label(name: "character_data_pointer"),
+            .label(name: "warp_point_data_pointer"),
+            .label(name: "camera_data_pointer"),
+            .uint32(name: "name_id"),
+            .label(name: "preprocess_function", description: "Called before the room loads"),
+            .label(name: "main_function", description: "Called every frame in the room"),
+            .label(name: "postprocess_function", description: "Called after the room unloads"),
+            .label(name: "unknown_data_pointer", description: "DOL data; set for 16 rooms"),
+        ]
+    }
+
+    static let roomStruct = StructMap(
+        name: "Room",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: roomHeadProperties + roomRuntimeProperties + [
+            .uint32(name: "fsys_id_us_uk", description: "Group id of the room's FSYS archive"),
+            .uint32(name: "fsys_id_german"),
+            .uint32(name: "fsys_id_french"),
+            .uint32(name: "fsys_id_italian"),
+            .uint32(name: "fsys_id_spanish"),
+        ],
+        description: "Room (floor) definition, US and PAL layout (0x40 bytes per entry; floorDataBiosGetPtr)"
+    )
+
+    static let roomJPStruct = StructMap(
+        name: "RoomJP",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: roomHeadProperties + [
+            .uint32(name: "fsys_id", description: "Group id of the room's FSYS archive"),
+        ] + roomRuntimeProperties,
+        description: "Room (floor) definition, JP layout: one fsys id, before the run-time fields (0x30 bytes per entry)"
     )
 }

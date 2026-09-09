@@ -18,7 +18,10 @@ public struct DataSectionManifest: Codable, Equatable {
         public let label: String
         /// What kind of data this chunk contains
         public let type: ChunkType
-        /// Filename (relative to section folder) containing the chunk data
+        /// File containing the chunk data. Relative to the section folder in
+        /// a DOL section's `manifest.json`; relative to the module folder in
+        /// a REL's `<name>.rel.json`, whose one chunk list spans every
+        /// section.
         public let file: String
         /// For struct chunks: the struct type name
         public let structType: String?

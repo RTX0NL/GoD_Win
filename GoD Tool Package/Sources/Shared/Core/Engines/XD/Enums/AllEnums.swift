@@ -35,6 +35,17 @@ public extension XDEngine {
                 PokemonEnumDefaults.coloXdMoveEffectTypeEnum,
                 PokemonEnumDefaults.coloXdContestCategoryEnum,
                 PokemonEnumDefaults.coloXdItemPocketEnum,
+                // Species-data fields (PokemonStat) — shared encodings,
+                // declared in the Pokemon module for the same reason.
+                PokemonEnumDefaults.expRatesEnum,
+                PokemonEnumDefaults.genderRatiosEnum,
+                PokemonEnumDefaults.evolutionMethodsEnum,
+                // Battle table (fightEncountData) — XD's own value sets.
+                XDCommonRelEnumDefaults.battleKind,
+                XDCommonRelEnumDefaults.battleStyle,
+                XDCommonRelEnumDefaults.deck,
+                XDCommonRelEnumDefaults.battleController,
+                XDCommonRelEnumDefaults.roomKind,
             ]
         }
     }

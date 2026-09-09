@@ -640,6 +640,19 @@ public func resolveStructTypes(
         case .file: break
         }
     }
+    return resolveStructTypes(named: typeNames, engineFolders: engineFolders, fileSystem: fileSystem, logger: logger)
+}
+
+/// The struct definitions behind a set of type names, resolved against the
+/// combined engine built from `engineFolders` in order. Used directly by the
+/// REL assembler, whose manifest already carries the type names, and through
+/// the type-map overload above by both disassemblers.
+public func resolveStructTypes(
+    named typeNames: Set<String>,
+    engineFolders: [Folder],
+    fileSystem: FileSystemTree,
+    logger: Logger?
+) -> [String: StructDefinition] {
     guard !typeNames.isEmpty else { return [:] }
 
     guard !engineFolders.isEmpty else {

@@ -140,7 +140,8 @@ extension MapRelBuild {
             inputFolder: config.inputFolder,
             relName: config.relName,
             outputPath: config.outputPath,
-            overwrite: config.overwrite
+            overwrite: config.overwrite,
+            engines: config.engines
         )
         try RelAssembly.assemble(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
     }
@@ -162,7 +163,8 @@ extension MapRelBuild {
                 inputFolder: sub,
                 relName: mapName,
                 outputPath: outputFile,
-                overwrite: config.overwrite
+                overwrite: config.overwrite,
+                engines: config.engines
             )
             do {
                 try RelAssembly.assemble(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)

@@ -49,8 +49,8 @@ enum CommonRelDump {
 
 enum CommonRelBuild {
     struct Config: Codable {
-        /// Folder containing the disassembly artifacts (must hold
-        /// `<relName>.rel.json` — the canonical semantic REL model).
+        /// Folder containing the disassembly artifacts: the `<relName>.rel.json`
+        /// manifest and the chunk files it points at.
         let inputFolder: Folder
         /// Stem used to locate `<relName>.rel.json` inside `inputFolder`.
         /// Defaults to `"common"` when omitted via the convenience init.
@@ -59,17 +59,23 @@ enum CommonRelBuild {
         let outputPath: File
         /// Overwrite an existing file at `outputPath`.
         let overwrite: Bool
+        /// Engine folders whose structs resolve the disassembly's typed
+        /// table chunks, game definitions first — the same list the dump
+        /// used. Absent = none, which is only enough for an untyped dump.
+        let engines: [Folder]?
 
         init(
             inputFolder: Folder,
             relName: String = "common",
             outputPath: File,
-            overwrite: Bool = true
+            overwrite: Bool = true,
+            engines: [Folder]? = nil
         ) {
             self.inputFolder = inputFolder
             self.relName = relName
             self.outputPath = outputPath
             self.overwrite = overwrite
+            self.engines = engines
         }
     }
 }

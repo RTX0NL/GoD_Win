@@ -12,10 +12,19 @@ import Dolphin
 /// exercise that rather than a stored `imports` array.
 final class RELFileTests: XCTestCase {
 
-    private static let corpusSearchPaths = [
-        "/Users/stars/Documents/Projects/GoD-Tool/scripts/XD project/Build/Unpacked/Data/Relocatable Modules",
-        "/Users/stars/Documents/Projects/GoD-Tool/scripts/Colo US project/Build/Unpacked/Data/Relocatable Modules",
-    ]
+    /// Folders of real `.rel` files to walk. The two project dumps, plus
+    /// whatever `GODDESS_REL_CORPUS` names (a colon-separated list), so the
+    /// corpus tests can run against RELs extracted anywhere.
+    private static let corpusSearchPaths: [String] = {
+        var paths = [
+            "/Users/stars/Documents/Projects/GoD-Tool/scripts/XD project/Build/Unpacked/Data/Relocatable Modules",
+            "/Users/stars/Documents/Projects/GoD-Tool/scripts/Colo US project/Build/Unpacked/Data/Relocatable Modules",
+        ]
+        if let extra = ProcessInfo.processInfo.environment["GODDESS_REL_CORPUS"] {
+            paths += extra.split(separator: ":").map(String.init)
+        }
+        return paths
+    }()
 
     private static func firstCorpusFile(named stem: String) -> [UInt8]? {
         for dir in corpusSearchPaths {
@@ -181,9 +190,10 @@ final class RELFileTests: XCTestCase {
 
     // MARK: - outputs
 
-    /// `outputs` emits exactly one JSON file (no section sidecars, since
-    /// the semantic model fully captures the REL).
-    func testREL_outputs_emitsSingleJSON() throws {
+    /// `outputs` is the source tree: a manifest that carries no bytes, plus
+    /// one assembly file per text section (and per data section), plus the
+    /// human summary.
+    func testREL_outputs_emitsManifestAndSectionSources() throws {
         var rel = RELFile(
             moduleID: 7,
             version: 3,
@@ -196,12 +206,20 @@ final class RELFileTests: XCTestCase {
         rel.name = "mod"
         let artifacts = try rel.outputs
 
-        XCTAssertEqual(artifacts.count, 1, "single JSON; no section sidecars")
-        XCTAssertEqual(artifacts.first?.file, File("mod.rel.json"))
-        let json = artifacts.first!.data.data
-        let text = String(data: json, encoding: .utf8) ?? ""
+        XCTAssertEqual(artifacts.first?.file, File("mod.rel.json"), "manifest comes first")
+        XCTAssertEqual(
+            Set(artifacts.map(\.file.path)), ["mod.rel.json", "text1.s", "sections.txt"],
+            "one .s per non-empty section beside the manifest"
+        )
+        let text = String(data: artifacts.first!.data.data, encoding: .utf8) ?? ""
         XCTAssertTrue(text.contains("\"moduleID\" : \"0x7\""),
                       "moduleID should emit as hex; got: \(text.prefix(200))")
+        XCTAssertTrue(text.contains("\"file\" : \"text1.s\""), "the manifest points at the section source")
+        XCTAssertFalse(text.contains("\"raw\""), "no instruction words in the manifest")
+        XCTAssertFalse(text.contains("\"bytes\""), "no chunk bytes in the manifest")
+
+        let source = String(data: artifacts.first { $0.file.path == "text1.s" }!.data.data, encoding: .utf8) ?? ""
+        XCTAssertTrue(source.contains("nop"), "the text section is real assembly; got: \(source)")
     }
 
     // MARK: - Convenience naming

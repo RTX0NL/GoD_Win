@@ -78,12 +78,45 @@ final class BundledTypeMapTests: XCTestCase {
         }
     }
 
+    /// Every XD common.rel table is typed now — the last four (PokemonStats,
+    /// Battles, Pokespots, Rooms) landed together with the region-specific
+    /// `BattleEU` and `RoomJP` layouts — so an unresolved type here is a
+    /// regression, not a pending port.
     func testXDCommonRelTypeMapsDecodeForEveryRegion() throws {
         let defined = Set(XDEngine.Structs.allItems.map(\.name))
         for region in Self.regions {
             let name = "common_rel_typemap_\(region).json"
             let map = try decode(PokemonXD.bundledResource(named: name), "XD \(name)")
+            for table in tableEntryTypes(map) {
+                XCTAssertTrue(defined.contains(table.type),
+                              "XD common.rel \(region): unresolved struct \(table.type) for \(table.name)")
+            }
             assertResolvable(map, definedTypes: defined, label: "XD common.rel \(region)")
+        }
+    }
+
+    /// The battle and room tables change stride between builds (PAL adds
+    /// four per-language intro ids to a battle, JP drops four of a room's
+    /// five fsys ids), so each region's map must name the layout that fits
+    /// its disc.
+    func testXDCommonRelTypeMapsNameTheRegionalLayouts() throws {
+        func entryType(_ region: String, table: String) throws -> String? {
+            let map = try decode(
+                PokemonXD.bundledResource(named: "common_rel_typemap_\(region).json"),
+                "XD common_rel_typemap_\(region).json"
+            )
+            return tableEntryTypes(map).first { $0.name == table }?.type
+        }
+        XCTAssertEqual(try entryType("us", table: "Battles"), "Battle")
+        XCTAssertEqual(try entryType("jp", table: "Battles"), "Battle")
+        XCTAssertEqual(try entryType("eu", table: "Battles"), "BattleEU")
+        XCTAssertEqual(try entryType("us", table: "Rooms"), "Room")
+        XCTAssertEqual(try entryType("eu", table: "Rooms"), "Room")
+        XCTAssertEqual(try entryType("jp", table: "Rooms"), "RoomJP")
+        for region in Self.regions {
+            for spot in ["PokespotRock", "PokespotOasis", "PokespotCave", "PokespotAll"] {
+                XCTAssertEqual(try entryType(region, table: spot), "PokespotEncounter", "\(region) \(spot)")
+            }
         }
     }
 
@@ -115,11 +148,31 @@ final class BundledTypeMapTests: XCTestCase {
                 PokemonColosseum.bundledResource(named: "common_rel_typemap_\(region).json"),
                 "Colo common_rel_typemap_\(region).json"
             )
+            // Every Colosseum common.rel table is typed now, so an unresolved
+            // type is a regression, not a pending port.
+            for table in tableEntryTypes(rel) {
+                XCTAssertTrue(defined.contains(table.type),
+                              "Colo common.rel \(region): unresolved struct \(table.type) for \(table.name)")
+            }
             assertResolvable(rel, definedTypes: defined, label: "Colo common.rel \(region)")
-            // The one ported Colo struct must resolve so at least one table is typed.
-            XCTAssertTrue(tableEntryTypes(rel).contains {
-                $0.type == "CharacterModel" && defined.contains("CharacterModel")
-            }, "Colo common.rel \(region): CharacterModel table")
+        }
+    }
+
+    /// Colosseum's PAL disc carries per-language copies of one field in three
+    /// tables, so its map must name the wider layouts and the others the
+    /// shared ones.
+    func testColosseumCommonRelTypeMapsNameTheRegionalLayouts() throws {
+        func entryType(_ region: String, table: String) throws -> String? {
+            let map = try decode(
+                PokemonColosseum.bundledResource(named: "common_rel_typemap_\(region).json"),
+                "Colo common_rel_typemap_\(region).json"
+            )
+            return tableEntryTypes(map).first { $0.name == table }?.type
+        }
+        for (table, shared, pal) in [("Rooms", "Room", "RoomEU"), ("Battles", "Battle", "BattleEU"), ("BattleFields", "BattleField", "BattleFieldEU")] {
+            XCTAssertEqual(try entryType("us", table: table), shared)
+            XCTAssertEqual(try entryType("jp", table: table), shared)
+            XCTAssertEqual(try entryType("eu", table: table), pal)
         }
     }
 

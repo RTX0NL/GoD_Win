@@ -269,6 +269,25 @@ enum Project {
                 )
             }
 
+            // Rebuild main.dol from its disassembly under /Source/Code back
+            // into the DATA partition before the disc is re-encrypted below.
+            // Ships disabled, like every other rebuild step: a user opts in
+            // once they have edited the source.
+            let wiiDolFile = contentsFolder.folder("DATA").folder("sys").file("main.dol")
+            buildOperations.append(
+                OperationConfig(
+                    operation: .dolAssembly(
+                        config: DolAssembly.Config(
+                            codeFolder: sourceFolder.folder("Code")
+                                .folder(DolDisassembler.outputFolderName(for: wiiDolFile)).prefixed("."),
+                            outputDolPath: wiiDolFile.prefixed("."),
+                            dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed(".")
+                        )
+                    ),
+                    enabled: .no
+                )
+            )
+
             buildOperations.append(
                 OperationConfig(
                     operation: .wiiBuild(
@@ -514,8 +533,8 @@ enum Project {
 
                 // Rebuild common.rel from /Source/Code/common_rel back to its
                 // Unpacked location *before* the FSYS pack, so the packed
-                // archive picks up edits. Disabled until the typed-chunk
-                // reassembly path lands for REL.
+                // archive picks up edits. Ships disabled, like the DOL
+                // assembly: a user opts in once they have edited something.
                 buildOperations.append(
                     OperationConfig(
                         operation: .commonRelBuild(
@@ -523,7 +542,8 @@ enum Project {
                                 inputFolder: commonRelSourceFolder.prefixed("."),
                                 relName: "common",
                                 outputPath: commonRelFile.prefixed("."),
-                                overwrite: true
+                                overwrite: true,
+                                engines: typedDataEngines
                             )
                         ),
                         enabled: .no
@@ -540,7 +560,8 @@ enum Project {
                                 config: MapRelBuild.BatchConfig(
                                     inputFolder: mapsSourceRoot.folder(plan.sourceFolderName).prefixed("."),
                                     outputFolder: relocatableModulesFolder.prefixed("."),
-                                    overwrite: true
+                                    overwrite: true,
+                                    engines: typedDataEngines
                                 )
                             ),
                             enabled: .no
@@ -581,6 +602,33 @@ enum Project {
                     )
                 )
             }
+
+            // Rebuild main.dol from /Source/Code/main back into Build/Contents
+            // before the ISO is packed. Ships disabled, like the REL rebuilds:
+            // a user opts in once they have edited the disassembly. The symbol
+            // and type maps mirror the dump's so typed chunks resolve the same
+            // way on the way back in.
+            let dolFile = contentsFolder.folder("sys").file("main.dol")
+            buildOperations.append(
+                OperationConfig(
+                    operation: .dolAssembly(
+                        config: DolAssembly.Config(
+                            codeFolder: sourceFolder.folder("Code")
+                                .folder(DolDisassembler.outputFolderName(for: dolFile)).prefixed("."),
+                            outputDolPath: dolFile.prefixed("."),
+                            symbolMapPath: profile.map { profile in
+                                gameEngineFolder.file(profile.dolSymbolMapResource.path).prefixed(".")
+                            },
+                            dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
+                            typeMapPath: profile?.dolTypeMapResource.map { resource in
+                                gameEngineFolder.file(resource.path).prefixed(".")
+                            },
+                            engines: profile?.dolTypeMapResource == nil ? nil : typedDataEngines
+                        )
+                    ),
+                    enabled: .no
+                )
+            )
 
             buildOperations.append(
                 OperationConfig(

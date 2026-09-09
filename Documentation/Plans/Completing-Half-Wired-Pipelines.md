@@ -1,6 +1,13 @@
 # Plan: Completing the Half-Wired Pipelines
 
-**Status:** proposed.
+**Status:** Tracks A and B done (2026-09). `DolAssembler` and `RelAssembler`
+both rebuild typed chunks from the dumped JSON/CSV through
+`StructData(definition:json:)` / `StructTableCSV.decode`, with
+`TypedDataImporter.importStruct` resolving labels; the second importer
+(`TypedDataImporter.decode*`, `DataSectionImporter`) and the unused
+`DataSectionExporter` are deleted. `ProjectSetup` now emits a disabled
+`dolAssembly` ahead of the disc build. Track C is still open: `ish`/`thh`
+remain registered as single-extension formats.
 **Motivation:** three subsystems currently *look* implemented but silently do
 nothing (or always fail), so a user editing the exported artifacts sees no
 effect on rebuild. Each needs either wiring-in or honest removal. These are

@@ -30,24 +30,30 @@ extension Convert {
             )
 
             /// Map a binary file onto a single struct definition (resolved by
-            /// `structName` from `engine`) and write it as a JSON object.
+            /// `structName` across `engines`) and write it as a JSON object.
             /// Fails unless the binary is exactly the struct's size.
+            ///
+            /// `engines` lists engine folders in priority order, exactly as the
+            /// DOL/REL type maps do: they are combined into one engine, so a
+            /// struct in one folder can name an enum or sub-struct from another,
+            /// and where two folders declare the same name the earliest listed
+            /// wins (logged as a warning). Pass the game engine first.
             case decodeStruct(
                 inputFile: File,
                 outputFolder: Folder,
                 overwrite: Bool,
                 structName: String,
-                engine: Folder
+                engines: [Folder]
             )
 
             /// Encode a struct JSON object (produced by `decodeStruct`) back
-            /// into its binary using `structName` from `engine`.
+            /// into its binary using `structName` from `engines`.
             case encodeStruct(
                 inputFile: File,
                 outputFolder: Folder,
                 overwrite: Bool,
                 structName: String,
-                engine: Folder
+                engines: [Folder]
             )
 
             /// Map a binary file onto a table of `structName` structs. The
@@ -59,18 +65,18 @@ extension Convert {
                 outputFolder: Folder,
                 overwrite: Bool,
                 structName: String,
-                engine: Folder
+                engines: [Folder]
             )
 
             /// Encode a struct-table JSON array (produced by
             /// `decodeStructTable`) back into its binary using `structName`
-            /// from `engine`.
+            /// from `engines`.
             case encodeStructTable(
                 inputFile: File,
                 outputFolder: Folder,
                 overwrite: Bool,
                 structName: String,
-                engine: Folder
+                engines: [Folder]
             )
         }
 

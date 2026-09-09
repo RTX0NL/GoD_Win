@@ -22,8 +22,8 @@ public struct PPCSectionAssembler {
         }
     }
 
-    private let parser = PPCAssemblyParser()
-    private let encoder = PPCEncoder()
+    let parser = PPCAssemblyParser()
+    let encoder = PPCEncoder()
 
     public init() {}
 
@@ -65,7 +65,7 @@ public struct PPCSectionAssembler {
 
     // MARK: - Pass 1: Label collection
 
-    private func collectLabels(
+    func collectLabels(
         parsedFiles: [(name: String, lines: [PPCParsedLine])],
         baseAddress: UInt32
     ) throws -> [String: UInt32] {

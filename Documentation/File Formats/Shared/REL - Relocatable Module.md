@@ -134,6 +134,36 @@ Contains shop inventory data and menu-related tables.
 - XD's common.rel is substantially larger than Colosseum's, reflecting XD's additional game systems (Shadow Pokemon purification, Pokespots, etc.)
 - Module IDs are assigned differently between the two games
 
+## Disassembly Layout
+
+GoD-Tool dumps a REL to a source tree and rebuilds it from that tree; the
+bytes of the module live only in the source files. The `<name>.rel.json`
+manifest carries the header scalars, the import-table order, one chunk list
+per data section (each chunk's file path relative to the module folder and
+the type it was mapped to), a symbol table, and at-rest words.
+
+| Path | Contents |
+|------|----------|
+| `<name>.rel.json` | Manifest (`RelManifest`). No bytes. |
+| `sections.txt` | Human summary. |
+| `textN.s` | One per text section. Relocated fields are written as `sym@ha`, `sym@h`, `sym@l`, `sym@l(rN)` or `.4byte sym`; a branch to a label in the same section is PC-relative and not relocated. |
+| `dataN.s` | A data section nothing points into. |
+| `dataN/` | A data section with self symbols: one file per chunk, cut at every symbol the module's relocations target — `<sym>.bin`, `<sym>.s` (`.4byte sym` at pointer slots), `<sym>.csv` (typed table), `<sym>/…` (typed file via the format registry), `<sym>_tail.bin`, `dataN_start.bin`. |
+
+The assembler re-derives every relocation from the source. A symbol
+resolves to a label defined in any section of the module first, then to the
+manifest's `symbols` table (targets the source cannot define: the DOL,
+other modules, this module's BSS). `restWords` records the at-rest word at a
+relocation site when it is not the zero-field default — 87 ADDR32 slots in
+Colosseum's `common.rel`, none elsewhere. An `lbl_XXXXXXXX` name that is not a
+known symbol assembles as that literal word, which is how a typed exporter
+spells an unrelocated, non-zero pointer slot.
+
+Measured over both US discs: text relocations are exclusively ADDR16_HA/LO
+pairs (10 077 each) with zero at-rest fields, and data relocations are
+exclusively ADDR32 (3 339 sites). All 430 RELs rebuild byte-identically from
+their source trees.
+
 ## References
 
 - GameCube SDK REL documentation
