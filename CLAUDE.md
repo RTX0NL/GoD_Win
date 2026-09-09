@@ -397,7 +397,7 @@ Full spec in `Documentation/File Formats/Shared/U8 NARC - Nintendo Archives.md`.
 | RARC | `.rarc`, `.arc`, `.szs` | JSystem resource archive (Mario Sunshine, Zelda Wind Waker). Often Yaz0-compressed. |
 | U8 | `.arc`, `.szs`, `.app` | **Implemented.** Primary Wii archive for non-JSystem games (NSMBW, MKWii). Magic: `U\xAA8-`. |
 | WAD | `.wad` | Installable Wii channel/title container (ticket + TMD + content). |
-| WBFS | `.wbfs` | Sparse Wii disc image storage format. |
+| WBFS | `.wbfs` | **Implemented (read).** Block-mapped Wii disc container; setup restores it as a lazy `GoDReadable` view (`WBFSDiscImage`), never a buffer. See `Documentation/File Formats/Shared/WBFS - Wii Backup File System.md`. |
 | WIA/RVZ | `.wia`, `.rvz` | Compressed GC/Wii disc images. RVZ is the newer variant. |
 | BRRES | `.brres` | NW4R resource container (models, textures, animations). |
 | BRSAR | `.brsar` | NW4R sound archive. |
@@ -744,8 +744,17 @@ hash function is recovered.
 - [ ] Script decompiler/compiler (XD format needs tweaks; Colosseum format not fully figured out)
 - [ ] DOL disassembly (split into sections, PowerPC disassembly, symbol map support for XD, shiftable output)
 - [ ] REL (relocatable module) handling
-- [ ] WBFS / WAD / U8 containers, and wiring up the existing RVZ/WIA parsers
-      (ProjectSetup still throws for `.wiaOrRVZ` and `.nkitWii`)
+- [ ] WAD and RARC containers. WBFS and U8 are done.
+- [ ] WIA/RVZ restore — the header, partition and group tables and the
+      RVZ packing codec parse, but the payload is zstd/bzip2/LZMA and the
+      package has no decompressor for any of them. The plan
+      (`Documentation/File Formats/Shared/RVZ - Implementation Plan.md`)
+      vendors the C libraries through SwiftPM; that is a dependency
+      decision, not plumbing. Setup names this in its error.
+- [ ] Wii NKit restore — needs partition re-hashing and re-encryption on
+      top of the GameCube decoder's junk regeneration (`WiiCrypto` now
+      exists), and a Wii `.nkit.iso` sample to validate against. Setup
+      names this in its error.
 - [ ] ISH/ISD audio decode/encode (DSP ADPCM ↔ WAV, replaces vgmstream/Audacity workflow)
 
 ### Separate Tools (planned)

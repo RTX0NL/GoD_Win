@@ -11,6 +11,12 @@ These formats are used by both Colosseum and XD with the same or very similar st
 - [Yaz0/Yay0 - Nintendo LZ77 Compression](Shared/Yaz0%20Yay0%20-%20Nintendo%20LZ77%20Compression.md) — Nintendo's own codec. Not used by Colosseum/XD/PBR; support exists for general GameCube/Wii titles and as a prerequisite for RARC and U8
 - [U8/NARC - Nintendo Archives](Shared/U8%20NARC%20-%20Nintendo%20Archives.md) — Nintendo's own containers, big and little endian, discriminated by the direction their magic is spelled. PBR ships both (`.arc`/`.narc`)
 
+### Disc Images
+- [CISO - Compact ISO](Shared/CISO%20-%20Compact%20ISO.md) — Zero-block-omitting GC/Wii image; read and written
+- [NKIT - Lossless Shrunk ISO](Shared/NKIT%20-%20Lossless%20Shrunk%20ISO.md) — Junk-stripped image; GameCube trailing-truncation restore only
+- [WBFS - Wii Backup File System](Shared/WBFS%20-%20Wii%20Backup%20File%20System.md) — Block-mapped Wii disc container; restored as a lazy view
+- [RVZ - Dolphin Disc Image](Shared/RVZ%20-%20Dolphin%20Disc%20Image.md) — WIA/RVZ; header and group table parse, no decompressor yet
+
 ### 3D Models
 - [DAT - HAL Model Format](Shared/DAT%20-%20HAL%20Model%20Format.md) — Character/room 3D models, HSD format (type `0x04`/`0x02`)
 - [DATS - Multi-Model Archive](Shared/DATS%20-%20Multi-Model%20Archive.md) — Multiple DAT models bundled (type `0x10`)

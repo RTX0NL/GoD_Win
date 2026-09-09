@@ -39,7 +39,7 @@ public enum GODOps {
     public static func process(inputFile: File, logger: Logger? = nil) throws {
         guard let fileType = inputFile.fileType else { return }
         switch fileType {
-        case "iso", "gcm", "ciso", "wia", "rvz":
+        case "iso", "gcm", "ciso", "wbfs", "wia", "rvz":
             try setupProject(discImage: inputFile)
         case "gci":
             try setupSaveProject(gci: inputFile)

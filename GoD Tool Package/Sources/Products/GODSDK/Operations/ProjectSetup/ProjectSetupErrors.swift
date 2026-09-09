@@ -6,7 +6,7 @@ public enum ProjectSetupErrors: GoDError {
     case fsysNotFound(File, ErrorTrace)
     case fsysParseFailed(File, underlying: String, ErrorTrace)
     case invalidGameID(ErrorTrace)
-    case unsupportedInputFormat(format: String, file: File, ErrorTrace)
+    case unsupportedInputFormat(format: String, reason: String, file: File, ErrorTrace)
     case unrecognizedGCIGamecode(String, ErrorTrace)
 
     public var description: String {
@@ -21,8 +21,8 @@ public enum ProjectSetupErrors: GoDError {
             return "Error: Couldn't parse \(file) as an FSYS archive with any known engine (XD, Colosseum, PBR). Last error: \(underlying)\n\(errorTrace)"
         case let .invalidGameID(errorTrace):
             return "Error: Couldn't read Game ID\n\(errorTrace)"
-        case let .unsupportedInputFormat(format, file, errorTrace):
-            return "Error: Detected \(format) at \(file.path), but the decoder isn't wired up yet. Convert to raw .iso first.\n\(errorTrace)"
+        case let .unsupportedInputFormat(format, reason, file, errorTrace):
+            return "Error: \(file.path) is a \(format) image, which setup can't open: \(reason)\n\(errorTrace)"
         case let .unrecognizedGCIGamecode(gamecode, errorTrace):
             return "Error: GCI gamecode '\(gamecode)' is not a known XD/Colo save\n\(errorTrace)"
         }

@@ -4,12 +4,12 @@
 //  Sniff a disc image file and tell callers what format it's in.
 //  Used by ProjectSetup and the various dump operations to chain the
 //  right decoder automatically — the user can point `GODDESS` at a
-//  `.iso`, `.ciso`, `.nkit.iso`, `.wia`, or `.rvz` and it'll do the
-//  right thing.
+//  `.iso`, `.ciso`, `.wbfs`, `.nkit.iso`, `.wia`, or `.rvz` and it'll do
+//  the right thing.
 //
 //  Detection order (cheapest / most specific first):
-//    1. ASCII magic at offset 0x00: "CISO" (Wii/GC CISO), "WIA\x01"
-//       (WIA/RVZ)
+//    1. ASCII magic at offset 0x00: "CISO" (Wii/GC CISO), "WBFS",
+//       "WIA\x01" / "RVZ\x01" (WIA/RVZ)
 //    2. ASCII magic at offset 0x200: "NKIT v01" (both GC and Wii NKit
 //       live here, differ by the disc-header magic at 0x1C/0x18)
 //    3. Disc magic at offset 0x18/0x1C: `0xC2339F3D` (GameCube) or
@@ -25,6 +25,7 @@ public enum DiscImageFormat: Equatable {
     case gamecubeISO
     case wiiISO
     case ciso        // Wii/GC CISO (not PSP CSO — distinguished by block-size)
+    case wbfs        // Wii Backup File System container; the disc is a block map inside it
     case wiaOrRVZ    // handled by the same reader; `compression` field inside picks WIA vs RVZ
     case nkitGC
     case nkitWii
@@ -59,6 +60,15 @@ public enum DiscImageFormat: Equatable {
                     return .ciso
                 }
                 return .unknown  // PSP CSO or malformed
+            }
+            // A WBFS names its geometry right after the magic; a header
+            // whose sector shifts aren't ones libwbfs would write is
+            // something else that happens to start with the letters.
+            if head == WBFSFile.magic,
+               let shifts = binary.read(atAddress: 8, length: 2)?.rawBytes,
+               (9...16).contains(Int(shifts[0])), (15...26).contains(Int(shifts[1]))
+            {
+                return .wbfs
             }
             // WIA and RVZ share a reader but not a magic: Dolphin writes
             // "RVZ\x01" for the newer variant. Missing the RVZ spelling made
@@ -102,6 +112,7 @@ public enum DiscImageFormat: Equatable {
         case .gamecubeISO: return "GameCube ISO"
         case .wiiISO:      return "Wii ISO"
         case .ciso:        return "Compact ISO (CISO)"
+        case .wbfs:        return "WBFS"
         case .wiaOrRVZ:    return "WIA/RVZ"
         case .nkitGC:      return "NKit GameCube"
         case .nkitWii:     return "NKit Wii"
@@ -115,7 +126,7 @@ public enum DiscImageFormat: Equatable {
     public var requiresDecoding: Bool {
         switch self {
         case .gamecubeISO, .wiiISO, .unknown: return false
-        case .ciso, .wiaOrRVZ, .nkitGC, .nkitWii: return true
+        case .ciso, .wbfs, .wiaOrRVZ, .nkitGC, .nkitWii: return true
         }
     }
 }

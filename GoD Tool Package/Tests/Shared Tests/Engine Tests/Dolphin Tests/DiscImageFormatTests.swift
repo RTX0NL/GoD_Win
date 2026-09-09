@@ -59,6 +59,27 @@ final class DiscImageFormatTests: XCTestCase {
         XCTAssertEqual(DiscImageFormat.detect(in: b), .unknown)
     }
 
+    // MARK: - WBFS
+
+    func testDetect_wbfs() {
+        let b = zeroBuffer()
+        for (i, by) in WBFSFile.magic.enumerated() {
+            _ = b.write(by, atAddress: i)
+        }
+        _ = b.write(UInt8(9), atAddress: 8)    // 512-byte hd sectors
+        _ = b.write(UInt8(21), atAddress: 9)   // 2 MiB blocks
+        XCTAssertEqual(DiscImageFormat.detect(in: b), .wbfs)
+    }
+
+    func testDetect_wbfsMagicWithImpossibleGeometryIsUnknown() {
+        let b = zeroBuffer()
+        for (i, by) in WBFSFile.magic.enumerated() {
+            _ = b.write(by, atAddress: i)
+        }
+        // Shifts left at zero: not a geometry libwbfs writes.
+        XCTAssertEqual(DiscImageFormat.detect(in: b), .unknown)
+    }
+
     // MARK: - WIA / RVZ
 
     func testDetect_wiaOrRVZ() {
@@ -109,6 +130,7 @@ final class DiscImageFormatTests: XCTestCase {
         XCTAssertFalse(DiscImageFormat.gamecubeISO.requiresDecoding)
         XCTAssertFalse(DiscImageFormat.wiiISO.requiresDecoding)
         XCTAssertTrue(DiscImageFormat.ciso.requiresDecoding)
+        XCTAssertTrue(DiscImageFormat.wbfs.requiresDecoding)
         XCTAssertTrue(DiscImageFormat.wiaOrRVZ.requiresDecoding)
         XCTAssertTrue(DiscImageFormat.nkitGC.requiresDecoding)
         XCTAssertTrue(DiscImageFormat.nkitWii.requiresDecoding)

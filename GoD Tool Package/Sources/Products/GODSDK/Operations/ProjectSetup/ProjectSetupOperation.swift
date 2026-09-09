@@ -35,12 +35,14 @@ enum Project {
             throw ProjectSetupErrors.isoNotFound(isoInputFile, .init())
         }
 
-        // Pre-decode compressed disc image formats to a raw ISO before
-        // the rest of setup runs. This lets a user drop a `.ciso` /
-        // `.nkit.iso` / `.rvz` at the same entry point as a raw ISO.
+        // Pre-decode container and compressed disc image formats to a raw
+        // ISO before the rest of setup runs. This lets a user drop a `.ciso`
+        // / `.wbfs` / `.nkit.iso` at the same entry point as a raw ISO.
         let detected = DiscImageFormat.detect(in: rawInput)
-        // A raw image stays a readable and is never held; the converters
-        // decompress, so those two branches genuinely produce a buffer.
+        // A raw image stays a readable and is never held. CISO and NKit
+        // decode to a buffer; a WBFS stays a readable too — its disc is a
+        // block map over the container, and the view resolves reads
+        // through it, so nothing is unpacked up front.
         let isoData: GoDReadable
         switch detected {
         case .gamecubeISO, .wiiISO, .unknown:
@@ -57,12 +59,30 @@ enum Project {
                 throw ProjectSetupErrors.isoNotFound(isoInputFile, .init())
             }
             isoData = try NKitGCConverter.dump(nkit: whole)
-        case .nkitWii, .wiaOrRVZ:
-            // Format detected but the decoder isn't wired up yet. Fail
-            // loudly rather than trying to parse the compressed bytes
-            // as a raw disc image.
+        case .wbfs:
+            isoData = try WBFSFile(binary: rawInput).firstDiscImage()
+        case .nkitWii:
+            // The GameCube NKit decoder restores trailing junk; a Wii NKit
+            // also needs its partitions re-hashed and re-encrypted, which
+            // no code here does yet. Say exactly that rather than parse
+            // the shrunk bytes as a disc.
             throw ProjectSetupErrors.unsupportedInputFormat(
-                format: detected.description, file: isoInputFile, .init()
+                format: detected.description,
+                reason: "restoring a Wii NKit needs partition re-hashing and re-encryption on top of the "
+                    + "junk regeneration the GameCube decoder does, and that path doesn't exist yet. "
+                    + "Convert it to a plain .iso with NKit or wit first.",
+                file: isoInputFile, .init()
+            )
+        case .wiaOrRVZ:
+            // The header and group table parse; the payload is zstd /
+            // bzip2 / LZMA-compressed and there is no decompressor in the
+            // package for any of the three.
+            throw ProjectSetupErrors.unsupportedInputFormat(
+                format: detected.description,
+                reason: "its data is zstd/bzip2/LZMA-compressed and GoD-Tool has no decompressor for those "
+                    + "yet (the header and group table parse, the data does not). "
+                    + "Convert it to a plain .iso with Dolphin or wit first.",
+                file: isoInputFile, .init()
             )
         }
 
