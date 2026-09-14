@@ -44,6 +44,7 @@ Pokemon XD project/
 ├── Build/          # the unpacked disc + rebuilt output
 ├── Config/         # generated config files (see below)
 ├── Engines/        # exported engine definitions (constants, parameters, specifications)
+│   └── Version.txt # the GODDESS version that wrote the project
 ├── Scripts/        # Dump.sh / Build.sh one-line launchers
 └── Settings/       # Settings.json (logging, Wii common key path)
 ```
@@ -117,6 +118,7 @@ created next to the input, mirroring the disc-image layout:
 ├── Build/Save/     # mirror of the original .gci; rebuilds land here too
 ├── Config/         # Save-Dump-Config.json / Save-Build-Config.json
 ├── Engines/        # exported engine definitions
+│   └── Version.txt # the GODDESS version that wrote the project
 ├── Scripts/        # Save-Dump.sh / Save-Build.sh launchers
 └── Settings/       # Settings.json
 ```

@@ -36,13 +36,17 @@ public enum GODOps {
     /// Process one input file the way the CLI does, dispatching on its
     /// extension: disc images and GCIs create projects, `.fsys` unpacks in
     /// place, `.json` runs a config's enabled operations in order.
-    public static func process(inputFile: File, logger: Logger? = nil) throws {
+    ///
+    /// `toolVersion` is the calling executable's version. Project setup
+    /// stamps it into the project (`/Engines/Version.txt`) so a project can
+    /// say which version dumped it; the other paths don't use it.
+    public static func process(inputFile: File, toolVersion: String, logger: Logger? = nil) throws {
         guard let fileType = inputFile.fileType else { return }
         switch fileType {
         case "iso", "gcm", "ciso", "wbfs", "wia", "rvz":
-            try setupProject(discImage: inputFile)
+            try setupProject(discImage: inputFile, toolVersion: toolVersion)
         case "gci":
-            try setupSaveProject(gci: inputFile)
+            try setupSaveProject(gci: inputFile, toolVersion: toolVersion)
         case "fsys":
             try unpackFSYS(inputFile)
         case "json":
@@ -56,13 +60,15 @@ public enum GODOps {
 
     /// Set up an editing project from a GameCube/Wii disc image (raw or
     /// CISO/NKit; `.wia`/`.rvz` recognized but not yet decodable).
-    public static func setupProject(discImage: File) throws {
-        try Project.setup(iso: discImage)
+    /// `toolVersion` is stamped into the project's `/Engines/Version.txt`.
+    public static func setupProject(discImage: File, toolVersion: String) throws {
+        try Project.setup(iso: discImage, toolVersion: toolVersion)
     }
 
     /// Set up a save-editing project from a `.gci` memory-card save.
-    public static func setupSaveProject(gci: File) throws {
-        try Project.setup(gci: gci)
+    /// `toolVersion` is stamped into the project's `/Engines/Version.txt`.
+    public static func setupSaveProject(gci: File, toolVersion: String) throws {
+        try Project.setup(gci: gci, toolVersion: toolVersion)
     }
 
     /// Unpack a standalone `.fsys` archive next to the input file.

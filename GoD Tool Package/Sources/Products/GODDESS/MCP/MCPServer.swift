@@ -6,6 +6,11 @@
 //  MCP clients. Every tool is a thin dispatch into the shared `GODOps`
 //  facade, so the server drives the exact same code paths as the CLI.
 //
+//  The server also sends MCP "instructions" in its initialize result —
+//  server-wide guidance a client may place in the model's system prompt. It
+//  carries what no single tool description can: how a project relates to the
+//  GODDESS version that dumped it, and how to move one between versions.
+//
 //  Register with a client, e.g.:
 //    claude mcp add goddess -- /path/to/GODDESS mcp
 //
@@ -52,6 +57,36 @@ private func objectSchema(
         "required": .array(required.map { .string($0) }),
     ])
 }
+
+// MARK: - Server instructions
+
+/// Sent to the client in the initialize result (`InitializeResult.instructions`).
+/// The MCP spec describes it as a hint the client may add to the model's system
+/// prompt, so this is the one place an agent reads before it calls any tool.
+let goddessInstructions: String = """
+GODDESS edits GameCube and Wii ROMs by exporting a disc image into an editable \
+project folder (setup_project), letting you change the exported files, and \
+rebuilding a disc from them (run_config on the project's generated \
+Build-Config.json). This server is GODDESS \(Version.semanticVersion); the same \
+number is printed by `GODDESS --version`.
+
+A project is bound to the GODDESS version that dumped it. Its engine folders, \
+registries and manifests are written in that version's layout, and a different \
+version cannot be assumed to read them correctly. setup_project records the \
+version that wrote a project in its Engines/Version.txt; read that file before \
+working on a project you did not create in this session.
+
+To move a project to a different GODDESS version, never point the new version \
+at the old project. Instead:
+  1. With the version named in the project's Engines/Version.txt, run its \
+Build-Config.json so every edit is captured in a rebuilt disc image.
+  2. With the new version, call setup_project on that rebuilt disc image to \
+dump a fresh project.
+  3. Continue editing in the new project.
+
+Do not mix engine folders, registries or configs between projects dumped by \
+different GODDESS versions.
+"""
 
 // MARK: - Tool catalog
 
@@ -152,10 +187,10 @@ private func handleToolCall(_ params: CallTool.Parameters, logger: GoDFoundation
         }
         switch ext {
         case "iso", "gcm", "ciso", "wia", "rvz":
-            try GODOps.setupProject(discImage: file)
+            try GODOps.setupProject(discImage: file, toolVersion: Version.semanticVersion)
             return "Set up editing project from \(file.fileName)."
         case "gci":
-            try GODOps.setupSaveProject(gci: file)
+            try GODOps.setupSaveProject(gci: file, toolVersion: Version.semanticVersion)
             return "Set up save-editing project from \(file.fileName)."
         default:
             throw MCPToolError.badInput("setup_project expects a disc image or .gci; got .\(ext)")
@@ -204,7 +239,8 @@ func runMCPServer() async {
 
     let server = Server(
         name: "goddess",
-        version: GoDVersion.semanticVersion,
+        version: Version.semanticVersion,
+        instructions: goddessInstructions,
         capabilities: .init(logging: .init(), tools: .init(listChanged: false))
     )
 

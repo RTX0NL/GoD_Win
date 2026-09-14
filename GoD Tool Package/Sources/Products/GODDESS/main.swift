@@ -46,7 +46,7 @@ guard let first = arguments.first else {
 }
 
 if first == "--version" || first == "-v" || first == "version" {
-    print(GoDVersion.versionLine)
+    print(Version.versionLine)
     exit(EXIT_SUCCESS)
 } else if first == "mcp" {
     // Start the Model Context Protocol server on stdio and block until the
@@ -58,7 +58,7 @@ if first == "--version" || first == "-v" || first == "version" {
         // Skip the executable path itself if it slips into the argument list.
         guard inputFile.nativePath != Bundle.main.executablePath else { continue }
         do {
-            try GODOps.process(inputFile: inputFile)
+            try GODOps.process(inputFile: inputFile, toolVersion: Version.semanticVersion)
         } catch {
             FileHandle.standardError.write(Data("\(error)\n".utf8))
             failed = true

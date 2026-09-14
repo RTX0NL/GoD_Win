@@ -41,6 +41,10 @@ final class ProjectSetupTests: XCTestCase {
         return data
     }
 
+    /// The version every setup in this file claims to be, so the stamp test
+    /// can tell a passed-through value from anything the library might invent.
+    private let testToolVersion = "9.8.7"
+
     /// Runs setup for a game ID and returns the tree plus the project folder.
     private func runSetup(
         gameID: String,
@@ -50,7 +54,7 @@ final class ProjectSetupTests: XCTestCase {
         let fst = InMemoryFST()
         let input = File("/input/\(fileName)")
         try fst.writeFile(discImage(gameID: gameID, wii: wii), at: input, overwrite: true)
-        try Project.setup(iso: input, fileSystem: fst)
+        try Project.setup(iso: input, toolVersion: testToolVersion, fileSystem: fst)
         return (fst, Folder("/input/\(fileName.withoutExtensions) project"))
     }
 
@@ -311,6 +315,17 @@ final class ProjectSetupTests: XCTestCase {
 
     // MARK: - Generated launcher scripts
 
+    /// The stamp is how a later GODDESS (or an agent driving it) learns which
+    /// version dumped the project, so it has to be the caller's value verbatim
+    /// and sit at the top of `/Engines`, not inside any one engine's folder.
+    func testSetupStampsTheToolVersionAtTheTopOfEngines() throws {
+        let (fst, project) = try runSetup(gameID: PokemonXD.gameIDUS)
+        let stamp = project.folder("Engines").file(Project.versionStampFileName)
+        let contents = try XCTUnwrap(fst.readFile(at: stamp)?.allData)
+        XCTAssertEqual(contents.string(format: .utf8), testToolVersion + "\n")
+        XCTAssertEqual(Project.versionStampFileName, "Version.txt")
+    }
+
     func testLauncherScriptsAreWrittenForBothConfigs() throws {
         let (fst, project) = try runSetup(gameID: PokemonXD.gameIDUS)
         XCTAssertNotNil(fst.inspectFile(at: project.folder("Scripts").file("Dump.sh")))
@@ -347,7 +362,7 @@ final class ProjectSetupTests: XCTestCase {
 
     func testSetupThrowsWhenTheInputIsMissing() {
         let fst = InMemoryFST()
-        XCTAssertThrowsError(try Project.setup(iso: File("/nope/missing.iso"), fileSystem: fst))
+        XCTAssertThrowsError(try Project.setup(iso: File("/nope/missing.iso"), toolVersion: testToolVersion, fileSystem: fst))
     }
 
     /// A `.wia`/`.rvz` image is recognized but not decodable yet; setup must
@@ -364,7 +379,7 @@ final class ProjectSetupTests: XCTestCase {
             data.write(GoDData(byteStream: Array(magic.utf8), byteOrder: .big), atAddress: 0)
             try fst.writeFile(data, at: input, overwrite: true)
             XCTAssertThrowsError(
-                try Project.setup(iso: input, fileSystem: fst),
+                try Project.setup(iso: input, toolVersion: testToolVersion, fileSystem: fst),
                 "\(magic) should be recognized as an undecodable compressed image"
             )
         }

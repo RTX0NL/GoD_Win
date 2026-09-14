@@ -10,16 +10,18 @@ import XD
 import Pokemon
 
 enum Project {
-    static func setup(iso isoInputFile: File) throws {
+    /// `toolVersion` is the version of the tool running setup; it is stamped
+    /// into the project (see `writeVersionStamp`).
+    static func setup(iso isoInputFile: File, toolVersion: String) throws {
         // Streamed: setup reads a few headers out of the disc image and then
         // copies it, neither of which needs it resident.
-        try setup(iso: isoInputFile, fileSystem: StreamedFileSystem())
+        try setup(iso: isoInputFile, toolVersion: toolVersion, fileSystem: StreamedFileSystem())
     }
 
-    /// Testable seam: same as `setup(iso:)` but over any `FileSystemTree`,
-    /// so the generated project layout and config files can be asserted
-    /// against an `InMemoryFST` without touching disk.
-    static func setup(iso isoInputFile: File, fileSystem: FileSystemTree) throws {
+    /// Testable seam: same as `setup(iso:toolVersion:)` but over any
+    /// `FileSystemTree`, so the generated project layout and config files can
+    /// be asserted against an `InMemoryFST` without touching disk.
+    static func setup(iso isoInputFile: File, toolVersion: String, fileSystem: FileSystemTree) throws {
         let projectFileSystem = InMemoryFST()
 
         let buildFolder = Folder("/Build")
@@ -191,6 +193,7 @@ enum Project {
         try engines.forEach { engine in
             try engine.write(to: projectFileSystem, in: enginesFolder, overwrite: false)
         }
+        try writeVersionStamp(toolVersion, to: projectFileSystem, in: enginesFolder)
 
         // Engines carry region-neutral resource paths; which bytes land in
         // them depends on the disc's region, so the profile resolves that.

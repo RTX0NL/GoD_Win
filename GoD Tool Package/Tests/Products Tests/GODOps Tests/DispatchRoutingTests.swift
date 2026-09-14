@@ -905,7 +905,7 @@ final class DispatchRoutingTests: XCTestCase {
     // MARK: - process(inputFile:) extension dispatch
 
     func testProcessRejectsUnsupportedFileType() {
-        XCTAssertThrowsError(try GODOps.process(inputFile: File("/tmp/file.xyz"))) { error in
+        XCTAssertThrowsError(try GODOps.process(inputFile: File("/tmp/file.xyz"), toolVersion: "0.0.0")) { error in
             guard case GODOps.DispatchError.unsupportedFileType(let ext, _) = error else {
                 return XCTFail("Expected unsupportedFileType, got \(error)")
             }
@@ -915,7 +915,7 @@ final class DispatchRoutingTests: XCTestCase {
 
     func testProcessIgnoresFilesWithoutExtension() throws {
         // No file type → silently skipped, never dispatched.
-        try GODOps.process(inputFile: File("/tmp/no-extension"))
+        try GODOps.process(inputFile: File("/tmp/no-extension"), toolVersion: "0.0.0")
     }
 
     // MARK: - PBR fonts
