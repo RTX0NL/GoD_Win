@@ -39,6 +39,15 @@ public enum XDSaveCipher {
     /// Body checksum tag region — 4 × u32 stored as 8 × u16 BE inside
     /// `cipherRange`, in the disasm's quirky reversed order.
     public static let checksumRange: Range<Int> = 0x10..<0x20
+    /// Byte length of the tag region, wherever it sits.
+    public static let checksumLength: Int = checksumRange.count
+
+    /// The tag region for a given offset, or `nil` when the save format
+    /// has no checksum and none should be written.
+    public static func checksumRegion(at offset: Int?) -> Range<Int>? {
+        guard let offset else { return nil }
+        return offset..<(offset + checksumLength)
+    }
     /// Lane stride for the body checksum: 4 × `0x9FF4` halfword sums,
     /// each lane covering one quarter of `slot[0x08..0x27FD8)`.
     public static let checksumLaneSpan: Int = 0x9FF4
@@ -59,33 +68,48 @@ public enum XDSaveCipher {
     ///      reversed order.
     ///   4. Encrypt `slot[0x10..0x27FD8)` using the keys at
     ///      `slot[0x08..0x10]`.
-    public static func encrypt(slot: GoDData) throws {
+    public static func encrypt(slot: GoDData, checksumOffset: Int? = XDSaveSlot.checksumOffset) throws {
         var bytes = slot.rawBytes
         guard bytes.count >= slotSize else {
             throw XDSaveCipherError.slotTooShort(minimum: slotSize, actual: bytes.count)
         }
 
-        clearChecksumRegion(&bytes)
-        let sums = computeChecksum(&bytes)
-        writeChecksum(&bytes, sums: sums)
+        // A `nil` offset means this save format has no checksum, so the
+        // slot is encrypted as-is rather than having four sums written
+        // at a guessed position.
+        if let region = checksumRegion(at: checksumOffset) {
+            try validate(region: region, in: bytes)
+            clearChecksumRegion(&bytes, region)
+            let sums = computeChecksum(&bytes)
+            writeChecksum(&bytes, sums: sums, region)
+        }
         cipherLoop(&bytes, direction: .encrypt)
 
         slot.write(GoDData(byteStream: bytes, byteOrder: .big), atAddress: 0)
     }
 
     /// Decrypts in place and returns `true` iff the four recomputed
-    /// body sums match the saved tags. Pipeline matches
-    /// `XDCrypto.DecryptSlot` + the `IsChecksumValid` body-tag check.
+    /// body sums match the saved tags, or `nil` when the save format
+    /// declares no checksum and there was nothing to check. Pipeline
+    /// matches `XDCrypto.DecryptSlot` + the `IsChecksumValid` body-tag
+    /// check.
     @discardableResult
-    public static func decrypt(slot: GoDData) throws -> Bool {
+    public static func decrypt(slot: GoDData, checksumOffset: Int? = XDSaveSlot.checksumOffset) throws -> Bool? {
         var bytes = slot.rawBytes
         guard bytes.count >= slotSize else {
             throw XDSaveCipherError.slotTooShort(minimum: slotSize, actual: bytes.count)
         }
 
         cipherLoop(&bytes, direction: .decrypt)
-        let saved = readChecksum(bytes)
-        clearChecksumRegion(&bytes)
+        guard let region = checksumRegion(at: checksumOffset) else {
+            // No checksum in this format: hand back the plaintext and
+            // report "not checked" rather than a pass or a failure.
+            slot.write(GoDData(byteStream: bytes, byteOrder: .big), atAddress: 0)
+            return nil
+        }
+        try validate(region: region, in: bytes)
+        let saved = readChecksum(bytes, region)
+        clearChecksumRegion(&bytes, region)
         let recomputed = computeChecksum(&bytes)
 
         slot.write(GoDData(byteStream: bytes, byteOrder: .big), atAddress: 0)
@@ -189,8 +213,25 @@ public enum XDSaveCipher {
     /// Clears `slot[0x10..0x20]` so the checksum loop doesn't include
     /// stale tag bytes — matches `XDCrypto.SetChecksums` line
     /// `data[0x10..0x20].Clear()`.
-    private static func clearChecksumRegion(_ bytes: inout [UInt8]) {
-        for i in checksumRange { bytes[i] = 0 }
+    private static func clearChecksumRegion(_ bytes: inout [UInt8], _ region: Range<Int>) {
+        for i in region { bytes[i] = 0 }
+    }
+
+    /// A relocated tag region still has to sit inside the slot and
+    /// inside the encrypted range, or the checksum would be written
+    /// somewhere the game never reads back.
+    private static func validate(region: Range<Int>, in bytes: [UInt8]) throws {
+        guard region.lowerBound >= 0, region.upperBound <= bytes.count else {
+            throw XDSaveCipherError.checksumRegionOutOfBounds(
+                offset: region.lowerBound, length: region.count, slotLength: bytes.count
+            )
+        }
+        guard cipherRange.contains(region.lowerBound),
+              region.upperBound <= cipherRange.upperBound else {
+            throw XDSaveCipherError.checksumRegionOutsideCipherRange(
+                offset: region.lowerBound, length: region.count
+            )
+        }
     }
 
     /// Writes the 4 × u32 sums into `slot[0x10..0x20]` using PKHeX's
@@ -198,7 +239,7 @@ public enum XDSaveCipher {
     /// `[hi, lo]` pairs, but the lanes themselves are written in
     /// reverse order — so lane 3 lands at `slot[0x10..0x14]`, lane 0
     /// at `slot[0x1C..0x20]`.
-    private static func writeChecksum(_ bytes: inout [UInt8], sums: [UInt32]) {
+    private static func writeChecksum(_ bytes: inout [UInt8], sums: [UInt32], _ region: Range<Int>) {
         // Build the 8-halfword vector in PKHeX's order:
         //   newchks = [hi0, lo0, hi1, lo1, hi2, lo2, hi3, lo3]
         // Then write reversed: dest[i] ← newchks[7 - i].
@@ -208,7 +249,7 @@ public enum XDSaveCipher {
             newchks[i * 2 + 1] = UInt16(sums[i] & 0xFFFF)
         }
         for i in 0..<8 {
-            let dest = checksumRange.lowerBound + i * 2
+            let dest = region.lowerBound + i * 2
             let v = newchks[7 - i]
             bytes[dest]     = UInt8((v >> 8) & 0xFF)
             bytes[dest + 1] = UInt8(v & 0xFF)
@@ -216,10 +257,10 @@ public enum XDSaveCipher {
     }
 
     /// Inverse of `writeChecksum`.
-    private static func readChecksum(_ bytes: [UInt8]) -> [UInt32] {
+    private static func readChecksum(_ bytes: [UInt8], _ region: Range<Int>) -> [UInt32] {
         var newchks = [UInt16](repeating: 0, count: 8)
         for i in 0..<8 {
-            let src = checksumRange.lowerBound + i * 2
+            let src = region.lowerBound + i * 2
             newchks[7 - i] = (UInt16(bytes[src]) << 8) | UInt16(bytes[src + 1])
         }
         var sums: [UInt32] = [0, 0, 0, 0]
@@ -234,11 +275,26 @@ public enum XDSaveCipher {
 
 public enum XDSaveCipherError: Error, CustomStringConvertible {
     case slotTooShort(minimum: Int, actual: Int)
+    case checksumRegionOutOfBounds(offset: Int, length: Int, slotLength: Int)
+    case checksumRegionOutsideCipherRange(offset: Int, length: Int)
 
     public var description: String {
         switch self {
         case let .slotTooShort(minimum, actual):
             return "XDSaveCipher: slot is \(actual) bytes, shorter than the required \(minimum) (0x28000) cipher range"
+        case let .checksumRegionOutOfBounds(offset, length, slotLength):
+            return """
+                XDSaveCipher: the engine puts the checksum at \(String(format: "%#x", offset)) \
+                (\(length) bytes), past the end of a \(slotLength)-byte slot
+                """
+        case let .checksumRegionOutsideCipherRange(offset, length):
+            return """
+                XDSaveCipher: the engine puts the checksum at \(String(format: "%#x", offset)) \
+                (\(length) bytes), outside the encrypted range \
+                \(String(format: "%#x", XDSaveCipher.cipherRange.lowerBound))..<\(String(format: "%#x", XDSaveCipher.cipherRange.upperBound)). \
+                The game reads its tags from inside the cipher region, so a tag \
+                written outside it would never be checked.
+                """
         }
     }
 }

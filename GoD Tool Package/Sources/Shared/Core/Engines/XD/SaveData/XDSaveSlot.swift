@@ -64,6 +64,8 @@ public struct XDSaveSlot: Equatable {
     public static let offsetTableOffset: Int = 0x40
     /// Base address sub-block offsets are computed relative to.
     public static let subBlockBaseOffset: Int = 0xA8
+    /// Retail position of the body-checksum tag region.
+    public static let checksumOffset: Int = 0x10
 
     /// Configurable slot-format parameters. Defaults (`.stock`) match
     /// the retail XD save format (16 sub-blocks, size table at 0x20,
@@ -81,23 +83,39 @@ public struct XDSaveSlot: Equatable {
         public var sizeTableOffset: Int = XDSaveSlot.sizeTableOffset
         public var offsetTableOffset: Int = XDSaveSlot.offsetTableOffset
         public var subBlockBaseOffset: Int = XDSaveSlot.subBlockBaseOffset
+        /// Where the body-checksum tags live, or `nil` for a save format
+        /// that has none.
+        ///
+        /// **`nil` means don't compute a checksum at all** — not "use the
+        /// default". A format with no tags, or one whose tags we haven't
+        /// located, must not have four sums written at a guessed offset;
+        /// that would corrupt whatever actually lives there. The stock
+        /// engine carries the retail `0x10` explicitly, so ordinary saves
+        /// are checksummed as always and only a deliberate `null` turns
+        /// it off.
+        public var checksumOffset: Int?
 
         public init(
             subBlockCount: Int = XDSaveSlot.subBlockCount,
             sizeTableOffset: Int = XDSaveSlot.sizeTableOffset,
             offsetTableOffset: Int = XDSaveSlot.offsetTableOffset,
-            subBlockBaseOffset: Int = XDSaveSlot.subBlockBaseOffset
+            subBlockBaseOffset: Int = XDSaveSlot.subBlockBaseOffset,
+            checksumOffset: Int? = XDSaveSlot.checksumOffset
         ) {
             self.subBlockCount = subBlockCount
             self.sizeTableOffset = sizeTableOffset
             self.offsetTableOffset = offsetTableOffset
             self.subBlockBaseOffset = subBlockBaseOffset
+            self.checksumOffset = checksumOffset
         }
 
-        /// Only the TOC table offsets are persisted; `subBlockCount` is
-        /// derived from `saveSections.count` at runtime.
+        /// Only the TOC table offsets and the checksum offset are
+        /// persisted; `subBlockCount` is derived from
+        /// `saveSections.count` at runtime. A `checksumOffset` of `nil`
+        /// serializes as an absent key and reads back as `nil`, so the
+        /// "this format has no checksum" opt-out survives a round trip.
         private enum CodingKeys: String, CodingKey {
-            case sizeTableOffset, offsetTableOffset, subBlockBaseOffset
+            case sizeTableOffset, offsetTableOffset, subBlockBaseOffset, checksumOffset
         }
 
         /// Returns a copy with the sub-block count set (from the section list).

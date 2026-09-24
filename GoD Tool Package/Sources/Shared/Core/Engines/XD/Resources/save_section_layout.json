@@ -1,0 +1,46 @@
+{
+  "sections": {
+    "Flags": {
+      "chunks": [
+        {
+          "flags": {
+            "name": "flags",
+            "offset": 0,
+            "banks": [
+              {
+                "name": "FlagLevel0",
+                "length": 32
+              },
+              {
+                "name": "FlagLevel1",
+                "length": 128
+              },
+              {
+                "name": "FlagLevel2",
+                "length": 1536
+              }
+            ]
+          }
+        },
+        {
+          "struct": {
+            "name": "tail",
+            "offset": 1696,
+            "type": "XDSaveFlagsTail"
+          }
+        }
+      ]
+    },
+    "CurrentMapState": {
+      "chunks": [
+        {
+          "struct": {
+            "name": "header",
+            "offset": 0,
+            "type": "XDAnywaySaveHeader"
+          }
+        }
+      ]
+    }
+  }
+}

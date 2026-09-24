@@ -144,6 +144,27 @@ public extension ColosseumStructDefaults {
     ///   - `originalRegion`  @ +0x02 (u8)
     ///   - `gcLanguage`      @ +0x03 (u8) — we name it `langAreaId`
     ///   - `playTimeSeconds` @ +0x20 (f32 BE — TimeSpan from seconds)
+    /// The 8-byte slot header that precedes the sections.
+    ///
+    /// Small, but real save data, so it is dumped as named fields rather
+    /// than as a blob — same treatment as XD's 0xA8 header.
+    ///
+    /// Measured on 8 real saves: `magic` is `01 01 00 00` on every one,
+    /// the same family as XD's `01 01 01 00` rather than the gamecode it
+    /// might look like it should be. `counter` is a small save counter
+    /// (2…77 in the corpus), the value the slot summary reports and what
+    /// picks the latest slot.
+    static let saveSlotHeaderStruct = StructMap(
+        name: "ColoSaveSlotHeader",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .array(name: "magic", count: 3, of: .uint8),   // +0x00 `01 01 00` on every real save
+            .uint8(name: "reserved"),                      // +0x03 `0` on every real save
+            .uint32(name: "counter"),                      // +0x04 save counter
+        ]
+    )
+
     static let saveConfigStruct = StructMap(
         name: "ColoSaveConfig",
         wordSize: 1,

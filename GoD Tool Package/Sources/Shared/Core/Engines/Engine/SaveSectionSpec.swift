@@ -86,4 +86,5 @@ public struct SaveSectionSpec: Codable, Equatable {
     public static func table(name: String, count: Int? = nil) -> SaveSectionSpec {
         SaveSectionSpec(name: name, type: .table, count: count)
     }
+
 }

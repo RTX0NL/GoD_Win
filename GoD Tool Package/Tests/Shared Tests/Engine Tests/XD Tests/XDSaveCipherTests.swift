@@ -56,7 +56,7 @@ final class XDSaveCipherTests: XCTestCase {
                           "encrypt produced no change")
 
         let ok = try XDSaveCipher.decrypt(slot: working)
-        XCTAssertTrue(ok, "decrypt running-sum tags did not match")
+        XCTAssertEqual(ok, true, "decrypt running-sum tags did not match")
 
         // The cipher only touches slot[0x08..0x27FD0); the tail bytes
         // [0x27FD0..0x28000) are not in the loop's range, so the
@@ -119,7 +119,7 @@ final class XDSaveCipherTests: XCTestCase {
         let corruptedSlot = GoDData(byteStream: corrupted, byteOrder: .big)
 
         let ok = try XDSaveCipher.decrypt(slot: corruptedSlot)
-        XCTAssertFalse(ok,
+        XCTAssertEqual(ok, false,
                        "single-byte corruption should fail the running-sum tag check")
     }
 
@@ -130,6 +130,73 @@ final class XDSaveCipherTests: XCTestCase {
         try XDSaveCipher.encrypt(slot: a)
         try XDSaveCipher.encrypt(slot: b)
         XCTAssertEqual(a.rawBytes, b.rawBytes)
+    }
+
+    // MARK: - Relocatable checksum region
+
+    /// The checksum offset is engine data so a modified save format can
+    /// move the tag region. Encrypting at a relocated offset must write
+    /// the tags there and leave the retail position alone.
+    func testChecksumCanBeWrittenAtARelocatedOffset() throws {
+        let relocated = 0x40
+        let slot = makePlaintextSlot()
+        let stock = GoDData(byteStream: slot.rawBytes, byteOrder: .big)
+
+        try XDSaveCipher.encrypt(slot: slot, checksumOffset: relocated)
+        try XDSaveCipher.encrypt(slot: stock)
+
+        // The two differ — the tags went to different places.
+        XCTAssertNotEqual(slot.rawBytes, stock.rawBytes)
+
+        // And the relocated slot decrypts and validates only when the
+        // same offset is supplied.
+        let good = GoDData(byteStream: slot.rawBytes, byteOrder: .big)
+        XCTAssertEqual(try XDSaveCipher.decrypt(slot: good, checksumOffset: relocated), true)
+
+        let wrong = GoDData(byteStream: slot.rawBytes, byteOrder: .big)
+        XCTAssertEqual(
+            try XDSaveCipher.decrypt(slot: wrong), false,
+            "reading the tags from the retail offset must not validate a relocated save"
+        )
+    }
+
+    /// `nil` means this format has no checksum, so none is written —
+    /// not "fall back to the retail offset". Writing four sums at a
+    /// guessed position would corrupt whatever actually lives there.
+    func testNilChecksumOffsetWritesNoChecksum() throws {
+        let tagged = makePlaintextSlot()
+        let untagged = makePlaintextSlot()
+        try XDSaveCipher.encrypt(slot: tagged)
+        try XDSaveCipher.encrypt(slot: untagged, checksumOffset: nil)
+        XCTAssertNotEqual(
+            tagged.rawBytes, untagged.rawBytes,
+            "a nil offset must skip the checksum, not reuse the retail one"
+        )
+
+        // The plaintext tag region is left exactly as it was found.
+        let plain = makePlaintextSlot()
+        let expected = Array(plain.rawBytes[XDSaveCipher.checksumRange])
+        let roundTripped = GoDData(byteStream: untagged.rawBytes, byteOrder: .big)
+        XCTAssertNil(
+            try XDSaveCipher.decrypt(slot: roundTripped, checksumOffset: nil),
+            "with no checksum there is nothing to validate"
+        )
+        XCTAssertEqual(Array(roundTripped.rawBytes[XDSaveCipher.checksumRange]), expected)
+    }
+
+    /// The stock layout carries the retail offset explicitly, so an
+    /// ordinary save is checksummed exactly as before.
+    func testStockLayoutUsesTheRetailChecksumOffset() throws {
+        XCTAssertEqual(XDSaveSlot.Layout.stock.checksumOffset, XDSaveSlot.checksumOffset)
+        XCTAssertEqual(XDSaveSlot.checksumOffset, XDSaveCipher.checksumRange.lowerBound)
+
+        let implicit = makePlaintextSlot()
+        let explicitOffset = makePlaintextSlot()
+        try XDSaveCipher.encrypt(slot: implicit)
+        try XDSaveCipher.encrypt(
+            slot: explicitOffset, checksumOffset: XDSaveSlot.Layout.stock.checksumOffset
+        )
+        XCTAssertEqual(implicit.rawBytes, explicitOffset.rawBytes)
     }
 
     func testChecksumLanesPartitionCoverage() {

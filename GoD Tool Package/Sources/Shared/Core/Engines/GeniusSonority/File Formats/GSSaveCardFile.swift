@@ -1,63 +1,67 @@
 //
 //  GSSaveCardFile.swift
 //
-//  Splits the body of a Pokémon **XD** `.gci` save into five fixed-size
+//  Splits the body of a Pokémon **XD** `.gci` save into its three
 //  regions:
 //
-//      0x00000  banner   — 0x2000  CARD banner / icon images + comments
-//      0x02000  header0  — 0x2000  slot-header records + flag/state area
-//      0x04000  header1  — 0x2000  spare / GBA-exchange bookkeeping
+//      0x00000  metadata — 0x6000  card comments, banner, icon frames,
+//                                  a checksum over all of it, then zero
 //      0x06000  slotA    — 0x28000 encrypted serialized SystemSaveData
 //      0x2E000  slotB    — 0x28000 encrypted serialized SystemSaveData
 //
 //  Total body size: 0x56000.
 //
-//  > **Note (2026-04 correction):** an earlier version of this file
-//  > claimed Colosseum used the same 0x56000 / 2-slot shape. Cross-
-//  > checking against PKHeX's `ColoCrypto.cs` confirms Colosseum's
-//  > save is actually 0x60000 bytes with **three** 0x1E000-byte slots
-//  > and a flat 0x6000 preamble (no banner / hdr0 / hdr1 split).
-//  > Colo splitting now lives in `Colosseum/SaveData/ColoSaveCardFile.swift`.
-//  > This type is XD-only; it stays in the GeniusSonority module
-//  > because PBR-on-Wii uses a similar (but not identical) GCI shape
-//  > and may share constants here in the future.
+//  > **Correction (2026-09).** This type used to cut the first 0x6000
+//  > into a 0x2000 "banner" and two 0x2000 "header sectors". Measured on
+//  > all 72 real XD and Colosseum saves, that is not the shape: the
+//  > banner ends at 0x1840, icon frames and the shared palette run to
+//  > 0x3A40, a checksum word follows, and everything to 0x6000 is zero.
+//  > The old split cut the first icon in half and both "header sectors"
+//  > held nothing. What the whole region *is* now derives from the save's
+//  > own directory entry — see `CardImageBlock` — so this type keeps only
+//  > the part that can't be derived: where the game's slots start.
+//
+//  > **Note (2026-04 correction):** an earlier version claimed Colosseum
+//  > used the same 0x56000 / 2-slot shape. Colosseum's save is 0x60000
+//  > with **three** 0x1E000 slots; that split lives in
+//  > `Colosseum/SaveData/ColoSaveCardFile.swift`.
+//
+//  The authoritative region list is declared as engine data — see
+//  `GeniusSonorityEngine.Data.galeOfDarknessSaveCard` — which is what the
+//  GCI operations split on. This type remains for callers that want the
+//  slots directly without going through a layout.
 //
 
 import Foundation
 import GoDFoundation
 
 public struct GSSaveCardFile: Equatable {
-    public static let bannerOffset: Int = 0x00000
-    public static let header0Offset: Int = 0x02000
-    public static let header1Offset: Int = 0x04000
+    public static let metadataOffset: Int = 0x00000
     public static let slotAOffset: Int  = 0x06000
     public static let slotBOffset: Int  = 0x2E000
 
-    public static let bannerSize: Int  = 0x02000
-    public static let header0Size: Int = 0x02000
-    public static let header1Size: Int = 0x02000
-    public static let slotSize: Int    = 0x28000
+    public static let metadataSize: Int = 0x06000
+    public static let slotSize: Int     = 0x28000
 
     public static let bodySize: Int = slotBOffset + slotSize  // 0x56000
+    public static let slotCount: Int = 2
 
-    public var banner: GoDData
-    public var header0: GoDData
-    public var header1: GoDData
+    /// Comments, banner, icon frames, the metadata checksum and the zero
+    /// fill up to the first slot. Its interior is described by the save's
+    /// directory entry, not by this type.
+    public var metadata: GoDData
     public var slotA: GoDData
     public var slotB: GoDData
 
-    public init(banner: GoDData, header0: GoDData, header1: GoDData, slotA: GoDData, slotB: GoDData) {
-        self.banner = banner
-        self.header0 = header0
-        self.header1 = header1
+    public init(metadata: GoDData, slotA: GoDData, slotB: GoDData) {
+        self.metadata = metadata
         self.slotA = slotA
         self.slotB = slotB
     }
 
-    /// Splits a 0x56000-byte body into the five named regions. Throws if
-    /// the body length doesn't match the expected total — callers should
-    /// have already validated that the GCI body matches `blockCount *
-    /// 0x2000`.
+    /// Splits a 0x56000-byte body into its three regions. Throws if the
+    /// body length doesn't match — callers should have already validated
+    /// that it matches `blockCount * 0x2000`.
     public init(body: GoDData) throws {
         guard body.length == GSSaveCardFile.bodySize else {
             throw GSSaveCardFileError.invalidBodySize(
@@ -66,17 +70,9 @@ public struct GSSaveCardFile: Equatable {
             )
         }
         guard
-            let banner = body.read(
-                atAddress: UInt(GSSaveCardFile.bannerOffset),
-                length: UInt(GSSaveCardFile.bannerSize)
-            ),
-            let header0 = body.read(
-                atAddress: UInt(GSSaveCardFile.header0Offset),
-                length: UInt(GSSaveCardFile.header0Size)
-            ),
-            let header1 = body.read(
-                atAddress: UInt(GSSaveCardFile.header1Offset),
-                length: UInt(GSSaveCardFile.header1Size)
+            let metadata = body.read(
+                atAddress: UInt(GSSaveCardFile.metadataOffset),
+                length: UInt(GSSaveCardFile.metadataSize)
             ),
             let slotA = body.read(
                 atAddress: UInt(GSSaveCardFile.slotAOffset),
@@ -89,22 +85,21 @@ public struct GSSaveCardFile: Equatable {
         else {
             throw GSSaveCardFileError.readFailed
         }
-        self.init(banner: banner, header0: header0, header1: header1, slotA: slotA, slotB: slotB)
+        self.init(metadata: metadata, slotA: slotA, slotB: slotB)
     }
 
-    /// Concatenates the five regions back into a single 0x56000-byte
-    /// body. Throws if any region is the wrong length.
+    /// The slots in index order, so a caller can pick one by number.
+    public var slots: [GoDData] { [slotA, slotB] }
+
+    /// Concatenates the regions back into a single 0x56000-byte body.
+    /// Throws if any region is the wrong length.
     public func assembledBody() throws -> GoDData {
-        try Self.requireSize(banner, GSSaveCardFile.bannerSize, named: "banner")
-        try Self.requireSize(header0, GSSaveCardFile.header0Size, named: "header0")
-        try Self.requireSize(header1, GSSaveCardFile.header1Size, named: "header1")
+        try Self.requireSize(metadata, GSSaveCardFile.metadataSize, named: "metadata")
         try Self.requireSize(slotA, GSSaveCardFile.slotSize, named: "slotA")
         try Self.requireSize(slotB, GSSaveCardFile.slotSize, named: "slotB")
 
         let combined = GoDData(byteOrder: .big)
-        combined.append(banner)
-        combined.append(header0)
-        combined.append(header1)
+        combined.append(metadata)
         combined.append(slotA)
         combined.append(slotB)
         return combined
@@ -129,11 +124,11 @@ public enum GSSaveCardFileError: Error, CustomStringConvertible {
     public var description: String {
         switch self {
         case let .invalidBodySize(expected, actual):
-            return "GSSaveCardFile: body size \(actual) does not match expected \(expected) (0x56000)"
+            return "XD save card body should be \(expected) bytes but is \(actual)"
         case let .invalidRegionSize(region, expected, actual):
-            return "GSSaveCardFile: region '\(region)' size \(actual) does not match expected \(expected)"
+            return "XD save card region '\(region)' should be \(expected) bytes but is \(actual)"
         case .readFailed:
-            return "GSSaveCardFile: failed to read region from body"
+            return "Failed to read an XD save card region"
         }
     }
 }

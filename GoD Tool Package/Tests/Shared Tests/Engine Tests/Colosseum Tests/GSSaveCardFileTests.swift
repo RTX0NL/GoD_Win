@@ -9,14 +9,8 @@ final class GSSaveCardFileTests: XCTestCase {
     /// landed at the right offset.
     private func makeMarkedBody() -> GoDData {
         var bytes = [UInt8](repeating: 0, count: GSSaveCardFile.bodySize)
-        for i in 0..<GSSaveCardFile.bannerSize {
-            bytes[GSSaveCardFile.bannerOffset + i] = 0xAA
-        }
-        for i in 0..<GSSaveCardFile.header0Size {
-            bytes[GSSaveCardFile.header0Offset + i] = 0xBB
-        }
-        for i in 0..<GSSaveCardFile.header1Size {
-            bytes[GSSaveCardFile.header1Offset + i] = 0xCC
+        for i in 0..<GSSaveCardFile.metadataSize {
+            bytes[GSSaveCardFile.metadataOffset + i] = 0xAA
         }
         for i in 0..<GSSaveCardFile.slotSize {
             bytes[GSSaveCardFile.slotAOffset + i] = 0xDD
@@ -27,21 +21,21 @@ final class GSSaveCardFileTests: XCTestCase {
         return GoDData(byteStream: bytes, byteOrder: .big)
     }
 
-    func testSplitLandsRegionsAtCorrectOffsets() throws {
-        let body = makeMarkedBody()
-        let card = try GSSaveCardFile(body: body)
-        XCTAssertEqual(card.banner.length, GSSaveCardFile.bannerSize)
-        XCTAssertEqual(card.header0.length, GSSaveCardFile.header0Size)
-        XCTAssertEqual(card.header1.length, GSSaveCardFile.header1Size)
+    /// The body splits into the metadata region and the two slots. The
+    /// metadata region is one run, not the banner / header0 / header1
+    /// trio an earlier version claimed: measured on every real save, the
+    /// banner ends a quarter of the way into what was called `header0`.
+    func testSplitsBodyIntoMetadataAndSlots() throws {
+        let card = try GSSaveCardFile(body: makeMarkedBody())
+        XCTAssertEqual(card.metadata.length, GSSaveCardFile.metadataSize)
         XCTAssertEqual(card.slotA.length, GSSaveCardFile.slotSize)
         XCTAssertEqual(card.slotB.length, GSSaveCardFile.slotSize)
 
-        XCTAssertEqual(card.banner.rawBytes.first, 0xAA)
-        XCTAssertEqual(card.banner.rawBytes.last, 0xAA)
-        XCTAssertEqual(card.header0.rawBytes.first, 0xBB)
-        XCTAssertEqual(card.header1.rawBytes.first, 0xCC)
+        XCTAssertEqual(card.metadata.rawBytes.first, 0xAA)
+        XCTAssertEqual(card.metadata.rawBytes.last, 0xAA)
         XCTAssertEqual(card.slotA.rawBytes.first, 0xDD)
         XCTAssertEqual(card.slotB.rawBytes.first, 0xEE)
+        XCTAssertEqual(card.slots.count, GSSaveCardFile.slotCount)
     }
 
     func testRoundTripBytes() throws {
@@ -65,9 +59,22 @@ final class GSSaveCardFileTests: XCTestCase {
     }
 
     func testRejectsWrongRegionSize() throws {
-        let body = makeMarkedBody()
-        var card = try GSSaveCardFile(body: body)
-        card.banner = GoDData(length: GSSaveCardFile.bannerSize - 1, byteOrder: .big)
+        var card = try GSSaveCardFile(body: makeMarkedBody())
+        card.metadata = GoDData(length: GSSaveCardFile.metadataSize - 1, byteOrder: .big)
         XCTAssertThrowsError(try card.assembledBody())
+    }
+
+    /// The declared region list and this type have to agree, since the
+    /// GCI operations split on the declaration while other callers use
+    /// the type directly.
+    func testDeclaredRegionsMatchTheSplit() throws {
+        let declaration = try XCTUnwrap(
+            GeniusSonorityEngine.defaultEngine(for: .galeOfDarkness).data.saveCard
+        )
+        XCTAssertEqual(declaration.bodyLength, GSSaveCardFile.bodySize)
+        XCTAssertEqual(declaration.regions.map(\.name), ["metadata", "slot-a", "slot-b"])
+        XCTAssertEqual(declaration.regions[0].length, GSSaveCardFile.metadataSize)
+        XCTAssertEqual(declaration.regions[1].offset, GSSaveCardFile.slotAOffset)
+        XCTAssertEqual(declaration.regions[2].offset, GSSaveCardFile.slotBOffset)
     }
 }

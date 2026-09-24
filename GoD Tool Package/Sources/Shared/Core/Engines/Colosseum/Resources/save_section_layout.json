@@ -1,0 +1,30 @@
+{
+  "sections": {
+    "Tail": {
+      "chunks": [
+        {
+          "flags": {
+            "name": "flags",
+            "banks": [
+              {
+                "name": "FlagLevel0",
+                "length": 32,
+                "field": "flagLevel0"
+              },
+              {
+                "name": "FlagLevel1",
+                "length": 128,
+                "field": "flagLevel1"
+              },
+              {
+                "name": "FlagLevel2",
+                "length": 1536,
+                "field": "flagLevel2"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -124,6 +124,45 @@ public extension XDStructDefaults {
     /// played" field — the runtime picks one based on the `Japanese`
     /// flag, but on-disk both slots exist. Editing one changes only
     /// the play-time recorded for that region.
+    /// The 0xA8 slot header that precedes the sub-blocks.
+    ///
+    /// Everything the game needs to find a sub-block lives here, so it is
+    /// real save data and is dumped as editable JSON rather than a blob.
+    /// Layout measured across 24 real saves spanning all three regions
+    /// (`scripts/analysis/scan_gci.py` plus a direct byte comparison):
+    ///
+    /// | Offset | Field | Observed |
+    /// |---|---|---|
+    /// | `0x00` | `magic` | `01 01 01` on 23 of 24; one save has `01 01 00` |
+    /// | `0x03` | `reserved` | `0` on every save |
+    /// | `0x04` | `saveCounter` | small `u32`, 1…279 in the corpus |
+    /// | `0x08` | `cipherKey` | the plaintext key seed, fresh per save |
+    /// | `0x10` | `checksumTags` | zero in a decrypted slot — the cipher clears it before recomputing, and `XDSaveCipher` rewrites it on encrypt |
+    /// | `0x20` | `subBlockSizes` | 16 × `u16`; region-dependent (JP's Config is 0x80 vs 0x88, PCBox 0xBC0C vs 0xBC50) |
+    /// | `0x40` | `subBlockOffsets` | 16 × two `u16`, **low half first**, relative to 0xA8 |
+    /// | `0x80` | `reservedConstant` | `00 20 00 80 06 00 00 08 00 00 00 08` on all 24, JP included |
+    /// | `0x8C` | `unidentified` | high-entropy and different on every save; halfwords repeat at +16 offset by the cipher's own sbox biases, so it reads as leftover cipher state rather than save data |
+    ///
+    /// The offset table is the game's own placement of each sub-block and
+    /// has to stay consistent with it — XD relocates sub-blocks on every
+    /// save, so these are not constants.
+    static let saveSlotHeaderStruct = StructMap(
+        name: "XDSaveSlotHeader",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .array(name: "magic", count: 3, of: .uint8),                 // +0x00
+            .uint8(name: "reserved"),                                    // +0x03
+            .uint32(name: "saveCounter"),                                // +0x04
+            .array(name: "cipherKey", count: 4, of: .uint16),            // +0x08 plaintext key seed
+            .array(name: "checksumTags", count: 8, of: .uint16),         // +0x10 rewritten on encrypt
+            .array(name: "subBlockSizes", count: 16, of: .uint16),       // +0x20
+            .array(name: "subBlockOffsets", count: 32, of: .uint16),     // +0x40 pairs: low half, high half
+            .array(name: "reservedConstant", count: 12, of: .uint8),     // +0x80 constant on every save measured
+            .array(name: "unidentified", count: 28, of: .uint8),         // +0x8C leftover cipher state
+        ]
+    )
+
     static let saveConfigStruct = StructMap(
         name: "XDSaveConfig",
         wordSize: 1,
@@ -265,6 +304,218 @@ public extension XDStructDefaults {
         ]
     )
 
+    // MARK: - Section 3: Mailbox
+
+    /// XD save section 3 — the **Mailbox** (0x4A). Identified from
+    /// `savedataBiosGetMailboxPtr` / status index 0xA and the `mail`
+    /// module's own accessors; `mailInitMailbox` memsets exactly 0x4A
+    /// bytes and seeds all 32 id slots with 0x00FF, which is what an
+    /// empty slot reads as (not 0xFFFF — the game does `li r0, 0xFF`
+    /// then `sth`). See `Documentation/Assembly Analysis/Data
+    /// Structures/Mailbox.md`.
+    ///
+    /// Mail *contents* are not here: an entry is an id into the game's
+    /// static mail table, and the mail attached to a Pokémon lives on
+    /// the Pokémon (`XDPokemon.mailId`).
+    static let saveMailboxStruct = StructMap(
+        name: "XDSaveMailbox",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            // +0x00..0x40 — the received-mail ids, in arrival order.
+            // `mailAddMailbox` writes at `base + count * 2`, so slots at
+            // and past `count` stay 0x00FF. Verified on every real save.
+            .array(name: "mailIDs", count: 32, of: .uint16),
+            .uint16(name: "count"),                          // +0x40 mailGetNbMailInMailbox
+            // +0x42..0x46 — one bit per mail id, MSB-first within each
+            // byte (`1 << (7 - (id & 7))` at `+0x42 + (id >> 3)`).
+            // `mailAddMailbox` *clears* the bit for the id it stores.
+            .array(name: "mailSeenBits", count: 4, of: .uint8),
+            .uint8(name: "sortMode"),                        // +0x46 mailGetSortMode
+            .array(name: "unknown1", count: 1, of: .uint8),  // +0x47 alignment before sendCount
+            .uint16(name: "sendCount"),                      // +0x48 mailGetSendCnt
+        ]
+    )
+
+    // MARK: - Section 8: Flags
+
+    /// XD save section 8 — the **flag banks** (0x6B4). Not one blob:
+    /// `_memcardStoreSaveData_multi` writes five separate regions back to
+    /// back whenever the section is the expected 0x6B4, with the piece
+    /// sizes in the slot header at +0x80/+0x82/+0x84/+0x86/+0x8A (0x20,
+    /// 0x80, 0x600, 0x8, 0x8 on every real save of every region).
+    ///
+    /// The banks stay byte arrays here: decoding individual flags needs
+    /// `common.rel`'s `GeneralFlags` descriptor table (2324 × 6 bytes),
+    /// which a save project doesn't carry. What this buys is the
+    /// boundaries — editing the wrong bank is the easy mistake. Each
+    /// bank's size is exactly what `GSflagInit` declares to the flag
+    /// system: 8, 0x20 and 0x180 *words*.
+    static let saveFlagsStruct = StructMap(
+        name: "XDSaveFlags",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .array(name: "flagLevel0", count: 0x20, of: .uint8),   // +0x000 savedataBiosGetFlagLevel0Ptr
+            .array(name: "flagLevel1", count: 0x80, of: .uint8),   // +0x020 …Level1
+            .array(name: "flagLevel2", count: 0x600, of: .uint8),  // +0x0A0 …Level2 — exactly the bank's size
+            // +0x6A0 — one bit per battle disk, MSB-first, via
+            // `savedataGet/SetBattleDiskSellOut` (status index 0x18).
+            .array(name: "battleDiskSellOut", count: 8, of: .uint8),
+            // +0x6A8 — `bingo_bios` clear state (getClearLv / isClear /
+            // isClearPlus), status index 0x1B.
+            .array(name: "bingo", count: 8, of: .uint8),
+            // +0x6B0 — the serializer writes 0x6B0 bytes into a 0x6B4
+            // section, so these four are never written by the game.
+            .array(name: "unknown1", count: 4, of: .uint8),
+        ]
+    )
+
+    /// The `0x14` bytes of save section 8 that sit past the three flag banks.
+    /// Not flags — no entry of `GeneralFlags` reaches them — so they are the
+    /// section's own fields, and `_memcardStoreSaveData_multi` writes them as
+    /// two separate blocks (`savedataGetStatus` indices 0x18 and 0x1B) with
+    /// their sizes in the slot header at +0x86 and +0x8A.
+    static let saveFlagsTailStruct = StructMap(
+        name: "XDSaveFlagsTail",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: [
+            // +0x00..0x08 — one bit per Battle CD, addressed exactly as
+            // `savedataGet`/`SetBattleDiskSellOut` do: word `id >> 5`, bit
+            // `id & 0x1F`. 64 bits for the 68 `NumberOfBattleCDs` the game
+            // declares, so the top four ids have no bit here.
+            .array(name: "battleDiskSellOut", count: 2, of: .uint32),
+            // +0x08 — two bits per Battle Bingo card, 11 of them
+            // (`NumberOfBingoCards`): bit `2n` is cleared
+            // (`isClear__10bingo_biosFUl`) and bit `2n + 1` is selected
+            // (`isSelect`). `getClearLv` walks the same word, skipping card 10.
+            .uint32(name: "bingoCardState"),
+            // +0x0C — one bit per card, and a different field despite the
+            // name: `setClear__10bingo_biosFUl` sets bit `n` here while
+            // `isClear` reads bit `2n` of the word above. What distinguishes
+            // the two isn't established, so the name says only what writes it.
+            .uint32(name: "bingoSetClearMask"),
+            // +0x10..0x14 — the serializer copies 0x6B0 bytes into a 0x6B4
+            // section, so the game never writes these four.
+            .array(name: "unknown1", count: 4, of: .uint8),
+        ],
+        description: "Save section 8's non-flag tail: Battle CD sell-out bits + Battle Bingo state"
+    )
+
+    // MARK: - Section 9: ExRibbon
+
+    /// XD save section 9 — the **extra-ribbon slots** (0xB). One byte per
+    /// slot holding a ribbon id, 0 = not earned; `exribbonInit` zeroes
+    /// exactly 0xB bytes and `pokeconv` copies all 11. Writes are
+    /// once-only: `exribbonSetNo` stores only into a slot that is still 0.
+    ///
+    /// Two slots are named by the game: 4 is the National Ribbon
+    /// (`exribbonSetNarionalRibbon` — the game's own spelling — stores
+    /// 0x2C) and 5 the Earth Ribbon (`exribbonSetEarthRibbon`, 0x2D).
+    /// Both were confirmed on the real corpus: slot 4 holds 44 on almost
+    /// every save, slot 5 holds 45 only on a completed one. Slots 0-6 are
+    /// the ones the status screen draws (`menuPokemonStatusDrawRibbon`
+    /// bounds its lookup at 7).
+    static let saveExRibbonStruct = StructMap(
+        name: "XDSaveExRibbon",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .array(name: "ribbonIDs", count: 11, of: .uint8),
+        ]
+    )
+
+    // MARK: - Section 15: AnywaySave
+
+    /// The `0x20`-byte header on save section 15, the "save anywhere"
+    /// snapshot (`AnywaySave` to the game).
+    ///
+    /// Only the header is a struct. Everything from `+0x20` on is a
+    /// `GSBinWriteStream` payload — `peopleMakeAnywaySaveData` writes it and
+    /// `peopleRestoreAnywaySaveData` plays it back — so it is a stream, not a
+    /// record, and its length varies per save. It stays raw.
+    ///
+    /// Fields marked "reader" are confirmed by
+    /// `getStateData__12FloorManagerFP12StateDataPtr`; the rest come from a
+    /// census of all 42 XD saves in the audit corpus.
+    static let saveAnywaySaveHeaderStruct = StructMap(
+        name: "XDAnywaySaveHeader",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: [
+            // Spells "ANSW" on every save that has a snapshot, and is zero on
+            // the ones that don't. Kept as bytes rather than a string: the
+            // field is exactly four characters with no terminator, and it
+            // isn't something anyone should be editing.
+            .array(name: "magic", count: 4, of: .uint8),                    // +0x00
+            // Reader: non-zero here is the whole of `floorCheckAnywaySaveData`
+            // — it is how the game knows a quicksave exists. Reads 9705-11797
+            // across the corpus, so it is a size rather than a flag.
+            .uint32(name: "payloadSize"),                                   // +0x04
+            // Reader: `ptr->extra = body + this`, an offset from `+0x20`.
+            .uint32(name: "secondRegionOffset"),                            // +0x08
+            .uint32(name: "unknown1"),                                      // +0x0C 820-2752, another size
+            .uint32(name: "unknown2"),                                      // +0x10 zero on every save
+            // Reader: FloorManager keeps the *maximum* of this across loads
+            // (at +0x9DC), which is what a buffer high-water mark looks like.
+            .uint32(name: "maxStateSize"),                                  // +0x14
+            // Reader: copied to FloorManager +0x9E0 whenever the field above
+            // raises that maximum. Reads 100-153, the range of XD's floor ids.
+            .uint16(name: "floorID"),                                       // +0x18
+            .uint16(name: "unknown3"),                                      // +0x1A zero on every save
+            .uint32(name: "unknown4"),                                      // +0x1C zero on every save
+        ],
+        description: "Header of the save-anywhere snapshot; the body after it is a GSBinWriteStream payload"
+    )
+
+    // MARK: - Section 14: Purify Chamber
+
+    /// One Purify Chamber set — 0x3D8, per
+    /// `getStage__11CReliveHallFl`'s `stage = hall + index * 0x3D8`.
+    /// Four "dancer" slots (`getDancerPointer` indexes them at 0xC4, the
+    /// `XDPokemon` stride, and every quantity loop bounds at 4) then the
+    /// centre Pokémon (`getVisitorPointer` at +0x310 = 4 × 0xC4).
+    ///
+    /// Nothing else is stored: flow/tempo, set state and how many sets
+    /// are open are all *computed* from the Pokémon and their types each
+    /// time (`getPassion`, `getTempo`, `getState`,
+    /// `getReliveGiveStageQuantity`), and whether the chamber is open at
+    /// all is a game flag (`isOpen` reads `GSflagGet(0x3C4)`).
+    static let saveReliveStageStruct = StructMap(
+        name: "XDReliveStage",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .array(name: "dancers", count: 4, of: .subStruct(name: "XDPokemon")),  // +0x000..0x310
+            .subStruct(name: "visitor", typeName: "XDPokemon"),                     // +0x310..0x3D4
+            // +0x3D4 — a *signed* dancer index: `getPassionWoBonus` reads
+            // it with `lbz`/`extsb`, multiplies by 0xC4 (the `XDPokemon`
+            // stride) and adds it to the set's base to pick one dancer out
+            // for the flow calculation. `debugPokemonSetup` stores 0.
+            // Reads 0-3 on real saves, as a dancer index should.
+            .int8(name: "flowDancerIndex"),
+            // +0x3D5..0x3D8 — carries non-zero bytes on real saves, so
+            // live data of some kind rather than alignment padding, but
+            // nothing in the module reads them.
+            .array(name: "unknown1", count: 3, of: .uint8),
+        ]
+    )
+
+    /// XD save section 14 — the **Purify Chamber** (`Relive` to the game;
+    /// 0x2298). Nine sets of 0x3D8: `getReliveGiveStageQuantity` walks
+    /// exactly 9, stepping 0x3D8, and 9 × 0x3D8 = 0x2298 to the byte.
+    /// Confirmed on the corpus — set occupancy runs 0-5 and a completed
+    /// save shows all nine sets holding five Pokémon each.
+    static let saveReliveStruct = StructMap(
+        name: "XDSaveRelive",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .array(name: "stages", count: 9, of: .subStruct(name: "XDReliveStage")),
+        ]
+    )
+
     // MARK: - Section 4: Daycare
 
     /// XD save section 4 — Daycare. Per PKHeX:
@@ -336,10 +587,140 @@ public extension XDStructDefaults {
             .array(name: "unknown1", count: 0x1A, of: .uint8),  // +0x00..0x1A rule header params (semantics TBD)
             .uint16(name: "participationCount"),// +0x1A RULE_INIT sets 4 for custom slots
             .array(name: "unknown2", count: 2, of: .uint8),     // +0x1C..0x1E (RULE_INIT sets 0)
-            .array(name: "regulationIds", count: 21, of: .uint16),  // +0x1E..0x48 regulation-ID list
+            // +0x1E..0x48 the player-visible rule name (21 units). Was
+            // declared as a 21-entry `regulationIds` u16 list; the saves
+            // disagree — every custom slot holds readable UTF-16 BE text
+            // here ("Edit Rule 1".."Edit Rule 3" on US/PAL, the same three
+            // names in katakana on JP), and slots 0-2, the preset rules,
+            // leave it empty. Checked across all 42 real saves in the save
+            // audit corpus: no slot carries bytes after the terminator, so
+            // it round-trips as a string.
+            .string(name: "ruleName", format: .gsXD, length: 21),  // +0x1E..0x48
             .array(name: "unknown3", count: 8, of: .uint8),     // +0x48..0x50 (u32 ×2, semantics TBD)
             .uint16(name: "signature"),         // +0x50 per-slot validity magic (RuleEditSaveON marks slot "on")
             .array(name: "unknown4", count: 0x3E, of: .uint8),  // +0x52..0x90 parameter block (semantics TBD)
+        ]
+    )
+
+    // MARK: - Japanese-build variants
+
+    // XD shipped in Japan first (Aug 2005) and the international builds
+    // widened four save sections. Every JP section is the same layout with
+    // one field resized, so the JP structs below differ from their
+    // international counterparts in exactly one property each — offsets
+    // before and after that property are unchanged. Derived from the real
+    // JP save in the audit corpus and cross-checked against a US save of
+    // the same sections; see `Documentation/Save-Round-Trip-Audit-2026-09.md`.
+
+    /// JP `XDBattleRule` — 0x7C, 20 bytes shorter than the international
+    /// 0x90. The rule name is 11 units here rather than 21; everything
+    /// else keeps its offset, confirmed by the trailing `unknown4` flag
+    /// byte landing at the same position from the end of the record on
+    /// both builds.
+    static let saveBattleRuleStructJP = StructMap(
+        name: "XDBattleRuleJP",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .array(name: "unknown1", count: 0x1A, of: .uint8),  // +0x00..0x1A
+            .uint16(name: "participationCount"),// +0x1A
+            .array(name: "unknown2", count: 2, of: .uint8),     // +0x1C..0x1E
+            .string(name: "ruleName", format: .gsXD, length: 11),  // +0x1E..0x34
+            .array(name: "unknown3", count: 8, of: .uint8),     // +0x34..0x3C
+            .uint16(name: "signature"),         // +0x3C
+            .array(name: "unknown4", count: 0x3E, of: .uint8),  // +0x3E..0x7C
+        ]
+    )
+
+    /// JP save section 6 — 6 × `XDBattleRuleJP` (0x7C) + the active-slot
+    /// byte + padding = 0x2EC, against the international 0x364.
+    static let saveBattleModeStructJP = StructMap(
+        name: "XDSaveBattleModeJP",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .array(name: "rules", count: 6, of: .subStruct(name: "XDBattleRuleJP")),  // +0x000..0x2E8
+            .uint8(name: "currentSlot"),        // +0x2E8
+            .padding(length: 3),                // +0x2E9..0x2EC
+        ]
+    )
+
+    /// JP `ShadowPokemonStatus` — 0x3C, 12 bytes shorter than the
+    /// international 0x48. `trainerName` is 6 units rather than 11 (−10),
+    /// and the alignment padding before the 4-byte `walkCount` shrinks
+    /// from 3 bytes to 1 (−2) as a result. Offsets up to the name are
+    /// identical: `heartGauge` at +0x24 reads the same round multiples of
+    /// 100 on both builds, and the record's own id is the entry index at
+    /// +0x34 here versus +0x3E internationally.
+    static let saveShadowPokemonStructJP = StructMap(
+        name: "ShadowPokemonStatusJP",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .uint8(name: "statusFlags"),        // +0x00
+            .uint8(name: "packedFlags"),        // +0x01
+            .array(name: "unknown1", count: 2, of: .uint8),  // +0x02..0x04
+            .uint32(name: "poolExp"),           // +0x04
+            .array(name: "unknown2", count: 3, of: .uint8),  // +0x08..0x0B
+            .uint8(name: "statusRnd"),          // +0x0B
+            .array(name: "unknown3", count: 7, of: .uint8),  // +0x0C..0x13
+            .uint8(name: "snatchIndex"),        // +0x13
+            .uint16(name: "orgTrainer"),        // +0x14
+            .uint16(name: "catchFloorId"),      // +0x16
+            .uint16(name: "poolFriendLevel"),   // +0x18
+            .uint16(name: "statusID"),          // +0x1A
+            .uint32(name: "rnd"),               // +0x1C
+            .array(name: "unknown4", count: 4, of: .uint8),  // +0x20..0x24
+            .uint32(name: "heartGauge"),        // +0x24
+            .string(name: "trainerName", format: .gsXD, length: 6),  // +0x28..0x34
+            .uint16(name: "shadowPokemonID"),   // +0x34
+            .uint8(name: "reversePattern"),     // +0x36
+            .array(name: "unknown5", count: 1, of: .uint8),  // +0x37 alignment before walkCount
+            .uint32(name: "walkCount"),         // +0x38..0x3C
+        ]
+    )
+
+    /// JP save section 0 — 0x80, 8 bytes shorter than the international
+    /// 0x88. The international builds added the f64 `playTimeIntl`; the JP
+    /// build only has the f32 `playTimeJP` at +0x20, which is the live
+    /// field on a JP save (the US save's f32 there is 0 while its f64
+    /// holds the real total, and vice versa). Every named field keeps its
+    /// offset; the trailing `unknown3` is opaque on both builds, so the
+    /// 8 bytes are accounted for either way.
+    static let saveConfigStructJP = StructMap(
+        name: "XDSaveConfigJP",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .abstraction(name: "gcGameIndex", typeName: "GameVersion"),
+            .uint8(name: "genId"),
+            .abstraction(name: "region", typeName: "Region"),
+            .abstraction(name: "langAreaId", typeName: "Language"),
+            .array(name: "unknown1", count: 0x1C, of: .uint8),   // +0x04..0x20
+            .losslessFloat(name: "playTimeJP"),                  // +0x20 the live play time on JP
+            .uint32(name: "prevFloorId"),                        // +0x24
+            .uint8(name: "floorPosIndex"),                       // +0x28
+            .uint8(name: "optionNoVibration"),                   // +0x29
+            .uint8(name: "optionAudio"),                         // +0x2A
+            .abstraction(name: "playerLanguage", typeName: "Language"), // +0x2B
+            .array(name: "unknown2", count: 0x04, of: .uint8),   // +0x2C..0x30
+            .array(name: "unknown3", count: 0x50, of: .uint8),   // +0x30..0x80
+        ]
+    )
+
+    /// JP save section 2 — 0xBC0C, 68 bytes shorter than the
+    /// international 0xBC50. The boxes are identical (8 × 0x170C, same
+    /// 8-unit names — JP ships them as ボックス１..ボックス８) and the
+    /// shared 235-slot item pool is unchanged; the JP section simply ends
+    /// there, without the international build's trailing flag word and
+    /// 0x40 on-card region.
+    static let savePCBoxStructJP = StructMap(
+        name: "XDSavePCBoxJP",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            .array(name: "boxes", count: 8, of: .subStruct(name: "XDBox")),          // 0x0000..0xB860
+            .array(name: "storedItems", count: 235, of: .subStruct(name: "XDItem")), // 0xB860..0xBC0C
         ]
     )
 
