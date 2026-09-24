@@ -77,6 +77,10 @@ public struct GTXFile: FileFormat {
         self.name = name
     }
 
+    public static func measuredLength(of data: GoDData) -> Int? {
+        GXTextureDecoder().measuredLength(data: data)
+    }
+
     public var binaries: [FileData] {
         get throws {
             let decoder = GXTextureDecoder()

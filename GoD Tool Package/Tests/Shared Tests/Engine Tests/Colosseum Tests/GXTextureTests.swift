@@ -1,8 +1,10 @@
 import XCTest
 import GoDFoundation
 import GTX
+import TestSupport
 
 final class GXTextureTests: XCTestCase {
+
 
     func testParseHeader() {
         var header = [UInt8](repeating: 0, count: 0x80)
@@ -40,6 +42,7 @@ final class GXTextureTests: XCTestCase {
         inner[0] = 0; inner[1] = 4              // width
         inner[2] = 0; inner[3] = 4              // height
         inner[4] = 32                            // bpp
+        inner[5] = 1                             // 1 on every retail texture
         inner[0x0B] = 0x45                       // format = RGBA32
         inner[0x2B] = 0x80                       // texture pointer (offset 0x80)
 
@@ -134,7 +137,7 @@ final class GXTextureTests: XCTestCase {
     /// Conditional integration test against a real poke_dance ATX sample.
     /// Skips silently if the legacy GoD tool dump isn't present on this machine.
     func testATXRoundTripsRealSample() throws {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/poke_dance/airmd.atx"
+        let path = SampleCorpus.xdGameFile("poke_dance/airmd.atx")
         guard FileManager.default.fileExists(atPath: path),
               let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             throw XCTSkip("poke_dance sample not available on this machine")
@@ -199,16 +202,19 @@ final class GXTextureTests: XCTestCase {
 
     /// One representative real-sample path per pixel format. The test skips any
     /// format whose sample isn't available on this machine.
-    private static let roundTripSamples: [(format: GXTextureFormat, path: String)] = [
-        (.C4,     "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/field_common/uv_str_root_csr.gtx"),
-        (.C8,     "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/battle_disk_doc_fr/uv_str_disk_01.gtx"),
-        (.I4,     "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/fight_common/uv_btl_panel_hyper_00.gtx"),
-        (.I8,     "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/M1_water_colo_field/tv_crew_0000_0.dat.gtx"),
-        (.RGB565, "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/pkx_patcheel/face.gtx"),
-        (.RGBA32, "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/world_map/menu_038.gtx"),
-        (.RGB5A3, "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/title/menu_018.gtx"),
-        (.CMPR,   "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/world_map/mapsnap007.gtx"),
-    ]
+    private static let roundTripSamples: [(format: GXTextureFormat, path: String)] = {
+        let samples: [(format: GXTextureFormat, path: String)] = [
+        (.C4,     "field_common/uv_str_root_csr.gtx"),
+        (.C8,     "battle_disk_doc_fr/uv_str_disk_01.gtx"),
+        (.I4,     "fight_common/uv_btl_panel_hyper_00.gtx"),
+        (.I8,     "wzx_kamikudaku_damage/kamikudaku_damage_0_7.wzx.dat.gtx"),
+        (.RGB565, "pkx_patcheel/face.gtx"),
+        (.RGBA32, "world_map/menu_038.gtx"),
+        (.RGB5A3, "title/menu_018.gtx"),
+        (.CMPR,   "world_map/mapsnap007.gtx"),
+        ]
+        return samples.map { (format: $0.format, path: SampleCorpus.xdGameFile($0.path)) }
+    }()
 
     /// Load a sample file, decode it, and return the decoded image plus metadata.
     private func loadAndDecode(_ path: String, expect format: GXTextureFormat) throws -> (GoDImage, GXTextureMetadata) {
@@ -253,6 +259,37 @@ final class GXTextureTests: XCTestCase {
             reDecoded.pixels.rawBytes, image.pixels.rawBytes,
             "\(format) should decode → encode → decode to pixel-identical output"
         )
+    }
+
+    /// `+0x05` is 1 on every retail texture, whatever the format: 4314
+    /// standalone `.gtx` files across the Colosseum, XD and Battle Revolution
+    /// dumps carry 1 there, indexed and direct alike, and the DOL-embedded
+    /// ones agree. (The only zeros anywhere are in headers the legacy tool
+    /// synthesized around textures it pulled out of DAT/PKX/WZX models, which
+    /// are not retail bytes.) Deriving it from the format — the encoder used
+    /// to write `isIndexed ? 1 : 0` — was the one byte standing between every
+    /// non-indexed texture and a byte-identical rebuild.
+    func testEncodedHeaderMarksByteFiveForEveryFormat() throws {
+        let decoder = GXTextureDecoder()
+        for format in [GXTextureFormat.C4, .C8, .I4, .I8, .IA4, .IA8,
+                       .RGB565, .RGBA32, .RGB5A3, .CMPR] {
+            let image = GoDImage(
+                width: 8,
+                height: 8,
+                pixels: GoDData(byteStream: [UInt8](repeating: 0x7F, count: 8 * 8 * 4), byteOrder: .big)
+            )
+            let metadata = GXTextureMetadata(
+                width: 8,
+                height: 8,
+                format: format,
+                paletteFormat: format.isIndexed ? .RGB5A3 : nil
+            )
+            guard let encoded = decoder.encode(image: image, metadata: metadata) else {
+                XCTFail("encode returned nil for \(format)"); continue
+            }
+            XCTAssertEqual(encoded.rawBytes[5], 1, "\(format) should write 1 at +0x05")
+            XCTAssertEqual(encoded.rawBytes[0x4C], 0, "\(format) should leave +0x4C zero")
+        }
     }
 
     func testRoundTripC4()     throws { try assertPixelStableRoundTrip(.C4) }

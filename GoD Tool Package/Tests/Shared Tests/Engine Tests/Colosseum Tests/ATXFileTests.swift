@@ -3,6 +3,7 @@ import Foundation
 import GoDFoundation
 import GeniusSonority
 import GTX
+import TestSupport
 
 /// Format-specific tests for ATXFile that go beyond the minimum 4-member
 /// coverage in FileFormatProtocolTests — per-frame offset overrides,
@@ -10,7 +11,7 @@ import GTX
 final class ATXFileTests: XCTestCase {
 
     private var absolBytes: [UInt8]? {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/poke_dance/absol.atx"
+        let path = SampleCorpus.xdGameFile("poke_dance/absol.atx")
         guard FileManager.default.fileExists(atPath: path),
               let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
         return [UInt8](raw)
@@ -37,7 +38,7 @@ final class ATXFileTests: XCTestCase {
     /// yOffset = -63 while frames 0 and 2 use -64. Verifies that
     /// init(binary:) surfaces the difference as a `frameOverrides` entry.
     func testATX_initBinary_capturesPerFrameOffsetOverrides() throws {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/poke_dance/airmd.atx"
+        let path = SampleCorpus.xdGameFile("poke_dance/airmd.atx")
         guard FileManager.default.fileExists(atPath: path),
               let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             throw XCTSkip("airmd.atx not available")

@@ -449,6 +449,35 @@ public struct GXTextureDecoder {
     }
 
     /// Decode a single GTX frame to a GoDImage
+    /// How many bytes the texture at `headerOffset` occupies, read off its
+    /// own header.
+    ///
+    /// A GTX embedded in a larger buffer — a DOL data section, an archive
+    /// member — ends where its palette does, and the palette's offset and
+    /// entry count are both header fields, so the length is derivable
+    /// rather than something the caller has to be told. That matters where
+    /// the surrounding container would otherwise guess: XD's health-warning
+    /// texture has its own symbol (`tex_warning`) on the palette, so the
+    /// disassembler's "a chunk ends at the next symbol" rule cuts the
+    /// texture 32 bytes short.
+    ///
+    /// Returns nil when the header doesn't parse.
+    public func measuredLength(data: GoDData, headerOffset: Int = 0) -> Int? {
+        guard let meta = parseHeader(data: data, headerOffset: headerOffset) else { return nil }
+        let fmt = meta.format
+        guard meta.width > 0, meta.height > 0 else { return nil }
+
+        data.setByteOrder(.big)
+        let texOff: UInt32 = data.readSafely(atAddress: headerOffset + 0x28)
+        let palOff: UInt32 = data.readSafely(atAddress: headerOffset + 0x48)
+
+        if fmt.isIndexed && palOff > 0 {
+            return Int(palOff) + fmt.paletteEntryCount * 2
+        }
+        let pw = padUp(meta.width, fmt.blockWidth), ph = padUp(meta.height, fmt.blockHeight)
+        return Int(texOff) + pw * ph * fmt.bitsPerPixel / 8
+    }
+
     public func decode(data: GoDData, headerOffset: Int = 0) -> GoDImage? {
         guard let meta = parseHeader(data: data, headerOffset: headerOffset) else { return nil }
         let fmt = meta.format
@@ -707,7 +736,12 @@ public struct GXTextureDecoder {
         output[0] = UInt8(w >> 8); output[1] = UInt8(w & 0xFF)
         output[2] = UInt8(h >> 8); output[3] = UInt8(h & 0xFF)
         output[4] = UInt8(fmt.bitsPerPixel)
-        output[5] = fmt.isIndexed ? 1 : 0
+        // Always 1, not `isIndexed`. Every retail texture measured carries 1
+        // here — 22 in the Colo/XD DOLs and 2480 across PBR's archives, of
+        // which 1022 are not indexed — so whatever the field means, it isn't
+        // "has a palette". Deriving it from the format was the one byte
+        // between a non-indexed texture and a byte-identical rebuild.
+        output[5] = 1
         output[0x0B] = UInt8(fmt.rawValue)
         output[0x0F] = UInt8(metadata.paletteFormat?.rawValue ?? 0)
         // Texture offset at 0x28 (big-endian UInt32 = 0x80)
