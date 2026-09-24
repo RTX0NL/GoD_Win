@@ -65,7 +65,7 @@ extension GSFont: FileFormat {
     public var outputs: [FileData] {
         get throws {
             let atlas = atlasImageFilename()
-            let result = GSFontAtlas.exportAtlas(font: self, atlasPath: atlas.path)
+            let result = try GSFontAtlas.exportAtlas(font: self, atlasPath: atlas.path)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let jsonData: Data = try encoder.encode(result.metadata)

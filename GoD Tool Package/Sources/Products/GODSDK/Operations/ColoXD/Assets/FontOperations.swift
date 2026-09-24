@@ -67,7 +67,7 @@ extension ColoXD {
         }
         let font = try GSFont(data: data)
         let atlasName = "\(stem)_atlas.png"
-        let (imageData, metadata) = GSFontAtlas.exportAtlas(font: font, atlasPath: atlasName)
+        let (imageData, metadata) = try GSFontAtlas.exportAtlas(font: font, atlasPath: atlasName)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         return [

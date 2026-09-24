@@ -30,6 +30,21 @@ public struct GSFontAtlas {
             /// Padding bytes between this block's last glyph and the next
             /// block's start (alignment filler). Hex-encoded.
             public let blockPaddingHex: String?
+            /// The atlas cell this block's glyphs are drawn in. Usually the
+            /// header's glyph size, but not always — a block can hold glyphs
+            /// larger than the size it declares (Colosseum's kanji sheet says
+            /// 21x21 and every one of its 2920 glyphs advances 22px), and a
+            /// cell that doesn't fit its glyphs loses their last column to
+            /// the neighbour drawn over it. Written by every dump; absent in
+            /// metadata written before it existed, where the cell *was* the
+            /// header's glyph size.
+            public let cellWidth: Int?
+            public let cellHeight: Int?
+
+            /// The cell to draw and read this block's glyphs in.
+            public var cell: (width: Int, height: Int) {
+                (cellWidth ?? glyphWidth, cellHeight ?? glyphHeight)
+            }
         }
 
         public struct GlyphInfo: Codable {
@@ -43,11 +58,25 @@ public struct GSFontAtlas {
         }
     }
 
+    /// How many pixel columns a glyph's bitmap actually stores.
+    ///
+    /// A 4bpp row is whole bytes, so a glyph that advances an odd number of
+    /// pixels stores one column past its advance in the low nibble of each
+    /// row's last byte. That column is usually zero, but not always — 133 of
+    /// Colosseum JP's 137 fonts carry stray values there (the kanji `何` has
+    /// 2 and 1 in two of its rows) — and drawing only `advanceWidth` columns
+    /// dropped them, so every one of those fonts came back changed.
+    static func storedWidth(advanceWidth: Int) -> Int {
+        ((advanceWidth + 1) / 2) * 2
+    }
+
     private struct BlockGrid {
         let cols: Int
         let rows: Int
-        let width: Int
-        let height: Int
+        let cellWidth: Int
+        let cellHeight: Int
+        var width: Int { cols * cellWidth }
+        var height: Int { rows * cellHeight }
     }
 
     private static func flattenBlocks(_ font: GSFont) -> [GSFont] {
@@ -60,11 +89,24 @@ public struct GSFontAtlas {
         return blocks
     }
 
+    /// One cell per glyph, sized to hold the largest glyph in the block.
+    ///
+    /// The block header's glyph size is the font's nominal cell and is what
+    /// this used to lay out, but it is a declared size rather than a measured
+    /// one: Colosseum's 2920-glyph kanji block declares 21x21 while every
+    /// glyph in it advances 22px. Cells a pixel too narrow put each glyph's
+    /// last column in the next cell, where the glyph drawn there overwrote
+    /// it, so the column came back as its neighbour's on the way in.
     private static func computeGrids(_ blocks: [GSFont], columns: Int) -> [BlockGrid] {
         return blocks.map { b in
             let cols = min(columns, max(b.visibleGlyphs.count, 1))
             let rows = (b.visibleGlyphs.count + cols - 1) / cols
-            return BlockGrid(cols: cols, rows: rows, width: cols * b.glyphWidth, height: rows * b.glyphHeight)
+            let cellWidth = max(
+                b.glyphWidth,
+                b.visibleGlyphs.map { storedWidth(advanceWidth: Int($0.advanceWidth)) }.max() ?? 0
+            )
+            let cellHeight = max(b.glyphHeight, b.visibleGlyphs.map { Int($0.height) }.max() ?? 0)
+            return BlockGrid(cols: cols, rows: rows, cellWidth: cellWidth, cellHeight: cellHeight)
         }
     }
 
@@ -73,9 +115,9 @@ public struct GSFontAtlas {
         into pixels: inout [UInt8],
         baseX: Int, baseY: Int, imgWidth: Int, imgHeight: Int
     ) {
-        let glyphW = Int(glyph.advanceWidth)
+        let glyphW = storedWidth(advanceWidth: Int(glyph.advanceWidth))
         let glyphH = Int(glyph.height)
-        let bpr = (glyphW + 1) / 2
+        let bpr = glyphW / 2
         for y in 0..<glyphH {
             for x in 0..<glyphW {
                 let byteIndex = y * bpr + x / 2
@@ -105,8 +147,8 @@ public struct GSFontAtlas {
         for (index, glyph) in block.visibleGlyphs.enumerated() {
             let gridRow = index / grid.cols
             let gridCol = index % grid.cols
-            let baseX = gridCol * block.glyphWidth
-            let baseY = gridOriginRow + gridRow * block.glyphHeight
+            let baseX = gridCol * grid.cellWidth
+            let baseY = gridOriginRow + gridRow * grid.cellHeight
             drawGlyph(glyph, into: &pixels, baseX: baseX, baseY: baseY, imgWidth: imgWidth, imgHeight: imgHeight)
             let codeInt = Int(glyph.code)
             var charStr: String? = nil
@@ -132,7 +174,9 @@ public struct GSFontAtlas {
             gridOriginRow: gridOriginRow,
             rows: grid.rows,
             glyphs: glyphInfos,
-            blockPaddingHex: padHex
+            blockPaddingHex: padHex,
+            cellWidth: grid.cellWidth,
+            cellHeight: grid.cellHeight
         )
     }
 
@@ -145,7 +189,7 @@ public struct GSFontAtlas {
         font: GSFont,
         atlasPath: String,
         columns: Int = 32
-    ) -> (imageData: GoDData, metadata: Metadata) {
+    ) throws -> (imageData: GoDData, metadata: Metadata) {
         let blocks = flattenBlocks(font)
         let blockGrids = computeGrids(blocks, columns: columns)
 
@@ -175,8 +219,12 @@ public struct GSFontAtlas {
         // opens nowhere on Windows without extra software and is an order of
         // magnitude larger, since these sheets are mostly empty. Every other
         // image artifact the tool emits is already PNG.
-        let imageData = GreyscaleImage(width: imgWidth, height: imgHeight, pixels: pixels)
-            .pngData() ?? GoDData(byteStream: [UInt8](), byteOrder: .big)
+        // A failed encode used to fall back to an empty `GoDData`, so the
+        // dump wrote a zero-byte PNG and the failure only surfaced on the way
+        // back in, as an unreadable atlas with nothing to say about why.
+        guard let imageData = GreyscaleImage(width: imgWidth, height: imgHeight, pixels: pixels).pngData() else {
+            throw GSFontError.atlasEncodingFailed(width: imgWidth, height: imgHeight)
+        }
 
         let metadata = Metadata(atlasPath: atlasPath, columns: columns, blocks: metaBlocks)
         return (imageData: imageData, metadata: metadata)
@@ -222,7 +270,7 @@ public struct GSFontAtlas {
         metadata: Metadata
     ) throws -> (font: GSFont, warnings: [String]) {
         guard let image = GreyscaleImage.fromPNG(imageData) else {
-            throw GSFontError.invalidAtlas
+            throw GSFontError.atlasImageUnreadable
         }
         let imgWidth = image.width
         let pixels = image.pixels
@@ -231,13 +279,14 @@ public struct GSFontAtlas {
         // Reconstruct each block, then chain via nextFont.
         var blocks = [GSFont]()
         for block in metadata.blocks {
+            let cell = block.cell
             var glyphs = [GSFont.Glyph]()
             for info in block.glyphs {
-                let baseX = info.gridCol * block.glyphWidth
-                let baseY = block.gridOriginRow + info.gridRow * block.glyphHeight
-                let glyphW = info.advanceWidth
+                let baseX = info.gridCol * cell.width
+                let baseY = block.gridOriginRow + info.gridRow * cell.height
+                let glyphW = storedWidth(advanceWidth: info.advanceWidth)
                 let glyphH = info.height
-                let bpr = (glyphW + 1) / 2
+                let bpr = glyphW / 2
                 var bitmap = [UInt8](repeating: 0, count: bpr * glyphH)
                 for y in 0..<glyphH {
                     for x in 0..<glyphW {
@@ -253,7 +302,7 @@ public struct GSFontAtlas {
                 }
                 glyphs.append(GSFont.Glyph(
                     code: UInt16(info.code),
-                    advanceWidth: UInt8(glyphW),
+                    advanceWidth: UInt8(info.advanceWidth),
                     height: UInt8(glyphH),
                     flags: UInt16(info.flags),
                     bitmap: bitmap
@@ -283,7 +332,7 @@ public struct GSFontAtlas {
                 blockPadding: b.blockPadding
             )
         }
-        guard let root = head else { throw GSFontError.invalidAtlas }
+        guard let root = head else { throw GSFontError.atlasHasNoBlocks }
         return (root, warnings)
     }
 
@@ -302,8 +351,26 @@ public struct GSFontAtlas {
     }
 }
 
-enum GSFontError: Error {
-    case invalidAtlas
+public enum GSFontError: Error, CustomStringConvertible {
+    /// The atlas image isn't a PNG this can read.
+    case atlasImageUnreadable
+    /// Metadata that names no block describes no font.
+    case atlasHasNoBlocks
+    /// The atlas image couldn't be encoded — a size the PNG writer rejects,
+    /// which is how a font with no glyphs at all used to reach the project as
+    /// a zero-byte file that only failed later, on the way back in.
+    case atlasEncodingFailed(width: Int, height: Int)
+
+    public var description: String {
+        switch self {
+        case .atlasImageUnreadable:
+            return "Error: the font atlas isn't a readable PNG."
+        case .atlasHasNoBlocks:
+            return "Error: the font atlas metadata names no font blocks."
+        case let .atlasEncodingFailed(width, height):
+            return "Error: couldn't encode a \(width)x\(height) font atlas as a PNG."
+        }
+    }
 }
 
 // MARK: - GSFont init from components
