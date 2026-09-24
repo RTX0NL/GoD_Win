@@ -3,6 +3,7 @@ import Foundation
 import GoDFoundation
 import GeniusSonority
 import GTX
+import TestSupport
 
 /// One test per protocol member per format. Each asserts a single step:
 ///
@@ -147,7 +148,7 @@ final class FileFormatProtocolTests: XCTestCase {
     // MARK: - GSFont
 
     private var realFontBytes: [UInt8]? {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/pda_menu/pda_menu.fnt"
+        let path = SampleCorpus.xdGameFile("pda_menu/pda_menu.fnt")
         guard FileManager.default.fileExists(atPath: path),
               let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
         return [UInt8](raw)
@@ -273,7 +274,7 @@ final class FileFormatProtocolTests: XCTestCase {
     // MARK: - ATXFile
 
     private var realATXBytes: [UInt8]? {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/poke_dance/absol.atx"
+        let path = SampleCorpus.xdGameFile("poke_dance/absol.atx")
         guard FileManager.default.fileExists(atPath: path),
               let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
         return [UInt8](raw)
@@ -343,7 +344,7 @@ final class FileFormatProtocolTests: XCTestCase {
     // MARK: - GSWFile
 
     private var realGSWBytes: [UInt8]? {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/battle_disk_ge/battle_disk_ge 0012.gsw"
+        let path = SampleCorpus.xdGameFile("battle_disk_ge/battle_disk_ge 0012.gsw")
         guard FileManager.default.fileExists(atPath: path),
               let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
         return [UInt8](raw)

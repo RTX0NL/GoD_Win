@@ -151,4 +151,60 @@ class GSStringTests: XCTestCase {
         XCTAssertEqual(sut4.string(format: .gsXD), "{Color: #A0CFB8}")
         XCTAssertEqual(sut4.string(format: .gs), "{08 A0 CF B8 FF}")
     }
+
+    // MARK: - PBR furigana
+
+    /// A furigana marker carries two counts — kana first, kanji second — and
+    /// the characters follow in that order. Reading them the other way round
+    /// takes the wrong number of trailing characters whenever the two counts
+    /// differ, which is every real annotation of more than one kanji.
+    private static let furiganaBytes: [UInt8] = [
+        0xFF, 0xFF, 0x00, 0x01,     // furigana marker
+        0x02,                       // 2 kana
+        0x03,                       // 3 kanji
+        0x30, 0x51, 0x30, 0x93,     // けん
+        0x52, 0x63, 0x5C, 0x71, 0x5D, 0xDD  // 剣山川
+    ]
+
+    func testPBRFuriganaReadsKanaThenKanji() {
+        let data = GoDData(byteStream: Self.furiganaBytes + [0xFF, 0xFF, 0xFF, 0xFF], byteOrder: .big)
+        let read = data.readGSString(atAddress: 0, format: .gsPBR)
+        XCTAssertEqual(read?.string(format: .gsPBR), "{Furigana:けん:剣山川}")
+        XCTAssertEqual(read?.rawData(byteOrder: .big).rawBytes, Self.furiganaBytes)
+    }
+
+    func testPBRFuriganaWritesKanaThenKanji() {
+        let sut = GSString(string: "{Furigana:けん:剣山川}", format: .gsPBR)
+        XCTAssertEqual(sut.rawData(byteOrder: .big).rawBytes, Self.furiganaBytes)
+        XCTAssertEqual(sut.string(format: .gsPBR), "{Furigana:けん:剣山川}")
+    }
+
+    /// A marker's characters can be spaces — 58 of the JP disc's are — so the
+    /// separator has to be something they never contain. None of the 6,441
+    /// markers on the disc holds a colon; one that did would fall back to raw
+    /// bytes rather than round-trip wrongly.
+    func testPBRFuriganaSurvivesSpacesAsItsCharacters() {
+        let bytes: [UInt8] = [
+            0xFF, 0xFF, 0x00, 0x01, 0x01, 0x01,
+            0x00, 0x20,             // kana: an ASCII space
+            0x30, 0x00,             // kanji: an ideographic space
+        ]
+        let data = GoDData(byteStream: bytes + [0xFF, 0xFF, 0xFF, 0xFF], byteOrder: .big)
+        let read = try? XCTUnwrap(data.readGSString(atAddress: 0, format: .gsPBR))
+        XCTAssertEqual(read?.string(format: .gsPBR), "{Furigana: :\u{3000}}")
+        XCTAssertEqual(read?.rawData(byteOrder: .big).rawBytes, bytes)
+        XCTAssertEqual(
+            GSString(string: "{Furigana: :\u{3000}}", format: .gsPBR)
+                .rawData(byteOrder: .big).rawBytes,
+            bytes
+        )
+    }
+
+    func testPBRFuriganaSurvivesSurroundingText() {
+        let bytes: [UInt8] = [0x00, 0x41] + Self.furiganaBytes + [0x00, 0x42, 0xFF, 0xFF, 0xFF, 0xFF]
+        let data = GoDData(byteStream: bytes, byteOrder: .big)
+        let read = data.readGSString(atAddress: 0, format: .gsPBR)
+        XCTAssertEqual(read?.string(format: .gsPBR), "A{Furigana:けん:剣山川}B")
+        XCTAssertEqual(read?.rawData(byteOrder: .big).rawBytes, Array(bytes.dropLast(4)))
+    }
 }

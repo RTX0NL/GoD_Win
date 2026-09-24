@@ -51,9 +51,28 @@ public protocol FileFormat {
     /// JSON manifest (`<name>.<formatName>.json`); subsequent entries are
     /// whatever companion files the manifest's paths resolve to.
     var outputs: [FileData] { get throws }
+
+    /// How many bytes an instance of this format occupies at the start of
+    /// `data`, when its own header says so.
+    ///
+    /// This is for containers that carve a format out of a larger buffer
+    /// and would otherwise have to guess where it ends — a DOL data
+    /// section, where the disassembler's rule is "a chunk runs to the next
+    /// symbol", and a symbol inside a file cuts it short. A format that
+    /// can measure itself answers the question outright; the default is
+    /// nil, which leaves the container's own guess in place.
+    ///
+    /// `data` may be longer than the format: only the leading bytes are
+    /// this instance. Implementations read the header and must not assume
+    /// the buffer ends where the format does.
+    static func measuredLength(of data: GoDData) -> Int?
 }
 
 public extension FileFormat {
+    /// Formats whose length isn't derivable from their own header leave the
+    /// container to decide where they end.
+    static func measuredLength(of data: GoDData) -> Int? { nil }
+
     /// `<name>.<formatName>.json` — the metadata JSON every format emits.
     var jsonFilename: File { File("\(name).\(Self.formatName).json") }
 

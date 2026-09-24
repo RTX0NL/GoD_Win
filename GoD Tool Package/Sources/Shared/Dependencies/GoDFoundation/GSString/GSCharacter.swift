@@ -60,36 +60,86 @@ extension GSCharacter {
         case (.gsColo, .special([0x6D])), (.gsXD, .special([0x6D])): return "{Await Input 2}"
             
         case (.gsPBR, .special(let bytes)) where bytes.count > 4 && bytes[0...1] == [0,1]:
+            // Kana reading first, then the kanji it annotates, each counted by
+            // its own byte. A byte count that doesn't match the two falls
+            // through to the raw form below rather than rendering as nothing.
             let kanaCount = Int(bytes[2])
             let kanjiCount = Int(bytes[3])
             let characterCount = kanaCount + kanjiCount
             if bytes.count == 4 + (characterCount * 2) {
                 let kanaBytes = Array(bytes[4 ..< 4 + (kanaCount * 2)])
-                let kanaData = GoDData(byteStream: kanaBytes, byteOrder: .big)
-                let kanjiBytes = Array(bytes[4 + (kanaCount * 2) ..< 4 + (kanaCount * 2) + (kanjiCount * 2)])
-                let kanjiData = GoDData(byteStream: kanjiBytes, byteOrder: .big)
-                return "{Furigana: \(kanaData.string(format: StringFormats.utf16_big)) \(kanjiData.string(format: StringFormats.utf16_big))}"
+                let kana = GoDData(byteStream: kanaBytes, byteOrder: .big)
+                    .string(format: StringFormats.utf16_big)
+                let kanjiBytes = Array(bytes[(4 + kanaCount * 2)...])
+                let kanji = GoDData(byteStream: kanjiBytes, byteOrder: .big)
+                    .string(format: StringFormats.utf16_big)
+                // The colon separates the reading from what it annotates. A
+                // run containing a colon of its own would make the token
+                // ambiguous, so it falls back to raw bytes rather than
+                // round-tripping wrongly — nothing on the JP disc does, and
+                // it is the only disc with furigana at all.
+                if !kana.contains(":"), !kanji.contains(":") {
+                    return "{Furigana:\(kana):\(kanji)}"
+                }
             }
+            return Self.rawSpecialToken(bytes)
         case (.gsPBR, .special(let bytes)) where bytes.count == 4 && bytes[0...1] == [0,2]:
             let durationBytes = Array(bytes[2 ..< 4])
             let durationData = GoDData(byteStream: durationBytes, byteOrder: .big)
             return "{Pause: \(UInt16(data: durationData) ?? 0)}"
         case (.gsPBR, .special([0xFF, 0xFF])):
             return "{End}"
+
+        // Formatting markers. The font size and letter spacing carry their
+        // parameter in the marker's own low byte; alignment, colour and the
+        // vertical offset take a following value. Every PBR string starts
+        // with a size and a spacing marker, so these four cover the bulk of
+        // what a reader would otherwise see as hex.
+        case (.gsPBR, .special(let bytes)) where bytes.count == 2 && bytes[0] == 0xF0:
+            return "{Size: \(bytes[1])}"
+        case (.gsPBR, .special(let bytes)) where bytes.count == 2 && bytes[0] == 0xF1:
+            return "{Spacing: \(Int8(bitPattern: bytes[1]))}"
+        case (.gsPBR, .special(let bytes)) where bytes.count == 4 && bytes[0...1] == [0x00, 0x03]:
+            return "{Align: \(Int(bytes[2]) << 8 | Int(bytes[3]))}"
+        case (.gsPBR, .special(let bytes)) where bytes.count == 4 && bytes[0...1] == [0x00, 0x05]:
+            return "{Color: \(Int(bytes[2]) << 8 | Int(bytes[3]))}"
+        case (.gsPBR, .special(let bytes)) where bytes.count == 6 && bytes[0...1] == [0x80, 0x11]:
+            let magnitude = bytes[2...5].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+            return "{VerticalOffset: \(Int32(bitPattern: magnitude))}"
+
+        // Fixed abbreviations the game substitutes from its own font.
+        case (.gsPBR, .special([0xFF, 0xFC])): return "{No.}"
+        case (.gsPBR, .special([0xFF, 0xFB])): return "{Lv.}"
+        case (.gsPBR, .special([0xFF, 0xFA])): return "{HP}"
+        case (.gsPBR, .special([0xFF, 0xF9])): return "{PP}"
             
         case (_, .special(let bytes)):
-            guard bytes.count > 0 else { return "" }
-            var string = ""
-            for byte in bytes {
-                string += byte.hex() + " "
-            }
-            if string.last == " " {
-                string.removeLast()
-            }
-            return "{" + string + "}"
+            return Self.rawSpecialToken(bytes)
         }
         
         return ""
+    }
+
+    /// The integer in a `{Name: value}` token, or nil if the token isn't
+    /// that one. Accepts decimal and `0x`-prefixed values, and a leading
+    /// minus, because `integerValue` does.
+    private static func parameter(of string: String, named name: String) -> Int? {
+        let prefix = "{" + name + ": "
+        guard string.startsWith(prefix), string.endsWith("}") else { return nil }
+        return string.substring(from: prefix.count).substring(from: 0, to: -1).integerValue
+    }
+
+    /// A special character with no named form, rendered as its bytes.
+    private static func rawSpecialToken(_ bytes: [UInt8]) -> String {
+        guard bytes.count > 0 else { return "" }
+        var string = ""
+        for byte in bytes {
+            string += byte.hex() + " "
+        }
+        if string.last == " " {
+            string.removeLast()
+        }
+        return "{" + string + "}"
     }
 }
 
@@ -146,27 +196,34 @@ extension GSCharacter {
             if string == "{New Line}" { self = .special([0xFF, 0xFE]); return }
             if string == "{End}" { self = .special([0xFF, 0xFF]); return }
             
-            if string.startsWith("{Furigana: "), string.endsWith("}") {
-                var substring = string.substring(from: "{Furigana: ".count)
-                substring = substring.substring(from: 0, to: -1)
-                let parts = substring.split(separator: " ")
+            if string.startsWith("{Furigana:"), string.endsWith("}") {
+                // `{Furigana:<kana>:<kanji>}` — the reading first, then the
+                // kanji it annotates, which is the order the marker's two
+                // count bytes and its characters are in. Empty runs are kept
+                // rather than dropped, so the split can't lose one.
+                let body = String(string.dropFirst("{Furigana:".count).dropLast())
+                let parts = body.split(separator: ":", omittingEmptySubsequences: false)
                 if parts.count == 2 {
-                    let kanji = String(parts[0])
-                    let kana = String(parts[1])
-                    let data = GoDData(byteOrder: .big)
-                    data.append(UInt16(1))
-                    data.append(UInt8(kanji.count & 0xFF))
-                    data.append(UInt8(kana.count & 0xFF))
-                    for char in kanji {
-                        data.append(GoDData(string: String(char), format: .utf16_big))
+                    let kana = Array(String(parts[0]).utf16)
+                    let kanji = Array(String(parts[1]).utf16)
+                    if kana.count <= 0xFF, kanji.count <= 0xFF {
+                        let data = GoDData(byteOrder: .big)
+                        data.append(UInt16(1))
+                        // The counts are in UTF-16 units, which is what the
+                        // characters are written as.
+                        data.append(UInt8(kana.count))
+                        data.append(UInt8(kanji.count))
+                        // Appended as bare code units: `GoDData(string:format:)`
+                        // prefixes a byte-order mark, and one in front of every
+                        // character is not what the marker's counts describe.
+                        for unit in kana + kanji {
+                            data.append(unit)
+                        }
+                        guard let bytes = [UInt8](data: data) else {
+                            return nil
+                        }
+                        self = .special(bytes); return
                     }
-                    for char in kana {
-                        data.append(GoDData(string: String(char), format: .utf16_big))
-                    }
-                    guard let bytes = [UInt8](data: data) else {
-                        return nil
-                    }
-                    self = .special(bytes); return
                 }
             }
             if string.startsWith("{Pause: "), string.endsWith("}") {
@@ -182,6 +239,28 @@ extension GSCharacter {
                     self = .special(bytes); return
                 }
             }
+            if let size = Self.parameter(of: string, named: "Size") {
+                self = .special([0xF0, UInt8(size & 0xFF)]); return
+            }
+            if let spacing = Self.parameter(of: string, named: "Spacing") {
+                self = .special([0xF1, UInt8(bitPattern: Int8(truncatingIfNeeded: spacing))]); return
+            }
+            if let alignment = Self.parameter(of: string, named: "Align") {
+                self = .special([0x00, 0x03, UInt8((alignment >> 8) & 0xFF), UInt8(alignment & 0xFF)]); return
+            }
+            if let color = Self.parameter(of: string, named: "Color") {
+                self = .special([0x00, 0x05, UInt8((color >> 8) & 0xFF), UInt8(color & 0xFF)]); return
+            }
+            if let offset = Self.parameter(of: string, named: "VerticalOffset") {
+                let magnitude = UInt32(bitPattern: Int32(truncatingIfNeeded: offset))
+                self = .special([0x80, 0x11,
+                                 UInt8((magnitude >> 24) & 0xFF), UInt8((magnitude >> 16) & 0xFF),
+                                 UInt8((magnitude >> 8) & 0xFF), UInt8(magnitude & 0xFF)]); return
+            }
+            if string == "{No.}" { self = .special([0xFF, 0xFC]); return }
+            if string == "{Lv.}" { self = .special([0xFF, 0xFB]); return }
+            if string == "{HP}" { self = .special([0xFF, 0xFA]); return }
+            if string == "{PP}" { self = .special([0xFF, 0xF9]); return }
         default:
             if string == "{New Line}" { self = .raw("\n"); return }
         }

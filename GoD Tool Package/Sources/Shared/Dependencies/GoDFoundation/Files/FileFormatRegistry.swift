@@ -18,6 +18,9 @@ public struct FileFormatRegistry {
         public let dump: ([FileData]) throws -> [FileData]
         /// Reconstruct the raw game-side binaries from an artifact bundle.
         public let build: ([FileData]) throws -> [FileData]
+        /// How long an instance of the format is at the start of the given
+        /// bytes, when the format can tell. Nil for formats that can't.
+        public let measure: (GoDData) -> Int?
         /// The format type, for diagnostics.
         public let formatType: FileFormat.Type
     }
@@ -32,6 +35,7 @@ public struct FileFormatRegistry {
         handlers[key] = Handler(
             dump: { binaries in try F(binaries: binaries).outputs },
             build: { outputs in try F(outputs: outputs).binaries },
+            measure: { data in F.measuredLength(of: data) },
             formatType: F.self
         )
     }
@@ -51,6 +55,14 @@ public struct FileFormatRegistry {
     /// True if a handler is registered for the given extension.
     public func isRegistered(_ ext: String) -> Bool {
         handlers[ext.lowercased()] != nil
+    }
+
+    /// How many of `bytes` the format registered for `ext` occupies, when
+    /// it can say. Nil when nothing is registered for the extension or the
+    /// format doesn't measure itself — the caller keeps whatever bound it
+    /// worked out on its own.
+    public func measuredLength(of bytes: GoDData, extension ext: String) -> Int? {
+        handler(for: ext)?.measure(bytes)
     }
 
     // MARK: - Filesystem convenience
