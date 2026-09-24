@@ -314,11 +314,15 @@ public struct RelAssembler {
 
         case .file:
             let data = try embeddedFileBinary(chunk, file: file, fileSystem: fileSystem, logger: logger)
+            // A file that measured itself past one of its own symbols keeps
+            // those symbols; they are relocation targets, so each is put back
+            // at the same offset inside the rebuilt file.
             return (
                 name: "\(chunk.label).synthesized.s",
-                content: Self.renderBlocks(sectionName: sectionName, label: chunk.label, blocks: [
-                    .init(label: nil, bytes: data.rawBytes, pointers: [:])
-                ])
+                content: Self.renderBlocks(
+                    sectionName: sectionName, label: chunk.label,
+                    blocks: Self.splitAtInteriorLabels(data.rawBytes, chunk: chunk, logger: logger)
+                )
             )
 
         case .struct, .table:
@@ -425,6 +429,49 @@ public struct RelAssembler {
         let bytes: [UInt8]
         /// Offset within `bytes` → symbol for each pointer slot.
         let pointers: [Int: String]
+    }
+
+    /// Cut a rebuilt file into blocks at the symbols that live inside it.
+    ///
+    /// A chunk normally ends at the next symbol, so a file has no interior
+    /// ones. It keeps going only when the format measured itself past one —
+    /// a GTX whose palette carries its own name — and that symbol is a
+    /// relocation target, so it has to come back at the same offset. An
+    /// offset past the rebuilt file is dropped with a warning: the file
+    /// re-encoded shorter than the symbol it used to contain.
+    static func splitAtInteriorLabels(
+        _ bytes: [UInt8],
+        chunk: DataSectionManifest.Chunk,
+        logger: Logger?
+    ) -> [Block] {
+        guard let interior = chunk.interiorLabels, !interior.isEmpty else {
+            return [.init(label: nil, bytes: bytes, pointers: [:])]
+        }
+        let cuts = interior
+            .compactMap { key, name -> (offset: Int, name: String)? in
+                guard let offset = Int(key), offset > 0 else { return nil }
+                guard offset < bytes.count else {
+                    logger?.log(.warning(
+                        "Interior label '\(name)' sits \(offset) bytes into '\(chunk.label)', which "
+                        + "rebuilt to only \(bytes.count) bytes — the label is dropped."
+                    ))
+                    return nil
+                }
+                return (offset: offset, name: name)
+            }
+            .sorted { $0.offset < $1.offset }
+        guard !cuts.isEmpty else { return [.init(label: nil, bytes: bytes, pointers: [:])] }
+
+        var blocks = [Block]()
+        var start = 0
+        var pendingLabel: String?
+        for cut in cuts {
+            blocks.append(.init(label: pendingLabel, bytes: Array(bytes[start..<cut.offset]), pointers: [:]))
+            pendingLabel = cut.name
+            start = cut.offset
+        }
+        blocks.append(.init(label: pendingLabel, bytes: Array(bytes[start...]), pointers: [:]))
+        return blocks
     }
 
     /// Wraps byte blocks in a `.section` + label + directives the assembler

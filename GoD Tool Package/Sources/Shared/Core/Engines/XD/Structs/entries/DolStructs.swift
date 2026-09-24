@@ -150,6 +150,23 @@ public extension XDStructDefaults {
             .subStruct(name: "spanish_info", typeName: "TextureInfo"),
             .uint32(name: "unknown_3"),
         ],
-        description: "Multi-language texture metadata (US/EU, 0x58 bytes)"
+        description: "Multi-language texture metadata (US/EU, 0x48 bytes)"
+    )
+
+    /// The Japanese build ships one language, so a menu sprite carries one
+    /// `TextureInfo` rather than five and the entry is 0x18 rather than 0x48.
+    /// Both strides come from the game's own accessor: `menuSpriteBiosGetPtr`
+    /// multiplies the row index by 0x48 on US and PAL and by 0x18 on JP.
+    static let textureJPStruct = StructMap(
+        name: "TextureJP",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: [
+            .uint32(name: "unknown"),
+            .uint32(name: "unknown_2"),
+            .subStruct(name: "jp_info", typeName: "TextureInfo"),
+            .uint32(name: "unknown_3"),
+        ],
+        description: "Single-language texture metadata (JP, 0x18 bytes)"
     )
 }

@@ -39,6 +39,30 @@ public struct PPCSectionAssembler {
         baseAddress: UInt32,
         externalSymbols: [String: UInt32] = [:]
     ) throws -> GoDData {
+        try assembleReportingFileLengths(
+            files: files, baseAddress: baseAddress, externalSymbols: externalSymbols
+        ).data
+    }
+
+    /// The result of assembling a section: the bytes, and how many of them
+    /// each input file contributed.
+    ///
+    /// The per-file lengths are what lets a caller tell an unchanged chunk
+    /// from one that re-encoded to a different size. Measuring them here is
+    /// free — the encoder walks every line anyway — where a caller doing it
+    /// afterwards would have to parse the whole section a second time.
+    public struct AssembledSection {
+        public let data: GoDData
+        /// Byte length contributed by each input file, in input order.
+        public let fileLengths: [(name: String, length: Int)]
+    }
+
+    /// Assemble a section and report each input file's byte contribution.
+    public func assembleReportingFileLengths(
+        files: [(name: String, content: String)],
+        baseAddress: UInt32,
+        externalSymbols: [String: UInt32] = [:]
+    ) throws -> AssembledSection {
         // Parse all files
         let parsedFiles = files.map { (name: $0.name, lines: parser.parse($0.content)) }
 
@@ -98,11 +122,13 @@ public struct PPCSectionAssembler {
         parsedFiles: [(name: String, lines: [PPCParsedLine])],
         baseAddress: UInt32,
         labels: [String: UInt32]
-    ) throws -> GoDData {
+    ) throws -> AssembledSection {
         var bytes = [UInt8]()
         var currentAddress = baseAddress
+        var fileLengths = [(name: String, length: Int)]()
 
         for file in parsedFiles {
+            let fileStart = bytes.count
             for line in file.lines {
                 switch line {
                 case .instruction(let mnemonic, let parsedOperands):
@@ -141,9 +167,12 @@ public struct PPCSectionAssembler {
                     break
                 }
             }
+            fileLengths.append((name: file.name, length: bytes.count - fileStart))
         }
 
-        return GoDData(byteStream: bytes, byteOrder: .big)
+        return AssembledSection(
+            data: GoDData(byteStream: bytes, byteOrder: .big), fileLengths: fileLengths
+        )
     }
 
     // MARK: - Operand resolution

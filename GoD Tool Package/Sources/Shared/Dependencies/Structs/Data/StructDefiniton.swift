@@ -165,6 +165,59 @@ public struct StructDefinition: Equatable, Nameable {
     /// The reserved name `.padding(length:)` assigns to every padding run.
     public static let paddingPropertyName = "padding"
 
+    /// Byte ranges the padding runs occupy, flattened through sub-structs and
+    /// arrays of them, walked at the same offsets `StructCSVSchema` and
+    /// `StructData` use.
+    ///
+    /// Padding is skipped by name when columns are built, so an entry rebuilt
+    /// from a CSV has zeroes wherever the original had filler. That is right
+    /// for a format whose padding really is zero and wrong for one whose
+    /// packer writes something else (Battle Revolution's table compiler fills
+    /// intra-entry gaps with `0xD0`), so a writer that has to re-emit the
+    /// filler needs to know where it goes — which is what this is for. It is
+    /// *not* an invitation to give padding a column: the bytes carry no
+    /// information, only a value.
+    public var paddingRanges: [Range<Int>] {
+        var ranges = [Range<Int>]()
+        appendPaddingRanges(from: 0, into: &ranges)
+        return ranges
+    }
+
+    private func appendPaddingRanges(from base: Int, into ranges: inout [Range<Int>]) {
+        var offset = base
+        for property in properties {
+            switch alignmentStyle {
+            case .none:
+                break
+            case .cStyle:
+                let alignmentOffset = offset % property.type.alignment
+                if alignmentOffset > 0 {
+                    offset += property.type.alignment - alignmentOffset
+                }
+            }
+
+            if property.name == Self.paddingPropertyName {
+                ranges.append(offset..<(offset + property.type.length))
+            } else {
+                switch property.type {
+                case .padding:
+                    ranges.append(offset..<(offset + property.type.length))
+                case .subStruct(let sub):
+                    sub.appendPaddingRanges(from: offset, into: &ranges)
+                case .array(let element, let count):
+                    if case .subStruct(let sub) = element {
+                        for index in 0..<count {
+                            sub.appendPaddingRanges(from: offset + index * sub.length, into: &ranges)
+                        }
+                    }
+                default:
+                    break
+                }
+            }
+            offset += property.type.length
+        }
+    }
+
     /// A declared property that `keypath`'s first segment probably meant, for
     /// "did you mean" diagnostics. Matching is exact, so a near miss —
     /// `fileDataPointer` for `file_data_pointer` — otherwise just resolves to

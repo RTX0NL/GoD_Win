@@ -443,12 +443,61 @@ final class StructTableCSVTests: XCTestCase {
     }
 
     func testNonZeroPaddingIsNotPreserved() throws {
-        // Padding has no column, so it rebuilds as zeroes. A padding run that
-        // isn't zero isn't padding — it should be typed as a real field.
+        // Padding has no column, so it rebuilds as zeroes unless the caller
+        // says what fills it — a file the decoder is handed on its own can't
+        // know, and the CSV was never asked to carry it.
         let def = definition("Padded", [.uint8(name: "a"), .padding(length: 2)])
         let text = try StructTableCSV.encode(entries: [entry(def, [7, 0x11, 0x11])], definition: def)
         let rebuilt = try StructTableCSV.decode(text, definition: def).entries[0]
         XCTAssertEqual(rebuilt.data.rawBytes, [7, 0, 0])
+    }
+
+    func testDeclaredPaddingFillsAreWrittenBack() throws {
+        // A packer that fills gaps with something other than zero (Battle
+        // Revolution's table compiler writes 0xD0) names the runs, and the
+        // bytes come back — without giving padding a column, because the fill
+        // is one value for the whole table rather than per-row data.
+        let def = definition("Padded", [.uint8(name: "a"), .padding(length: 2), .uint8(name: "b")])
+        let rows = [entry(def, [7, 0xD0, 0xD0, 9]), entry(def, [8, 0xD0, 0xD0, 10])]
+        let fills = try XCTUnwrap(StructPaddingFill.measure(in: rows, definition: def))
+        XCTAssertEqual(fills, [StructPaddingFill(offset: 1, length: 2, byte: 0xD0)])
+
+        let text = try StructTableCSV.encode(entries: rows, definition: def)
+        XCTAssertFalse(lines(text)[0].contains("padding"), "the fill is not a column")
+        let rebuilt = try StructTableCSV.decode(text, definition: def, paddingFills: fills).entries
+        XCTAssertEqual(rebuilt.map(\.data.rawBytes), rows.map(\.data.rawBytes))
+    }
+
+    func testMeasuringRefusesAPaddingRunThatVariesBetweenRows() throws {
+        // Two rows disagreeing about a "padding" byte means it carries
+        // information, so it is a field the definition hasn't named. Saying
+        // nil here is what lets a caller refuse to write a lossy CSV.
+        let def = definition("Padded", [.uint8(name: "a"), .padding(length: 1)])
+        let rows = [entry(def, [7, 0xD0]), entry(def, [8, 0x11])]
+        XCTAssertNil(StructPaddingFill.measure(in: rows, definition: def))
+    }
+
+    func testAPaddingFillThatDoesNotFitTheRecordIsIgnored() throws {
+        // A manifest naming a run the record doesn't have is describing some
+        // other record. Writing it would grow the row and shift every entry
+        // after it, so it is dropped instead.
+        let def = definition("Padded", [.uint8(name: "a"), .padding(length: 1)])
+        let text = try StructTableCSV.encode(entries: [entry(def, [7, 0])], definition: def)
+        let rebuilt = try StructTableCSV.decode(
+            text, definition: def,
+            paddingFills: [StructPaddingFill(offset: 4, length: 2, byte: 0xD0)]
+        ).entries[0]
+        XCTAssertEqual(rebuilt.data.rawBytes, [7, 0])
+    }
+
+    func testPaddingRangesFlattenThroughSubStructsAndArrays() throws {
+        let cell = definition("Cell", [.uint8(name: "v"), .padding(length: 1)])
+        let def = definition("Grid", [
+            .padding(length: 2),
+            .subStruct(name: "head", defintion: cell),
+            .array(name: "rest", count: 2, of: .subStruct(cell)),
+        ])
+        XCTAssertEqual(def.paddingRanges, [0..<2, 3..<4, 5..<6, 7..<8])
     }
 
     func testRoundTripSurvivesStringsThatNeedQuoting() throws {

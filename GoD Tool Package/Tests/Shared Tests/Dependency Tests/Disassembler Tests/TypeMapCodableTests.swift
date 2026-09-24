@@ -11,14 +11,15 @@ import TestSupport
 final class TypeMapCodableTests: XCTestCase {
 
     /// The model equivalent of `typemap_sample.json` — every chunk variant,
-    /// including a count-by-value table and a count-by-label table.
+    /// including a table that declares its entry count and one that leaves it
+    /// out, which means "as many as fit before the next label".
     private func expectedTypeMap() -> TypeMap {
         TypeMap(
             chunks: [
                 .table(.init(name: "Trainers", start: "trainer_table",
                              entryType: "Trainer", count: 3)),
                 .table(.init(name: "Items", start: "item_table",
-                             entryType: "Item", countLabel: "item_count")),
+                             entryType: "Item")),
                 .single(.init(label: "player_start", type: "Vector3")),
                 .file(.init(label: "intro_text", extension: "msg", size: 256)),
             ]

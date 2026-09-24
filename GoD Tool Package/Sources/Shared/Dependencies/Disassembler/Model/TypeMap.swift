@@ -34,17 +34,26 @@ public struct TypeMap: Codable, Equatable {
             public let start: String
             /// Type name (looked up in engines — no "struct" prefix needed)
             public let entryType: String
-            /// Hardcoded entry count
-            public let count: Int?
-            /// Label pointing to a value holding the entry count (preferred over hardcoded)
-            public let countLabel: String?
 
-            public init(name: String, start: String, entryType: String, count: Int? = nil, countLabel: String? = nil) {
+            /// How many entries the table has. Absent means "as many as fit
+            /// between this label and the next", which is what a table whose
+            /// end a symbol already marks should say.
+            ///
+            /// There used to be a `countLabel` beside this — a label naming a
+            /// word that holds the count — and nothing ever read it: a map
+            /// could set it and get an empty table with no complaint. The
+            /// count words are worth checking a declared count *against*
+            /// (`DolTableCSVCorpusTests` does), but reading one at dump time
+            /// would only trade a hardcoded number for a hardcoded per-region
+            /// address, since on the DOL side they are unnamed `lbl_` targets
+            /// in `.sdata` rather than symbols.
+            public let count: Int?
+
+            public init(name: String, start: String, entryType: String, count: Int? = nil) {
                 self.name = name
                 self.start = start
                 self.entryType = entryType
                 self.count = count
-                self.countLabel = countLabel
             }
         }
 

@@ -16,7 +16,7 @@ final class SectionManifestTests: XCTestCase {
         DataSectionManifest(section: "data0", chunks: [
             .init(label: "lbl_80456200", type: .binary, file: "lbl_80456200.bin", size: 16),
             .init(label: "trainer_table", type: .table, file: "trainer_table.json",
-                  structType: "Trainer", countLabel: "trainer_count"),
+                  structType: "Trainer", count: 3),
             .init(label: "player_start", type: .struct, file: "player_start.json",
                   structType: "Vector3"),
             .init(label: "intro_text", type: .file, file: "intro_text.msg",

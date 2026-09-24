@@ -354,7 +354,7 @@ public struct DolDisassembler {
                         sectionName: ".\(sectionName)"
                     )
                     try? output.writeFile(GoDData(string: text, format: .utf8), at: sectionFolder.file(fileName), overwrite: true)
-                    manifest.chunks.append(.init(label: labelName, type: .assembly, file: fileName))
+                    manifest.chunks.append(.init(label: labelName, type: .assembly, file: fileName, size: chunkBytes.count))
                 } else {
                     let fileName = "\(labelName).bin"
                     try? output.writeFile(GoDData(byteStream: chunkBytes, byteOrder: .big), at: sectionFolder.file(fileName), overwrite: true)
@@ -385,9 +385,26 @@ public struct DolDisassembler {
                 if let typeChunk = typeChunkByLabel[labelName] {
                     switch typeChunk {
                     case .table(let table):
-                        let count = table.count ?? 0
                         guard let definition = resolvedStructs[table.entryType] else {
                             logger?.log(.warning("Unknown struct type '\(table.entryType)' for table '\(table.name)' — emitting as untyped chunk"))
+                            emitUntypedChunk(from: labelOffset, to: nextOffset, label: labelName)
+                            consumedUpTo = nextOffset
+                            continue
+                        }
+                        // A table that declares no count runs to the next
+                        // label, which is the rule the REL side already uses
+                        // and the only one that can be right: a DOL chunk's
+                        // end *is* the next label. Defaulting to zero instead
+                        // wrote an empty CSV and pushed every byte of the
+                        // table into the gap chunk behind it, saying nothing.
+                        let entrySize = definition.length
+                        let available = nextOffset - labelOffset
+                        let count = table.count ?? (entrySize > 0 ? available / entrySize : 0)
+                        guard entrySize > 0, count > 0 else {
+                            logger?.log(.warning(
+                                "Table '\(table.name)' of \(table.entryType) resolves to \(count) entries of "
+                                + "\(entrySize) bytes — emitting as untyped chunk"
+                            ))
                             emitUntypedChunk(from: labelOffset, to: nextOffset, label: labelName)
                             consumedUpTo = nextOffset
                             continue
@@ -437,6 +454,7 @@ public struct DolDisassembler {
                             manifest.chunks.append(.init(
                                 label: table.start, type: .table, file: fileName,
                                 structType: table.entryType, count: count,
+                                size: tableSize,
                                 entryLabels: entryLabels.isEmpty ? nil : entryLabels
                             ))
                         } catch {
@@ -472,7 +490,7 @@ public struct DolDisassembler {
                             try output.writeFile(json, at: sectionFolder.file(fileName), overwrite: true)
                             manifest.chunks.append(.init(
                                 label: single.label, type: .struct, file: fileName,
-                                structType: single.type
+                                structType: single.type, size: structSize
                             ))
                         } catch {
                             logger?.log(.warning("Failed to encode struct '\(single.label)' as JSON: \(error). Emitting as raw binary chunk."))
@@ -489,14 +507,49 @@ public struct DolDisassembler {
                         consumedUpTo = labelOffset + structSize
 
                     case .file(let embeddedFile):
-                        // The chunk was already split at label boundaries, so
-                        // its extent is the answer; the map only overrides when
-                        // a file is deliberately shorter than the gap.
+                        // The gap to the next label is a floor, not the
+                        // answer. A format that reads its own length off its
+                        // header can raise it: XD's health-warning texture
+                        // names its palette `tex_warning` 0x6C0 bytes in, and
+                        // XD PAL's Spanish message table has a symbol 66 KB
+                        // before its end, so the gap rule cut both short.
+                        //
+                        // It can only raise it. A measurement below the gap
+                        // would leave the bytes between to a separate chunk,
+                        // which is a layout decision the container already
+                        // made: a `.msg` keeps the alignment padding after
+                        // its pool, and `MSGFile` re-emits it. Declare
+                        // `size` in the type map to shorten a chunk.
+                        let ext = embeddedFile.extension
                         let available = min(nextOffset, bytes.count) - labelOffset
-                        let fileSize = min(embeddedFile.size ?? available, available)
+                        let toSectionEnd = bytes.count - labelOffset
+                        let measured = registry.measuredLength(
+                            of: GoDData(
+                                byteStream: Array(bytes[labelOffset..<bytes.count]), byteOrder: .big
+                            ),
+                            extension: ext
+                        )
+                        let fileSize = min(
+                            embeddedFile.size ?? max(measured ?? available, available), toSectionEnd
+                        )
                         let fileBytes = Array(bytes[labelOffset..<(labelOffset + fileSize)])
                         let fileData = GoDData(byteStream: fileBytes, byteOrder: .big)
-                        let ext = embeddedFile.extension
+
+                        // Symbols the file swallowed. Code points at them, so
+                        // the manifest carries them and the assembler puts
+                        // them back at the same offsets inside the rebuilt file.
+                        var interiorLabels = [String: String]()
+                        if fileSize > available {
+                            for (offset, name) in sectionLabels
+                            where offset > labelOffset && offset < labelOffset + fileSize {
+                                interiorLabels[String(offset - labelOffset)] = name
+                            }
+                            logger?.log(.info(
+                                "'\(embeddedFile.label)' (.\(ext)) measures \(fileSize) bytes and runs past "
+                                + "\(interiorLabels.count) of its own symbol(s); keeping them as interior labels."
+                            ))
+                        }
+                        let interior = interiorLabels.isEmpty ? nil : interiorLabels
 
                         if registry.isRegistered(ext) {
                             // Route through the file-format registry: dumps structured
@@ -516,7 +569,7 @@ public struct DolDisassembler {
                                     ?? "\(embeddedFile.label).\(ext)"
                                 manifest.chunks.append(.init(
                                     label: embeddedFile.label, type: .file, file: primary,
-                                    size: fileSize, fileExtension: ext
+                                    size: fileSize, fileExtension: ext, interiorLabels: interior
                                 ))
                             } catch {
                                 logger?.log(.warning("Registry dump failed for '\(embeddedFile.label)' (.\(ext)): \(error). Falling back to raw bytes."))
@@ -524,7 +577,7 @@ public struct DolDisassembler {
                                 try output.writeFile(fileData, at: sectionFolder.file(fileName), overwrite: true)
                                 manifest.chunks.append(.init(
                                     label: embeddedFile.label, type: .file, file: fileName,
-                                    size: fileSize, fileExtension: ext
+                                    size: fileSize, fileExtension: ext, interiorLabels: interior
                                 ))
                             }
                         } else {
@@ -532,7 +585,7 @@ public struct DolDisassembler {
                             try output.writeFile(fileData, at: sectionFolder.file(fileName), overwrite: true)
                             manifest.chunks.append(.init(
                                 label: embeddedFile.label, type: .file, file: fileName,
-                                size: fileSize, fileExtension: ext
+                                size: fileSize, fileExtension: ext, interiorLabels: interior
                             ))
                         }
                         consumedUpTo = labelOffset + fileSize

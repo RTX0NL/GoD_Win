@@ -96,7 +96,13 @@ public final class Dol {
             var dataSectionRAMAddresses = [UInt32]()
             var dataSectionSizes = [UInt32]()
             
-            var currentOffset = dolHeaderStruct.length
+            // Retail sections are all a multiple of 32 bytes long and sit
+            // back to back, so this alignment is a no-op on an unedited
+            // rebuild. It matters once an edit changes a section's size:
+            // the apploader DMAs sections straight off the disc, and an
+            // unaligned source offset is not something a DVD read can do.
+            let sectionAlignment = max(dolphinEngine.data.systemFiles.dolSectionAlignment, 1)
+            var currentOffset = dolHeaderStruct.length.aligned(to: sectionAlignment)
             
             for i in 0 ... 6 {
                 if i < textSections.count {
@@ -104,7 +110,7 @@ public final class Dol {
                     textSectionOffsets.append(currentOffset.unsigned)
                     textSectionRAMAddresses.append(section.RAMAddress)
                     textSectionSizes.append(section.assembly.length.unsigned)
-                    currentOffset += section.assembly.length
+                    currentOffset = (currentOffset + section.assembly.length).aligned(to: sectionAlignment)
                 } else {
                     textSectionOffsets.append(0)
                     textSectionRAMAddresses.append(0)
@@ -118,7 +124,7 @@ public final class Dol {
                     dataSectionOffsets.append(currentOffset.unsigned)
                     dataSectionRAMAddresses.append(section.RAMAddress)
                     dataSectionSizes.append(section.data.length.unsigned)
-                    currentOffset += section.data.length
+                    currentOffset = (currentOffset + section.data.length).aligned(to: sectionAlignment)
                 } else {
                     dataSectionOffsets.append(0)
                     dataSectionRAMAddresses.append(0)
@@ -133,12 +139,15 @@ public final class Dol {
             header.data_sections_RAM_addresses = dataSectionRAMAddresses
             header.data_sections_sizes = dataSectionSizes
             
-            let result = header.data
-            textSections.forEach {
-                result.append($0.assembly)
+            // Write each section at the offset the header just recorded, so
+            // any alignment padding between them is real zero bytes.
+            let result = GoDData(length: 0, byteOrder: .big)
+            result.append(header.data)
+            for (index, section) in textSections.enumerated() where section.assembly.length > 0 {
+                result.write(section.assembly, atAddress: Int(textSectionOffsets[index]))
             }
-            dataSections.forEach {
-                result.append($0.data)
+            for (index, section) in dataSections.enumerated() where section.data.length > 0 {
+                result.write(section.data, atAddress: Int(dataSectionOffsets[index]))
             }
             return result
         }

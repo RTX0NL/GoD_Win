@@ -645,4 +645,36 @@ public extension XDStructDefaults {
         ] + roomRuntimeProperties,
         description: "Room (floor) definition, JP layout: one fsys id, before the run-time fields (0x30 bytes per entry)"
     )
+
+    /// One entry of `common.rel`'s **`GeneralFlags`** table — the schema half
+    /// of XD's flag system (2324 × 6 bytes). The values live in save section
+    /// 8; nothing in the save says where one flag ends and the next begins,
+    /// so this table is what makes the banks readable. Full write-up in
+    /// `Documentation/Assembly Analysis/Data Structures/Flags.md`.
+    ///
+    /// Byte-identical on US, PAL and JP — one table serves every build.
+    static let generalFlagStruct = StructMap(
+        name: "GeneralFlag",
+        wordSize: 1,
+        alignmentStyle: .none,
+        properties: [
+            // +0x0 packs two fields: bits 6-7 are the bank (1-3; 0 means the
+            // flag has no storage, which nothing uses) and bits 0-5 the bit
+            // length (1-32). `GSflagGet` masks it one way for the bank,
+            // `_flagGet` the other for the width. `StructData` has no sub-byte
+            // fields, so it stays one byte here; the save-side flag CSV is
+            // where the two halves are split out.
+            .uint8(name: "bankAndBitLength", description: "bits 6-7 bank, bits 0-5 bit length"),
+            .uint8(name: "reserved", description: "0 in all 2324 entries"),
+            // +0x2 is scratch on disc: `GSflagInitBitPos` fills it at boot
+            // with the bank's running bit total over all lower-numbered
+            // flags. Zero in every entry of every region's table.
+            .uint16(name: "bitPosition", description: "computed at boot by GSflagInitBitPos; 0 on disc"),
+            // +0x4 threads every flag into one list for the debug menu
+            // (`_dbgMenuFlagGetID` walks it). From entry 0 it visits all 2324
+            // exactly once and ends at -1.
+            .int16(name: "nextFlagID", description: "next flag in the debug-menu chain, -1 ends"),
+        ],
+        description: "GeneralFlags entry: XD's flag descriptor (bank + bit width + debug-menu link)"
+    )
 }

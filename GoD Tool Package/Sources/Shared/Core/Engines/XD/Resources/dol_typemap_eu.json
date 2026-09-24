@@ -1,6 +1,110 @@
 {
  "chunks": [
   {
+   "table": {
+    "name": "MenuData",
+    "start": "lbl_802FDFB0",
+    "entryType": "MenuData",
+    "count": 288
+   }
+  },
+  {
+   "table": {
+    "name": "Textures",
+    "start": "lbl_803018D8",
+    "entryType": "Texture",
+    "count": 1019
+   }
+  },
+  {
+   "table": {
+    "name": "StatusEffects",
+    "start": "lbl_80436CC0",
+    "entryType": "StatusEffect",
+    "count": 87
+   }
+  },
+  {
+   "table": {
+    "name": "Abilities",
+    "start": "lbl_8043A530",
+    "entryType": "Ability",
+    "count": 78
+   }
+  },
+  {
+   "table": {
+    "name": "TMs",
+    "start": "lbl_8043FC80",
+    "entryType": "TM",
+    "count": 58
+   }
+  },
+  {
+   "table": {
+    "name": "WZXMoveAnimations",
+    "start": "lbl_80446EA8",
+    "entryType": "WZXMoveAnimation",
+    "count": 373
+   }
+  },
+  {
+   "table": {
+    "name": "PKXTrainerModels",
+    "start": "lbl_80447768",
+    "entryType": "PKXModel",
+    "count": 68
+   }
+  },
+  {
+   "table": {
+    "name": "PKXPokemonModels",
+    "start": "lbl_80447988",
+    "entryType": "PKXModel",
+    "count": 419
+   }
+  },
+  {
+   "table": {
+    "name": "UnownPKXModels",
+    "start": "lbl_8044A620",
+    "entryType": "PKXModel",
+    "count": 28
+   }
+  },
+  {
+   "table": {
+    "name": "ShinyPKXPokemonModels",
+    "start": "lbl_8044A700",
+    "entryType": "ShinyPKXModel",
+    "count": 35
+   }
+  },
+  {
+   "table": {
+    "name": "WZXAnimations",
+    "start": "lbl_8044AA08",
+    "entryType": "WZXAnimation",
+    "count": 1399
+   }
+  },
+  {
+   "table": {
+    "name": "DeoxysPKXModels",
+    "start": "lbl_8044D958",
+    "entryType": "PKXModel",
+    "count": 4
+   }
+  },
+  {
+   "table": {
+    "name": "DeoxysShinyPKXModels",
+    "start": "lbl_8044D978",
+    "entryType": "PKXModel",
+    "count": 4
+   }
+  },
+  {
    "file": {
     "label": "lbl_803757C8",
     "extension": "fnt"

@@ -17,6 +17,14 @@
 //  bytes zero. Columns are matched by header, not by position, so a file
 //  can be reordered or partially filled.
 //
+//  Padding is the one thing a zeroed buffer can get wrong, because it has
+//  no column to carry it: a packer that fills its gaps with something other
+//  than zero (Battle Revolution's table compiler writes `0xD0` in some runs
+//  and zero in others) needs those bytes back, so `decode` takes the runs
+//  and their fill byte. A run's fill is one value for the whole table — it
+//  carries no information, which is exactly why it has no column and why
+//  naming the value is enough.
+//
 
 import Foundation
 import GoDFoundation
@@ -219,10 +227,17 @@ public enum StructTableCSV {
 
     // MARK: - Decoding
 
+    /// - Parameter paddingFills: what to write over the record's padding
+    ///   runs once a row is built. Padding has no column, so a rebuilt row is
+    ///   zero there; a packer that fills its gaps with something else
+    ///   (Battle Revolution's table compiler writes `0xD0` in some runs and
+    ///   zero in others, per run) hands those runs over here. Empty leaves
+    ///   every run zero.
     public static func decode(
         _ text: String,
         definition: StructDefinition,
-        byteOrder: ByteOrder = .big
+        byteOrder: ByteOrder = .big,
+        paddingFills: [StructPaddingFill] = []
     ) throws -> DecodeResult {
         let columns = StructCSVSchema.columns(of: definition)
         guard !columns.isEmpty else {
@@ -267,6 +282,14 @@ public enum StructTableCSV {
             )
         }
 
+        // A zero-filled run needs no writing: the row starts zeroed. A run
+        // that doesn't fit this record isn't described by it — writing it
+        // would grow the row and move every entry after it — so it is
+        // dropped rather than applied.
+        let fills = paddingFills.filter {
+            $0.byte != 0 && $0.length > 0 && $0.offset >= 0 && $0.offset + $0.length <= definition.length
+        }
+
         var entries = [StructData]()
         for (rowIndex, row) in rows.dropFirst().enumerated() {
             let rowNumber = rowIndex + 1
@@ -279,6 +302,12 @@ public enum StructTableCSV {
             let entry = StructData(definition: definition, byteOrder: byteOrder)
             for (index, column) in mapping where index < row.count {
                 try write(cell: row[index], column: column, into: entry, row: rowNumber)
+            }
+            for fill in fills {
+                entry.data.write(
+                    GoDData(byteStream: [UInt8](repeating: fill.byte, count: fill.length), byteOrder: byteOrder),
+                    atAddress: UInt(fill.offset)
+                )
             }
             entries.append(entry)
         }

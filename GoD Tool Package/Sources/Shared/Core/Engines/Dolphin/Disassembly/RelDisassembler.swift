@@ -458,7 +458,7 @@ public struct RelDisassembler {
                 bytes: span, label: label, isGlobal: isGlobal, pointers: pointerMap, sectionName: sectionName
             )
             try fileSystem.writeFile(GoDData(string: text, format: .utf8), at: folder.file(path), overwrite: true)
-            return .init(label: label, type: .assembly, file: path)
+            return .init(label: label, type: .assembly, file: path, size: span.count)
         }
 
         // A section nothing points into is one assembly file.
@@ -469,7 +469,7 @@ public struct RelDisassembler {
                 pointers: pointerNames(in: 0..<bytes.count), sectionName: sectionName
             )
             try fileSystem.writeFile(GoDData(string: text, format: .utf8), at: folder.file(path), overwrite: true)
-            result.chunks.append(.init(label: sectionName, type: .assembly, file: path))
+            result.chunks.append(.init(label: sectionName, type: .assembly, file: path, size: bytes.count))
             result.emittedLabels.insert(sectionName)
             return result
         }
@@ -495,19 +495,61 @@ public struct RelDisassembler {
             var consumed = 0   // bytes a typed chunk claimed from `start`
 
             if case .file(let embedded) = typeChunkBySymbol[label] {
-                let fileSize = min(embedded.size ?? (end - start), end - start)
+                // The next symbol is a floor, not the answer: a format that
+                // reads its own length off its header can raise it, since a
+                // symbol can sit inside a file (a GTX names its palette) and
+                // would otherwise cut it short. It can only raise it — a
+                // measurement below the gap would take the container's
+                // trailing padding away from the chunk that owns it.
+                let measured = inputs.registry?.measuredLength(
+                    of: GoDData(byteStream: Array(bytes[start...]), byteOrder: .big),
+                    extension: embedded.extension
+                )
+                let fileSize = min(
+                    embedded.size ?? max(measured ?? (end - start), end - start), bytes.count - start
+                )
                 if pointers.keys.contains(where: { $0 >= start && $0 < start + fileSize }) {
                     logger?.log(.warning(
                         "'\(label)' is typed as a .\(embedded.extension) file but a relocation lands inside it; "
                         + "emitting it as assembly so the pointer survives."
                     ))
                 } else {
+                    // Symbols the file swallowed. They are relocation targets,
+                    // so the manifest carries them and the assembler puts them
+                    // back at the same offsets inside the rebuilt file.
+                    var interiorLabels = [String: String]()
+                    if fileSize > end - start {
+                        for offset in boundaries where offset > start && offset < start + fileSize {
+                            interiorLabels[String(offset - start)] = labelsAtOffset[UInt32(offset)]!
+                        }
+                        logger?.log(.info(
+                            "'\(label)' (.\(embedded.extension)) measures \(fileSize) bytes and runs past "
+                            + "\(interiorLabels.count) of its own symbol(s); keeping them as interior labels."
+                        ))
+                    }
                     let fileData = GoDData(byteStream: Array(bytes[start..<start + fileSize]), byteOrder: .big)
-                    result.chunks.append(try writeEmbeddedFile(
+                    var chunk = try writeEmbeddedFile(
                         fileData, label: label, extension: embedded.extension,
                         sectionName: sectionName, into: folder, fileSystem: fileSystem, logger: logger
-                    ))
+                    )
+                    if !interiorLabels.isEmpty {
+                        chunk = .init(
+                            label: chunk.label, type: chunk.type, file: chunk.file,
+                            structType: chunk.structType,
+                            count: chunk.count, size: chunk.size,
+                            fileExtension: chunk.fileExtension, entryLabels: chunk.entryLabels,
+                            interiorLabels: interiorLabels
+                        )
+                        for (_, name) in interiorLabels { result.emittedLabels.insert(name) }
+                    }
+                    result.chunks.append(chunk)
                     consumed = fileSize
+                    // Boundaries the file swallowed are interior labels, not
+                    // chunks of their own — the same rule the table path uses.
+                    while i + 1 < boundaries.count, boundaries[i + 1] < start + consumed {
+                        i += 1
+                    }
+                    end = i + 1 < boundaries.count ? boundaries[i + 1] : bytes.count
                 }
             } else if case .table(let table) = typeChunkBySymbol[label] {
                 if let definition = inputs.structs[table.entryType] {
@@ -678,7 +720,7 @@ public struct RelDisassembler {
         }
         let chunk = DataSectionManifest.Chunk(
             label: label, type: .table, file: path,
-            structType: table.entryType, count: count,
+            structType: table.entryType, count: count, size: tableSize,
             entryLabels: namesByIndex.isEmpty ? nil : namesByIndex
         )
         return (chunk, tableSize)

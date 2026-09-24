@@ -25,9 +25,7 @@ public struct DataSectionManifest: Codable, Equatable {
         public let file: String
         /// For struct chunks: the struct type name
         public let structType: String?
-        /// For table chunks: label pointing to the count value
-        public let countLabel: String?
-        /// For table chunks: hardcoded count (fallback)
+        /// For table chunks: how many entries it holds
         public let count: Int?
         /// For binary chunks: size in bytes
         public let size: Int?
@@ -41,27 +39,37 @@ public struct DataSectionManifest: Codable, Equatable {
         /// the struct's fields and nothing else. (Keyed by a string because
         /// JSON object keys are strings.)
         public let entryLabels: [String: String]?
+        /// For file chunks: symbol names that fall *inside* the file, keyed
+        /// by their byte offset from the chunk's start.
+        ///
+        /// A chunk normally runs from its own symbol to the next one, so an
+        /// interior symbol would end it early. A format that measures itself
+        /// overrides that — XD's health-warning texture names its palette
+        /// `tex_warning`, 0x6C0 bytes in — and the names have to survive,
+        /// because code points at them. The assembler re-emits each one at
+        /// its offset inside the rebuilt file.
+        public let interiorLabels: [String: String]?
 
         public init(
             label: String,
             type: ChunkType,
             file: String,
             structType: String? = nil,
-            countLabel: String? = nil,
             count: Int? = nil,
             size: Int? = nil,
             fileExtension: String? = nil,
-            entryLabels: [String: String]? = nil
+            entryLabels: [String: String]? = nil,
+            interiorLabels: [String: String]? = nil
         ) {
             self.label = label
             self.type = type
             self.file = file
             self.structType = structType
-            self.countLabel = countLabel
             self.count = count
             self.size = size
             self.fileExtension = fileExtension
             self.entryLabels = entryLabels
+            self.interiorLabels = interiorLabels
         }
     }
 

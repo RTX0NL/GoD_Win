@@ -31,11 +31,13 @@ public struct DolAssembler {
         codeFolder: Folder,
         outputDolPath: File,
         symbolMapPath: File?,
+        outputSymbolMapPath: File? = nil,
         typeMapPath: File?,
         bssEntryListPath: File?,
         engineFolders: [Folder],
         sdaBase: UInt32?,
         sda2Base: UInt32?,
+        allowResizedChunks: Bool = false,
         in fileSystem: FileSystemTree,
         logger: Logger? = nil
     ) throws {
@@ -84,7 +86,7 @@ public struct DolAssembler {
 
         var prescanDataFiles = [String: [(name: String, content: String)]]()
         for section in layout.dataSections {
-            prescanDataFiles[section.name] = Self.collectDataSectionFiles(
+            prescanDataFiles[section.name] = try Self.collectDataSectionFiles(
                 section.name,
                 codeFolder: codeFolder,
                 fileSystem: fileSystem,
@@ -92,8 +94,9 @@ public struct DolAssembler {
                 structs: resolvedStructs,
                 labelTable: prescanLabelTable,
                 registry: registry,
+                allowResizedChunks: allowResizedChunks,
                 logger: nil
-            )
+            ).files
         }
 
         for section in layout.textSections {
@@ -105,9 +108,17 @@ public struct DolAssembler {
             let labels = assembler.collectLabelsOnly(files: files, baseAddress: section.address)
             globalSymbols.merge(labels) { existing, _ in existing }
         }
+        // Data labels are kept separately as well as merged: they are the
+        // chunk and table-entry symbols a type map names, so a rewritten
+        // symbol map has to carry them even when the input map never did.
+        // Their addresses here are final — the prescan renders typed chunks
+        // with an empty label table, which can leave a pointer *value*
+        // wrong but never changes a chunk's length.
+        var dataSectionLabels = [String: UInt32]()
         for section in layout.dataSections {
             let files = prescanDataFiles[section.name] ?? []
             let labels = assembler.collectLabelsOnly(files: files, baseAddress: section.address)
+            dataSectionLabels.merge(labels) { existing, _ in existing }
             globalSymbols.merge(labels) { existing, _ in existing }
         }
 
@@ -148,11 +159,12 @@ public struct DolAssembler {
         }
 
         // Load symbol map for external references (exception handlers, etc.)
+        var inputSymbols = [PPCSymbol]()
         if let symbolMapPath = symbolMapPath,
            let mapData = fileSystem.readFile(at: symbolMapPath)?.allData {
             let parser = SymbolMapParser()
-            let symbols = parser.parse(mapData.string(format: .utf8))
-            for sym in symbols where globalSymbols[sym.name] == nil {
+            inputSymbols = parser.parse(mapData.string(format: .utf8))
+            for sym in inputSymbols where globalSymbols[sym.name] == nil {
                 globalSymbols[sym.name] = sym.address
             }
         }
@@ -209,7 +221,7 @@ public struct DolAssembler {
         // Assemble data sections — re-render typed chunks with the
         // final label table so pointer fields carry real addresses.
         for section in layout.dataSections {
-            let files = Self.collectDataSectionFiles(
+            let source = try Self.collectDataSectionFiles(
                 section.name,
                 codeFolder: codeFolder,
                 fileSystem: fileSystem,
@@ -217,11 +229,45 @@ public struct DolAssembler {
                 structs: resolvedStructs,
                 labelTable: labelTable,
                 registry: registry,
+                allowResizedChunks: allowResizedChunks,
                 logger: logger
             )
-            if !files.isEmpty {
-                let assembled = try assembler.assemble(files: files, baseAddress: section.address, externalSymbols: globalSymbols)
-                dataSections.append(.init(RAMAddress: section.address, data: assembled))
+            if !source.files.isEmpty {
+                let assembled = try assembler.assembleReportingFileLengths(
+                    files: source.files, baseAddress: section.address, externalSymbols: globalSymbols
+                )
+                // Every other chunk type was held to its recorded size before
+                // assembly; an assembly chunk is text the assembler consumes
+                // verbatim, so this is the first point its length is known.
+                for (name, length) in assembled.fileLengths {
+                    guard let recorded = source.assemblySizes[name], recorded.recorded != length else { continue }
+                    if length > recorded.recorded, !allowResizedChunks {
+                        throw DolAssemblyErrors.chunkOverflow(
+                            section: section.name, label: recorded.label,
+                            recorded: recorded.recorded, assembled: length, .init()
+                        )
+                    }
+                    logger?.log(.warning(
+                        "\(section.name) assembly chunk '\(recorded.label)' assembled to \(length) bytes, "
+                        + "\(abs(length - recorded.recorded)) \(length > recorded.recorded ? "more" : "fewer") "
+                        + "than the \(recorded.recorded) it was dumped at — everything after it in "
+                        + "\(section.name) shifts."
+                    ))
+                }
+                if let recorded = section.size, UInt32(assembled.data.length) != recorded {
+                    let assembledSize = assembled.data.length
+                    if assembledSize > Int(recorded), !allowResizedChunks {
+                        throw DolAssemblyErrors.sectionOverflow(
+                            section: section.name, recorded: Int(recorded),
+                            assembled: assembledSize, .init()
+                        )
+                    }
+                    logger?.log(.warning(
+                        "\(section.name) assembled to \(assembledSize) bytes against the \(recorded) "
+                        + "sections.txt records."
+                    ))
+                }
+                dataSections.append(.init(RAMAddress: section.address, data: assembled.data))
             } else {
                 dataSections.append(.init(RAMAddress: section.address, data: .none))
             }
@@ -299,8 +345,115 @@ public struct DolAssembler {
         let dolData = try dol.data
         try fileSystem.writeFile(dolData, at: outputDolPath, overwrite: true)
 
+        if let outputSymbolMapPath {
+            let dataSectionRanges = layout.dataSections.enumerated().map { index, info in
+                (
+                    start: info.address,
+                    end: info.address &+ UInt32(index < dataSections.count ? dataSections[index].data.length : 0)
+                )
+            }
+            try Self.writeSymbolMap(
+                to: outputSymbolMapPath,
+                inputSymbols: inputSymbols,
+                assembledSymbols: globalSymbols,
+                dataSectionLabels: dataSectionLabels,
+                dataSectionRanges: dataSectionRanges,
+                in: fileSystem,
+                logger: logger
+            )
+        }
+
         logger?.log(.taskStatus(taskName: "Assemble DOL", status: .completed(true)))
         logger?.log(.info("DOL written to \(outputDolPath.path) (\(dolData.length) bytes)"))
+    }
+
+    /// Re-emit the symbol map with the addresses this assembly produced.
+    ///
+    /// A DOL's symbol map is addresses, and the type map layered on it names
+    /// chunks by label, so a chunk that re-encodes to a different size leaves
+    /// every later symbol somewhere the map doesn't know and the next
+    /// disassembly types the wrong bytes. Writing the map back closes that
+    /// loop: the names stay put and the addresses follow the rebuild.
+    ///
+    /// Two sets go in. The **input map's symbols** keep their size, section
+    /// and object file — those columns decide how the next disassembly
+    /// groups text into per-object folders, so losing them would reshape the
+    /// source tree — and take whatever address the assembly gave the label of
+    /// that name, falling back to the address they came in with for symbols
+    /// the source never defines (hardware registers, BSS interiors). The
+    /// **data-section labels** are added whether or not the map had them,
+    /// because on a game like XD the type map's tables are named by
+    /// `lbl_XXXXXXXX` auto-labels that were never in the map to begin with,
+    /// and those are exactly the names a shift would strand.
+    ///
+    /// A new label's size is the gap to the next label, which is what the
+    /// disassembler's own chunking uses; the input map's sizes are left
+    /// alone, since nothing here can measure a text symbol.
+    ///
+    /// One case is knowingly not covered: a map symbol inside a data section
+    /// that the disassembler kept out of the chunk boundaries (a misaligned
+    /// string or byte global — it warns about these) defines no label, so it
+    /// keeps its old address and is wrong by the shift. Those are already
+    /// documented as not shiftable.
+    private static func writeSymbolMap(
+        to path: File,
+        inputSymbols: [PPCSymbol],
+        assembledSymbols: [String: UInt32],
+        dataSectionLabels: [String: UInt32],
+        dataSectionRanges: [(start: UInt32, end: UInt32)],
+        in fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws {
+        var output = [PPCSymbol]()
+        var moved = 0
+        var known = Set<String>()
+
+        for symbol in inputSymbols {
+            let address = assembledSymbols[symbol.name] ?? symbol.address
+            if address != symbol.address { moved += 1 }
+            known.insert(symbol.name)
+            output.append(PPCSymbol(
+                name: symbol.name,
+                address: address,
+                size: symbol.size,
+                section: symbol.section,
+                sourceFile: symbol.sourceFile
+            ))
+        }
+
+        // Size a new label by the distance to the next one in its section.
+        var boundariesBySection = [Int: [UInt32]]()
+        func sectionIndex(of address: UInt32) -> Int? {
+            dataSectionRanges.firstIndex { address >= $0.start && address < $0.end }
+        }
+        for (_, address) in dataSectionLabels {
+            guard let index = sectionIndex(of: address) else { continue }
+            boundariesBySection[index, default: []].append(address)
+        }
+        for index in boundariesBySection.keys {
+            boundariesBySection[index]?.sort()
+        }
+
+        for (name, address) in dataSectionLabels where !known.contains(name) {
+            var size: UInt32 = 0
+            if let index = sectionIndex(of: address), let boundaries = boundariesBySection[index] {
+                let next = boundaries.first(where: { $0 > address }) ?? dataSectionRanges[index].end
+                size = next &- address
+            }
+            output.append(PPCSymbol(name: name, address: address, size: size, section: ".data"))
+        }
+
+        let sectionOrder = inputSymbols.reduce(into: [String]()) { order, symbol in
+            if let section = symbol.section, !order.contains(section) { order.append(section) }
+        }
+        let text = SymbolMapWriter().write(output, sectionOrder: sectionOrder)
+        try fileSystem.writeFile(GoDData(string: text, format: .utf8), at: path, overwrite: true)
+
+        let added = output.count - inputSymbols.count
+        logger?.log(.info(
+            "Symbol map written to \(path.path) (\(output.count) symbols, "
+            + "\(moved) moved, \(added) added from the assembled data sections)"
+        ))
     }
 
     /// Collect assembly files for a data section.
@@ -327,29 +480,37 @@ public struct DolAssembler {
         structs: [String: StructDefinition],
         labelTable: LabelTable,
         registry: FileFormatRegistry,
+        allowResizedChunks: Bool,
         logger: Logger?
-    ) -> [(name: String, content: String)] {
+    ) throws -> DataSectionSource {
         let sectionFolder = codeFolder.folder(sectionName)
 
         if let manifest = manifestReader.readDataManifest(from: sectionFolder, fileSystem: fileSystem) {
-            var files = [(name: String, content: String)]()
+            var source = DataSectionSource()
             for chunk in manifest.chunks {
                 let file = sectionFolder.file(chunk.file)
                 switch chunk.type {
                 case .assembly:
                     if let data = fileSystem.readFile(at: file)?.allData {
-                        files.append((name: chunk.file, content: data.string(format: .utf8)))
+                        source.files.append((name: chunk.file, content: data.string(format: .utf8)))
+                        if let recorded = chunk.size {
+                            source.assemblySizes[chunk.file] = (label: chunk.label, recorded: recorded)
+                        }
                     } else {
                         logger?.log(.warning("Assembly chunk '\(chunk.label)' dropped: \(chunk.file) missing — section \(sectionName) will come out short"))
                     }
                 case .binary:
                     if let data = fileSystem.readFile(at: file)?.allData {
-                        files.append((
+                        source.files.append((
                             name: "\(chunk.label).synthesized.s",
                             content: renderByteBlocksAsAssembly(
                                 sectionName: sectionName,
                                 chunkLabel: chunk.label,
-                                blocks: [(label: nil, bytes: data)]
+                                blocks: try Self.fitToRecordedSize(
+                                    [(label: nil, bytes: data)],
+                                    chunk: chunk, sectionName: sectionName,
+                                    allowResizedChunks: allowResizedChunks, logger: logger
+                                )
                             )
                         ))
                     } else {
@@ -363,47 +524,184 @@ public struct DolAssembler {
                         registry: registry,
                         logger: logger
                     ) {
-                        files.append((
+                        source.files.append((
                             name: "\(chunk.label).synthesized.s",
                             content: renderByteBlocksAsAssembly(
                                 sectionName: sectionName,
                                 chunkLabel: chunk.label,
-                                blocks: [(label: nil, bytes: data)]
+                                blocks: try Self.fitToRecordedSize(
+                                    Self.splitAtInteriorLabels(data, chunk: chunk, logger: logger),
+                                    chunk: chunk, sectionName: sectionName,
+                                    allowResizedChunks: allowResizedChunks, logger: logger
+                                )
                             )
                         ))
                     } else {
                         logger?.log(.warning("File chunk '\(chunk.label)' dropped: no rebuildable artifacts for \(chunk.file) — section \(sectionName) will come out short"))
                     }
                 case .struct, .table:
-                    if let rendered = Self.renderTypedChunkAssembly(
+                    if let blocks = Self.typedChunkBlocks(
                         chunk: chunk,
-                        sectionName: sectionName,
                         sectionFolder: sectionFolder,
                         fileSystem: fileSystem,
                         structs: structs,
                         labelTable: labelTable,
                         logger: logger
                     ) {
-                        files.append(rendered)
+                        source.files.append((
+                            name: "\(chunk.label).synthesized.s",
+                            content: renderByteBlocksAsAssembly(
+                                sectionName: sectionName,
+                                chunkLabel: chunk.label,
+                                blocks: try Self.fitToRecordedSize(
+                                    blocks,
+                                    chunk: chunk, sectionName: sectionName,
+                                    allowResizedChunks: allowResizedChunks, logger: logger
+                                )
+                            )
+                        ))
                     } else {
                         logger?.log(.warning("Typed chunk '\(chunk.label)' dropped: JSON missing or undecodable — section \(sectionName) will come out short"))
                     }
                 }
             }
-            return files
+            return source
         }
 
         // Fall back to folder with .s files
         if fileSystem.inspectFolder(at: sectionFolder) != nil {
-            return Self.collectAssemblyFiles(from: sectionFolder, fileSystem: fileSystem)
+            return DataSectionSource(
+                files: Self.collectAssemblyFiles(from: sectionFolder, fileSystem: fileSystem)
+            )
         }
 
         // Fall back to single file
         let sectionFile = codeFolder.file("\(sectionName).s")
         if let data = fileSystem.readFile(at: sectionFile)?.allData {
-            return [(sectionName + ".s", data.string(format: .utf8))]
+            return DataSectionSource(files: [(sectionName + ".s", data.string(format: .utf8))])
         }
-        return []
+        return DataSectionSource()
+    }
+
+    /// The assembly sources for one data section, plus what the manifest
+    /// said each `.assembly` chunk used to weigh.
+    ///
+    /// Every other chunk type is rebuilt from bytes this file holds, so its
+    /// size is known — and enforced — before assembly. An assembly chunk is
+    /// text handed straight to the assembler, so its length only becomes
+    /// known once the section is encoded; `assemblySizes` is what lets the
+    /// caller check it afterwards.
+    struct DataSectionSource {
+        var files: [(name: String, content: String)] = []
+        var assemblySizes: [String: (label: String, recorded: Int)] = [:]
+    }
+
+    /// Cut a rebuilt file into blocks at the symbols that live inside it,
+    /// so each one is re-emitted as a label at the same offset.
+    ///
+    /// A file chunk normally has no interior symbols — the disassembler
+    /// ends a chunk at the next one. It keeps going only when the format
+    /// measured itself past a symbol (XD's health-warning texture and its
+    /// `tex_warning` palette), and that symbol is a real relocation target,
+    /// so dropping it would leave the code pointing at a stale address.
+    ///
+    /// An offset past the rebuilt file is dropped with a warning rather
+    /// than silently losing the label: it means the file re-encoded shorter
+    /// than the symbol it used to contain.
+    private static func splitAtInteriorLabels(
+        _ data: GoDData,
+        chunk: DataSectionManifest.Chunk,
+        logger: Logger?
+    ) -> [(label: String?, bytes: GoDData)] {
+        guard let interior = chunk.interiorLabels, !interior.isEmpty else {
+            return [(label: nil, bytes: data)]
+        }
+        let cuts = interior
+            .compactMap { key, name -> (offset: Int, name: String)? in
+                guard let offset = Int(key), offset > 0 else { return nil }
+                guard offset < data.length else {
+                    logger?.log(.warning(
+                        "Interior label '\(name)' sits \(offset) bytes into '\(chunk.label)', which "
+                        + "rebuilt to only \(data.length) bytes — the label is dropped."
+                    ))
+                    return nil
+                }
+                return (offset: offset, name: name)
+            }
+            .sorted { $0.offset < $1.offset }
+        guard !cuts.isEmpty else { return [(label: nil, bytes: data)] }
+
+        // The chunk's own label is emitted by the renderer, so the first
+        // block carries none; each cut names the block that starts at it.
+        var blocks = [(label: String?, bytes: GoDData)]()
+        var start = 0
+        var pendingLabel: String?
+        let bytes = data.byteStream
+        for cut in cuts {
+            blocks.append((
+                label: pendingLabel,
+                bytes: GoDData(byteStream: Array(bytes[start..<cut.offset]), byteOrder: .big)
+            ))
+            pendingLabel = cut.name
+            start = cut.offset
+        }
+        blocks.append((
+            label: pendingLabel,
+            bytes: GoDData(byteStream: Array(bytes[start...]), byteOrder: .big)
+        ))
+        return blocks
+    }
+
+    /// Hold a rebuilt chunk to the extent the disassembly recorded for it.
+    ///
+    /// A chunk runs from its own symbol to the next one, so its length is
+    /// part of the section's layout, not a property of its contents: let a
+    /// chunk re-encode shorter or longer and every symbol after it in the
+    /// section moves. The symbol map the next disassembly reads is keyed by
+    /// address and the type map on top of it names chunks by label, so that
+    /// shift is what turns a table into garbage rows on a second dump.
+    ///
+    /// Short is recoverable and common — a re-encoded `.msg` re-derives its
+    /// own string layout and can land a few bytes under — so the gap is
+    /// zero-filled and reported. Those bytes belong to the chunk and the
+    /// formats that own them carry their own lengths, so nothing reads them.
+    ///
+    /// Long cannot be absorbed and stops the assembly, unless the caller has
+    /// explicitly accepted resized chunks; the rebuild then rewrites the
+    /// symbol map, which is what keeps a deliberate shift usable.
+    ///
+    /// A manifest from before chunk sizes were recorded has no `size`, and
+    /// nothing is enforced for it.
+    private static func fitToRecordedSize(
+        _ blocks: [(label: String?, bytes: GoDData)],
+        chunk: DataSectionManifest.Chunk,
+        sectionName: String,
+        allowResizedChunks: Bool,
+        logger: Logger?
+    ) throws -> [(label: String?, bytes: GoDData)] {
+        guard let recorded = chunk.size else { return blocks }
+        let assembled = blocks.reduce(0) { $0 + $1.bytes.length }
+        if assembled == recorded { return blocks }
+
+        if assembled > recorded {
+            guard allowResizedChunks else {
+                throw DolAssemblyErrors.chunkOverflow(
+                    section: sectionName, label: chunk.label,
+                    recorded: recorded, assembled: assembled, .init()
+                )
+            }
+            logger?.log(.warning(
+                "\(sectionName) chunk '\(chunk.label)' rebuilt \(assembled - recorded) bytes longer than "
+                + "the \(recorded) it was dumped at — everything after it in \(sectionName) shifts."
+            ))
+            return blocks
+        }
+
+        logger?.log(.warning(
+            "\(sectionName) chunk '\(chunk.label)' rebuilt \(recorded - assembled) bytes shorter than "
+            + "the \(recorded) it was dumped at; padding with zeroes to keep the following symbols in place."
+        ))
+        return blocks + [(label: nil, bytes: GoDData(length: recorded - assembled, byteOrder: .big))]
     }
 
     /// Resolve the small-data-area base addresses (r13 = _SDA_BASE_,
@@ -484,19 +782,21 @@ public struct DolAssembler {
         return fileSystem.readFile(at: sectionFolder.file(chunk.file))?.allData
     }
 
-    /// Decode a `.struct` chunk's JSON or a `.table` chunk's CSV and render
-    /// the imported bytes as synthetic assembly. Returns nil when the file
-    /// is missing, its struct type is unresolved, or decoding fails — the
+    /// Decode a `.struct` chunk's JSON or a `.table` chunk's CSV into the
+    /// labelled byte blocks it rebuilds to. Returns nil when the file is
+    /// missing, its struct type is unresolved, or decoding fails — the
     /// caller drops the chunk with a warning.
-    private static func renderTypedChunkAssembly(
+    ///
+    /// Blocks rather than finished assembly text so the caller can measure
+    /// the chunk against its recorded size, and pad it, before rendering.
+    private static func typedChunkBlocks(
         chunk: DataSectionManifest.Chunk,
-        sectionName: String,
         sectionFolder: Folder,
         fileSystem: FileSystemTree,
         structs: [String: StructDefinition],
         labelTable: LabelTable,
         logger: Logger?
-    ) -> (name: String, content: String)? {
+    ) -> [(label: String?, bytes: GoDData)]? {
         guard let structType = chunk.structType else {
             logger?.log(.warning("Typed chunk '\(chunk.label)' has no structType in the manifest"))
             return nil
@@ -515,14 +815,7 @@ public struct DolAssembler {
             do {
                 let structData = try StructData(definition: definition, json: chunkData, byteOrder: .big)
                 let bytes = importer.importStruct(structData: structData, labelTable: labelTable, byteOrder: .big)
-                return (
-                    name: "\(chunk.label).synthesized.s",
-                    content: renderByteBlocksAsAssembly(
-                        sectionName: sectionName,
-                        chunkLabel: chunk.label,
-                        blocks: [(label: nil, bytes: bytes)]
-                    )
-                )
+                return [(label: nil, bytes: bytes)]
             } catch {
                 logger?.log(.warning("Struct chunk '\(chunk.label)' JSON failed to decode: \(error)"))
                 return nil
@@ -576,14 +869,7 @@ public struct DolAssembler {
                 )
                 blocks.append((label: entryLabel, bytes: bytes))
             }
-            return (
-                name: "\(chunk.label).synthesized.s",
-                content: renderByteBlocksAsAssembly(
-                    sectionName: sectionName,
-                    chunkLabel: chunk.label,
-                    blocks: blocks
-                )
-            )
+            return blocks
 
         case .assembly, .binary, .file:
             return nil
@@ -647,11 +933,28 @@ private func renderByteBlocksAsAssembly(
 
 public enum DolAssemblyErrors: Error, CustomStringConvertible {
     case sectionsFileNotFound(file: File, ErrorTrace)
+    case chunkOverflow(section: String, label: String, recorded: Int, assembled: Int, ErrorTrace)
+    case sectionOverflow(section: String, recorded: Int, assembled: Int, ErrorTrace)
 
     public var description: String {
         switch self {
         case let .sectionsFileNotFound(file, trace):
             return "sections.txt not found: \(file)\n\(trace)"
+        case let .chunkOverflow(section, label, recorded, assembled, trace):
+            return """
+            \(section) chunk '\(label)' rebuilt \(assembled - recorded) bytes longer than the \(recorded) \
+            it was dumped at (now \(assembled)). Everything after it in \(section) would shift, which moves \
+            every symbol the disassembly named. Shrink the chunk, or set "allowResizedChunks": true to accept \
+            the shift — the assembly then rewrites the symbol map so the next dump can still find them.
+            \(trace)
+            """
+        case let .sectionOverflow(section, recorded, assembled, trace):
+            return """
+            \(section) assembled to \(assembled) bytes, \(assembled - recorded) more than the \(recorded) \
+            sections.txt records. A data section cannot grow past the next one's address. Shrink it, or set \
+            "allowResizedChunks": true to accept the shift.
+            \(trace)
+            """
         }
     }
 }

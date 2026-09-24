@@ -1,6 +1,126 @@
 {
  "chunks": [
   {
+   "table": {
+    "name": "ValidItems",
+    "start": "lbl_8035DF10",
+    "entryType": "ValidItem",
+    "count": 1220
+   }
+  },
+  {
+   "table": {
+    "name": "Types",
+    "start": "lbl_803A85C0",
+    "entryType": "Type",
+    "count": 18
+   }
+  },
+  {
+   "table": {
+    "name": "StatusEffects",
+    "start": "lbl_803A8C50",
+    "entryType": "StatusEffect",
+    "count": 86
+   }
+  },
+  {
+   "table": {
+    "name": "Abilities",
+    "start": "lbl_803AC688",
+    "entryType": "Ability",
+    "count": 78
+   }
+  },
+  {
+   "table": {
+    "name": "Items",
+    "start": "lbl_803B0DA0",
+    "entryType": "Item",
+    "count": 397
+   }
+  },
+  {
+   "table": {
+    "name": "TMs",
+    "start": "lbl_803B50D0",
+    "entryType": "TM",
+    "count": 58
+   }
+  },
+  {
+   "table": {
+    "name": "ValidItems2",
+    "start": "lbl_803B52A0",
+    "entryType": "ValidItem",
+    "count": 548
+   }
+  },
+  {
+   "table": {
+    "name": "WZXMoveAnimations",
+    "start": "lbl_803BB248",
+    "entryType": "WZXMoveAnimation",
+    "count": 356
+   }
+  },
+  {
+   "table": {
+    "name": "PKXTrainerModels",
+    "start": "lbl_803BD938",
+    "entryType": "PKXModel",
+    "count": 76
+   }
+  },
+  {
+   "table": {
+    "name": "PKXPokemonModels",
+    "start": "lbl_803BDCC8",
+    "entryType": "PKXModel",
+    "count": 417
+   }
+  },
+  {
+   "table": {
+    "name": "UnownPKXModels",
+    "start": "lbl_803C22C8",
+    "entryType": "UnownPKXModel",
+    "count": 28
+   }
+  },
+  {
+   "table": {
+    "name": "ShinyPKXPokemonModels",
+    "start": "lbl_803C23A8",
+    "entryType": "ShinyPKXModel",
+    "count": 35
+   }
+  },
+  {
+   "table": {
+    "name": "Textures",
+    "start": "lbl_80329570",
+    "entryType": "TextureEU",
+    "count": 986
+   }
+  },
+  {
+   "table": {
+    "name": "TextureRenderingInfo",
+    "start": "lbl_8033C028",
+    "entryType": "TextureRenderingInfo",
+    "count": 4829
+   }
+  },
+  {
+   "table": {
+    "name": "ScriptBuiltinFunctions",
+    "start": "lbl_80323508",
+    "entryType": "ScriptBuiltinFunction",
+    "count": 247
+   }
+  },
+  {
    "file": {
     "label": "lbl_802C1F30",
     "extension": "fnt"

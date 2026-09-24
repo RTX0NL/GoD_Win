@@ -1,7 +1,7 @@
 {
   "chunks" : [
     { "table" : { "name" : "Trainers", "start" : "trainer_table", "entryType" : "Trainer", "count" : 3 } },
-    { "table" : { "name" : "Items", "start" : "item_table", "entryType" : "Item", "countLabel" : "item_count" } },
+    { "table" : { "name" : "Items", "start" : "item_table", "entryType" : "Item" } },
     { "single" : { "label" : "player_start", "type" : "Vector3" } },
     { "file" : { "label" : "intro_text", "extension" : "msg", "size" : 256 } }
   ]
