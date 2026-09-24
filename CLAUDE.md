@@ -1649,6 +1649,32 @@ hash function is recovered.
 
 ### TODO
 
+Carried over from three implementation plans deleted once their work landed
+(`Completing-Half-Wired-Pipelines`, `CISO`, `GCI`). These are the only parts
+that were still open.
+
+- [ ] **`ish` and `thh` are registered as single-extension formats and can't
+      be built that way.** `FileFormatRegistry+Builtins` registers them, but
+      `ISFFile.init(binaries:)` and `THPFile.init(binaries:)` need both
+      siblings (`.ish`+`.isd`, `.thh`+`.thd`), so the single-binary path
+      always throws while `isRegistered("ish")` says yes — a generic caller
+      is lured into a guaranteed failure. Either drop the registrations so
+      the registry tells the truth, or give it a paired-format concept that
+      gathers the sibling from the same folder.
+- [ ] **`TypedDataImporter` and `LabelTable` look dead.** The second
+      JSON→binary importer was meant to go when `StructData.populate` became
+      canonical; `DataSectionImporter` and `DataSectionExporter` did. Confirm
+      nothing reaches these two and delete them, so there is no second,
+      incomplete implementation to drift.
+- [ ] **A GCI dumps under two artifact layouts.** The `FileFormat`
+      conformance writes `<name>.gci.json` + `<name>.gci.body.bin`; the
+      operation writes `gci-manifest.json` + region bins. Two layouts for one
+      format is a wart, though unifying them changes the golden fixture.
+- [ ] **`.gcs` / `.sav` save intake.** Both wrap the same directory entry and
+      body behind a larger header, and `.sav` byte-swaps eleven field pairs —
+      cheap to add at the parse boundary, but no sample of either is on hand
+      to test against.
+
 ### Planned (in order)
 - [ ] XD script compiler — `XD/Script` has the parser and expression builder only; no source emitter, compiler or operation. The Colosseum pipeline (`ColoScriptSourceEmitter` / `ColoScriptTextParser` / `ColoScriptCompiler`) is the template
 - [ ] Model file export (DAT/PKX)

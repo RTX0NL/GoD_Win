@@ -45,7 +45,6 @@ These formats are used by both Colosseum and XD with the same or very similar st
 
 ### Save Files
 - [GCI - GameCube Memory Card Save](Shared/GCI%20-%20GameCube%20Memory%20Card%20Save.md) — Single-save export: a 0x40 directory entry plus the file's blocks. The entry describes the banner, animated icon and comment strings generically for any GameCube title; the body past that is the game's own
-- [GCI - Genericised Dump & Rebuild plan](Shared/GCI%20-%20Implementation%20Plan.md) — Design for deriving the card metadata for every title, with per-game body regions and integrity rules as engine data
 - [XD Save Slot - From-Scratch Rebuild plan](XD/XD%20Save%20Slot%20-%20From-Scratch%20Rebuild%20Plan.md) — The one save region that still can't be rebuilt from its artifacts: what is derivable, what is inter-save filler, and how to close it
 
 ### Executable data
