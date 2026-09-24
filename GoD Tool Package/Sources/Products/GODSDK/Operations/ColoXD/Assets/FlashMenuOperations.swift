@@ -14,6 +14,10 @@ import GeniusSonority
 
 extension ColoXD {
 
+    /// A menu's textures are named after the tags inside it, so two menus
+    /// dumped side by side would collide. Both directions read this.
+    private static let flashMenuLayout: AssetLayout = .perAssetFolder
+
     static func dumpFlashMenus(
         in folder: Folder,
         outputFolder: Folder,
@@ -26,7 +30,7 @@ extension ColoXD {
             matching: { $0.fileType == "gsw" },
             label: "flash menu",
             outputFolder: outputFolder,
-            perFileFolder: true,
+            layout: flashMenuLayout,
             overwrite: overwrite,
             fileSystem: fileSystem,
             logger: logger,
@@ -46,7 +50,7 @@ extension ColoXD {
         try dumpSingle(
             file: gswFile,
             outputFolder: outputFolder,
-            perFileFolder: true,
+            layout: flashMenuLayout,
             overwrite: overwrite,
             fileSystem: fileSystem,
             logger: logger,
@@ -69,6 +73,7 @@ extension ColoXD {
             stem: { $0.fileName.withoutExtensions },
             label: "flash menu",
             outputFolder: outputFolder,
+            layout: flashMenuLayout,
             overwrite: overwrite,
             fileSystem: fileSystem,
             logger: logger,

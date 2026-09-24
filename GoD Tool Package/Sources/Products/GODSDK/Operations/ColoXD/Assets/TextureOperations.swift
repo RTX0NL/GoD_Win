@@ -18,6 +18,10 @@ extension ColoXD {
     /// sit beside it and a bare `.json` would be ambiguous.
     private static let atxManifestSuffix = ".atx.json"
 
+    /// An ATX's frames are numbered from zero, so two textures dumped side by
+    /// side would overwrite each other. Both directions read this.
+    private static let atxLayout: AssetLayout = .perAssetFolder
+
     static func dumpATXs(
         in folder: Folder,
         outputFolder: Folder,
@@ -30,7 +34,7 @@ extension ColoXD {
             matching: { $0.fileType == "atx" },
             label: "ATX texture",
             outputFolder: outputFolder,
-            perFileFolder: true,
+            layout: atxLayout,
             overwrite: overwrite,
             fileSystem: fileSystem,
             logger: logger,
@@ -50,7 +54,7 @@ extension ColoXD {
         try dumpSingle(
             file: atxFile,
             outputFolder: outputFolder,
-            perFileFolder: true,
+            layout: atxLayout,
             overwrite: overwrite,
             fileSystem: fileSystem,
             logger: logger,
@@ -73,6 +77,7 @@ extension ColoXD {
             stem: { stem(of: $0, droppingSuffix: atxManifestSuffix) },
             label: "ATX texture",
             outputFolder: outputFolder,
+            layout: atxLayout,
             overwrite: overwrite,
             fileSystem: fileSystem,
             logger: logger,
