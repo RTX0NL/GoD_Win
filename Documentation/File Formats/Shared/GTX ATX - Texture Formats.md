@@ -24,7 +24,7 @@ Each texture (or each frame in an ATX) has a header of approximately 0x80 bytes.
 | 0x00 | 2 | u16 | Width | Texture width in pixels |
 | 0x02 | 2 | u16 | Height | Texture height in pixels |
 | 0x04 | 1 | u8 | Bits per pixel | See BPP column in format table |
-| 0x05 | 1 | u8 | Unknown, always 1 | Previously documented as an indexed flag, but it is 1 on every retail texture measured — all 22 embedded in the six Colo/XD DOLs and all 2480 standalone GTX entries in PBR's US archives, indexed or not (1022 of those are non-indexed). Likely an image or mip count. The encoder still writes `isIndexed ? 1 : 0` here |
+| 0x05 | 1 | u8 | Unknown, always 1 | Previously documented as an indexed flag, but it is 1 on every retail texture measured — all 22 embedded in the six Colo/XD DOLs, and all 4314 standalone `.gtx` files across the Colosseum, XD and PBR dumps, indexed or not. Likely an image or mip count. The encoder writes the constant; deriving it from the format was the one byte between a non-indexed texture and a byte-identical rebuild. (The only zeros anywhere are in headers the *legacy* tool synthesized around textures it pulled out of DAT/PKX/WZX models — 582 of them — which are not retail bytes.) |
 | 0x06 | 5 | — | Reserved | |
 | 0x0B | 1 | u8 | Texture format | GS texture format ID (see table below) |
 | 0x0C | 3 | — | Reserved | |
@@ -36,6 +36,18 @@ Each texture (or each frame in an ATX) has a header of approximately 0x80 bytes.
 | 0x4C | 4 | u32 | Texture data length | Zero in every standalone GTX measured, including all 2480 in PBR's US archives; do not rely on it (the length is derived from dimensions and format) |
 
 Texture data typically starts at offset **0x80** from the header start, but always use the pointer at 0x28 for the actual offset.
+
+### File extent
+
+A texture's total length is derivable from its own header, which matters
+wherever one is embedded in a larger buffer: an indexed texture ends at
+`palette offset + entry count x 2`, a non-indexed one at
+`texture offset + padded width x padded height x bpp / 8`. Do not infer it
+from the surrounding container. XD's health-warning texture is the case that
+proves it: its 16-entry palette carries its own symbol (`tex_warning`) in the
+DOL's symbol map, so the disassembler's "a chunk ends at the next symbol"
+rule cut the texture 32 bytes short, the palette decoded as empty, and the
+PNG came out blank.
 
 ## GS Texture Format IDs
 
@@ -125,6 +137,35 @@ Indexed textures (C4, C8, C14X2) require a color palette. Each entry is **2 byte
 | 3 | RGB5A3 | Same as above (used in standalone GTX files in Colo/XD) |
 
 **Note:** Palette format ID 2 and 3 both decode as RGB5A3. ID 2 is used within DAT model embedded textures and other games; ID 3 is used in Colo/XD standalone GTX files.
+
+### Re-encoding an indexed texture
+
+The tool dumps a texture's pixels as an RGBA PNG, so an indexed one does
+not come back byte-identical: RGBA cannot say which index carried which
+color, and real palettes carry duplicate entries — XD's `lbl_803FA760`
+(C8, 122×38) uses 125 indices holding only 56 distinct colors, and the
+health-warning texture has 16 indices over 15 colors. A re-encode
+therefore rebuilds the palette in first-seen-color order and assigns
+different index numbers.
+
+**This is cosmetic, and deliberately left as is.** A palette's entry
+count is fixed by the format, so the texture keeps its byte length and
+nothing downstream of it moves; and every pixel still resolves to the
+color it had, because each GTX carries its own palette and nothing
+indexes into it by number. Measured on all six Colosseum/XD discs: the
+only bytes that differ in a rebuilt `main.dol` are the bodies of three
+indexed textures per XD disc (7,398 bytes) and rather more on Colosseum
+(23–24 KB).
+
+Contrast the GameCube card icon, where the same loss *is* a correctness
+problem: its frames share one palette, so per-frame re-indexing has no
+single palette to store. Those are written as indexed PNGs — see
+`GCI - GameCube Memory Card Save.md`. If GTX ever needs the same
+treatment (a title that animates a palette at runtime, say), the fix is
+the same: dump indices and palette rather than flattened color.
+
+C14X2 could not use that route anyway — its palette holds up to 16,384
+entries and an indexed PNG caps at 256.
 
 **Palette sizes:**
 | Texture Format | Entries | Palette Size |

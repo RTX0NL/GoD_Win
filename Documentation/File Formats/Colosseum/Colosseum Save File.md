@@ -1,23 +1,37 @@
 # Pokémon Colosseum Save File
 
-This is the working brief on Colosseum's `.gci` save format. It mirrors
-the structure of `Documentation/File Formats/XD/XD Save Encryption.md`
-for XD, but most of the encryption-side detail is still TBD — see
-"Status / open work" below.
+Colosseum's `.gci` save is implemented and round-trips byte-identically:
+20 of 20 real saves across US, PAL and JP rebuild to the original bytes
+with the source file deleted first, so the rebuild derives everything
+rather than copying it forward. See
+[`Documentation/Save-Round-Trip-Audit-2026-09.md`](../../Save-Round-Trip-Audit-2026-09.md).
 
-## What's confirmed
+This brief is the Colosseum-specific detail. The envelope it sits in —
+the directory entry, the banner, the animated icon and the comment
+strings, all of which are generic to any GameCube title — is in
+[`GCI - GameCube Memory Card Save.md`](../Shared/GCI%20-%20GameCube%20Memory%20Card%20Save.md).
 
-### Container
+## Container
 
-Colo and XD share the on-card / GCI envelope:
+Colosseum's body is **`0x60000` (48 × 0x2000 blocks) with three
+`0x1E000` slots** — not XD's `0x56000` with two `0x28000` slots. An
+earlier revision of this document claimed the two games shared a body
+shape; they do not, and `ColoSaveCardFile` exists precisely because of
+it.
 
-- File body size: `0x56000` (43 × 0x2000 blocks).
-- Body framing: banner (0x2000) + hdr0 (0x2000) + hdr1 (0x2000) +
-  slotA (0x28000) + slotB (0x28000), per
-  `Documentation/Assembly Analysis/Overview/Save System.md` §1.
+| Region | Offset | Length |
+|---|---|---|
+| card metadata | `0x00000` | `0x6000` |
+| slot 1 | `0x06000` | `0x1E000` |
+| slot 2 | `0x24000` | `0x1E000` |
+| slot 3 | `0x42000` | `0x1E000` |
 
-This is why `GSSaveCardFile` in `GeniusSonority/File Formats` works
-for both games — the splitter is GS-specific, not XD-specific.
+That split is declared as engine data
+(`GeniusSonorityEngine.Data.colosseumSaveCard`), not hardcoded in the
+operations. The metadata region is identical in shape to XD's: the two
+comment strings at `0x0`, the banner and icon frames from `0x40` to
+`0x3A40`, a `u32` word sum of everything before it at `0x3A40`, then
+zero to the first slot.
 
 ### GCI gamecodes
 
@@ -25,13 +39,38 @@ for both games — the splitter is GS-specific, not XD-specific.
 - `GC6J` — Colosseum JP
 - `GC6P` — Colosseum PAL/EU
 
-(Detected by the `Project.setup(gci:)` dispatch in
-`ProjectSetupGCI.swift`.)
+One engine serves all three: the 7 sections have the same names,
+offsets and lengths on every region, which is why Colosseum needs no
+per-region struct variants the way XD does.
 
-### Slot layout differs from XD
+## Slot header
 
-The legacy GoD tool (`Objects/managers/XGSaveManager.swift`) lists the
-following Colo-specific offsets (per-slot, post-decryption):
+The 8 bytes before the sections, typed as `ColoSaveSlotHeader`
+(`Colosseum/Structs/entries/SaveDataStructs.swift`) and dumped as
+`slot-header.json`:
+
+| Offset | Field | Observed on 8 real saves |
+|---|---|---|
+| `0x00` | `magic` | `01 01 00` on every one |
+| `0x03` | `reserved` | `0` on every one |
+| `0x04` | `counter` | small `u32` (2…77), picks the latest slot |
+
+> **Corrected.** An earlier revision guessed `01 01 01` by analogy with
+> XD and called it unverified. Measured, byte 2 is `00` on every
+> Colosseum save and `01` on every XD save. It is also **not** the
+> gamecode, which is what an 8-byte header starting a `GC6E` save
+> invites you to assume — the existing synthetic test fixture writes
+> `"GC6E"` there and is misleading on that point.
+
+## Slot layout
+
+The slot is addressed by fixed offsets rather than XD's 16-entry table
+of contents, so `XDSaveSlot` is not reusable and `ColosseumSaveSlot`
+exists separately. Its 7 sections all tile their structs exactly, so
+all 7 dump as editable JSON on every region, with none demoted.
+
+Legacy offsets from the original tool's `XGSaveManager.swift`, kept as
+the historical reference that seeded the layout:
 
 | Field | Colo offset | XD offset (reference) |
 |-------|------------:|---------------------:|
@@ -46,99 +85,29 @@ following Colo-specific offsets (per-slot, post-decryption):
 | Pokémon record size | `0x138` | `0xC4` |
 | PC boxes count | 3 | 8 |
 
-So the on-slot sub-block layout is **completely different** from XD's
-TOC scheme. Colo doesn't appear to use the same `+0x38..+0x98` 24-entry
-TOC that XD does — the legacy code addresses sub-blocks by hard-coded
-absolute offsets instead.
+## Encryption
 
-This means `XDSaveSlot` from `Sources/Shared/Core/Engines/XD/SaveData/`
-is **not reusable** for Colo. Colo needs its own `ColosseumSaveSlot`
-type with its own offset table.
+Solved. `ColoSaveCipher` implements the PKHeX-aligned SHA-1 XOR
+cascade; the latest slot is decrypted at dump and re-encrypted from
+scratch at build. The "cipher hunt" section this document used to carry
+— asking for a real encrypted save to bisect against — is obsolete.
 
-### Slot magic / header
+## What ships today
 
-Unverified, but the §1 layout (`01 01 01` magic + counter at +0x04)
-likely applies — it lives in the unencrypted CARD header sectors, not
-inside the slot. Worth confirming against an actual Colo save.
+`ColoSaveOps` dumps the **latest slot only**, decrypted, as per-section
+artifacts plus `slot-header.json` and `slot-metadata.json`. The build
+reconstructs that one slot from scratch from those artifacts,
+re-encrypts it, and leaves the other two slots byte-untouched. The ops
+are enabled by default in generated configs.
 
-## Status / open work
-
-What's known:
-- File container shape (matches XD).
-- Per-region gamecodes for routing.
-- High-level sub-block offsets from the legacy tool.
-- The sub-block layout is unique to Colo; XD's TOC scheme does not
-  carry over.
-
-What's not yet known:
-1. **Colo memcard function entry points.** The Colo PowerPC
-   disassembly under `scripts/Disassembly-Colosseum` is unsymbolised
-   (`zz_<addr>_.s` filenames). Even cross-referencing `__CARDWriteAsync`
-   / `__CARDReadAsync` callers is a manual hunt because the surrounding
-   code is anonymous.
-2. **Encryption algorithm.** Multi-pronged fingerprint search ruled
-   out an exact-byte match to XD's cipher in the Colo disasm:
-   - XD's SBOX `[0x43, 0x29, 0x17, 0x13]` does not appear as a
-     16-byte data file under `data*/@*.bin`, nor as a contiguous
-     8-byte sequence in any text1 file.
-   - XD's `0x4FF9` / `0x4FFA` loop-count constants don't appear in
-     any Colo text1 file.
-   - The XD encrypt/decrypt instruction profile (~5 `rlwinm`,
-     ~10–15 `rlwimi`, 1–2 `bdnz`, 200–250 lines, paired
-     `addi r29, r29, 0x8` + `addi r30, r30, 0x4` lane stride) does
-     not match any Colo function in the same size/profile range.
-   - The legacy GoD tool also delegates Colo decryption to `gcitool`
-     (same as XD) — they didn't reverse-engineer it either.
-   So either Colo uses a substantially different cipher (different
-   SBOX, different loop length, different shape), or the encryption
-   path is split across multiple unsymbolised functions in a way
-   our fingerprint search can't catch. **Resolution requires either
-   Colo symbol-map data or a real `.gci` save to bisect against.**
-3. **Slot picker / counter location.** Probably the same as XD given
-   shared CARD framing, but unverified.
-4. **Save sub-block identification.** Beyond the high-level field
-   table above, no exhaustive sub-block boundary list exists. Future
-   work would lift the legacy tool's offset constants into
-   `ColosseumSaveSlot`'s sub-block enum.
-
-### What would unblock the cipher hunt
-
-In rough order of usefulness:
-- **A real encrypted Colo `.gci` from a saved game.** With one in hand
-  we can: dump the slots, eyeball whether the bytes look random
-  (encrypted) or structured (plaintext); try XD's cipher on it and
-  see if `01 01 01` magic falls out at slot[0..2]; bisect short
-  experiments against known-good plaintext like the player name field
-  at slot+0x78.
-- **A Colo `.map` symbol file.** Even a partial map covering
-  `_memcard_*` / `_memcardJobMain` would let us walk straight to the
-  cipher function instead of fingerprint-fishing.
-- **The original Colo dol with debug strings preserved**, if any
-  build of the game has them.
-
-## How we ship Colo support today
-
-`ColoSaveOps` mirrors `XDSaveOps` but does only the safe passthrough:
-
-- `dumpColosseumSave` reads `slot-a.bin` / `slot-b.bin` from the
-  unpacked GCI body, parses the plaintext slot magic + counter, and
-  emits each slot as `Slot N/raw-slot.bin` plus a `slot-metadata.json`.
-- `buildColosseumSave` reads each `raw-slot.bin` back and writes it
-  out unchanged.
-
-No sub-block extraction, no encryption — same shape as XD's current
-state. The two ops diverge once we (a) implement the encryption and
-(b) carve the Colo slot into named sub-blocks. Until then the project
-setup keeps these ops disabled-by-default in the generated configs.
+A blank never-saved card is rejected at dump with `noValidSlot` rather
+than being "parsed" into a save whose checksums are then valid. All 13
+blank cards in the audit corpus are refused.
 
 ## References
 
-- Legacy tool: `/Users/stars/Documents/Projects/GoD Tool/Objects/managers/XGSaveManager.swift`
-  (Colo offset constants, `decryptedSaveSlot` consumption pattern).
-- `Documentation/Assembly Analysis/Overview/Save System.md` (XD-side
-  reference, file-container layout — applies to Colo too).
-- `Documentation/File Formats/XD/XD Save Encryption.md` (XD encryption
-  brief — Colo's may follow the same shape).
-- `scripts/Disassembly-Colosseum/text1/zz_800ff970_.s` (one of the
-  files where `__CARDExiHandler` is referenced — possible entry point
-  into the memcard pipeline).
+- `Documentation/Save-Round-Trip-Audit-2026-09.md` — the round-trip measurements.
+- [`GCI - GameCube Memory Card Save.md`](../Shared/GCI%20-%20GameCube%20Memory%20Card%20Save.md) — the envelope, generic to every GameCube game.
+- [`XD Save Encryption.md`](../XD/XD%20Save%20Encryption.md) — XD's cipher, a different algorithm from Colosseum's.
+- `Documentation/Assembly Analysis/Overview/Save System.md` — XD-side disassembly notes; its card-layout table applies to both games.
+- Legacy tool: `Objects/managers/XGSaveManager.swift` (the Colo offset constants above).

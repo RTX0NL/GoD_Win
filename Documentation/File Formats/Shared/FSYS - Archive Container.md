@@ -55,7 +55,7 @@ Each entry describes one file contained in the archive. Entry size differs betwe
 
 ## LZSS Compression
 
-Files within FSYS archives may be individually LZSS-compressed. Compressed entries are identified by their magic bytes.
+Files within FSYS archives may be individually LZSS-compressed. A compressed entry is flagged in its entry metadata (bit 31 of the flags word) and carries this header at the start of its data.
 
 ### LZSS Header
 
@@ -63,8 +63,14 @@ Files within FSYS archives may be individually LZSS-compressed. Compressed entri
 |--------|------|------|-------|-------|
 | 0x00 | 4 | char[4] | Magic | `LZSS` |
 | 0x04 | 4 | UInt32 | Uncompressed size | Size after decompression |
-| 0x08 | 4 | UInt32 | Compressed size | Size of the compressed data (excluding header) |
-| 0x0C | 4 | - | Padding | |
+| 0x08 | 4 | UInt32 | Compressed size | Size of the compressed data **including** this 16-byte header — the stream is `compressed_size - 0x10` bytes |
+| 0x0C | 4 | - | Padding | Zero |
+
+Header plus stream is also a standalone format: `LZSSHeaderedCompressor` /
+`CompressionFormat.lzss` in GoDFoundation, and the `compress` / `decompress`
+operations' `lzss` format (the bare stream is `lzss-raw`). `FSYSArchive`
+keeps its own header writer, since the archive is a byte-identical target;
+`FSYSLZSSHeaderCrossCheckTests` pins the two to the same bytes.
 
 ### LZSS Parameters
 

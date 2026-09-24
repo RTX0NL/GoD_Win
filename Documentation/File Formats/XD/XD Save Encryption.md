@@ -101,12 +101,18 @@ Done:
   rlwinm/rlwimi block (lines 68–106 of the decrypt file, 159–197 of
   the encrypt file) — confirmed by side-by-side comparison.
 - Running-sum tag location confirmed: 4 × u32 stored at
-  `slot[0x08..0x18)`, in the disasm's "low halfword first, then
-  high halfword" pair-swapped order:
-    - sum lane 0 → slot[0x14..0x17] (low @ 0x14, high @ 0x16)
-    - sum lane 1 → slot[0x10..0x13] (low @ 0x10, high @ 0x12)
-    - sum lane 2 → slot[0x0C..0x0F] (low @ 0x0C, high @ 0x0E)
-    - sum lane 3 → slot[0x08..0x0B] (low @ 0x08, high @ 0x0A)
+  **`slot[0x10..0x20)`**, low halfword first, with the lanes written in
+  reverse order:
+    - sum lane 3 → slot[0x10..0x13] (low @ 0x10, high @ 0x12)
+    - sum lane 2 → slot[0x14..0x17]
+    - sum lane 1 → slot[0x18..0x1B]
+    - sum lane 0 → slot[0x1C..0x1F]
+
+  `slot[0x08..0x10)` is the **plaintext key seed**, not tag storage —
+  an earlier revision of this list said the tags lived there, which
+  contradicted the prose above and the implementation. The coverage the
+  sums coverage *starts* at 0x08 so the key seed is included in what is
+  summed, which is probably where the confusion came from.
 - Internal-consistency tests pass (`XDSaveCipherTests`):
   encrypt/decrypt symmetry, tag-corruption detection, key-seed
   sensitivity, determinism.
@@ -116,12 +122,41 @@ Open:
    covered by the main 0x4FF9-iteration loop. We currently leave
    them untouched; whether the game expects them encrypted or zeroed
    wants checking against a real save.
-2. **Fixture for end-to-end validation** — without a real encrypted
-   XD `.gci` we can't prove byte-for-byte compatibility with the
-   game's output. Self-inverse symmetry is verified, but a real
-   fixture would catch any subtle bug (e.g. wrong tag layout, tail
-   handling) that survives a synthetic round-trip. Tracked as task
-   #12.
+2. ~~**Fixture for end-to-end validation**~~ — **closed.** 42 real XD
+   saves across US, PAL and JP decrypt with all four tags matching and
+   re-encrypt cleanly, and the decrypted slot's declared sections come
+   back byte-identical on every one. A wrong tag layout or a wrong lane
+   order would fail the tag check on the first real save, so the layout
+   above is validated against the game's own output rather than only
+   against itself. See `Documentation/Save-Round-Trip-Audit-2026-09.md`.
+
+3. **No rebuilt save has been booted in an emulator.** The tags
+   validate and the sections round-trip, but nothing has yet confirmed
+   the game itself accepts a rebuilt slot.
+
+## Where the tags live is engine data
+
+`XDSaveSlot.Layout.checksumOffset` is an optional `Int`. The stock
+engine carries the retail `0x10` explicitly, so ordinary saves are
+tagged exactly as described above. A modified save format can move the
+tag region and the encrypt path will clear and rewrite the tags where
+they actually live.
+
+**`nil` means the format has no checksum**, so none is written and
+`decrypt` returns `nil` for "not checked" rather than a pass or a fail.
+It does *not* mean "fall back to 0x10": writing four sums at a guessed
+offset would corrupt whatever lives there. A relocated region has to
+stay inside `cipherRange` or the cipher throws, since the game reads
+its tags from inside the encrypted range.
+
+## Status of the surrounding header
+
+The 0xA8 bytes before the sub-blocks are now typed as
+`XDSaveSlotHeader` and dumped as `slot-header.json` — magic, save
+counter, the key seed at `0x08`, the tag region at `0x10`, the 16 × u16
+sub-block sizes at `0x20` and the 16 offsets at `0x40` (each a `u32`
+stored low half first). Layout and measurements in
+[`XD Save Slot - From-Scratch Rebuild Plan.md`](./XD%20Save%20Slot%20-%20From-Scratch%20Rebuild%20Plan.md).
 
 The cipher is wired into `xdSaveDump` / `xdSaveBuild` and runs by
 default in projects produced by `Project.setup(gci:)`. Users with

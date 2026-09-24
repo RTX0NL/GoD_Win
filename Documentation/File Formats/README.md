@@ -7,8 +7,8 @@ Format specifications for file types used in Pokemon Colosseum and Pokemon XD: G
 These formats are used by both Colosseum and XD with the same or very similar structure.
 
 ### Archives & Compression
-- [FSYS - Archive Container](Shared/FSYS%20-%20Archive%20Container.md) — Main game archive with LZSS compression (type `0x90`)
-- [Yaz0/Yay0 - Nintendo LZ77 Compression](Shared/Yaz0%20Yay0%20-%20Nintendo%20LZ77%20Compression.md) — Nintendo's own codec. Not used by Colosseum/XD/PBR; support exists for general GameCube/Wii titles and as a prerequisite for RARC and U8
+- [FSYS - Archive Container](Shared/FSYS%20-%20Archive%20Container.md) — Main game archive with LZSS compression (type `0x90`). The 16-byte `LZSS` header + stream a compressed entry holds is also a standalone format (`LZSSHeaderedCompressor`, `CompressionFormat.lzss`), reachable through the `compress` / `decompress` operations as `lzss`; the bare stream is `lzss-raw`
+- [Yaz0/Yay0 - Nintendo LZ77 Compression](Shared/Yaz0%20Yay0%20-%20Nintendo%20LZ77%20Compression.md) — Nintendo's own codec. Not used by Colosseum/XD/PBR; support exists for general GameCube/Wii titles and as a prerequisite for RARC and U8. Exposed by the `compress` / `decompress` operations
 - [U8/NARC - Nintendo Archives](Shared/U8%20NARC%20-%20Nintendo%20Archives.md) — Nintendo's own containers, big and little endian, discriminated by the direction their magic is spelled. PBR ships both (`.arc`/`.narc`)
 
 ### Disc Images
@@ -43,8 +43,24 @@ These formats are used by both Colosseum and XD with the same or very similar st
 - [CAM - Camera Data](Shared/CAM%20-%20Camera%20Data.md) — Camera animation sequences (type `0x18`)
 - [REL - Relocatable Module](Shared/REL%20-%20Relocatable%20Module.md) — Runtime-linked code and data tables (type `0x1C`)
 
+### Save Files
+- [GCI - GameCube Memory Card Save](Shared/GCI%20-%20GameCube%20Memory%20Card%20Save.md) — Single-save export: a 0x40 directory entry plus the file's blocks. The entry describes the banner, animated icon and comment strings generically for any GameCube title; the body past that is the game's own
+- [GCI - Genericised Dump & Rebuild plan](Shared/GCI%20-%20Implementation%20Plan.md) — Design for deriving the card metadata for every title, with per-game body regions and integrity rules as engine data
+- [XD Save Slot - From-Scratch Rebuild plan](XD/XD%20Save%20Slot%20-%20From-Scratch%20Rebuild%20Plan.md) — The one save region that still can't be rebuilt from its artifacts: what is derivable, what is inter-save filler, and how to close it
+
+### Executable data
+- [main.dol Data Tables](Shared/main.dol%20Data%20Tables.md) — The tables both games keep in the executable rather than in `common.rel`: XD's 13 and Colosseum's 15, with the per-region addresses and how each was located
+- [Colosseum common.rel Tables](Colosseum/common.rel%20Tables.md) — Colosseum's 28 `common.rel` tables, their strides and where the PAL build widens a record
+
 ### Other
 - [BIN - Generic Binary Data](Shared/BIN%20-%20Generic%20Binary%20Data.md) — Context-dependent binary data (type `0x34`)
+
+## Battle Revolution Formats
+
+PBR reuses the FSYS container but not much else — its own file-type
+namespace, its own text format, its own fonts.
+
+- [MESG - String Tables](Battle%20Revolution/MESG%20-%20String%20Tables.md) — Every string in the game, addressed by a global id through a directory in `common.fsys`. Unrelated to the Colosseum/XD `.msg` beyond the extension. Dumped and rebuilt by `pbrStringsDump` / `pbrStringsBuild`
 
 ## File Type ID Reference
 

@@ -150,6 +150,17 @@ measuring, and naming whatever divergences remain, exactly as FSYS did.
 - `NintendoCompressionGoldenTests` — freezes what the encoders emit, so
   unintended drift fails. Not evidence of matching Nintendo's tooling.
 
+## CLI
+
+The `compress` / `decompress` operations, and their bulk `compressFiles` /
+`decompressFiles` forms, expose both codecs from a config file — see the
+[Configuration Reference](../../GODDESS%20Configuration%20Reference.md#compression).
+Their options map straight onto the code: `alignment` is the Yaz0 header's
+third word, and `deferredMatching` / `maxChainLength` are
+`LZ77Encoder.Configuration`'s `usesDeferredMatching` / `maxChainLength`. The
+window and match-length bounds are not exposed: they are what makes a stream
+Yaz0 or Yay0, not tuning.
+
 ## References
 
 - **WiiBrew / CloudModding wikis** — Yaz0 and Yay0 layouts.
