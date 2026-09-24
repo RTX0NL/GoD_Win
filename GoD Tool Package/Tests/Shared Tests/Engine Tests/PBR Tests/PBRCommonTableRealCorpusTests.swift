@@ -170,6 +170,39 @@ final class PBRCommonTableRealCorpusTests: XCTestCase {
         guard let corpus else {
             throw XCTSkip("No PBR common.fsys — set GODDESS_PBR_COMMON to run.")
         }
+        let checked = try assertDeclaredPaddingIsFiller(in: corpus, japanese: false)
+        XCTAssertGreaterThan(checked.tables, 8, "expected many tables to declare padding")
+        XCTAssertGreaterThan(checked.runs, 15)
+    }
+
+    /// The same guard on the Japanese disc, which is where it earns its keep.
+    ///
+    /// A JP record can diverge *without* changing stride — `PokemonStats`
+    /// drops the international record's Japanese-name id and ends on two
+    /// bytes of filler, same 0x34 either way — so it still tiles the entry
+    /// array and every geometry check passes while each field is read two
+    /// bytes late. Filler is the content that catches it: read a JP table
+    /// with the wrong record and the bytes its struct calls padding carry
+    /// live data.
+    func testDeclaredPaddingRunsAreFillerOnTheJapaneseDisc() throws {
+        guard let corpus = japaneseCorpus else {
+            throw XCTSkip("No Japanese PBR common.fsys — set GODDESS_PBR_COMMON_JP to run.")
+        }
+        let checked = try assertDeclaredPaddingIsFiller(in: corpus, japanese: true)
+        XCTAssertGreaterThan(checked.tables, 8, "expected many tables to declare padding")
+        XCTAssertGreaterThan(checked.runs, 15)
+    }
+
+    /// Every byte a bound struct declares as padding, in every row of every
+    /// table of one disc, is one of the packer's two filler bytes.
+    ///
+    /// Tables are looked up by file index through `commonTable(fileIndex:
+    /// japanese:)` — the same call the dump makes — so the JP member
+    /// permutation and the JP record bindings are exercised rather than
+    /// restated here.
+    private func assertDeclaredPaddingIsFiller(
+        in corpus: Corpus, japanese: Bool
+    ) throws -> (tables: Int, runs: Int) {
         let engine = try PBREngine.defaults()
         let format = engine.data.commonTableFormat
 
@@ -201,10 +234,14 @@ final class PBRCommonTableRealCorpusTests: XCTestCase {
         }
 
         var checkedTables = 0, checkedRuns = 0
-        for descriptor in engine.data.commonTables {
-            guard let structName = descriptor.structName,
-                  let file = corpus.members[descriptor.index] else { continue }
+        for (index, file) in corpus.members.sorted(by: { $0.key < $1.key }) {
+            guard let descriptor = engine.commonTable(fileIndex: index, japanese: japanese),
+                  let structName = descriptor.structName else { continue }
             let definition = try engine.getStruct(structName)
+            XCTAssertEqual(
+                definition.length, descriptor.entrySize,
+                "\(corpus.label) \(descriptor.name): \(structName) doesn't match the declared stride"
+            )
             let ranges = paddingRanges(of: definition)
             guard !ranges.isEmpty else { continue }
 
@@ -232,15 +269,48 @@ final class PBRCommonTableRealCorpusTests: XCTestCase {
                 ]
                 XCTAssertTrue(
                     observed.isSubset(of: filler),
-                    "\(descriptor.name).\(structName) padding at +0x\(String(range.lowerBound, radix: 16)) "
+                    "\(corpus.label) \(descriptor.name).\(structName) padding at +0x\(String(range.lowerBound, radix: 16)) "
                     + "carries live data (bytes \(observed.sorted().map { String($0, radix: 16) })) — it is a field, not padding"
                 )
                 checkedRuns += 1
             }
             checkedTables += 1
         }
-        XCTAssertGreaterThan(checkedTables, 8, "expected many tables to declare padding")
-        XCTAssertGreaterThan(checkedRuns, 15)
+        return (checkedTables, checkedRuns)
+    }
+
+    /// Every table on the Japanese disc rebuilds from its own CSV, byte for
+    /// byte — the property a JP build depends on, and one the international
+    /// corpus can't stand in for, since JP binds three of its own records and
+    /// orders its members differently.
+    func testEveryTableRebuildsFromItsCSVOnTheJapaneseDisc() throws {
+        guard let corpus = japaneseCorpus else {
+            throw XCTSkip("No Japanese PBR common.fsys — set GODDESS_PBR_COMMON_JP to run.")
+        }
+        let engine = try PBREngine.defaults()
+
+        var checked = 0
+        for (index, file) in corpus.members.sorted(by: { $0.key < $1.key }) {
+            guard let descriptor = engine.commonTable(fileIndex: index, japanese: true),
+                  descriptor.structName != nil,
+                  let typed = try engine.typeCommonTable(descriptor, binary: file, structs: engine)
+            else { continue }
+
+            let csv = try StructTableCSV.encode(entries: typed.entries, definition: typed.entryDefinition)
+            let fills = try XCTUnwrap(
+                StructPaddingFill.measure(in: typed.entries, definition: typed.entryDefinition),
+                "\(descriptor.name): a padding run varies between rows, so it isn't padding"
+            )
+            let rebuilt = try StructTableCSV.decode(
+                csv, definition: typed.entryDefinition, byteOrder: .big, paddingFills: fills
+            ).entries
+            XCTAssertEqual(
+                rebuilt.flatMap { $0.data.rawBytes }, typed.entries.flatMap { $0.data.rawBytes },
+                "\(descriptor.name) doesn't rebuild from its CSV"
+            )
+            checked += 1
+        }
+        XCTAssertEqual(checked, 32, "the JP disc ships 32 tables and all of them type")
     }
 
     /// Each name-table record points at a string-pool record, and the
@@ -428,6 +498,100 @@ final class PBRCommonTableRealCorpusTests: XCTestCase {
         XCTAssertEqual(populated, 18, "the same 18 countries carry sub-regions as on PAL")
     }
 
+    /// The JP stats table is the same 501 rows at the same 0x34 stride, so a
+    /// wrong record doesn't fail — it silently reads every field past the
+    /// species name two bytes late. What settles it is the values: Bulbasaur's
+    /// base stats and typing are the same numbers on every disc, and they only
+    /// land in the right fields once the name id the JP record drops (+0x1A,
+    /// the Japanese name every international disc also carries) is accounted
+    /// for.
+    func testJapanesePokemonStatsUseTheJapaneseRecord() throws {
+        guard let corpus = japaneseCorpus else {
+            throw XCTSkip("No Japanese PBR common.fsys — set GODDESS_PBR_COMMON_JP to run.")
+        }
+        let engine = try PBREngine.defaults()
+        let descriptor = try XCTUnwrap(engine.commonTable(fileIndex: 14, japanese: true))
+        XCTAssertEqual(descriptor.name, "PokemonStats")
+        XCTAssertEqual(descriptor.structName, "PBRPokemonStatsJP")
+        XCTAssertEqual(descriptor.entrySize, 0x34, "the record is the same length, not the same layout")
+
+        let binary = try XCTUnwrap(corpus.members[14], "JP common.fsys member 14")
+        let typed = try XCTUnwrap(engine.typeCommonTable(descriptor, binary: binary, structs: engine))
+        XCTAssertEqual(typed.entries.count, 501, "the JP disc ships the same 501 species rows")
+
+        let bulbasaur = typed.entries[1]
+        XCTAssertEqual(bulbasaur.get("base_hp") as Int?, 45)
+        XCTAssertEqual(bulbasaur.get("base_attack") as Int?, 49)
+        XCTAssertEqual(bulbasaur.get("base_defense") as Int?, 49)
+        XCTAssertEqual(bulbasaur.get("base_speed") as Int?, 45)
+        XCTAssertEqual(bulbasaur.get("base_special_attack") as Int?, 65)
+        XCTAssertEqual(bulbasaur.get("base_special_defense") as Int?, 65)
+        XCTAssertEqual(bulbasaur.get("type_1") as Int?, 12, "Grass")
+        XCTAssertEqual(bulbasaur.get("type_2") as Int?, 3, "Poison")
+        XCTAssertEqual(bulbasaur.get("catch_rate") as Int?, 45)
+        XCTAssertEqual(bulbasaur.get("base_experience") as Int?, 64)
+        XCTAssertEqual(bulbasaur.get("ability_1") as Int?, 65, "Overgrow")
+        XCTAssertEqual(bulbasaur.get("height") as Int?, 7, "0.7 m, stored ×10")
+        XCTAssertEqual(bulbasaur.get("weight") as Int?, 69, "6.9 kg, stored ×10")
+
+        // The model index is the field the dropped name id used to sit in
+        // front of, so it is the one that moves; row N pointing at model N
+        // for the first few species is what shows it landed.
+        XCTAssertEqual(bulbasaur.get("model_index") as Int?, 1)
+        XCTAssertEqual(typed.entries[2].get("model_index") as Int?, 2)
+
+        // Name ids ascend with the row across the whole table, which they
+        // cannot do if the field is misaligned.
+        let names: [Int] = try typed.entries[1...386].map { try XCTUnwrap($0.get("name_message_id")) }
+        XCTAssertEqual(names, names.sorted(), "name ids ascend with the row")
+        XCTAssertEqual(names.first, 11)
+
+        // And the id is worth resolving rather than only checking it ascends,
+        // because the JP disc carries its one string table and its directory
+        // in this same archive: the row's id turns into the text the game
+        // prints. A record read two bytes late would still hand back *an* id,
+        // and it would not be the species'.
+        let directory = try PBRStringDirectory(
+            binary: XCTUnwrap(corpus.members[engine.data.japaneseStringDirectoryIndex],
+                              "JP common.fsys string directory")
+        )
+        var stringTables = [Int: PBRStringTable]()
+        for member in corpus.members.values where PBRStringTable.isStringTable(member) {
+            let table = try PBRStringTable(binary: member)
+            stringTables[table.tableID] = table
+        }
+        func speciesName(row: Int) throws -> String {
+            let id: Int = try XCTUnwrap(typed.entries[row].get("name_message_id"))
+            let record = directory.records[id - 1]
+            let table = try XCTUnwrap(stringTables[record.tableID], "string table \(record.tableID)")
+            return table.strings[record.index - 1].string(format: .gsPBR)
+        }
+        // Leading control codes are the string's own formatting, so the name
+        // is the tail of it.
+        for (row, name) in [(1, "フシギダネ"), (25, "ピカチュウ"), (150, "ミュウツー"), (386, "デオキシス")] {
+            let text = try speciesName(row: row)
+            XCTAssertTrue(text.hasSuffix(name), "row \(row) named '\(text)', expected it to end in \(name)")
+        }
+
+        // Reading it right is half the job. The record ends on two bytes the
+        // packer filled, and a CSV has no column for padding, so the table an
+        // edit rebuilds is only the table the disc had if the fill is carried
+        // separately — which is what the dump measures and the registry
+        // records.
+        let csv = try StructTableCSV.encode(entries: typed.entries, definition: typed.entryDefinition)
+        let fills = try XCTUnwrap(StructPaddingFill.measure(in: typed.entries, definition: typed.entryDefinition))
+        XCTAssertEqual(fills, [StructPaddingFill(offset: 0x32, length: 2, byte: 0xD0)],
+                       "the record's only gap is the two bytes the dropped name id left, filled with 0xD0")
+        let decoded = try StructTableCSV.decode(
+            csv, definition: typed.entryDefinition, byteOrder: .big, paddingFills: fills
+        )
+        XCTAssertEqual(
+            decoded.entries.flatMap { $0.data.rawBytes },
+            typed.entries.flatMap { $0.data.rawBytes },
+            "the JP stats table rebuilds byte-for-byte from its CSV"
+        )
+    }
+
     func testJapaneseIndexNineIsColosseumsUnknownNotTutorialData() throws {
         guard let corpus = japaneseCorpus else {
             throw XCTSkip("No Japanese PBR common.fsys — set GODDESS_PBR_COMMON_JP to run.")
@@ -467,5 +631,89 @@ final class PBRCommonTableRealCorpusTests: XCTestCase {
         XCTAssertEqual(groupIndices.min(), 17)
         XCTAssertEqual(groupIndices.max(), 54)
         XCTAssertEqual(flagValues, [0x81, 0x82])
+    }
+
+    /// The type chart identifies itself, so it can be asserted rather than
+    /// assumed: if the columns of `PBRTypeMatchup` were named in the wrong
+    /// order, or `PBRTypeEffectiveness`'s values were assigned the wrong way
+    /// round, these matchups would not be the ones the series has.
+    func testTypeMatchupChartIsTheSeriesChart() throws {
+        guard let corpus else {
+            throw XCTSkip("No PBR common.fsys — set GODDESS_PBR_COMMON to run.")
+        }
+        let engine = try PBREngine.defaults()
+        let descriptor = try XCTUnwrap(engine.commonTable(named: "TypeMatchups"))
+        let file = try XCTUnwrap(corpus.members[descriptor.index])
+
+        let headerDefinition = try engine.getStruct("PBRCommonTableHeader")
+        let header = StructData(
+            definition: headerDefinition,
+            data: try XCTUnwrap(file.read(atAddress: 0, length: headerDefinition.length))
+        )
+        let count: Int = try XCTUnwrap(header.get("entry_count"))
+        let entriesOffset: Int = try XCTUnwrap(header.get("entries_offset"))
+
+        let rowDefinition = try engine.getStruct("PBRTypeMatchup")
+        XCTAssertEqual(rowDefinition.length, descriptor.entrySize)
+
+        let columns = [
+            "effect_against_normal", "effect_against_fighting", "effect_against_flying",
+            "effect_against_poison", "effect_against_ground", "effect_against_rock",
+            "effect_against_bug", "effect_against_ghost", "effect_against_steel",
+            "effect_against_none", "effect_against_fire", "effect_against_water",
+            "effect_against_grass", "effect_against_electric", "effect_against_psychic",
+            "effect_against_ice", "effect_against_dragon", "effect_against_dark",
+        ]
+        XCTAssertEqual(columns.count, 18)
+
+        func row(_ index: Int) throws -> StructData {
+            StructData(
+                definition: rowDefinition,
+                data: try XCTUnwrap(file.read(
+                    atAddress: entriesOffset + index * rowDefinition.length,
+                    length: rowDefinition.length
+                ))
+            )
+        }
+        func effect(_ attacking: Int, _ column: String) throws -> String {
+            let value: Enum.Case? = try row(attacking).get(column)
+            return try XCTUnwrap(value, "row \(attacking).\(column)").name
+        }
+
+        // Attacking type index → the shared `Type` enum's order.
+        XCTAssertEqual(try effect(0, "effect_against_ghost"), "NoEffect")           // Normal
+        XCTAssertEqual(try effect(0, "effect_against_rock"), "NotVeryEffective")
+        XCTAssertEqual(try effect(1, "effect_against_normal"), "SuperEffective")    // Fighting
+        XCTAssertEqual(try effect(1, "effect_against_ghost"), "NoEffect")
+        XCTAssertEqual(try effect(1, "effect_against_flying"), "NotVeryEffective")
+        XCTAssertEqual(try effect(4, "effect_against_flying"), "NoEffect")          // Ground
+        XCTAssertEqual(try effect(7, "effect_against_normal"), "NoEffect")          // Ghost
+        XCTAssertEqual(try effect(10, "effect_against_grass"), "SuperEffective")    // Fire
+        XCTAssertEqual(try effect(10, "effect_against_water"), "NotVeryEffective")
+        XCTAssertEqual(try effect(11, "effect_against_fire"), "SuperEffective")     // Water
+        XCTAssertEqual(try effect(13, "effect_against_ground"), "NoEffect")         // Electric
+        XCTAssertEqual(try effect(16, "effect_against_dragon"), "SuperEffective")   // Dragon
+
+        // Type slot 9 is unused and neutral in both directions.
+        for column in columns {
+            XCTAssertEqual(try effect(9, column), "Neutral", "unused type's own row")
+        }
+        for attacking in 0..<18 {
+            XCTAssertEqual(try effect(attacking, "effect_against_none"), "Neutral",
+                           "row \(attacking) against the unused type")
+        }
+
+        // Rows past the 18 types are the battle code's override rows: each is
+        // either uniform, or neutral except for one or more `NoEffect`
+        // columns — an immunity granted by an ability or effect. (Row 21
+        // grants two, against Poison and Steel.)
+        XCTAssertGreaterThanOrEqual(count, 18)
+        for index in 18..<count {
+            let values = try columns.map { try effect(index, $0) }
+            if Set(values).count == 1 { continue }
+            let exceptions = Set(values.filter { $0 != "Neutral" })
+            XCTAssertEqual(exceptions, ["NoEffect"],
+                           "override row \(index) should be neutral but for immunities")
+        }
     }
 }

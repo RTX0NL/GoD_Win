@@ -146,17 +146,49 @@ public extension PBRStructDefaults {
 
     /// One row of the type matchup chart (0x12 / 18 bytes).
     ///
-    /// The row index is the attacking type and each byte is the multiplier
-    /// against the defending type at that position, in the games' internal
-    /// type order. Modelled as an array rather than 18 named fields because
-    /// PBR's type ids haven't been confirmed against the data here — the
-    /// legacy tool generated names from its own type enum.
+    /// The row index is the attacking type and each byte is the effectiveness
+    /// class against the defending type at that position, in the games' own
+    /// type order — the order the shared `Type` enum uses, with the unused
+    /// slot 9 in the middle.
+    ///
+    /// The columns are named rather than left as an array because the real
+    /// chart identifies itself: the PAL disc's 18 typed rows are Gen 4's
+    /// matchups exactly (Fighting super-effective on Normal/Rock/Steel/Ice/
+    /// Dark, no effect on Ghost; Fire super-effective on Grass/Bug/Steel/Ice;
+    /// Normal no effect on Ghost; row 9 neutral throughout), which pins both
+    /// the axis order and `PBRTypeEffectiveness`'s values.
+    ///
+    /// The table carries 32 rows, not 18. The 14 past the last type are
+    /// override rows the battle code selects instead of the attacker's own —
+    /// each is neutral everywhere but for one or two `NoEffect` columns, an
+    /// immunity granted by an ability or effect (Ground for Levitate, Fire
+    /// for Flash Fire, Poison *and* Steel for one row) — plus five uniform
+    /// rows: one all-neutral and four of `Unknown4`/`Unknown5`.
     static let typeMatchupStruct = StructMap(
         name: "PBRTypeMatchup",
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
-            .array(name: "effectiveness_by_defending_type", count: 18, of: .uint8),
+            .abstraction(name: "effect_against_normal",   typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_fighting", typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_flying",   typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_poison",   typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_ground",   typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_rock",     typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_bug",      typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_ghost",    typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_steel",    typeName: "PBRTypeEffectiveness"),
+            // Type slot 9 is the games' unused "None" type; every row is
+            // neutral against it and its own row is neutral throughout.
+            .abstraction(name: "effect_against_none",     typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_fire",     typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_water",    typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_grass",    typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_electric", typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_psychic",  typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_ice",      typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_dragon",   typeName: "PBRTypeEffectiveness"),
+            .abstraction(name: "effect_against_dark",     typeName: "PBRTypeEffectiveness"),
         ],
         description: "One attacking type's effectiveness against each of the 18 defending type slots."
     )

@@ -116,6 +116,32 @@ extension PBROps {
                 continue
             }
 
+            // Writing a CSV is a claim that the CSV rebuilds the table, and
+            // the raw `.bin` is about to be deleted, so the claim is checked
+            // first: measure what the packer left in the record's gaps (the
+            // CSV can't carry it), decode the file back with those filled in
+            // exactly as the repack will, and compare the entry bytes. A
+            // mismatch — or a "padding" run that varies from row to row, so
+            // isn't padding — means the struct doesn't describe this table,
+            // and the entry keeps its binary rather than becoming an
+            // editable file that rebuilds into something else.
+            guard let paddingFills = StructPaddingFill.measure(
+                    in: typed.entries, definition: typed.entryDefinition
+                  ),
+                  let rebuilt = try? StructTableCSV.decode(
+                    csv, definition: typed.entryDefinition, byteOrder: .big, paddingFills: paddingFills
+                  ).entries,
+                  rebuilt.flatMap({ $0.data.rawBytes }) == typed.entries.flatMap({ $0.data.rawBytes })
+            else {
+                logger?.log(.warning(
+                    "common.fsys table '\(table.name)' (index \(index)) doesn't rebuild from its own CSV "
+                    + "byte-for-byte. Keeping it as a raw binary entry."
+                ))
+                demotedCount += 1
+                newEntries.append(entry)
+                continue
+            }
+
             let tableFolder = commonRoot.folder(table.name)
             let headerFile = tableFolder.file(table.name + ".header.json")
             try fileSystem.encodeJSON(typed.header, to: unpackedFolder.file(headerFile.path), overwrite: overwrite)
@@ -148,7 +174,8 @@ extension PBROps {
                     headerStructName: format.headerStructName,
                     headerFile: headerFile,
                     leadingExtraFile: leadingFile,
-                    trailingExtraFile: trailingFile
+                    trailingExtraFile: trailingFile,
+                    entryPaddingFills: paddingFills
                 )
             ))
             typedCount += 1
@@ -186,6 +213,24 @@ extension PBROps {
                     continue
                 }
                 let (typed, csv) = decoded
+                // Same check as the common tables: the CSV has to rebuild the
+                // entry bytes, filler included, before the binary goes away.
+                guard let paddingFills = StructPaddingFill.measure(
+                        in: typed.entries, definition: typed.entryDefinition
+                      ),
+                      let rebuilt = try? StructTableCSV.decode(
+                        csv, definition: typed.entryDefinition, byteOrder: .big, paddingFills: paddingFills
+                      ).entries,
+                      rebuilt.flatMap({ $0.data.rawBytes }) == typed.entries.flatMap({ $0.data.rawBytes })
+                else {
+                    logger?.log(.warning(
+                        "deck.fsys table '\(deck.fileType)' doesn't rebuild from its own CSV byte-for-byte. "
+                        + "Keeping it as a raw binary entry."
+                    ))
+                    demotedCount += 1
+                    deckEntries.append(entry)
+                    continue
+                }
                 // Typed files sit next to the raw bin, sharing its base name.
                 let stem = entry.file.path.withoutExtensions
                 let headerFile = File(stem + ".header.json")
@@ -203,7 +248,8 @@ extension PBROps {
                         headerStructName: pbrEngine.data.deckHeaderStructName,
                         headerFile: headerFile,
                         leadingExtraFile: nil,
-                        trailingExtraFile: nil
+                        trailingExtraFile: nil,
+                        entryPaddingFills: paddingFills
                     )
                 ))
                 deckCount += 1

@@ -293,12 +293,16 @@ public extension PBRStructDefaults {
         alignmentStyle: .none,
         properties: [
             .array(name: "raw_data", count: 0x2A, of: .uint8),
-            // 0x2A: The one field the game reads through a generated accessor.
-            .uint8(name: "value"),
+            // 0x2A: The one field the game reads through a generated accessor
+            // — which of the species' two ability slots the AI assumes an
+            // unseen Pokémon has. One-based: every row of the PAL disc holds
+            // 1 (376 rows) or 2 (123), and nothing else, which is what rules
+            // out the ability *id* the field is sometimes taken for.
+            .uint8(name: "preferred_ability_slot"),
             // 0x2B: Alignment filler (0xD0).
             .padding(length: 1),
         ],
-        description: "Per-species AI expectation data, named by species in the table's name pool. Only the +0x2A field is resolved."
+        description: "Per-species AI expectation data, named by species in the table's name pool. Only the +0x2A ability slot is resolved."
     )
 
     /// AI per-Pokémon part data (0x0E / 14 bytes). Every byte is in 0…100,

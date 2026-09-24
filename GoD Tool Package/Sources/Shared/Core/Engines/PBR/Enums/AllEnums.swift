@@ -20,6 +20,7 @@ public extension PBREngine {
                 PBREnumDefaults.commonTableIndexJP,
                 PBREnumDefaults.modelBoneSlot,
                 PBREnumDefaults.modelAnimationSlot,
+                PBREnumDefaults.typeEffectiveness,
                 // Carried here as well as in the Pokemon engine, because the
                 // common-table structs name them and `getStruct` only ever
                 // consults one engine's own enums — the `structs:` parameter

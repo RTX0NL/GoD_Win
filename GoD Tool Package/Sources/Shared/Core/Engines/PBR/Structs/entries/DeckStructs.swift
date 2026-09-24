@@ -82,9 +82,16 @@ public extension PBRStructDefaults {
             .subStruct(name: "battle_start", typeName: "PBRTrainerDeckMessages"),
             .subStruct(name: "defeated", typeName: "PBRTrainerDeckMessages"),
             .subStruct(name: "victory", typeName: "PBRTrainerDeckMessages"),
+            // 0x5C: Skin tone in bits 4:2 — the byte is the tone times four.
+            // The PAL disc uses 0, 4, 8, 12, 16 and 20, i.e. tones 0…5, and
+            // never sets bits 0, 1 or 5 upwards. (The legacy tool reads this
+            // as two bits from bit 3, which can't hold six values.)
             .uint8(name: "skin_tone"),
             .array(name: "unknown_value_lists", count: 3, of: .uint8),
-            .array(name: "pokemon_themes", count: 4, of: .uint8),
+            // 0x60: Up to four type ids that bias the team's composition;
+            // 0xFF in a slot means no theme, and is 873 of the 1492 slots on
+            // the PAL disc.
+            .array(name: "pokemon_themes", count: 4, of: .enumeration(name: "Type")),
             .subStruct(name: "pokemon_pool_1", typeName: "PBRTrainerDeckPool"),
             .subStruct(name: "pokemon_pool_2", typeName: "PBRTrainerDeckPool"),
             .subStruct(name: "pokemon_pool_3", typeName: "PBRTrainerDeckPool"),
@@ -125,10 +132,28 @@ public extension PBRStructDefaults {
         alignmentStyle: .none,
         properties: [
             .uint16(name: "id"),
+            // 0x02: Generation flags. A set "random" bit means the field it
+            // names is rolled when the team is built, and the stored field is
+            // left at 0 — which is what identifies them on the PAL disc's
+            // 4598 deck rows: every row with bit 5 set stores form 0, every
+            // row with bit 4 set stores nature 0, every row with bit 3 set
+            // stores gender 0, and rows carrying a real value never set the
+            // matching bit.
+            //
+            //   bit 11 (0x0800) — use the species' second ability slot
+            //   bit  6 (0x0040) — random IVs
+            //   bit  5 (0x0020) — random form
+            //   bit  4 (0x0010) — random nature
+            //   bit  3 (0x0008) — random gender
+            //
+            // The rest are unidentified; bits 2, 4, 6 and 5 are set on nearly
+            // every row, bit 7 on eight rows, bit 15 on none.
             .uint16(name: "flags"),
             .uint16(name: "minimum_level"),
             .abstraction(name: "species", typeName: "PokemonSpecies"),
-            .array(name: "types", count: 2, of: .uint8),
+            // 0x08: The species' own typing, copied here for the AI's team
+            // building rather than read back from the stats table.
+            .array(name: "types", count: 2, of: .enumeration(name: "Type")),
             .uint8(name: "pokeball"),
             .uint8(name: "gender"),
             .uint8(name: "nature"),

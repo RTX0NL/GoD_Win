@@ -30,7 +30,22 @@ public extension PBREngine.Data {
         .init(name: "ExperienceTables",       index: 5,  japaneseIndex: 11,  structName: "PBRExperienceTable",          entrySize: 0x194),
         .init(name: "PokemonModels",          index: 6,  japaneseIndex: 12,  structName: "PBRPokemonModel",             entrySize: 0x48),
         .init(name: "PokemonModelEffects",    index: 7,  japaneseIndex: 13,  structName: "PBRPokemonModelEffect",       entrySize: 0x14),
-        .init(name: "PokemonStats",           index: 8,  japaneseIndex: 14,  structName: "PBRPokemonStats",             entrySize: 0x34),
+        // Same 0x34 stride on every disc, but not the same record: the
+        // international discs carry a second name id at +0x1A that the JP
+        // disc has no use for, so everything after it sits two bytes earlier
+        // there and the entry ends on two bytes of 0xD0 filler. Decoding a
+        // JP disc with the international record reads the model index, base
+        // stats and everything past them from two bytes too far in.
+        //
+        // Which id survives is settled by resolving both through each disc's
+        // string directory: the id at +0x18 is the species name in the
+        // disc's own language (PAL id 11 → "BULBASAUR", JP id 11 →
+        // フシギダネ, same numbers on both), and the one the JP disc drops
+        // is the Japanese name every international copy also ships (PAL id
+        // 21278 → table 2 index 8739 → フシギダネ, in the USUK table as much
+        // as the others).
+        .init(name: "PokemonStats",           index: 8,  japaneseIndex: 14,  structName: "PBRPokemonStats",             entrySize: 0x34,
+              japaneseStructName: "PBRPokemonStatsJP", japaneseEntrySize: 0x34),
         .init(name: "Evolutions",             index: 9,  japaneseIndex: 15,  structName: "PBRPokemonEvolutions",        entrySize: 0x2A),
         .init(name: "BallModels",             index: 10, japaneseIndex: 23,  structName: "PBRBallModel",                entrySize: 0x20),
         .init(name: "Colosseums",             index: 11, japaneseIndex: 24,  structName: "PBRColosseum",                entrySize: 0x5C),

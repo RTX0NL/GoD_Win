@@ -28,6 +28,7 @@ public extension PBREngine {
 
                 // Per-species tables
                 PBRStructDefaults.pokemonStatsStruct,
+                PBRStructDefaults.pokemonStatsJPStruct,
                 PBRStructDefaults.evolutionStruct,
                 PBRStructDefaults.pokemonEvolutionsStruct,
                 PBRStructDefaults.levelUpMoveStruct,

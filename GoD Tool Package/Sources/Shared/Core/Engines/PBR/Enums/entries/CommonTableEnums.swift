@@ -101,4 +101,26 @@ public extension PBREnumDefaults {
         ],
         propertyType: .uint32
     )
+
+    /// One cell of the type matchup chart.
+    ///
+    /// The chart stores an effectiveness *class*, not a multiplier — the
+    /// damage code turns the class into ×2 / ×1 / ×½ / ×0. Values 0…3 are the
+    /// four real classes; 4 and 5 appear only in the 14 rows past the 18
+    /// types, which are override rows the battle code selects for an ability
+    /// or effect (one is all-`NoEffect` against Ground — Levitate — another
+    /// all-`NoEffect` against Fire — Flash Fire), and both behave as neutral.
+    static let typeEffectiveness = Enum(
+        name: "PBRTypeEffectiveness",
+        allowUnknownCases: true,
+        values: [
+            .init(name: "SuperEffective",   rawValue: 0),
+            .init(name: "Neutral",          rawValue: 1),
+            .init(name: "NotVeryEffective", rawValue: 2),
+            .init(name: "NoEffect",         rawValue: 3),
+            .init(name: "Unknown4",         rawValue: 4),
+            .init(name: "Unknown5",         rawValue: 5),
+        ],
+        propertyType: .uint8
+    )
 }

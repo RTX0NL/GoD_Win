@@ -45,9 +45,18 @@ final class PBRCommonTableDumpTests: XCTestCase {
             let count: Int = try XCTUnwrap(typed.header.get("entry_count"))
             XCTAssertEqual(typed.entries.count, count, "\(table.name): row count")
 
-            // CSV encodes and re-decodes to the same number of rows.
+            // CSV encodes and re-decodes to the same number of rows. Padding
+            // runs are measured and refilled the way the dump and the repack
+            // do it: they have no column, so without them 14 of the 33 tables
+            // come back zeroed where the packer wrote 0xD0.
             let csv = try StructTableCSV.encode(entries: typed.entries, definition: typed.entryDefinition)
-            let decoded = try StructTableCSV.decode(csv, definition: typed.entryDefinition, byteOrder: .big)
+            let fills = try XCTUnwrap(
+                StructPaddingFill.measure(in: typed.entries, definition: typed.entryDefinition),
+                "\(table.name): a padding run varies between rows, so it isn't padding"
+            )
+            let decoded = try StructTableCSV.decode(
+                csv, definition: typed.entryDefinition, byteOrder: .big, paddingFills: fills
+            )
             XCTAssertEqual(decoded.entries.count, typed.entries.count, "\(table.name): CSV row count")
 
             // Byte-exactness of the entry array through CSV.
@@ -61,6 +70,9 @@ final class PBRCommonTableDumpTests: XCTestCase {
         }
 
         XCTAssertEqual(typedCount, 33, "all 33 tables have entry structs")
-        print("CSV byte-exact: \(byteExact)/\(typedCount); differ: \(paddingLost.joined(separator: ", "))")
+        XCTAssertEqual(
+            byteExact, typedCount,
+            "every table rebuilds from its CSV byte-for-byte; these don't: \(paddingLost.joined(separator: ", "))"
+        )
     }
 }
