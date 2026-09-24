@@ -23,9 +23,25 @@ public class FileSystem: FileSystemTree {
         currentDirectory = Folder(cwd.hasPrefix("/") ? cwd : "/")
     }
     
+    /// Answers "is anything here?" with one `stat`.
+    ///
+    /// The protocol's default asks `inspectFolder`, which lists the whole
+    /// directory and builds a `File` or `Folder` for every entry in it — and
+    /// `writeFile` asks this twice per write, so writing *n* files into one
+    /// folder costs O(n²) directory listings. That is invisible on a folder
+    /// of ten files and crippling on one of thousands: a Colosseum DOL
+    /// disassembly with a symbol map loaded went from seconds to minutes,
+    /// which is what put a `sample` of the "stall" on this line.
+    public func itemExists(at path: PathRepresentable) -> Bool {
+        // `extendPath` only resolves a `./` prefix and `nativePath` is the
+        // same conversion for either kind of path, so which one this borrows
+        // doesn't matter — `fileExists` answers for files and folders alike.
+        fm.fileExists(atPath: extendPath(File(path.path)).nativePath)
+    }
+
     public func inspectFile(at path: File) -> FileMetaData? {
         let filePath = extendPath(path).nativePath
-        
+
         let exists = fm.fileExists(atPath: filePath)
         guard exists else { return nil }
         
@@ -197,8 +213,13 @@ public class FileSystem: FileSystemTree {
         try? fm.setAttributes([FileAttributeKey.posixPermissions: 0o777], ofItemAtPath: fullPath.nativePath)
     }
     
+    /// `FileSystemTree`'s path resolution: on disk that is `extendPath`,
+    /// which is what every read and write here already goes through.
+    public func resolvedPath(of file: File) -> File { extendPath(file) }
+    public func resolvedPath(of folder: Folder) -> Folder { extendPath(folder) }
+
     public func extendPath(_ file: File) -> File {
-        if file.path.startsWith("./") || file.path.startsWith("../") {
+        if Self.isRelative(file.path) {
             return currentDirectory.file(file.path)
         } else {
             return file
@@ -206,11 +227,22 @@ public class FileSystem: FileSystemTree {
     }
 
     public func extendPath(_ folder: Folder) -> Folder {
-        if folder.path.startsWith("./") || folder.path.startsWith("../") {
+        if Self.isRelative(folder.path) {
             return currentDirectory.folder(folder.path)
         } else {
             return folder
         }
+    }
+
+    /// The spellings `File`/`Folder` accept for a path that isn't absolute.
+    ///
+    /// Bare `.` and `..` count. `Folder.init` strips a trailing separator,
+    /// so `"./"` — which is plainly relative — *becomes* `"."`; leaving that
+    /// out meant the same folder resolved against the running config's
+    /// `rootFolder` when spelled `./x` and against the process's own working
+    /// directory when spelled `.`.
+    private static func isRelative(_ path: String) -> Bool {
+        path == "." || path == ".." || path.startsWith("./") || path.startsWith("../")
     }
 }
 

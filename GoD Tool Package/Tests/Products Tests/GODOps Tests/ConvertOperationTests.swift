@@ -193,6 +193,21 @@ final class ConvertOperationTests: XCTestCase {
         assertBytesEqual(rebuilt, font.data, "PBR font round trip through Convert")
     }
 
+    func testFormatNamesAreHyphenatedLowercaseStrings() throws {
+        // The JSON spelling is the contract; the Swift case names are not.
+        let expected: [Convert.FileFormatSelection: String] = [
+            .msgColo: "msg-colo", .msgXD: "msg-xd",
+            .gtx: "gtx", .atx: "atx",
+            .fntColoXD: "fnt-colo-xd", .fntPBR: "fnt-pbr", .f3d: "f3d",
+            .gsw: "gsw", .ish: "ish", .thh: "thh",
+        ]
+        for (format, name) in expected {
+            XCTAssertEqual(format.rawValue, name)
+            XCTAssertEqual(Convert.FileFormatSelection(rawValue: name), format)
+        }
+        XCTAssertNil(Convert.FileFormatSelection(rawValue: "msgColo"), "camel case is not accepted")
+    }
+
     // MARK: - Struct
 
     func testDecodeStructWritesJSONThenEncodesBackToBinary() throws {
@@ -223,10 +238,10 @@ final class ConvertOperationTests: XCTestCase {
         assertBytesEqual(rebuilt, original, "struct round trip")
     }
 
-    func testDecodeStructFailsWhenSizeMismatch() throws {
+    func testDecodeStructFailsWhenTheInputIsShorterThanTheStruct() throws {
         let fst = InMemoryFST()
         let engineFolder = try installRecordEngine(in: fst)
-        // 6 bytes, but TestRecord is 8.
+        // 6 bytes, but TestRecord is 8 — the window runs past the end.
         try fst.writeFile(GoDData(byteStream: [1, 2, 3, 4, 5, 6], byteOrder: .big),
                       at: File("/project/in/bad.bin"), overwrite: true)
 
@@ -413,5 +428,278 @@ final class ConvertOperationTests: XCTestCase {
         XCTAssertEqual(logger.warnings.count, 1)
         XCTAssertTrue(logger.warnings.first?.contains("TestRecord") ?? false, "\(logger.warnings)")
         XCTAssertTrue(logger.warnings.first?.contains("earliest listed engine wins") ?? false)
+    }
+
+    // MARK: - Offsets, counts and in-place insertion
+
+    /// 32 bytes: four 8-byte records, values 0...31.
+    private func fourRecords() -> GoDData {
+        GoDData(byteStream: (0..<32).map { UInt8($0) }, byteOrder: .big)
+    }
+
+    private func json(at file: File, in fst: InMemoryFST) throws -> String {
+        try XCTUnwrap(fst.readFile(at: file)?.allData).string(format: .utf8)
+    }
+
+    func testDecodeStructReadsTheWindowAtFileOffsetAndIgnoresTheRest() throws {
+        let fst = InMemoryFST()
+        let engineFolder = try installRecordEngine(in: fst)
+        try fst.writeFile(fourRecords(), at: File("/project/in/blob.bin"), overwrite: true)
+
+        try run(.decodeStruct(
+            inputFile: File("/project/in/blob.bin"),
+            outputFolder: Folder("/project/json"),
+            overwrite: true,
+            structName: "TestRecord",
+            engines: [engineFolder],
+            fileOffset: 16
+        ), in: fst)
+
+        // Record 2 is bytes 16..<24: first = 0x10111213, second = 0x14151617.
+        let text = try json(at: File("/project/json/blob.json"), in: fst)
+        XCTAssertTrue(text.contains("\(0x10111213)"), text)
+        XCTAssertTrue(text.contains("\(0x14151617)"), text)
+    }
+
+    func testDecodeStructWithoutAnOffsetIgnoresTrailingBytes() throws {
+        let fst = InMemoryFST()
+        let engineFolder = try installRecordEngine(in: fst)
+        try fst.writeFile(fourRecords(), at: File("/project/in/blob.bin"), overwrite: true)
+
+        try run(.decodeStruct(
+            inputFile: File("/project/in/blob.bin"),
+            outputFolder: Folder("/project/json"),
+            overwrite: true,
+            structName: "TestRecord",
+            engines: [engineFolder]
+        ), in: fst)
+
+        let text = try json(at: File("/project/json/blob.json"), in: fst)
+        XCTAssertTrue(text.contains("\(0x00010203)"), text)
+    }
+
+    func testDecodeStructFailsWhenTheWindowRunsPastTheEnd() throws {
+        let fst = InMemoryFST()
+        let engineFolder = try installRecordEngine(in: fst)
+        try fst.writeFile(fourRecords(), at: File("/project/in/blob.bin"), overwrite: true)
+
+        // 28 + 8 > 32.
+        XCTAssertThrowsError(try run(.decodeStruct(
+            inputFile: File("/project/in/blob.bin"),
+            outputFolder: Folder("/project/json"),
+            overwrite: true,
+            structName: "TestRecord",
+            engines: [engineFolder],
+            fileOffset: 28
+        ), in: fst)) { error in
+            guard case ConvertErrors.windowOutOfRange(_, let offset, let length, let dataSize, _) = error else {
+                return XCTFail("expected windowOutOfRange, got \(error)")
+            }
+            XCTAssertEqual([offset, length, dataSize], [28, 8, 32])
+        }
+    }
+
+    func testDecodeStructTableReadsCountEntriesFromFileOffsetAndIgnoresTheTail() throws {
+        let fst = InMemoryFST()
+        let engineFolder = try installRecordEngine(in: fst)
+        try fst.writeFile(fourRecords(), at: File("/project/in/blob.bin"), overwrite: true)
+
+        // Records 1 and 2 only; record 3 is ignored even though it would fit.
+        try run(.decodeStructTable(
+            inputFile: File("/project/in/blob.bin"),
+            outputFolder: Folder("/project/json"),
+            overwrite: true,
+            structName: "TestRecord",
+            engines: [engineFolder],
+            fileOffset: 8,
+            count: 2
+        ), in: fst)
+
+        let rows = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: XCTUnwrap(fst.readFile(at: File("/project/json/blob.json"))?.allData).data) as? [Any])
+        XCTAssertEqual(rows.count, 2)
+        let text = try json(at: File("/project/json/blob.json"), in: fst)
+        XCTAssertTrue(text.contains("\(0x08090A0B)"), text)
+        XCTAssertFalse(text.contains("\(0x18191A1B)"), "record 3 should not have been read")
+    }
+
+    func testDecodeStructTableWithoutACountTilesFromTheOffsetToTheEnd() throws {
+        let fst = InMemoryFST()
+        let engineFolder = try installRecordEngine(in: fst)
+        try fst.writeFile(fourRecords(), at: File("/project/in/blob.bin"), overwrite: true)
+
+        try run(.decodeStructTable(
+            inputFile: File("/project/in/blob.bin"),
+            outputFolder: Folder("/project/json"),
+            overwrite: true,
+            structName: "TestRecord",
+            engines: [engineFolder],
+            fileOffset: 16
+        ), in: fst)
+
+        let rows = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: XCTUnwrap(fst.readFile(at: File("/project/json/blob.json"))?.allData).data) as? [Any])
+        XCTAssertEqual(rows.count, 2)
+    }
+
+    func testDecodeStructTableWithoutACountFailsOnAPartialTrailingEntry() throws {
+        let fst = InMemoryFST()
+        let engineFolder = try installRecordEngine(in: fst)
+        try fst.writeFile(fourRecords(), at: File("/project/in/blob.bin"), overwrite: true)
+
+        // 32 - 4 = 28 bytes, not a multiple of 8.
+        XCTAssertThrowsError(try run(.decodeStructTable(
+            inputFile: File("/project/in/blob.bin"),
+            outputFolder: Folder("/project/json"),
+            overwrite: true,
+            structName: "TestRecord",
+            engines: [engineFolder],
+            fileOffset: 4
+        ), in: fst)) { error in
+            guard case ConvertErrors.structDoesNotTile = error else {
+                return XCTFail("expected structDoesNotTile, got \(error)")
+            }
+        }
+    }
+
+    func testDecodeStructTableFailsWhenCountRunsPastTheEnd() throws {
+        let fst = InMemoryFST()
+        let engineFolder = try installRecordEngine(in: fst)
+        try fst.writeFile(fourRecords(), at: File("/project/in/blob.bin"), overwrite: true)
+
+        XCTAssertThrowsError(try run(.decodeStructTable(
+            inputFile: File("/project/in/blob.bin"),
+            outputFolder: Folder("/project/json"),
+            overwrite: true,
+            structName: "TestRecord",
+            engines: [engineFolder],
+            fileOffset: 16,
+            count: 3
+        ), in: fst)) { error in
+            guard case ConvertErrors.windowOutOfRange = error else {
+                return XCTFail("expected windowOutOfRange, got \(error)")
+            }
+        }
+    }
+
+    func testEncodeStructInsertsInPlaceAndIgnoresOverwrite() throws {
+        let fst = InMemoryFST()
+        let engineFolder = try installRecordEngine(in: fst)
+        // Decode record 0 of a fresh blob, then patch it into a *different*
+        // file at offset 16, with overwrite false — which would refuse a
+        // whole-file write but is beside the point when patching.
+        try fst.writeFile(GoDData(byteStream: [0xAA, 0xAA, 0xAA, 0xAA, 0xBB, 0xBB, 0xBB, 0xBB], byteOrder: .big),
+                          at: File("/project/in/record.bin"), overwrite: true)
+        try run(.decodeStruct(
+            inputFile: File("/project/in/record.bin"),
+            outputFolder: Folder("/project/json"),
+            overwrite: true,
+            structName: "TestRecord",
+            engines: [engineFolder]
+        ), in: fst)
+        try fst.writeFile(fourRecords(), at: File("/project/bin/record.bin"), overwrite: true)
+
+        try run(.encodeStruct(
+            inputFile: File("/project/json/record.json"),
+            outputFolder: Folder("/project/bin"),
+            overwrite: false,
+            structName: "TestRecord",
+            engines: [engineFolder],
+            insertOffset: 16
+        ), in: fst)
+
+        let patched = try XCTUnwrap(fst.readFile(at: File("/project/bin/record.bin"))?.allData)
+        var expected = (0..<32).map { UInt8($0) }
+        expected.replaceSubrange(16..<24, with: [0xAA, 0xAA, 0xAA, 0xAA, 0xBB, 0xBB, 0xBB, 0xBB])
+        assertBytesEqual(patched, GoDData(byteStream: expected, byteOrder: .big), "in-place patch")
+    }
+
+    func testEncodeStructWithInsertOffsetWritesTheWholeFileWhenItDoesNotExist() throws {
+        let fst = InMemoryFST()
+        let engineFolder = try installRecordEngine(in: fst)
+        let original = GoDData(byteStream: [1, 2, 3, 4, 5, 6, 7, 8], byteOrder: .big)
+        try fst.writeFile(original, at: File("/project/in/record.bin"), overwrite: true)
+        try run(.decodeStruct(
+            inputFile: File("/project/in/record.bin"),
+            outputFolder: Folder("/project/json"),
+            overwrite: true,
+            structName: "TestRecord",
+            engines: [engineFolder]
+        ), in: fst)
+
+        let logger = RecordingLogger()
+        try run(.encodeStruct(
+            inputFile: File("/project/json/record.json"),
+            outputFolder: Folder("/project/bin"),
+            overwrite: true,
+            structName: "TestRecord",
+            engines: [engineFolder],
+            insertOffset: 16
+        ), in: fst, logger: logger)
+
+        let written = try XCTUnwrap(fst.readFile(at: File("/project/bin/record.bin"))?.allData)
+        assertBytesEqual(written, original, "no file to patch, so the struct is the whole file")
+        XCTAssertEqual(logger.warnings.count, 1, "\(logger.warnings)")
+    }
+
+    func testEncodeStructFailsWhenThePatchRunsPastTheExistingFile() throws {
+        let fst = InMemoryFST()
+        let engineFolder = try installRecordEngine(in: fst)
+        try fst.writeFile(GoDData(byteStream: [1, 2, 3, 4, 5, 6, 7, 8], byteOrder: .big),
+                          at: File("/project/in/record.bin"), overwrite: true)
+        try run(.decodeStruct(
+            inputFile: File("/project/in/record.bin"),
+            outputFolder: Folder("/project/json"),
+            overwrite: true,
+            structName: "TestRecord",
+            engines: [engineFolder]
+        ), in: fst)
+        try fst.writeFile(fourRecords(), at: File("/project/bin/record.bin"), overwrite: true)
+
+        // 28 + 8 > 32: refuse rather than grow the file.
+        XCTAssertThrowsError(try run(.encodeStruct(
+            inputFile: File("/project/json/record.json"),
+            outputFolder: Folder("/project/bin"),
+            overwrite: true,
+            structName: "TestRecord",
+            engines: [engineFolder],
+            insertOffset: 28
+        ), in: fst)) { error in
+            guard case ConvertErrors.insertOutOfRange = error else {
+                return XCTFail("expected insertOutOfRange, got \(error)")
+            }
+        }
+        let untouched = try XCTUnwrap(fst.readFile(at: File("/project/bin/record.bin"))?.allData)
+        assertBytesEqual(untouched, fourRecords(), "a refused patch must leave the file alone")
+    }
+
+    func testEncodeStructTableInsertsInPlace() throws {
+        let fst = InMemoryFST()
+        let engineFolder = try installRecordEngine(in: fst)
+        // Two records of 0xFF, decoded to JSON, then patched over records 1-2.
+        try fst.writeFile(GoDData(byteStream: [UInt8](repeating: 0xFF, count: 16), byteOrder: .big),
+                          at: File("/project/in/table.bin"), overwrite: true)
+        try run(.decodeStructTable(
+            inputFile: File("/project/in/table.bin"),
+            outputFolder: Folder("/project/json"),
+            overwrite: true,
+            structName: "TestRecord",
+            engines: [engineFolder]
+        ), in: fst)
+        try fst.writeFile(fourRecords(), at: File("/project/bin/table.bin"), overwrite: true)
+
+        try run(.encodeStructTable(
+            inputFile: File("/project/json/table.json"),
+            outputFolder: Folder("/project/bin"),
+            overwrite: false,
+            structName: "TestRecord",
+            engines: [engineFolder],
+            insertOffset: 8
+        ), in: fst)
+
+        let patched = try XCTUnwrap(fst.readFile(at: File("/project/bin/table.bin"))?.allData)
+        var expected = (0..<32).map { UInt8($0) }
+        expected.replaceSubrange(8..<24, with: [UInt8](repeating: 0xFF, count: 16))
+        assertBytesEqual(patched, GoDData(byteStream: expected, byteOrder: .big), "table patched in place")
     }
 }

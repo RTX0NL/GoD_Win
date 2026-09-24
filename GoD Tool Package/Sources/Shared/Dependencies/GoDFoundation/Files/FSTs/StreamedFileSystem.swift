@@ -63,6 +63,11 @@ public final class StreamedFileSystem: FileSystemTree {
         disk?.changeDirectory(folder)
     }
 
+    /// Resolution is the backing tree's, not this wrapper's — the same
+    /// current directory `changeDirectory` above moves.
+    public func resolvedPath(of file: File) -> File { backing.resolvedPath(of: file) }
+    public func resolvedPath(of folder: Folder) -> Folder { backing.resolvedPath(of: folder) }
+
     // MARK: - FileSystemTree
     //
     // Everything else is the backing tree's job. Nothing is reinterpreted on

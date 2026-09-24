@@ -16,7 +16,9 @@ enum Convert {}
 
 extension Convert {
     /// The file format a `decodeFile` / `encodeFile` converts, as one plain
-    /// name in the config (`"format": "msgColo"`).
+    /// name in the config (`"format": "msg-colo"`). Raw values are the
+    /// lowercase extension, then each game suffix hyphenated: `fnt-colo-xd`,
+    /// `fnt-pbr`.
     ///
     /// Where one extension is shared by unrelated layouts, or one layout is
     /// rendered differently per game, each variant is its own case named
@@ -35,15 +37,15 @@ extension Convert {
     enum FileFormatSelection: String, Codable {
         /// Colosseum/XD string table. One binary layout, but the string
         /// rendering differs per game, so decode has to be told which.
-        case msgColo
-        case msgXD
+        case msgColo = "msg-colo"
+        case msgXD = "msg-xd"
         case gtx
         case atx
         /// The Colosseum/XD bitmap font.
-        case fntColoXD
+        case fntColoXD = "fnt-colo-xd"
         /// Battle Revolution's bitmap font — the same `.fnt` extension as
         /// `fntColoXD` and nothing else in common.
-        case fntPBR
+        case fntPBR = "fnt-pbr"
         /// Battle Revolution's 3D display font. Vector outlines, so its
         /// artifacts are an SVG specimen sheet plus a JSON manifest rather
         /// than an atlas image.

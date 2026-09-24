@@ -137,13 +137,20 @@ public extension GoDReadable {
                 let paramsLength: Int
                 switch charID {
                 case 0x01, 0x02, 0x03, 0x04, 0x05: paramsLength = 2
+                // Vertical offset, a signed 32-bit displacement. Retail
+                // always follows it with a line break, but the break is a
+                // character of its own and is read as one.
+                case 0x8011: paramsLength = 4
                 default: paramsLength = 0
                 }
                 guard let paramData = read(atAddress: address + 4, length: paramsLength) else { return nil }
                 var paramBytes = paramData.rawBytes
                 if charID == 1, paramBytes.count == 2 {
+                    // A furigana marker is followed by its kana reading and
+                    // then the kanji it annotates, each counted by its own
+                    // byte: kana first, kanji second.
                     let kanaCount = Int(paramBytes[0])
-                    let kanjiCount = Int(paramBytes[0])
+                    let kanjiCount = Int(paramBytes[1])
                     let characterLength = (kanaCount + kanjiCount) * 2
                     if let characterData = read(atAddress: address + 6, length: characterLength) {
                         paramBytes += characterData.rawBytes

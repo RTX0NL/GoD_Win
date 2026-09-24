@@ -26,21 +26,25 @@ extension Convert {
                 try encodeFile(inputFolder: inputFolder, outputFolder: outputFolder,
                                overwrite: overwrite, format: format, fileSystem: fileSystem)
 
-            case let .decodeStruct(inputFile, outputFolder, overwrite, structName, engines):
+            case let .decodeStruct(inputFile, outputFolder, overwrite, structName, engines, fileOffset):
                 try decodeStruct(inputFile: inputFile, outputFolder: outputFolder, overwrite: overwrite,
-                                 structName: structName, engineFolders: engines, fileSystem: fileSystem, logger: logger)
+                                 structName: structName, engineFolders: engines, fileOffset: fileOffset ?? 0,
+                                 fileSystem: fileSystem, logger: logger)
 
-            case let .encodeStruct(inputFile, outputFolder, overwrite, structName, engines):
+            case let .encodeStruct(inputFile, outputFolder, overwrite, structName, engines, insertOffset):
                 try encodeStruct(inputFile: inputFile, outputFolder: outputFolder, overwrite: overwrite,
-                                 structName: structName, engineFolders: engines, fileSystem: fileSystem, logger: logger)
+                                 structName: structName, engineFolders: engines, insertOffset: insertOffset,
+                                 fileSystem: fileSystem, logger: logger)
 
-            case let .decodeStructTable(inputFile, outputFolder, overwrite, structName, engines):
+            case let .decodeStructTable(inputFile, outputFolder, overwrite, structName, engines, fileOffset, count):
                 try decodeStructTable(inputFile: inputFile, outputFolder: outputFolder, overwrite: overwrite,
-                                      structName: structName, engineFolders: engines, fileSystem: fileSystem, logger: logger)
+                                      structName: structName, engineFolders: engines, fileOffset: fileOffset ?? 0,
+                                      count: count, fileSystem: fileSystem, logger: logger)
 
-            case let .encodeStructTable(inputFile, outputFolder, overwrite, structName, engines):
+            case let .encodeStructTable(inputFile, outputFolder, overwrite, structName, engines, insertOffset):
                 try encodeStructTable(inputFile: inputFile, outputFolder: outputFolder, overwrite: overwrite,
-                                      structName: structName, engineFolders: engines, fileSystem: fileSystem, logger: logger)
+                                      structName: structName, engineFolders: engines, insertOffset: insertOffset,
+                                      fileSystem: fileSystem, logger: logger)
             }
         }
     }
@@ -112,6 +116,7 @@ extension Convert {
         overwrite: Bool,
         structName: String,
         engineFolders: [Folder],
+        fileOffset: Int,
         fileSystem: FileSystemTree,
         logger: Logger?
     ) throws {
@@ -123,11 +128,8 @@ extension Convert {
         guard definition.length > 0 else {
             throw ConvertErrors.emptyStruct(structName: structName, .init())
         }
-        guard bytes.length == definition.length else {
-            throw ConvertErrors.structSizeMismatch(
-                structName: structName, structSize: definition.length, dataSize: bytes.length, .init())
-        }
-        let parsed = StructData(definition: definition, data: bytes)
+        let region = try window(of: bytes, structName: structName, offset: fileOffset, length: definition.length)
+        let parsed = StructData(definition: definition, data: region)
         let outFile = outputFolder.file("\(inputFile.fileName.withoutExtensions).json")
         try fileSystem.encodeJSON(parsed, to: outFile, overwrite: overwrite)
     }
@@ -138,6 +140,7 @@ extension Convert {
         overwrite: Bool,
         structName: String,
         engineFolders: [Folder],
+        insertOffset: Int?,
         fileSystem: FileSystemTree,
         logger: Logger?
     ) throws {
@@ -149,7 +152,8 @@ extension Convert {
         let parsed = try StructData(definition: definition, json: jsonBytes)
         let binary = GoDData(byteStream: parsed.data.rawBytes, byteOrder: .big)
         let outFile = outputFolder.file("\(inputFile.fileName.withoutExtensions).bin")
-        try fileSystem.writeFile(binary, at: outFile, overwrite: overwrite)
+        try write(binary, to: outFile, insertOffset: insertOffset, overwrite: overwrite,
+                  fileSystem: fileSystem, logger: logger)
     }
 
     private static func decodeStructTable(
@@ -158,6 +162,8 @@ extension Convert {
         overwrite: Bool,
         structName: String,
         engineFolders: [Folder],
+        fileOffset: Int,
+        count: Int?,
         fileSystem: FileSystemTree,
         logger: Logger?
     ) throws {
@@ -170,17 +176,32 @@ extension Convert {
         guard entrySize > 0 else {
             throw ConvertErrors.emptyStruct(structName: structName, .init())
         }
-        // Entry count is the input size divided by the struct size, and the
-        // struct must tile the input exactly — any remainder is an error.
-        guard bytes.length % entrySize == 0 else {
-            throw ConvertErrors.structDoesNotTile(
-                structName: structName, structSize: entrySize, dataSize: bytes.length, .init())
+        let entries: Int
+        if let count {
+            guard count >= 0 else {
+                throw ConvertErrors.invalidCount(structName: structName, count: count, .init())
+            }
+            entries = count
+        } else {
+            // No count: tile from the offset to the end of the file, and the
+            // struct must tile that span exactly — a partial trailing entry
+            // is a mismatch, not something to silently drop.
+            guard fileOffset >= 0, fileOffset <= bytes.length else {
+                throw ConvertErrors.windowOutOfRange(
+                    structName: structName, offset: fileOffset, length: entrySize, dataSize: bytes.length, .init())
+            }
+            let available = bytes.length - fileOffset
+            guard available % entrySize == 0 else {
+                throw ConvertErrors.structDoesNotTile(
+                    structName: structName, structSize: entrySize, offset: fileOffset, dataSize: available, .init())
+            }
+            entries = available / entrySize
         }
-        let count = bytes.length / entrySize
+        let region = try window(of: bytes, structName: structName, offset: fileOffset, length: entries * entrySize)
         var rows: [StructData] = []
-        rows.reserveCapacity(count)
-        for i in 0..<count {
-            let row = bytes.read(atAddress: i * entrySize, length: entrySize)
+        rows.reserveCapacity(entries)
+        for i in 0..<entries {
+            let row = region.read(atAddress: i * entrySize, length: entrySize)
                 ?? GoDData(length: entrySize, byteOrder: .big)
             rows.append(StructData(definition: definition, data: row))
         }
@@ -194,6 +215,7 @@ extension Convert {
         overwrite: Bool,
         structName: String,
         engineFolders: [Folder],
+        insertOffset: Int?,
         fileSystem: FileSystemTree,
         logger: Logger?
     ) throws {
@@ -217,7 +239,52 @@ extension Convert {
         }
         let binary = GoDData(byteStream: out, byteOrder: .big)
         let outFile = outputFolder.file("\(inputFile.fileName.withoutExtensions).bin")
-        try fileSystem.writeFile(binary, at: outFile, overwrite: overwrite)
+        try write(binary, to: outFile, insertOffset: insertOffset, overwrite: overwrite,
+                  fileSystem: fileSystem, logger: logger)
+    }
+
+    /// The `length` bytes at `offset`. Everything outside that window is
+    /// ignored; a window that isn't wholly inside the input is an error
+    /// rather than a short read.
+    private static func window(of bytes: GoDData, structName: String, offset: Int, length: Int) throws -> GoDData {
+        guard offset >= 0, length >= 0, offset + length <= bytes.length,
+              let region = bytes.read(atAddress: offset, length: length) else {
+            throw ConvertErrors.windowOutOfRange(
+                structName: structName, offset: offset, length: length, dataSize: bytes.length, .init())
+        }
+        return region
+    }
+
+    /// Writes an encoded binary. With `insertOffset` and an existing output
+    /// file, the bytes are patched into that file in place — the patch has
+    /// to sit wholly inside it, and `overwrite` doesn't apply because
+    /// rewriting the file is the point. Otherwise the file is written whole.
+    private static func write(
+        _ binary: GoDData,
+        to outFile: File,
+        insertOffset: Int?,
+        overwrite: Bool,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws {
+        guard let insertOffset else {
+            try fileSystem.writeFile(binary, at: outFile, overwrite: overwrite)
+            return
+        }
+        guard let existing = fileSystem.readFile(at: outFile)?.allData else {
+            logger?.log(.warning(
+                "\(outFile.path) doesn't exist, so insertOffset \(insertOffset) has nothing to patch into; "
+                + "writing the file whole"
+            ))
+            try fileSystem.writeFile(binary, at: outFile, overwrite: overwrite)
+            return
+        }
+        guard insertOffset >= 0, insertOffset + binary.length <= existing.length else {
+            throw ConvertErrors.insertOutOfRange(
+                file: outFile, offset: insertOffset, length: binary.length, fileSize: existing.length, .init())
+        }
+        existing.write(binary, atAddress: UInt(insertOffset))
+        try fileSystem.writeFile(existing, at: outFile, overwrite: true)
     }
 
     /// The engine a struct name resolves against: every listed folder,

@@ -87,6 +87,16 @@ public protocol FileSystemTree {
 
     /// Marks the file executable where the tree has a notion of permissions.
     func setExecutable(file: File)
+
+    /// The path this tree will really read or write: a `./`- or `../`-
+    /// prefixed path resolved against the tree's current directory.
+    ///
+    /// Only meaningful to a caller that has to hand the path to something
+    /// outside the tree — launching a program is the case that needs it,
+    /// since the child resolves a relative path against *its* working
+    /// directory rather than the running config's `rootFolder`.
+    func resolvedPath(of file: File) -> File
+    func resolvedPath(of folder: Folder) -> Folder
 }
 
 public extension FileSystemTree {
@@ -95,6 +105,11 @@ public extension FileSystemTree {
     /// On the protocol rather than behind an `as? FileSystem` at the one call
     /// site that needs it, so asking is not a runtime type question.
     func setExecutable(file: File) {}
+
+    /// A tree with no current directory resolves every path absolutely
+    /// already, so there is nothing to extend.
+    func resolvedPath(of file: File) -> File { file }
+    func resolvedPath(of folder: Folder) -> Folder { folder }
 
     /// Grows the file to `length` with zeros, leaving it alone if already at
     /// least that long — the padding operation disc images want.

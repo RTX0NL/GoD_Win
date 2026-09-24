@@ -31,7 +31,10 @@ extension Convert {
 
             /// Map a binary file onto a single struct definition (resolved by
             /// `structName` across `engines`) and write it as a JSON object.
-            /// Fails unless the binary is exactly the struct's size.
+            ///
+            /// The struct is read from `fileOffset` (default 0) and occupies
+            /// exactly its own size from there; bytes outside that window
+            /// are ignored. The window has to sit wholly inside the input.
             ///
             /// `engines` lists engine folders in priority order, exactly as the
             /// DOL/REL type maps do: they are combined into one engine, so a
@@ -43,40 +46,55 @@ extension Convert {
                 outputFolder: Folder,
                 overwrite: Bool,
                 structName: String,
-                engines: [Folder]
+                engines: [Folder],
+                fileOffset: Int? = nil
             )
 
             /// Encode a struct JSON object (produced by `decodeStruct`) back
             /// into its binary using `structName` from `engines`.
+            ///
+            /// With `insertOffset`, and an output file that already exists,
+            /// the bytes are patched into that file at the offset instead of
+            /// replacing it — the patch has to fit inside the file, and
+            /// `overwrite` is ignored because patching is the point. Without
+            /// an offset, or when the file doesn't exist yet, the file is
+            /// written whole.
             case encodeStruct(
                 inputFile: File,
                 outputFolder: Folder,
                 overwrite: Bool,
                 structName: String,
-                engines: [Folder]
+                engines: [Folder],
+                insertOffset: Int? = nil
             )
 
-            /// Map a binary file onto a table of `structName` structs. The
-            /// entry count is the input size divided by the struct size;
-            /// fails unless the struct tiles the input exactly. Written as a
-            /// JSON array of struct objects.
+            /// Map a binary file onto a table of `structName` structs, written
+            /// as a JSON array of struct objects.
+            ///
+            /// Entries tile from `fileOffset` (default 0). With `count`, that
+            /// many are read and anything after them is ignored; without it,
+            /// tiling runs to the end of the file and a partial trailing
+            /// entry is an error.
             case decodeStructTable(
                 inputFile: File,
                 outputFolder: Folder,
                 overwrite: Bool,
                 structName: String,
-                engines: [Folder]
+                engines: [Folder],
+                fileOffset: Int? = nil,
+                count: Int? = nil
             )
 
             /// Encode a struct-table JSON array (produced by
             /// `decodeStructTable`) back into its binary using `structName`
-            /// from `engines`.
+            /// from `engines`. `insertOffset` behaves as for `encodeStruct`.
             case encodeStructTable(
                 inputFile: File,
                 outputFolder: Folder,
                 overwrite: Bool,
                 structName: String,
-                engines: [Folder]
+                engines: [Folder],
+                insertOffset: Int? = nil
             )
         }
 
