@@ -197,11 +197,20 @@ final class ColoSaveOperationTests: XCTestCase {
         XCTAssertEqual(meta.physicalSlotIndex, latestSlotIndex)
         XCTAssertEqual(meta.header.magic, Array("GC6E".utf8))
         XCTAssertEqual(meta.header.counter, 3)
-        XCTAssertFalse(meta.headerRegion.isEmpty)
+        // The slot header is dumped as structured JSON, not base64 here
+        // and not a blob — same treatment as XD's larger header.
+        XCTAssertEqual(meta.headerRegionFile, XDSaveOps.slotHeaderJSONFilename)
 
-        // Header region = the 8 header bytes of the latest slot.
-        let headerData = try XCTUnwrap(Data(base64Encoded: meta.headerRegion))
-        XCTAssertEqual([UInt8](headerData), Array(plains[latestSlotIndex].rawBytes[0..<0x08]))
+        let headerJSON = try XCTUnwrap(
+            fst.readFile(at: latest.file(XDSaveOps.slotHeaderJSONFilename))?.allData
+        )
+        let engine = try ColosseumEngine(from: engineFolder, in: fst)
+        let definition = try XCTUnwrap(
+            try? engine.getStruct(ColoSaveOps.slotHeaderStructName) as StructDefinition
+        )
+        // And its named fields decode back to the 8 header bytes exactly.
+        let decoded = try StructData(definition: definition, json: headerJSON)
+        XCTAssertEqual(decoded.data.rawBytes, Array(plains[latestSlotIndex].rawBytes[0..<0x08]))
 
         XCTAssertEqual(meta.sections.map(\.index), expectedSections.map(\.index))
         let plainLatest = plains[latestSlotIndex].rawBytes
@@ -267,6 +276,54 @@ final class ColoSaveOperationTests: XCTestCase {
                 return XCTFail("Expected ColoSaveOpsErrors.missingSlot, got \(error)")
             }
         }
+    }
+
+    /// A never-saved Colosseum card: `01 01` then zeroes to the end of the
+    /// first 0x2000 block, then 0xFF fill. Colosseum's section layout is
+    /// fixed rather than read from the slot, so it used to "parse" the
+    /// garbage this decrypts to and the whole round trip succeeded —
+    /// writing back a slot whose checksums were now *valid*, i.e. a save
+    /// manufactured out of an empty card.
+    private func blankCardSlot() -> GoDData {
+        var bytes = [UInt8](repeating: 0, count: ColoSaveCipher.slotSize)
+        bytes[0] = 1; bytes[1] = 1
+        for i in 0x2000..<bytes.count { bytes[i] = 0xFF }
+        return GoDData(byteStream: bytes, byteOrder: .big)
+    }
+
+    func testDumpRejectsABlankNeverSavedCard() throws {
+        let (fst, engineFolder) = try makeProject()
+        let unpacked = Folder("/project/Unpacked")
+        for i in 1...3 {
+            try fst.writeFile(blankCardSlot(), at: unpacked.file("slot-\(i).bin"), overwrite: true)
+        }
+
+        XCTAssertThrowsError(
+            try runDump(fst: fst, engine: engineFolder, unpacked: unpacked, out: Folder("/project/Save"), decrypted: false)
+        ) { error in
+            guard case ColoSaveOpsErrors.noValidSlot = error else {
+                return XCTFail("Expected ColoSaveOpsErrors.noValidSlot, got \(error)")
+            }
+        }
+    }
+
+    func testDumpPrefersAValidSlotOverAHigherCounter() throws {
+        let (fst, engineFolder) = try makeProject()
+        let unpacked = Folder("/project/Unpacked")
+        // Slots 1 and 3 are blank; only slot 2 holds a real save, so it is
+        // the one to dump however the garbage slots' counters decode.
+        try fst.writeFile(blankCardSlot(), at: unpacked.file("slot-1.bin"), overwrite: true)
+        try fst.writeFile(try encrypted(makePreparedSlot(counter: 2, seed: 0x5EED)), at: unpacked.file("slot-2.bin"), overwrite: true)
+        try fst.writeFile(blankCardSlot(), at: unpacked.file("slot-3.bin"), overwrite: true)
+
+        let out = Folder("/project/Save")
+        try runDump(fst: fst, engine: engineFolder, unpacked: unpacked, out: out, decrypted: false)
+
+        let metadata = try XCTUnwrap(fst.readFile(at: out.file("save-metadata.json"))?.allData)
+        let decoded = try JSONDecoder().decode(ColoSaveOps.SaveMetadata.self, from: metadata.data)
+        XCTAssertEqual(decoded.latestSlotIndex, 1, "the one intact slot (index 1) must be the latest")
+        XCTAssertEqual(decoded.slots[0].bodyChecksumValid, false)
+        XCTAssertEqual(decoded.slots[1].bodyChecksumValid, true)
     }
 
     // MARK: - Build

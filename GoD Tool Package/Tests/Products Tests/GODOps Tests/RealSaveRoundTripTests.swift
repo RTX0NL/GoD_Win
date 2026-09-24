@@ -121,7 +121,7 @@ final class RealSaveRoundTripTests: XCTestCase {
         let origPlain = origSlot.raw.rawBytes
         let rebuilt = try XCTUnwrap(fst.readFile(at: unpacked.file(latestName))?.allData)
         let rebuiltData = GoDData(byteStream: rebuilt.rawBytes, byteOrder: .big)
-        XCTAssertTrue(try XDSaveCipher.decrypt(slot: rebuiltData), "\(label): rebuilt checksum must validate")
+        XCTAssertEqual(try XDSaveCipher.decrypt(slot: rebuiltData), true, "\(label): rebuilt checksum must validate")
         let rebuiltPlain = rebuiltData.rawBytes
 
         // Header region 0x00..0xA8 (magic, counter, seed, TOC, sizes) identical.

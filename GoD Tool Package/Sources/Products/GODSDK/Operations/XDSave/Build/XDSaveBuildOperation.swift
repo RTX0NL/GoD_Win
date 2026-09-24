@@ -46,12 +46,14 @@ extension XDSaveOps {
         let slotMeta: XDSaveOps.SlotMetadata =
             try fileSystem.decodeJSON(from: slotFolder.file(slotMetadataFilename))
 
-        // Decode the captured 0xA8 header region — carries the cipher
-        // seed, the sub-block TOC, and the size fields.
-        guard let headerData = Data(base64Encoded: slotMeta.headerRegion) else {
-            throw XDSaveOpsErrors.invalidHeaderRegion(.init())
-        }
-        let headerRegion = GoDData(byteStream: [UInt8](headerData), byteOrder: .big)
+        // The 0xA8 header region — cipher seed, sub-block tables, size
+        // fields — comes from its own file. Older dumps carried it as
+        // base64 in the metadata instead, so that is accepted as a
+        // fallback.
+        let headerRegion = try XDSaveOps.readHeaderRegion(
+            slotMeta: slotMeta, slotFolder: slotFolder,
+            engine: xdEngine, fileSystem: fileSystem
+        )
 
         // Rebuild every sub-block from its artifact (JSON when it exists,
         // else the raw `.bin`), hard-checking each against the size the
@@ -79,7 +81,9 @@ extension XDSaveOps {
         // tail zeroed (see XDSaveSlot.assembled). Then re-encrypt.
         let layout = xdEngine.data.saveSlotLayout.with(subBlockCount: xdEngine.data.saveSections.count)
         let plaintext = try XDSaveSlot.assembled(headerRegion: headerRegion, sections: sections, layout: layout)
-        let slotBytes = try encryptIfNeeded(plaintext, decrypted: decrypted)
+        let slotBytes = try encryptIfNeeded(
+            plaintext, decrypted: decrypted, checksumOffset: layout.checksumOffset
+        )
 
         // Replace ONLY the latest physical slot. The other slot's
         // original encrypted bytes remain in the unpacked GCI and pass
@@ -137,7 +141,7 @@ extension XDSaveOps {
                 }
                 return GoDData(byteStream: out, byteOrder: .big)
             case .binary:
-                break   // .binary sections never carry JSON — fall to .bin
+                break   // .binary sections never carry JSON — fall to the .bin
             }
         }
         if let binName = entry.bin {
@@ -150,12 +154,17 @@ extension XDSaveOps {
         throw XDSaveOpsErrors.missingArtifact(file: slotFolder.file(entry.name), .init())
     }
 
-    private static func encryptIfNeeded(_ plaintext: GoDData, decrypted: Bool) throws -> GoDData {
+    /// The engine may say the checksum tags live somewhere other than
+    /// the retail 0x10; pass that through so a modified save format is
+    /// re-tagged in the right place rather than at a stale offset.
+    private static func encryptIfNeeded(
+        _ plaintext: GoDData, decrypted: Bool, checksumOffset: Int?
+    ) throws -> GoDData {
         if decrypted {
             return plaintext
         }
         let copy = GoDData(byteStream: plaintext.rawBytes, byteOrder: .big)
-        try XDSaveCipher.encrypt(slot: copy)
+        try XDSaveCipher.encrypt(slot: copy, checksumOffset: checksumOffset)
         return copy
     }
 }

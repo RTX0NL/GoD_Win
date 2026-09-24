@@ -12,6 +12,28 @@ extension ColoSaveOps {
     static let saveMetadataFilename = "save-metadata.json"
     static let slotMetadataFilename = "slot-metadata.json"
     static let rawSlotFilename = "raw-slot.bin"
+    /// Struct the slot header is decoded through when the engine has it.
+    static let slotHeaderStructName = "ColoSaveSlotHeader"
+    /// The slot header region, decoded from its artifact.
+    static func readHeaderRegion<E: Engine>(
+        slotMeta: SlotMetadata,
+        slotFolder: Folder,
+        engine: E,
+        fileSystem: FileSystemTree
+    ) throws -> GoDData {
+        let filename = slotMeta.headerRegionFile
+        let path = slotFolder.file(filename)
+        guard let bytes = fileSystem.readFile(at: path)?.allData else {
+            throw ColoSaveOpsErrors.missingHeaderRegionFile(file: path, .init())
+        }
+        guard filename.hasSuffix(".json") else { return bytes }
+        guard let definition = try? engine.getStruct(slotHeaderStructName) as StructDefinition else {
+            throw ColoSaveOpsErrors.missingHeaderStruct(name: slotHeaderStructName, .init())
+        }
+        let parsed = try StructData(definition: definition, json: bytes)
+        return GoDData(byteStream: parsed.data.rawBytes, byteOrder: .big)
+    }
+
 
     struct SaveMetadata: Codable, Equatable {
         let decrypted: Bool
@@ -32,7 +54,9 @@ extension ColoSaveOps {
         /// Base64 of `slot[0x00..bodyBaseOffset]` (magic + counter) —
         /// the header bytes before the first section. Everything from
         /// bodyBaseOffset on is reconstructed from the sections.
-        let headerRegion: String
+        /// File holding the pre-section header verbatim — real save
+        /// data, dumped as a file of its own.
+        var headerRegionFile: String
         let decrypted: Bool
         let headerChecksumValid: Bool?
         let bodyChecksumValid: Bool?
@@ -108,8 +132,27 @@ extension ColoSaveOps {
             ))
         }
 
-        // Latest = highest save counter — PKHeX `ColoCrypto.DetectLatest`.
-        let latestIndex = summaries.enumerated().max { $0.element.counter < $1.element.counter }?.offset ?? 0
+        // A freshly formatted memory-card file has all three slots blank:
+        // the decrypt yields garbage, both checksums fail on every slot,
+        // and the fixed section layout then happily "parses" that garbage.
+        // Left unchecked the whole round trip succeeds and writes back a
+        // slot whose checksums are now *valid* — a save manufactured out
+        // of an empty card. Reject it here.
+        let judged = summaries.filter { $0.headerChecksumValid != nil || $0.bodyChecksumValid != nil }
+        let valid = summaries.indices.filter {
+            summaries[$0].headerChecksumValid != false && summaries[$0].bodyChecksumValid != false
+        }
+        if !judged.isEmpty && valid.isEmpty {
+            throw ColoSaveOpsErrors.noValidSlot(
+                file: unpackedFolder.file(GCIOps.coloSlotFilename(0)), .init()
+            )
+        }
+
+        // Latest = highest save counter — PKHeX `ColoCrypto.DetectLatest` —
+        // but only among slots that actually validated, so a blank or
+        // half-written slot can't win on counter alone.
+        let candidates = valid.isEmpty ? Array(summaries.indices) : valid
+        let latestIndex = candidates.max { summaries[$0].counter < summaries[$1].counter } ?? 0
         let latest = parsed[latestIndex]
 
         try dumpOneSlot(
@@ -152,7 +195,7 @@ extension ColoSaveOps {
         let copy = GoDData(byteStream: slotBytes.rawBytes, byteOrder: .big)
         let result = try ColoSaveCipher.decrypt(slot: copy)
         if !(result.headerValid && result.bodyValid) {
-            logger?.log(.info("Colo slot decrypt: header=\(result.headerValid), body=\(result.bodyValid)"))
+            logger?.log(.warning("Colo slot decrypt: header checksum \(result.headerValid ? "ok" : "FAILED"), body checksum \(result.bodyValid ? "ok" : "FAILED") — the slot is blank or corrupt"))
         }
         return (copy, result.headerValid, result.bodyValid)
     }
@@ -177,10 +220,20 @@ extension ColoSaveOps {
             overwrite: overwrite
         )
 
-        // Capture the pre-section header (magic + counter). Everything
-        // from bodyBaseOffset on is covered by the sections.
+        // The pre-section header (magic + counter) is real save data, so
+        // it is dumped as its own editable artifact — JSON through the
+        // engine's struct when that tiles it exactly, else raw bytes.
+        // Everything from bodyBaseOffset on is covered by the sections.
         let headerRegion = slot.raw.read(atAddress: 0, length: UInt(bodyBaseOffset)) ?? slot.raw
-        let headerRegionBase64 = Data(headerRegion.rawBytes).base64EncodedString()
+        let headerFile = try XDSaveOps.emitSlotHeader(
+            headerRegion,
+            structName: slotHeaderStructName,
+            slotFolder: slotFolder,
+            engine: engine,
+            fileSystem: fileSystem,
+            overwrite: overwrite,
+            logger: logger
+        )
 
         // Walk the engine's section array sequentially. Each
         // section's physical offset is the cumulative sum of prior
@@ -197,7 +250,7 @@ extension ColoSaveOps {
             let structTypeName = engine.data.sectionStructTypes[index]
             guard let typeName = structTypeName,
                   let definition = try? engine.getStruct(typeName) as StructDefinition else {
-                logger?.log(.info("Colo section '\(spec.name)' (idx \(index)): no struct binding — can't derive length, skipping"))
+                logger?.log(.warning("Colo section '\(spec.name)' (idx \(index)): no struct binding — can't derive its length, so the section is skipped entirely"))
                 continue
             }
             // Total section length = struct length × count for
@@ -208,7 +261,7 @@ extension ColoSaveOps {
             cursor += totalLength
 
             guard offset + totalLength <= slotBytes.length else {
-                logger?.log(.info("Colo section '\(spec.name)' at +\(String(format: "0x%X", offset)) extends beyond slot (len \(totalLength)) — stopping"))
+                logger?.log(.warning("Colo section '\(spec.name)' at +\(String(format: "0x%X", offset)) extends beyond the slot (len \(totalLength)) — stopping; every later section is missing from this dump"))
                 break
             }
             guard let bytes = slotBytes.read(atAddress: offset, length: totalLength) else { continue }
@@ -246,7 +299,9 @@ extension ColoSaveOps {
             entries.append(SlotMetadata.SectionEntry(
                 index: index,
                 name: spec.name,
-                type: spec.type,
+                // Report what was actually written — see the note on the
+                // XD dump's equivalent line.
+                type: jsonFilename == nil ? .binary : spec.type,
                 structType: structTypeName,
                 count: spec.count,
                 offset: offset,
@@ -259,7 +314,7 @@ extension ColoSaveOps {
         let slotMetadata = SlotMetadata(
             header: slot.header,
             physicalSlotIndex: physicalSlotIndex,
-            headerRegion: headerRegionBase64,
+            headerRegionFile: headerFile,
             decrypted: true,
             headerChecksumValid: headerOK,
             bodyChecksumValid: bodyOK,

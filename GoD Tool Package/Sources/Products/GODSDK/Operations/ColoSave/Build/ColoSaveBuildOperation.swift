@@ -50,10 +50,10 @@ extension ColoSaveOps {
             try fileSystem.decodeJSON(from: slotFolder.file(slotMetadataFilename))
 
         // Decode the captured header region (magic + counter).
-        guard let headerData = Data(base64Encoded: slotMeta.headerRegion) else {
-            throw ColoSaveOpsErrors.invalidHeaderRegion(.init())
-        }
-        let headerRegion = GoDData(byteStream: [UInt8](headerData), byteOrder: .big)
+        let headerRegion = try ColoSaveOps.readHeaderRegion(
+            slotMeta: slotMeta, slotFolder: slotFolder,
+            engine: engine, fileSystem: fileSystem
+        )
 
         // Reconstruct every section from its artifact (JSON when it
         // exists, else the raw `.bin`), hard-checking each against the

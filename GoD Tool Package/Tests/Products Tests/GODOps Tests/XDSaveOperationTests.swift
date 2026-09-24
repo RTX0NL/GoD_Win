@@ -22,6 +22,7 @@ import Foundation
 import GoDFoundation
 import GoDEngine
 import XD
+import Structs
 @testable import GODOps
 
 final class XDSaveOperationTests: XCTestCase {
@@ -90,6 +91,7 @@ final class XDSaveOperationTests: XCTestCase {
         // Section payloads. Everything else (gaps, padding) stays zero.
         fillDeterministic(&bytes, from: configOffset, count: configLen, seed: payloadSeed)
         fillDeterministic(&bytes, from: trainer1Offset, count: trainer1Size, seed: payloadSeed ^ 0x5A5A5A5A)
+
         return GoDData(byteStream: bytes, byteOrder: .big)
     }
 
@@ -174,11 +176,11 @@ final class XDSaveOperationTests: XCTestCase {
         let meta: XDSaveOps.SlotMetadata = try fst.decodeJSON(from: latest.file("slot-metadata.json"))
         XCTAssertEqual(meta.physicalSlot, "B")
         XCTAssertEqual(meta.header.counter, 0x0000_0200)
-        XCTAssertFalse(meta.headerRegion.isEmpty)
-
-        // Header region is exactly the first 0xA8 bytes of slot B.
-        let headerData = try XCTUnwrap(Data(base64Encoded: meta.headerRegion))
-        XCTAssertEqual([UInt8](headerData), Array(plainB.rawBytes[0..<XDSaveSlot.subBlockBaseOffset]))
+        // The slot header is real save data — cipher seed, checksum tags
+        // and the sub-block tables — so it is dumped as editable JSON
+        // rather than base64 inside this manifest.
+        XCTAssertEqual(meta.headerRegionFile, XDSaveOps.slotHeaderJSONFilename)
+        XCTAssertNotNil(fst.readFile(at: latest.file(XDSaveOps.slotHeaderJSONFilename))?.allData)
 
         // Config (index 0) tiles its struct → JSON; Trainer1 (index 1)
         // is short → .bin.
@@ -227,6 +229,52 @@ final class XDSaveOperationTests: XCTestCase {
         }
     }
 
+    /// A freshly formatted memory-card file: `01 01 01` then zeroes to the
+    /// end of the first 0x2000 block, then 0xFF fill. This is what every
+    /// never-saved XD card on a real memory card looks like, and it used to
+    /// dump "successfully" with an empty section list — the failure only
+    /// surfaced at build time, as "section 0 has no reconstructed bytes".
+    private func blankCardSlot() -> GoDData {
+        var bytes = [UInt8](repeating: 0, count: XDSaveCipher.slotSize)
+        bytes[0] = 1; bytes[1] = 1; bytes[2] = 1
+        for i in 0x2000..<bytes.count { bytes[i] = 0xFF }
+        return GoDData(byteStream: bytes, byteOrder: .big)
+    }
+
+    func testDumpRejectsABlankNeverSavedCard() throws {
+        let (fst, engineFolder) = makeProject()
+        let unpacked = Folder("/project/Unpacked")
+        // Both slots blank — the card has never been saved to.
+        try fst.writeFile(blankCardSlot(), at: unpacked.file("slot-a.bin"), overwrite: true)
+        try fst.writeFile(blankCardSlot(), at: unpacked.file("slot-b.bin"), overwrite: true)
+
+        XCTAssertThrowsError(
+            try runDump(fst: fst, xdEngine: engineFolder, unpacked: unpacked, out: Folder("/project/Save"), decrypted: false)
+        ) { error in
+            guard case XDSaveOpsErrors.noValidSlot = error else {
+                return XCTFail("Expected XDSaveOpsErrors.noValidSlot, got \(error)")
+            }
+        }
+    }
+
+    func testDumpPrefersTheValidSlotOverAHigherCounter() throws {
+        let (fst, engineFolder) = makeProject()
+        let unpacked = Folder("/project/Unpacked")
+        // Slot A is blank; slot B is a real save with a *lower* counter than
+        // the garbage slot A decrypts to. The intact slot is the one to dump.
+        try fst.writeFile(blankCardSlot(), at: unpacked.file("slot-a.bin"), overwrite: true)
+        try fst.writeFile(try encrypted(try makePlaintextSlot(counter: 7)), at: unpacked.file("slot-b.bin"), overwrite: true)
+
+        let out = Folder("/project/Save")
+        try runDump(fst: fst, xdEngine: engineFolder, unpacked: unpacked, out: out, decrypted: false)
+
+        let metadata = try XCTUnwrap(fst.readFile(at: out.file("save-metadata.json"))?.allData)
+        let decoded = try JSONDecoder().decode(XDSaveOps.SaveMetadata.self, from: metadata.data)
+        XCTAssertEqual(decoded.latestSlot, "B")
+        XCTAssertEqual(decoded.slotA.checksumValid, false, "the blank slot must be recorded as failing its checksum")
+        XCTAssertEqual(decoded.slotB.checksumValid, true)
+    }
+
     // MARK: - Build
 
     func testBuildFromScratchReplacesLatestSlotOnly() throws {
@@ -255,8 +303,43 @@ final class XDSaveOperationTests: XCTestCase {
         // decrypts back to the original plaintext with valid checksums.
         let rebuiltB = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-b.bin"))?.allData)
         let decrypted = GoDData(byteStream: rebuiltB.rawBytes, byteOrder: .big)
-        XCTAssertTrue(try XDSaveCipher.decrypt(slot: decrypted), "rebuilt slot B checksum must validate")
+        XCTAssertEqual(try XDSaveCipher.decrypt(slot: decrypted), true, "rebuilt slot B checksum must validate")
         XCTAssertEqual(decrypted.rawBytes, plainB.rawBytes, "rebuilt slot B plaintext must match original")
+    }
+
+    /// The header dumps as JSON with named fields, and those fields
+    /// decode back to exactly the bytes they came from — so it is both
+    /// readable and lossless.
+    func testSlotHeaderIsDumpedAsStructuredJSON() throws {
+        let (fst, engineFolder) = makeProject()
+        let plainA = try makePlaintextSlot(counter: 0x0000_0100)
+        let plainB = try makePlaintextSlot(counter: 0x0000_0200, payloadSeed: 0x0BADF00D)
+        let unpacked = Folder("/project/Unpacked")
+        try fst.writeFile(try encrypted(plainA), at: unpacked.file("slot-a.bin"), overwrite: true)
+        try fst.writeFile(try encrypted(plainB), at: unpacked.file("slot-b.bin"), overwrite: true)
+
+        let out = Folder("/project/Save")
+        try runDump(fst: fst, xdEngine: engineFolder, unpacked: unpacked, out: out, decrypted: false)
+
+        let latest = out.folder(XDSaveOps.latestSlotFolderName)
+        let json = try XCTUnwrap(
+            fst.readFile(at: latest.file(XDSaveOps.slotHeaderJSONFilename))?.allData,
+            "slot-header.json should exist"
+        )
+
+        // Named fields, not a blob.
+        let engine = try XDEngine(from: engineFolder, in: fst)
+        let definition = try XCTUnwrap(
+            try? engine.getStruct(XDSaveOps.slotHeaderStructName) as StructDefinition
+        )
+        XCTAssertEqual(definition.length, XDSaveSlot.subBlockBaseOffset)
+
+        // And they decode back to the original header bytes exactly.
+        let decoded = try StructData(definition: definition, json: json)
+        XCTAssertEqual(
+            decoded.data.rawBytes,
+            Array(plainB.rawBytes[0..<XDSaveSlot.subBlockBaseOffset])
+        )
     }
 
     func testEditedConfigFieldSurvivesRebuild() throws {
@@ -294,7 +377,7 @@ final class XDSaveOperationTests: XCTestCase {
         // Rebuilt latest slot must still validate.
         let rebuiltA = try XCTUnwrap(fst.readFile(at: unpacked.file("slot-a.bin"))?.allData)
         let decrypted = GoDData(byteStream: rebuiltA.rawBytes, byteOrder: .big)
-        XCTAssertTrue(try XDSaveCipher.decrypt(slot: decrypted), "rebuilt slot checksum must validate")
+        XCTAssertEqual(try XDSaveCipher.decrypt(slot: decrypted), true, "rebuilt slot checksum must validate")
 
         let out2 = Folder("/project/Save2")
         try runDump(fst: fst, xdEngine: engineFolder, unpacked: unpacked, out: out2, decrypted: false)

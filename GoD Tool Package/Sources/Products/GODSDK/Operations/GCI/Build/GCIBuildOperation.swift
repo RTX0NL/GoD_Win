@@ -35,52 +35,150 @@ extension GCIOps {
         logger?.log(.taskStatus(taskName: "Build GCI", status: .started))
 
         let manifestPath = inputFolder.file(manifestFilename)
-        let header: GCIFile.Header = try fileSystem.decodeJSON(from: manifestPath)
+        guard fileSystem.itemExists(at: manifestPath) else {
+            throw GCIOpsErrors.missingManifest(file: manifestPath, .init())
+        }
+        let manifest: SaveManifest = try fileSystem.decodeJSON(from: manifestPath)
 
-        let body: GoDData
-        if isXDSaveShape(header: header) {
-            guard
-                let banner = fileSystem.readFile(at: inputFolder.file(bannerFilename))?.allData,
-                let header0 = fileSystem.readFile(at: inputFolder.file(header0Filename))?.allData,
-                let header1 = fileSystem.readFile(at: inputFolder.file(header1Filename))?.allData,
-                let slotA = fileSystem.readFile(at: inputFolder.file(slotAFilename))?.allData,
-                let slotB = fileSystem.readFile(at: inputFolder.file(slotBFilename))?.allData
-            else {
-                throw GCIOpsErrors.missingRegion(folder: inputFolder, .init())
+        let bodyLength = Int(manifest.header.blockCount) * GCIFile.blockSize
+        let layout = try manifest.layout(bodyLength: bodyLength)
+
+        let metadataRegion = layout.metadataRegion
+        var regionBytes: [String: GoDData] = [:]
+        for region in layout.regions where region.name != metadataRegion?.name {
+            let path = inputFolder.file(region.binaryFilename)
+            guard let bytes = fileSystem.readFile(at: path)?.allData else {
+                throw GCIOpsErrors.missingRegion(
+                    folder: inputFolder, name: region.binaryFilename, .init()
+                )
             }
-            let card = GSSaveCardFile(
-                banner: banner,
-                header0: header0,
-                header1: header1,
-                slotA: slotA,
-                slotB: slotB
+            regionBytes[region.name] = bytes
+        }
+
+        // The metadata region is built from scratch out of its artifacts.
+        // It has no file of its own, so there is nothing to read back and
+        // nothing of the old save to carry forward.
+        if let metadataRegion, let card = manifest.card {
+            regionBytes[metadataRegion.name] = try rebuildCardMetadata(
+                region: metadataRegion,
+                card: card,
+                header: manifest.header,
+                inputFolder: inputFolder,
+                fileSystem: fileSystem,
+                logger: logger
             )
-            body = try card.assembledBody()
-        } else if isColoSaveShape(header: header) {
-            guard let preamble = fileSystem.readFile(at: inputFolder.file(preambleFilename))?.allData else {
-                throw GCIOpsErrors.missingRegion(folder: inputFolder, .init())
-            }
-            var slots: [GoDData] = []
-            for i in 0..<ColoSaveCardFile.slotCount {
-                guard let slot = fileSystem.readFile(at: inputFolder.file(coloSlotFilename(i)))?.allData else {
-                    throw GCIOpsErrors.missingRegion(folder: inputFolder, .init())
-                }
-                slots.append(slot)
-            }
-            body = try ColoSaveCardFile(preamble: preamble, slots: slots).assembledBody()
-        } else {
-            guard let raw = fileSystem.readFile(at: inputFolder.file(bodyFilename))?.allData else {
-                throw GCIOpsErrors.missingRegion(folder: inputFolder, .init())
-            }
-            body = raw
+        } else if let metadataRegion {
+            // A metadata region the manifest says nothing about is all
+            // fill, which is the right answer for a save that declares no
+            // banner, icon or comments.
+            regionBytes[metadataRegion.name] = GoDData(
+                byteStream: [UInt8](repeating: metadataRegion.fill, count: metadataRegion.length),
+                byteOrder: .big
+            )
+        }
+
+        let body = try layout.assembled(regionBytes: regionBytes)
+
+        // Any checksum the game keeps over its own metadata is recomputed
+        // last, over the assembled body. An edited banner or comment
+        // changes bytes these cover, so replaying the dumped value would
+        // hand the game a save it rejects.
+        for rule in manifest.integrity {
+            try rule.apply(to: body)
+        }
+        if !manifest.integrity.isEmpty {
+            logger?.log(.info("Applied \(manifest.integrity.count) save integrity rule(s)"))
         }
 
         let stem = gciFile.fileName.withoutExtensions
-        let gci = GCIFile(name: stem.isEmpty ? "save" : stem, header: header, body: body)
+        let gci = GCIFile(name: stem.isEmpty ? "save" : stem, header: manifest.header, body: body)
         let assembled = try gci.assembled()
 
         try fileSystem.writeFile(assembled, at: gciFile, overwrite: overwrite)
         logger?.log(.info("Wrote \(assembled.length) bytes to \(gciFile.path)"))
         logger?.log(.taskStatus(taskName: "Build GCI", status: .completed(true)))
+    }
+
+    /// Build the metadata region from scratch.
+    ///
+    /// Fill the whole region with its declared fill byte, then write the
+    /// images and the comments over it. Nothing is copied from the save
+    /// that was dumped: the dump refused to proceed unless every byte
+    /// outside those artifacts equalled the fill, so filling reproduces
+    /// them. Any checksum is applied later, over the assembled body.
+    private static func rebuildCardMetadata(
+        region: CardSaveLayout.Region,
+        card: SaveManifest.Card,
+        header: GCIFile.Header,
+        inputFolder: Folder,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws -> GoDData {
+        let rebuilt = GoDData(
+            byteStream: [UInt8](repeating: region.fill, count: region.length),
+            byteOrder: .big
+        )
+
+        if let images = card.images {
+            guard let layout = CardImageBlock.layout(header: header) else {
+                throw GCIOpsErrors.imageLayoutUnavailable(.init())
+            }
+            var pngData: [String: GoDData] = [:]
+            for entry in imageArtifactPaths(images: images) {
+                let path = inputFolder.file(entry.path)
+                guard let data = fileSystem.readFile(at: path)?.allData else {
+                    throw GCIOpsErrors.missingArtifact(file: path, .init())
+                }
+                pngData[entry.filename] = data
+            }
+            let block = try CardImageBlock.fromArtifacts(layout: layout, pngData: pngData)
+            let encoded = try block.encoded()
+            guard layout.offset >= region.offset, layout.end <= region.end else {
+                throw GCIOpsErrors.imageBlockOutsideRegion(region: region.name, .init())
+            }
+            rebuilt.write(encoded, atAddress: UInt(layout.offset - region.offset))
+        }
+
+        if let comments = card.comments {
+            let decoded = CardComments(
+                title: comments.title,
+                subtitle: comments.subtitle,
+                encoding: comments.encoding
+            )
+            let start = comments.offset - region.offset
+            guard start >= 0, start + CardComments.byteCount <= region.length else {
+                throw GCIOpsErrors.commentsOutsideRegion(region: region.name, .init())
+            }
+            rebuilt.write(
+                GoDData(byteStream: decoded.encoded(), byteOrder: .big),
+                atAddress: UInt(start)
+            )
+        }
+
+        guard rebuilt.length == region.length else {
+            throw GCIOpsErrors.regionLengthChanged(
+                name: region.name, expected: region.length, actual: rebuilt.length, .init()
+            )
+        }
+        return rebuilt
+    }
+
+    /// Artifact paths the manifest names, paired with the bare filenames
+    /// `CardImageBlock` keys its pieces by.
+    private static func imageArtifactPaths(
+        images: SaveManifest.Images
+    ) -> [(filename: String, path: String)] {
+        var entries: [(filename: String, path: String)] = []
+        if let banner = images.bannerFile,
+           let filename = CardImageBlock.artifactFilename(for: .banner) {
+            entries.append((filename, banner))
+        }
+        for frame in images.frames {
+            guard let filename = CardImageBlock.artifactFilename(
+                for: .frame(slot: frame.slot)
+            ) else { continue }
+            entries.append((filename, frame.file))
+        }
+        return entries
     }
 }

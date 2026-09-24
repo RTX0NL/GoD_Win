@@ -12,6 +12,65 @@ extension XDSaveOps {
     static let saveMetadataFilename = "save-metadata.json"
     static let slotMetadataFilename = "slot-metadata.json"
     static let rawSlotFilename = "raw-slot.bin"
+    static let slotHeaderFilename = "slot-header.bin"
+    static let slotHeaderJSONFilename = "slot-header.json"
+    /// Struct the slot header is decoded through when the engine has it.
+    static let slotHeaderStructName = "XDSaveSlotHeader"
+
+    /// Writes the slot header as JSON when the engine's struct tiles it
+    /// exactly, else as raw bytes. Returns the filename written.
+    ///
+    /// The struct has to match the header length exactly for the JSON to
+    /// be lossless — a shorter one would drop the tail and a longer one
+    /// would overrun — so a mismatch falls back to `.bin` with a warning
+    /// rather than dumping something that can't rebuild.
+    static func emitSlotHeader<E: Engine>(
+        _ headerRegion: GoDData,
+        structName: String = XDSaveOps.slotHeaderStructName,
+        slotFolder: Folder,
+        engine: E,
+        fileSystem: FileSystemTree,
+        overwrite: Bool,
+        logger: Logger?
+    ) throws -> String {
+        if let definition = try? engine.getStruct(structName) as StructDefinition,
+           definition.length == headerRegion.length {
+            let parsed = StructData(definition: definition, data: headerRegion)
+            try fileSystem.encodeJSON(
+                parsed, to: slotFolder.file(slotHeaderJSONFilename), overwrite: overwrite
+            )
+            return slotHeaderJSONFilename
+        }
+        logger?.log(.warning(
+            "Slot header: no '\(structName)' struct of \(headerRegion.length) bytes "
+            + "in the engine — dumping \(slotHeaderFilename), so the header is not editable by field"
+        ))
+        try fileSystem.writeFile(
+            headerRegion, at: slotFolder.file(slotHeaderFilename), overwrite: overwrite
+        )
+        return slotHeaderFilename
+    }
+
+    /// The slot header region, decoded from its artifact.
+    static func readHeaderRegion<E: Engine>(
+        slotMeta: SlotMetadata,
+        slotFolder: Folder,
+        engine: E,
+        fileSystem: FileSystemTree
+    ) throws -> GoDData {
+        let filename = slotMeta.headerRegionFile
+        let path = slotFolder.file(filename)
+        guard let bytes = fileSystem.readFile(at: path)?.allData else {
+            throw XDSaveOpsErrors.missingHeaderRegionFile(file: path, .init())
+        }
+        guard filename.hasSuffix(".json") else { return bytes }
+        guard let definition = try? engine.getStruct(slotHeaderStructName) as StructDefinition else {
+            throw XDSaveOpsErrors.missingHeaderStruct(name: slotHeaderStructName, .init())
+        }
+        let parsed = try StructData(definition: definition, json: bytes)
+        return GoDData(byteStream: parsed.data.rawBytes, byteOrder: .big)
+    }
+
 
     /// Top-level metadata that lives next to the slot folder.
     struct SaveMetadata: Codable, Equatable {
@@ -26,6 +85,12 @@ extension XDSaveOps {
         struct SlotSummary: Codable, Equatable {
             let counter: UInt32
             let magic: [UInt8]
+            /// Whether the slot's four running-sum body tags matched on
+            /// decrypt. `nil` when the input was already plaintext, so
+            /// there was nothing to check. Colosseum's dump has recorded
+            /// the equivalent since it was written; XD's did not, which
+            /// is why a blank card used to dump as though it were a save.
+            let checksumValid: Bool?
         }
     }
 
@@ -37,18 +102,20 @@ extension XDSaveOps {
         let header: XDSaveSlot.Header
         /// "A" or "B" — the physical slot these artifacts came from.
         let physicalSlot: String
-        /// Base64 of `slot[0x00..0xA8]`: cipher seed (0x08), placeholder
-        /// checksum tags (0x10), the 24-entry sub-block TOC + scattered
-        /// size fields (0x18..0x98), and the header tail. Carried as
-        /// opaque metadata — the sub-block *payloads* are rebuilt fresh
-        /// from their artifacts, and the inter-block gaps + unused tail
-        /// are zeroed.
-        let headerRegion: String
+        /// File holding `slot[0x00..0xA8]` verbatim: the cipher seed
+        /// (0x08), the checksum tags (0x10), the sub-block size and
+        /// offset tables (0x20..0x80) and a few trailing words. This is
+        /// real save data, so it is dumped as a file of its own; the
+        /// sub-block *payloads* are rebuilt from their own artifacts,
+        /// and the inter-block gaps and unused tail are filler the game
+        /// re-randomises (measured 7.97 bits/byte, sharing nothing with
+        /// live sections) and are not carried.
+        var headerRegionFile: String
         let decrypted: Bool
         let sections: [SectionEntry]
 
         /// One per section that actually has bytes (zero-size
-        /// sub-blocks are skipped). Each section dumps to *either*
+        /// sub-blocks are skipped). Most sections dump to *either*
         /// `bin` *or* `json`, never both: when the engine has a
         /// resolvable struct binding for the index, the section's
         /// JSON sidecar is the source of truth and we omit the
@@ -114,13 +181,40 @@ extension XDSaveOps {
         // Sub-block count comes from the registered section list, not a
         // hardcoded/persisted number — one source of truth.
         let layout = xdEngine.data.saveSlotLayout.with(subBlockCount: xdEngine.data.saveSections.count)
-        let slotA = try XDSaveSlot(raw: decryptedPlaintext(of: slotABytes, decrypted: decrypted, logger: logger), layout: layout)
-        let slotB = try XDSaveSlot(raw: decryptedPlaintext(of: slotBBytes, decrypted: decrypted, logger: logger), layout: layout)
+        let (plainA, validA) = try decryptedPlaintext(
+            of: slotABytes, decrypted: decrypted,
+            checksumOffset: layout.checksumOffset, logger: logger, slot: "A"
+        )
+        let (plainB, validB) = try decryptedPlaintext(
+            of: slotBBytes, decrypted: decrypted,
+            checksumOffset: layout.checksumOffset, logger: logger, slot: "B"
+        )
+        let slotA = try XDSaveSlot(raw: plainA, layout: layout)
+        let slotB = try XDSaveSlot(raw: plainB, layout: layout)
+
+        // A freshly formatted memory-card file has both slots blank — the
+        // decrypt produces garbage whose running-sum tags don't match, and
+        // the sub-block TOC it yields is all zeroes, so the dump used to
+        // emit an empty section list and the build failed much later with
+        // "section 0 has no reconstructed bytes". Reject it here instead,
+        // naming the real cause.
+        if validA == false && validB == false {
+            throw XDSaveOpsErrors.noValidSlot(file: slotAFile, .init())
+        }
 
         // The live save is the slot with the higher save counter — XD
         // ping-pongs writes between the two slots, bumping the counter
-        // each save. Dump only that one; ties favour A.
-        let latestIsA = slotA.header.counter >= slotB.header.counter
+        // each save. A slot whose checksum failed is never preferred over
+        // one that passed, however high its counter: on a half-written or
+        // partly blank card the intact slot is the one worth dumping.
+        let latestIsA: Bool
+        if validA == false, validB != false {
+            latestIsA = false
+        } else if validB == false, validA != false {
+            latestIsA = true
+        } else {
+            latestIsA = slotA.header.counter >= slotB.header.counter  // ties favour A
+        }
         let latest = latestIsA ? slotA : slotB
         let latestLetter = latestIsA ? "A" : "B"
 
@@ -137,8 +231,8 @@ extension XDSaveOps {
         let topLevel = SaveMetadata(
             decrypted: decrypted,
             latestSlot: latestLetter,
-            slotA: .init(counter: slotA.header.counter, magic: slotA.header.magic),
-            slotB: .init(counter: slotB.header.counter, magic: slotB.header.magic)
+            slotA: .init(counter: slotA.header.counter, magic: slotA.header.magic, checksumValid: validA),
+            slotB: .init(counter: slotB.header.counter, magic: slotB.header.magic, checksumValid: validB)
         )
         try fileSystem.encodeJSON(
             topLevel,
@@ -151,19 +245,28 @@ extension XDSaveOps {
     }
 
     /// Decrypts an encrypted slot (or passes through an already-plain
-    /// one), returning the plaintext bytes ready for `XDSaveSlot`.
+    /// one), returning the plaintext bytes ready for `XDSaveSlot` plus
+    /// whether the body checksum validated (`nil` when the input was
+    /// already plaintext, so there was nothing to check).
     private static func decryptedPlaintext(
         of slotBytes: GoDData,
         decrypted: Bool,
-        logger: Logger?
-    ) throws -> GoDData {
-        if decrypted { return slotBytes }
+        checksumOffset: Int?,
+        logger: Logger?,
+        slot: String
+    ) throws -> (GoDData, Bool?) {
+        if decrypted { return (slotBytes, nil) }
         let copy = GoDData(byteStream: slotBytes.rawBytes, byteOrder: .big)
-        let ok = try XDSaveCipher.decrypt(slot: copy)
-        if !ok {
-            logger?.log(.info("XD slot decrypt: running-sum tags did not match — slot may be corrupt"))
+        // `nil` means the engine declares no checksum for this format,
+        // so there was nothing to check — distinct from a check that
+        // failed.
+        let ok = try XDSaveCipher.decrypt(slot: copy, checksumOffset: checksumOffset)
+        if ok == false {
+            logger?.log(.warning("XD slot \(slot): running-sum tags did not match after decrypt — the slot is blank or corrupt"))
+        } else if ok == nil {
+            logger?.log(.info("XD slot \(slot): the engine declares no checksum offset, so the slot was not validated"))
         }
-        return copy
+        return (copy, ok)
     }
 
     private static func dumpOneSlot(
@@ -185,10 +288,22 @@ extension XDSaveOps {
             overwrite: overwrite
         )
 
-        // Capture the full header region (seed + TOC + size fields) so
-        // the build can rebuild from scratch without touching raw-slot.
+        // The header region is real save data — the cipher seed, the
+        // checksum tags and the sub-block tables — so it is dumped as
+        // its own editable artifact. JSON through the engine's struct
+        // when that tiles it exactly, otherwise raw bytes; either way
+        // the build reads it back from there and never touches
+        // raw-slot.
         let headerRegion = slot.raw.read(atAddress: 0, length: UInt(slot.layout.subBlockBaseOffset)) ?? slot.raw
-        let headerRegionBase64 = Data(headerRegion.rawBytes).base64EncodedString()
+        let headerFile = try emitSlotHeader(
+            headerRegion,
+            structName: slotHeaderStructName,
+            slotFolder: slotFolder,
+            engine: xdEngine,
+            fileSystem: fileSystem,
+            overwrite: overwrite,
+            logger: logger
+        )
 
         // Walk the engine's section list. The array's position is
         // the in-slot TOC index; XD reads each section's physical
@@ -244,7 +359,13 @@ extension XDSaveOps {
             entries.append(SlotMetadata.SectionEntry(
                 index: index,
                 name: spec.name,
-                type: spec.type,
+                // Report what was actually written. A `.struct`/`.table`
+                // section that failed to tile and fell back to a `.bin` is
+                // a binary section on disk, and saying otherwise made the
+                // manifest contradict its own file list. `structType` is
+                // kept either way — it still names the struct this section
+                // *would* use, which is what a region fix needs to know.
+                type: jsonFilename == nil ? .binary : spec.type,
                 structType: structTypeName,
                 count: spec.count,
                 offset: offset,
@@ -257,7 +378,7 @@ extension XDSaveOps {
         let slotMetadata = SlotMetadata(
             header: slot.header,
             physicalSlot: physicalSlot,
-            headerRegion: headerRegionBase64,
+            headerRegionFile: headerFile,
             decrypted: true,
             sections: entries
         )
@@ -297,7 +418,7 @@ extension XDSaveOps {
         case .struct:
             guard let typeName = structTypeName,
                   let definition = try? engine.getStruct(typeName) as StructDefinition else {
-                logger?.log(.info("Save section '\(spec.name)': no struct binding (engine.sectionStructTypes missing or struct '\(structTypeName ?? "<nil>")' unregistered) — falling back to .bin only"))
+                logger?.log(.warning("Save section '\(spec.name)': no struct binding (engine.sectionStructTypes missing or struct '\(structTypeName ?? "<nil>")' unregistered) — dumping .bin, so this section is not editable"))
                 return nil
             }
             // JSON is emitted *only* when the struct tiles the section
@@ -308,7 +429,7 @@ extension XDSaveOps {
             // the full `.bin` instead and flag it: extend the struct's
             // padding to make the section editable.
             guard bytes.length == definition.length else {
-                logger?.log(.info("Save section '\(spec.name)': struct '\(typeName)' is \(definition.length) bytes but the section is \(bytes.length) — extend the struct's padding to make it editable; dumping .bin for now"))
+                logger?.log(.warning("Save section '\(spec.name)': struct '\(typeName)' is \(definition.length) bytes but the section is \(bytes.length) — dumping .bin, so this section is not editable. A region whose layout differs needs its own struct bound in the engine's sectionStructTypes."))
                 return nil
             }
             let parsed = StructData(definition: definition, data: bytes)
@@ -319,7 +440,7 @@ extension XDSaveOps {
         case .table:
             guard let typeName = structTypeName,
                   let definition = try? engine.getStruct(typeName) as StructDefinition else {
-                logger?.log(.info("Save section '\(spec.name)': no struct binding (engine.sectionStructTypes missing or struct '\(structTypeName ?? "<nil>")' unregistered) — falling back to .bin only"))
+                logger?.log(.warning("Save section '\(spec.name)': no struct binding (engine.sectionStructTypes missing or struct '\(structTypeName ?? "<nil>")' unregistered) — dumping .bin, so this section is not editable"))
                 return nil
             }
             let entrySize = definition.length
@@ -328,7 +449,7 @@ extension XDSaveOps {
             // Exact tiling only — the row run must cover the whole
             // section so rebuild reproduces it byte-for-byte.
             guard count > 0, count * entrySize == bytes.length else {
-                logger?.log(.info("Save section '\(spec.name)': table \(count) × \(entrySize) != section \(bytes.length) bytes — dumping .bin instead"))
+                logger?.log(.warning("Save section '\(spec.name)': table \(count) × \(entrySize) != section \(bytes.length) bytes — dumping .bin, so this section is not editable. A region whose entry size differs needs its own struct bound in the engine's sectionStructTypes."))
                 return nil
             }
             var rows: [StructData] = []
