@@ -45,7 +45,9 @@ let package = Package(
     ],
     dependencies: [
         // Dependencies declare other packages that this package depends on.
-        .package(url: "https://github.com/tayloraswift/swift-png", from: "4.0.2"),
+        // swift-png's own dependency, kept because its `LZ77` and `PNG`
+        // targets are vendored under Sources/Shared/Dependencies/Third Party.
+        .package(url: "https://github.com/rarestype/h", from: "1.0.1"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.11.0"),
     ],
     targets: [
@@ -183,6 +185,7 @@ let package = Package(
                 "GoDEngine",
                 "Dolphin",
                 "GoDFoundation",
+                "GTX",
                 "Structs"
             ],
             path: "Sources/Shared/Core/Engines/GameCube"
@@ -202,15 +205,6 @@ let package = Package(
             path: "Sources/Shared/Core/Engines/Dolphin"
         ),
         .target(
-            name: "Orre",
-            dependencies: [
-                "GoDEngine",
-                "GoDFoundation",
-                "Structs"
-            ],
-            path: "Sources/Shared/Core/Engines/Orre"
-        ),
-        .target(
             name: "Nintendo",
             dependencies: [
                 "GoDEngine",
@@ -226,6 +220,9 @@ let package = Package(
                 "GoDFoundation",
                 "Structs",
                 "GTX",
+                // Save-card region and integrity declarations are written
+                // in the platform's own terms — see Constants/entries/SaveCard.swift.
+                "GameCube",
                 // The disc's FST can hold Nintendo containers alongside
                 // FSYS archives, and the rebuild repacks them from their
                 // manifests — see `FSTRegistry.EntryType.nintendoArchive`.
@@ -293,11 +290,32 @@ let package = Package(
             resources: []
         ),
         
+        // MARK: - Vendored Third Party Targets
+
+        // swift-png 4.5.1, carrying one local fix to its DEFLATE final-flush
+        // path — see that folder's README. Vendored rather than depended on
+        // because the bug silently truncates encoded images and there is no
+        // upstream release with the fix.
+        .target(
+            name: "LZ77",
+            dependencies: [
+                .product(name: "CRC", package: "h"),
+            ],
+            path: "Sources/Shared/Dependencies/Third Party/swift-png/LZ77"
+        ),
+        .target(
+            name: "PNG",
+            dependencies: [
+                "LZ77",
+            ],
+            path: "Sources/Shared/Dependencies/Third Party/swift-png/PNG"
+        ),
+
         // MARK: - Dependency Library Targets
         .target(
             name: "GoDFoundation",
             dependencies: [
-                .product(name: "PNG", package: "swift-png"),
+                "PNG",
             ],
             path: "Sources/Shared/Dependencies/GoDFoundation",
             resources: []
@@ -404,7 +422,7 @@ let package = Package(
             path: "Tests/Shared Tests/Engine Tests/Wii Tests"),
         .testTarget(
             name: "GameCubeTests",
-            dependencies: ["GameCube", "Dolphin", "GoDFoundation", "Structs", "TestSupport"],
+            dependencies: ["GameCube", "Dolphin", "GoDFoundation", "GTX", "Structs", "TestSupport"],
             path: "Tests/Shared Tests/Engine Tests/GameCube Tests",
             exclude: ["Fixtures"]),
         .testTarget(

@@ -46,6 +46,20 @@ public struct GreyscaleImage {
     }
 
     /// Encode as an 8-bit greyscale PNG.
+    ///
+    /// Compression level 0, matching `GoDImage` and `GoDIndexedImage`. These
+    /// sheets are mostly empty, so they compress an order of magnitude at any
+    /// level and a higher one buys a few percent of size for several times the
+    /// encode.
+    ///
+    /// This used to walk a ladder of levels and decode each attempt before
+    /// handing it out, because the encoder could emit a deflate stream that
+    /// ended early — one Colosseum JP font atlas (`D4_dome_4`, 528x40) came
+    /// back 19,660 bytes of the 21,160 it should. That was a bug in the
+    /// deflator's final flush, not a property of any level, and it is fixed in
+    /// the vendored copy (`Third Party/swift-png/README.md`). Verifying by
+    /// decoding was never a real check either: it only ever caught the cases
+    /// where the truncation happened to land on the level tried first.
     public func pngData() -> GoDData? {
         // The scalar-packing overload treats a `[UInt8]` as greyscale
         // samples directly, which is exactly what these pixels are.
@@ -56,11 +70,7 @@ public struct GreyscaleImage {
         )
         var stream = GreyscalePNGWriteStream()
         do {
-            // Level 6, not 9. These sheets are mostly empty so they compress
-            // an order of magnitude either way, and level 9 made encoding the
-            // largest atlas (11,800 glyphs) dominate the test suite's runtime
-            // for a few percent of size.
-            try image.compress(stream: &stream, level: 6)
+            try image.compress(stream: &stream, level: 0)
         } catch {
             return nil
         }

@@ -94,3 +94,94 @@ private struct PNGReadStream: PNG.Bytestream.Source {
         return result
     }
 }
+
+// MARK: - Indexed images
+
+/// A paletted image, kept as indices plus a palette rather than as
+/// color.
+///
+/// Flattening a paletted image to RGBA loses which index carried which
+/// color and collapses duplicate palette entries, so re-encoding one
+/// rebuilds a different palette for identical pixels. Where an exact
+/// round trip matters — a GameCube memory-card icon, whose palette is
+/// shared between frames and checksummed by the game — the indices and
+/// the palette order are the thing to preserve, and PNG's own indexed
+/// format preserves both.
+public struct GoDIndexedImage {
+    public let width: Int
+    public let height: Int
+    /// One palette index per pixel, row-major.
+    public let indices: [UInt8]
+    /// Palette entries as RGBA, four bytes each.
+    public let palette: [UInt8]
+
+    public init(width: Int, height: Int, indices: [UInt8], palette: [UInt8]) {
+        self.width = width
+        self.height = height
+        self.indices = indices
+        self.palette = palette
+    }
+
+    public var paletteEntryCount: Int { palette.count / 4 }
+
+    /// Encode as an indexed (color type 3) PNG.
+    public func pngData() -> GoDData? {
+        guard width > 0, height > 0 else { return nil }
+        guard indices.count == width * height else { return nil }
+        guard palette.count % 4 == 0, !palette.isEmpty, paletteEntryCount <= 256 else { return nil }
+
+        let entries: [(r: UInt8, g: UInt8, b: UInt8, a: UInt8)] = (0..<paletteEntryCount).map {
+            let offset = $0 * 4
+            return (palette[offset], palette[offset + 1], palette[offset + 2], palette[offset + 3])
+        }
+
+        let image = PNG.Image(
+            packing: indices,
+            size: (width, height),
+            layout: .init(format: .indexed8(palette: entries, fill: nil)),
+            indexer: { _ in { Int($0) } }
+        )
+
+        var stream = PNGWriteStream()
+        do {
+            try image.compress(stream: &stream, level: 0)
+        } catch {
+            return nil
+        }
+        return GoDData(byteStream: stream.bytes, byteOrder: .big)
+    }
+
+    /// Decode an indexed PNG back to indices and palette. Returns `nil`
+    /// for a PNG that isn't indexed, since flattened color could not be
+    /// re-indexed without inventing a palette.
+    public static func fromPNG(_ data: GoDData) -> GoDIndexedImage? {
+        var stream = PNGReadStream(data: data.rawBytes)
+        guard let image = try? PNG.Image.decompress(stream: &stream) else { return nil }
+
+        let entries: [(r: UInt8, g: UInt8, b: UInt8, a: UInt8)]
+        switch image.layout.format {
+        case let .indexed1(palette, _),
+             let .indexed2(palette, _),
+             let .indexed4(palette, _),
+             let .indexed8(palette, _):
+            entries = palette
+        default:
+            return nil
+        }
+
+        let (width, height) = image.size
+        let indices = image.unpack(as: UInt8.self, deindexer: { _ in { UInt8(truncatingIfNeeded: $0) } })
+        guard indices.count == width * height else { return nil }
+
+        var palette = [UInt8]()
+        palette.reserveCapacity(entries.count * 4)
+        for entry in entries {
+            palette.append(entry.r)
+            palette.append(entry.g)
+            palette.append(entry.b)
+            palette.append(entry.a)
+        }
+
+        return GoDIndexedImage(width: width, height: height, indices: indices, palette: palette)
+    }
+}
