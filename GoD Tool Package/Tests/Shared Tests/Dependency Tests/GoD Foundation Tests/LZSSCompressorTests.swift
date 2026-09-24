@@ -120,6 +120,31 @@ final class LZSSCompressorTests: XCTestCase {
         XCTAssertFalse(LZSSError.truncatedOutput(produced: 1, expected: 5).description.isEmpty)
     }
 
+    // MARK: - Parameters
+
+    /// The encoder packs the position's upper bits above the length field,
+    /// so a stream cut with one geometry only decodes under that geometry.
+    func testCustomParametersRoundTrip() throws {
+        var bytes = [UInt8]()
+        for i in 0 ..< 3000 { bytes.append(UInt8((i * 7 + i / 11) & 0x0F)) }
+        for (ei, ej, p) in [(10, 6, 1), (13, 3, 2), (9, 7, 0), (15, 1, 5)] {
+            let sut = LZSSCompressor(EI: ei, EJ: ej, P: p)
+            let compressed = sut.compress(data(bytes))
+            XCTAssertEqual(try sut.decompress(compressed).rawBytes, bytes, "\(ei)/\(ej)/\(p) round trip")
+            XCTAssertEqual(try sut.decompress(compressed, expectedSize: bytes.count).rawBytes, bytes, "\(ei)/\(ej)/\(p) sized round trip")
+        }
+    }
+
+    func testCustomParametersChangeTheStream() throws {
+        var bytes = [UInt8]()
+        for i in 0 ..< 600 { bytes.append(UInt8(i % 9)) }
+        let custom = LZSSCompressor(EI: 10, EJ: 6, P: 1).compress(data(bytes))
+        let standard = LZSSCompressor().compress(data(bytes))
+        XCTAssertNotEqual(custom.rawBytes, standard.rawBytes)
+        // The default decoder reads the wrong bits out of every pair.
+        XCTAssertNotEqual((try? LZSSCompressor().decompress(custom))?.rawBytes, bytes)
+    }
+
     func testCompressedIsSmallerForRepetitiveData() {
         let sut = LZSSCompressor()
         let original = data([UInt8](repeating: 0x77, count: 1000))

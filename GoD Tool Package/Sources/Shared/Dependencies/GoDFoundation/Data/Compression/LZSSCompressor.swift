@@ -19,18 +19,39 @@ public class LZSSCompressor: Compressor {
     // ported code from QuickBMS by Luigi Auriemma
     // https://aluigi.altervista.org/quickbms.htm
 
+    /// Genius Sonority's geometry — the defaults, shared by Colosseum, XD
+    /// and Battle Revolution. Named so a caller that exposes the parameters
+    /// can fall back to them without restating the numbers.
+    public static let defaultWindowBits = 12
+    public static let defaultLengthBits = 4
+    public static let defaultThreshold = 2
+
     private let EI: Int
     private let EJ: Int
     private let P: Int
-    
+
+    /// - Parameters:
+    ///   - EI: window bits — the ring buffer holds `1 << EI` bytes.
+    ///   - EJ: length bits — a match spans at most `(1 << EJ) + P` bytes.
+    ///   - P: threshold — a match of `P` bytes or fewer is sent as literals.
+    ///
+    /// A back-reference is packed into two bytes, `EJ` bits of which carry
+    /// the length, so the position gets `16 - EJ` bits and `EI` may not
+    /// exceed that; and the encoder primes its search tree with a full
+    /// lookahead's worth of positions below the start, so the window must
+    /// hold at least two lookaheads (`1 << EI >= 2 * ((1 << EJ) + P)`).
+    /// The defaults are Genius Sonority's, shared by Colosseum, XD and
+    /// Battle Revolution.
     public init(
-        EI: Int = 12,
-        EJ: Int = 4,
-        P: Int = 2
+        EI: Int = LZSSCompressor.defaultWindowBits,
+        EJ: Int = LZSSCompressor.defaultLengthBits,
+        P: Int = LZSSCompressor.defaultThreshold
     ) {
-        if (EI < 0) || (EI >= 0xffff)
+        if (EI < 0) || (EI >= 16)
         || (EJ < 0) || (EJ >= 31)
-        || (P  < 0) || (P  >= 0xffff) {
+        || (P  < 0) || (P  >= 0xffff)
+        || (EI + EJ > 16)
+        || (1 << EI) < 2 * ((1 << EJ) + P) {
             assertionFailure("LZSS Compression parameters are invalid")
         }
         self.EI = EI
@@ -45,7 +66,9 @@ public class LZSSCompressor: Compressor {
     public func decompress(_ data: GoDData, expectedSize: Int?) throws -> GoDData {
         var N = 1 << EI
         var F = 1 << EJ
-        let rless = 2
+        // The encoder starts writing at `N - ((1 << EJ) + P)`; this is the
+        // same position expressed against the decoder's `F = 1 << EJ`.
+        let rless = P
 
         let slidingWindowSize = N
         var slidingWindow = [UInt8](repeating: 0x00, count: slidingWindowSize)
@@ -121,7 +144,7 @@ public class LZSSCompressor: Compressor {
     }
 
     public func compress(_ data: GoDData) -> GoDData {
-        let THRESHOLD     = 2    // encode string into position and length if match_length is greater than this
+        let THRESHOLD     = P    // encode string into position and length if match_length is greater than this
         let N             = EI >= 16 ? EI : 1 << EI // size of ring buffer
         let F             = (1 << EJ) + THRESHOLD   // upper limit for match_length
         let NIL         = N // index for root of binary search trees
@@ -310,8 +333,11 @@ public class LZSSCompressor: Compressor {
                 codeBuffer.append(textBuffer[r])  // Send uncoded.
             } else {
                 // Send position and length pair. Note match_length > THRESHOLD.
+                // The low byte of the position first; then its remaining
+                // `16 - EJ` bits above the `EJ`-bit length, which is how
+                // the decoder unpacks it (`i |= (j >> EJ) << 8`).
                 codeBuffer.append(UInt8(matchPosition & 0xFF))
-                codeBuffer.append(UInt8(((matchPosition >> 4) & 0xf0) | (matchLength - (THRESHOLD + 1))))
+                codeBuffer.append(UInt8(((matchPosition >> 8) << EJ) | (matchLength - (THRESHOLD + 1))))
             }
 
 

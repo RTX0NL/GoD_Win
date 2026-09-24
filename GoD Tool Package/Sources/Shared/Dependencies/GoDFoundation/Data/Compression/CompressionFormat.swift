@@ -10,9 +10,11 @@
 //  mutable state to inject, so callers just ask.
 //
 //  Only self-describing formats belong here — ones whose own first bytes
-//  say what they are. The LZSS inside FSYS entries does not qualify: its
-//  magic lives in the archive's entry header, so `FSYSArchive` knows the
-//  payload is compressed before it ever reaches `LZSSCompressor`.
+//  say what they are. The bare LZSS stream `LZSSCompressor` speaks does not
+//  qualify: it has no magic and no sizes, and `FSYSArchive` knows an entry
+//  is compressed from the entry's flags before the codec sees it. The
+//  16-byte `LZSS` header the archive puts in front of that stream does
+//  qualify — `LZSSHeaderedCompressor` is that form, and `.lzss` names it.
 //
 
 import Foundation
@@ -27,11 +29,17 @@ public enum CompressionFormat: String, CaseIterable, Codable {
     /// split across three tables.
     case yay0
 
+    /// Genius Sonority's LZSS behind its 16-byte `LZSS` header — the payload
+    /// of a compressed FSYS entry, and the standalone `.lzss` form. The bare
+    /// stream has no magic and is not detectable.
+    case lzss
+
     /// The bytes at offset 0 that identify this format.
     public var magic: [UInt8] {
         switch self {
         case .yaz0: return Yaz0Compressor.magic
         case .yay0: return Yay0Compressor.magic
+        case .lzss: return LZSSHeaderedCompressor.magic
         }
     }
 
@@ -40,6 +48,7 @@ public enum CompressionFormat: String, CaseIterable, Codable {
         switch self {
         case .yaz0: return Yaz0Compressor.formatName
         case .yay0: return Yay0Compressor.formatName
+        case .lzss: return LZSSHeaderedCompressor.formatName
         }
     }
 
@@ -53,6 +62,7 @@ public enum CompressionFormat: String, CaseIterable, Codable {
         switch self {
         case .yaz0: return Yaz0Compressor()
         case .yay0: return Yay0Compressor()
+        case .lzss: return LZSSHeaderedCompressor()
         }
     }
 
@@ -62,6 +72,7 @@ public enum CompressionFormat: String, CaseIterable, Codable {
         switch self {
         case .yaz0: return try Yaz0Compressor.header(of: data).uncompressedSize
         case .yay0: return try Yay0Compressor.header(of: data).uncompressedSize
+        case .lzss: return try LZSSHeaderedCompressor.header(of: data).uncompressedSize
         }
     }
 

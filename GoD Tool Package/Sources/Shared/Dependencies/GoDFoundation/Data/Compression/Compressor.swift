@@ -9,8 +9,8 @@ public protocol Compressor {
 ///
 /// Lets a codec keep its signature next to its implementation while
 /// `CompressionFormat` sniffs across all of them. Not every compressor
-/// qualifies: the LZSS used inside FSYS entries carries its magic in the
-/// surrounding archive header, not in the stream the codec is handed.
+/// qualifies: the bare LZSS stream `LZSSCompressor` speaks carries no magic
+/// at all — `LZSSHeaderedCompressor` is its self-describing form.
 public protocol MagicPrefixedCompressor: Compressor {
     static var magic: [UInt8] { get }
 }

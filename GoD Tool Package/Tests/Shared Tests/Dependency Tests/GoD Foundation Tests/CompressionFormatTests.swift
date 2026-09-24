@@ -30,6 +30,19 @@ final class CompressionFormatTests: XCTestCase {
         XCTAssertTrue(CompressionFormat.isCompressed(stream))
     }
 
+    func testDetectsLZSS() {
+        let stream = LZSSHeaderedCompressor().compress(data(sample))
+        XCTAssertEqual(CompressionFormat.detect(stream), .lzss)
+        XCTAssertTrue(CompressionFormat.isCompressed(stream))
+    }
+
+    /// The bare stream `LZSSCompressor` speaks has no magic, so it is not
+    /// — and must not be — recognized.
+    func testDoesNotDetectABareLZSSStream() {
+        let stream = LZSSCompressor().compress(data(sample))
+        XCTAssertNil(CompressionFormat.detect(stream))
+    }
+
     func testDoesNotDetectPlainData() {
         XCTAssertNil(CompressionFormat.detect(data(sample)))
         XCTAssertFalse(CompressionFormat.isCompressed(data(sample)))
@@ -45,6 +58,7 @@ final class CompressionFormatTests: XCTestCase {
     func testDoesNotConfuseTheTwoSimilarMagics() {
         XCTAssertNil(CompressionFormat.detect(data(Array("Yaz1".utf8) + [UInt8](repeating: 0, count: 16))))
         XCTAssertNil(CompressionFormat.detect(data(Array("Yay1".utf8) + [UInt8](repeating: 0, count: 16))))
+        XCTAssertNil(CompressionFormat.detect(data(Array("LZSX".utf8) + [UInt8](repeating: 0, count: 16))))
     }
 
     func testMagicLengthCoversEveryFormat() {
@@ -82,6 +96,7 @@ final class CompressionFormatTests: XCTestCase {
     func testUncompressedSizeThrowsOnAForeignStream() {
         XCTAssertThrowsError(try CompressionFormat.yaz0.uncompressedSize(of: data(sample)))
         XCTAssertThrowsError(try CompressionFormat.yay0.uncompressedSize(of: data(sample)))
+        XCTAssertThrowsError(try CompressionFormat.lzss.uncompressedSize(of: data(sample)))
     }
 
     func testDecompressIfRecognizedUnwrapsCompressedInput() throws {
@@ -105,6 +120,7 @@ final class CompressionFormatTests: XCTestCase {
     func testRawValuesAreStable() {
         XCTAssertEqual(CompressionFormat.yaz0.rawValue, "yaz0")
         XCTAssertEqual(CompressionFormat.yay0.rawValue, "yay0")
+        XCTAssertEqual(CompressionFormat.lzss.rawValue, "lzss")
         XCTAssertEqual(CompressionFormat(rawValue: "yaz0"), .yaz0)
         XCTAssertNil(CompressionFormat(rawValue: "Yaz0"))
     }
