@@ -127,6 +127,126 @@ final class FSTPipelineArchiveTests: XCTestCase {
         _ = engine
     }
 
+    /// A loose file keeps the directory it sat in on the disc. PBR ships five
+    /// files under both `hb/HomeButton2` and `hb/HomeButton3`; routing by type
+    /// alone named them by basename, so the second of each pair overwrote the
+    /// first and the rebuild wrote one copy's bytes into both.
+    func testLooseFilesSharingAFilenameDoNotCollide() throws {
+        let second = payload("HomeButton2's copy")
+        let third = payload("HomeButton3's copy")
+        let disc = try makeDisc(files: [
+            ("hb/HomeButton2/config.txt", second),
+            ("hb/HomeButton3/config.txt", third),
+            ("loose.bin", payload("at the root")),
+        ])
+        let output = try engine().unpackProject(from: discRoot, fileSystem: disc)
+        let fst = try registry(from: output)
+
+        let a = try XCTUnwrap(entry(fst, discPath: "hb/HomeButton2/config.txt")?.file)
+        let b = try XCTUnwrap(entry(fst, discPath: "hb/HomeButton3/config.txt")?.file)
+        XCTAssertNotEqual(a.path, b.path, "both copies claimed one project path")
+        XCTAssertEqual(output.readFile(at: a)?.allData?.rawBytes, second.rawBytes)
+        XCTAssertEqual(output.readFile(at: b)?.allData?.rawBytes, third.rawBytes)
+
+        // A file at the root of `files/` keeps its plain, un-nested path.
+        let root = try XCTUnwrap(entry(fst, discPath: "loose.bin")?.file)
+        XCTAssertEqual(File(root.path).fileName, "loose.bin")
+        XCTAssertFalse(root.path.contains("/hb/"), "a root file shouldn't gain a directory")
+
+        // And both come back where they belong.
+        let built = InMemoryFST()
+        try copyTree(output, into: built, at: Folder("/project"))
+        try engine().packProject(
+            fstRegistryFile: Folder("/project").file("FST.json"),
+            outputFolder: Folder("/built"),
+            overwrite: true,
+            fileSystem: built
+        )
+        XCTAssertEqual(
+            built.readFile(at: Folder("/built/files").file("hb/HomeButton2/config.txt"))?.allData?.rawBytes,
+            second.rawBytes
+        )
+        XCTAssertEqual(
+            built.readFile(at: Folder("/built/files").file("hb/HomeButton3/config.txt"))?.allData?.rawBytes,
+            third.rawBytes
+        )
+    }
+
+    // MARK: - Platform directories
+
+    /// `hb/HomeButton2` and `hb/HomeButton3` are the console's Home Menu
+    /// library, not the game's assets, so they mirror their disc path under
+    /// `/Platform` rather than sorting into the asset folders by file type.
+    func testPlatformDirectoriesMirrorTheirDiscPathUnderPlatform() throws {
+        let disc = try makeDisc(files: [
+            ("hb/HomeButton2/homeBtn.arc", try u8Bytes("two")),
+            ("hb/HomeButton2/config.txt", payload("HomeButton2's copy")),
+            ("hb/HomeButton3/config.txt", payload("HomeButton3's copy")),
+        ])
+        let output = try engine().unpackProject(from: discRoot, fileSystem: disc)
+        let fst = try registry(from: output)
+
+        let arc = try XCTUnwrap(entry(fst, discPath: "hb/HomeButton2/homeBtn.arc")?.file)
+        XCTAssertEqual(arc.path, "/Platform/hb/HomeButton2/homeBtn.arc.json")
+
+        let second = try XCTUnwrap(entry(fst, discPath: "hb/HomeButton2/config.txt")?.file)
+        let third = try XCTUnwrap(entry(fst, discPath: "hb/HomeButton3/config.txt")?.file)
+        XCTAssertEqual(second.path, "/Platform/hb/HomeButton2/config.txt")
+        XCTAssertEqual(third.path, "/Platform/hb/HomeButton3/config.txt")
+
+        // Nothing platform-owned leaked into the game's asset folders.
+        for entry in fst.entries {
+            guard let discPath = entry.discPath, discPath.hasPrefix("hb/") else { continue }
+            XCTAssertFalse(entry.file.path.hasPrefix("/Assets/"), "\(discPath) sorted as a game asset")
+            XCTAssertFalse(entry.file.path.hasPrefix("/Archives/"), "\(discPath) sorted as a game archive")
+        }
+    }
+
+    /// A game-content directory is unaffected: it still routes by file type
+    /// and nests the disc directory under the folder its type chose.
+    func testANonPlatformDirectoryStillRoutesByFileType() throws {
+        let disc = try makeDisc(files: [("hb/HomeButton9/config.txt", payload("an unlisted version"))])
+        let fst = try registry(from: try engine().unpackProject(from: discRoot, fileSystem: disc))
+        let file = try XCTUnwrap(entry(fst, discPath: "hb/HomeButton9/config.txt")?.file)
+        XCTAssertFalse(file.path.hasPrefix("/Platform/"), "an unlisted directory isn't platform data")
+        XCTAssertTrue(file.path.hasSuffix("hb/HomeButton9/config.txt"), "it still keeps its disc directory")
+    }
+
+    /// The whole point of the folder is that the rebuild finds it again.
+    func testPlatformFilesRebuildToTheirOriginalDiscPaths() throws {
+        let u8 = try u8Bytes("two")
+        let second = payload("HomeButton2's copy")
+        let third = payload("HomeButton3's copy")
+        let disc = try makeDisc(files: [
+            ("hb/HomeButton2/homeBtn.arc", u8),
+            ("hb/HomeButton2/config.txt", second),
+            ("hb/HomeButton3/config.txt", third),
+        ])
+        let engine = engine()
+        let output = try engine.unpackProject(from: discRoot, fileSystem: disc)
+
+        let built = InMemoryFST()
+        try copyTree(output, into: built, at: Folder("/project"))
+        try engine.packProject(
+            fstRegistryFile: Folder("/project").file("FST.json"),
+            outputFolder: Folder("/built"),
+            overwrite: true,
+            fileSystem: built
+        )
+        XCTAssertEqual(
+            built.readFile(at: Folder("/built/files").file("hb/HomeButton2/homeBtn.arc"))?.allData?.rawBytes,
+            u8.rawBytes
+        )
+        XCTAssertEqual(
+            built.readFile(at: Folder("/built/files").file("hb/HomeButton2/config.txt"))?.allData?.rawBytes,
+            second.rawBytes
+        )
+        XCTAssertEqual(
+            built.readFile(at: Folder("/built/files").file("hb/HomeButton3/config.txt"))?.allData?.rawBytes,
+            third.rawBytes
+        )
+    }
+
     // MARK: - Round trip
 
     func testUnpackThenPackReproducesTheArchivesByteIdentically() throws {

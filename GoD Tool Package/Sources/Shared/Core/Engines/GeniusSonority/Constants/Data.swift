@@ -24,8 +24,19 @@ public extension GeniusSonorityEngine {
         /// still decodes; the computed accessor presents it as an array.
         internal var storedChunkTypeMapRoutes: [ChunkTypeMapRoute]?
 
+        /// How this game's memory-card save body divides into regions,
+        /// and any checksum it keeps over its own metadata (see
+        /// SaveCard.swift).
+        ///
+        /// Optional because Battle Revolution has none: it is a Wii
+        /// title, so its save is a NAND file rather than a GameCube
+        /// memory-card one and there is no `.gci` shape to describe. A
+        /// dump with no declaration falls back to the layout derived
+        /// from the directory entry.
+        public internal(set) var saveCard: SaveCard?
+
         enum CodingKeys: String, CodingKey {
-            case fsys, lzss, toc
+            case fsys, lzss, toc, saveCard
             case storedGame = "game"
             case storedChunkTypeMapRoutes = "chunkTypeMapRoutes"
         }

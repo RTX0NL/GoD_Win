@@ -19,10 +19,21 @@ public struct FSYSRegistry: Codable {
         public let leadingExtraFile: File?
         /// Raw name-table + relocation-table bytes, if the table has them.
         public let trailingExtraFile: File?
+        /// What the table's packer left in the gaps a record declares as
+        /// padding, measured run by run when the table was read.
+        ///
+        /// Those gaps have no CSV column — padding carries no information —
+        /// so a rebuilt row is zero across them unless the repack writes the
+        /// fill back. Battle Revolution's table compiler fills some runs
+        /// with `0xD0` and others with zero, in the same record, so one byte
+        /// per table would not do; a table rebuilt without these differs
+        /// from the disc in every row that has a gap.
+        public let entryPaddingFills: [StructPaddingFill]?
 
         public init(
             tableName: String, entryStructName: String, headerStructName: String,
-            headerFile: File, leadingExtraFile: File?, trailingExtraFile: File?
+            headerFile: File, leadingExtraFile: File?, trailingExtraFile: File?,
+            entryPaddingFills: [StructPaddingFill]? = nil
         ) {
             self.tableName = tableName
             self.entryStructName = entryStructName
@@ -30,6 +41,7 @@ public struct FSYSRegistry: Codable {
             self.headerFile = headerFile
             self.leadingExtraFile = leadingExtraFile
             self.trailingExtraFile = trailingExtraFile
+            self.entryPaddingFills = entryPaddingFills
         }
     }
 
@@ -68,12 +80,36 @@ public struct FSYSRegistry: Codable {
             self.thdMetadata = thdMetadata
             self.dataTable = dataTable
         }
+
+        /// The same entry pointing at a different project file, for the
+        /// unpack's path-collision pass.
+        public func pointing(at file: File) -> Entry {
+            Entry(
+                metadata: metadata,
+                file: file,
+                textureMetadata: textureMetadata,
+                atxMetadata: atxMetadata,
+                thdMetadata: thdMetadata,
+                dataTable: dataTable
+            )
+        }
     }
     
+    /// The archive's group ID **as the disc's table of contents gives it**,
+    /// and 0 when the table doesn't list the archive at all.
+    ///
+    /// This is what identifies the archive to the game, what the rebuilt table
+    /// is written from, and what goes back into the rebuilt archive's header.
+    /// The header's own value is deliberately not kept: it disagrees often
+    /// enough to matter — on each XD disc 35 to 40 archives carry a header ID
+    /// the table never lists, one is listed despite a header of 0
+    /// (`stm_bgm_windycity`), and one under a different ID than its header
+    /// claims (`stm_bgm_country`, header 0x90C, table 0x924) — and the table
+    /// is the authority, so those headers are corrected on rebuild.
     public let groupID: Int
     public let metaData: FSYSArchive.MetaData
     public let entries: [Entry]
-    
+
     public init(groupID: Int, metaData: FSYSArchive.MetaData, entries: [Entry]) {
         self.groupID = groupID
         self.metaData = metaData

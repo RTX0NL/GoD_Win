@@ -97,6 +97,90 @@ extension GeniusSonorityEngine.Data {
         /// FSYS archives whose images route to the character images folder
         public internal(set) var characterImageFsysNames: [String] = []
 
+        /// Archives that are a self-contained oddity rather than a member of
+        /// one of the categories above — test and debug data, the bonus-disc
+        /// menus, the leftover Colosseum battle maps.
+        ///
+        /// Everything they hold goes to one folder of their own under
+        /// `miscArchivesBaseFolder`, whatever its file type. They carry
+        /// their own variants of files the real maps and menus also ship
+        /// (`worldmap`'s map snapshots, the cave archives' Poké Ball models),
+        /// so scattering them by type drops them on top of the versions the
+        /// game actually uses.
+        public internal(set) var miscFsysNames: [String] = []
+
+        /// Cutscene and camera-demo archives. Each stages a place the game
+        /// already ships and brings its own build of that place's files, so
+        /// like `miscFsysNames` the whole archive goes to a folder of its own
+        /// rather than scattering by type onto the live versions.
+        public internal(set) var sceneFsysNames: [String] = []
+
+        // MARK: - Header Fields
+
+        /// Whether the archive's own header carries the group ID, or leaves
+        /// the word zero.
+        ///
+        /// The disc's table of contents is the only authority on what an
+        /// archive's group ID *is* (`FSYSRegistry.groupID`); this is purely
+        /// about whether the header repeats it. The three games disagree, and
+        /// the disagreement is total rather than a matter of stray outliers:
+        /// XD US populates the word in 2,533 of its 2,540 archives, while
+        /// Battle Revolution leaves it zero in **all 1,095** of its own and
+        /// reads the ID from the table instead. Writing the table's value into
+        /// a PBR header would therefore change every archive on the disc away
+        /// from the game's own convention, which is why this is engine data
+        /// and not a fixed rule.
+        ///
+        /// Optional so engine folders serialized before this existed decode;
+        /// `writesGroupIDInHeaderValue` supplies the default.
+        public internal(set) var writesGroupIDInHeader: Bool? = nil
+
+        /// The effective setting. Defaults to `true` — a header that repeats
+        /// the ID is the Genius Sonority norm, and Colosseum and XD both do it.
+        public var writesGroupIDInHeaderValue: Bool { writesGroupIDInHeader ?? true }
+
+        // MARK: - Platform Directories
+
+        /// Disc directories holding console platform data rather than game
+        /// content — libraries the console's SDK ships, which every title on
+        /// the platform carries its own copy of.
+        ///
+        /// Their files don't route by file type at all. A platform directory
+        /// mirrors its disc path under `platformBaseFolder`, so
+        /// `hb/HomeButton2/homeBtn.arc` becomes
+        /// `/Platform/hb/HomeButton2/homeBtn.arc.json`. Two reasons: these
+        /// aren't the game's assets and don't belong beside them, and a disc
+        /// commonly ships several versions of one library side by side under
+        /// sibling directories, so the directory is what tells two otherwise
+        /// identically named files apart.
+        ///
+        /// A directory nested inside a listed one counts as well, so listing
+        /// `hb` catches every `hb/HomeButtonN` without naming them.
+        ///
+        /// Optional so engine folders serialized before this existed decode.
+        public internal(set) var platformDirectories: [String]? = nil
+
+        /// Where platform files mirror their disc path — a sibling of
+        /// `/Assets`, not a folder inside it, because platform data isn't a
+        /// category of game asset. Optional for back-compatible decode;
+        /// `platformBaseFolderValue` supplies the default.
+        public internal(set) var platformBaseFolder: Folder? = nil
+
+        /// The effective platform folder, with the default when the engine
+        /// doesn't pin one.
+        public var platformBaseFolderValue: Folder { platformBaseFolder ?? "/Platform" }
+
+        /// Whether a disc-relative directory is one of `platformDirectories`,
+        /// or sits inside one. `nil` and `[]` both mean the game declares no
+        /// platform data, which is the Colosseum and XD case — the GameCube
+        /// has no equivalent of the Home Menu.
+        public func isPlatformDirectory(_ directory: String) -> Bool {
+            guard let platformDirectories else { return false }
+            return platformDirectories.contains {
+                directory == $0 || directory.hasPrefix($0 + "/")
+            }
+        }
+
         // MARK: - Language Routing
 
         /// Language suffix → subfolder name mapping for localized FSYS archives
@@ -114,6 +198,13 @@ extension GeniusSonorityEngine.Data {
 
         /// Base folder for menu images; the FSYS name is appended as a subfolder
         public internal(set) var menuImagesBaseFolder: Folder = "/Assets/Images/Menus"
+
+        /// Where a `miscFsysNames` archive's own folder is created, a sibling
+        /// of the menu and model folders rather than a category of its own.
+        public internal(set) var miscArchivesBaseFolder: Folder = "/Assets/Misc"
+
+        /// Where a `sceneFsysNames` archive's own folder is created.
+        public internal(set) var sceneArchivesBaseFolder: Folder = "/Assets/Scenes"
 
         /// Folder for battlefield models
         public internal(set) var battlefieldModelsFolder: Folder = "/Assets/Models/Battlefields"
@@ -165,11 +256,25 @@ extension GeniusSonorityEngine.Data {
         /// Optional so existing serialized Colo/XD engines still decode.
         public internal(set) var archiveSubfolderRoutes: [ArchiveSubfolderRoute]? = nil
 
-        /// Entry filename the game writes for unnamed entries (PBR uses
-        /// `(null)` for every entry). When an entry carries this name it's
-        /// treated as unnamed, so the project name comes from the archive
-        /// and the entry's index instead. Optional for back-compatible decode.
+        /// Entry filename the game writes for unnamed entries. When an entry
+        /// carries this name it's treated as unnamed, so the project name
+        /// comes from the archive and the entry's index instead. Optional for
+        /// back-compatible decode.
         public internal(set) var scrubbedFilenamePlaceholder: String? = nil
+
+        /// The effective placeholder, with the packer's own value when the
+        /// engine doesn't pin one.
+        ///
+        /// Genius Sonority's packer printed an absent filename through `%s`
+        /// with a null pointer, so every game it built stores the literal
+        /// `(null)` — all of PBR's entries, and 1105–2104 per XD disc
+        /// (every streamed sound, the movies, the flash menus and some
+        /// textures). The fallback is here rather than only in the engine
+        /// defaults so an engine folder serialized before this was recorded
+        /// still names those entries correctly.
+        public var scrubbedFilenamePlaceholderValue: String {
+            scrubbedFilenamePlaceholder ?? "(null)"
+        }
 
         // MARK: - Message language routing (PBR)
 

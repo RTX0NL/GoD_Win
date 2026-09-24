@@ -2,18 +2,6 @@ import GoDFoundation
 import GoDEngine
 import Structs
 
-public enum FSYSArchiveError: GoDError {
-    case duplicateFilenames([String], ErrorTrace = .init())
-
-    public var description: String {
-        switch self {
-        case let .duplicateFilenames(names, errorTrace):
-            return "Error: FSYS archive has duplicate entry filenames: \(names.joined(separator: ", ")). "
-                + "Entry filenames must be unique within an archive.\n\(errorTrace)"
-        }
-    }
-}
-
 public final class FSYSArchive {
     public static let formatName = "fsys"
     
@@ -244,19 +232,12 @@ public final class FSYSArchive {
         header.unknown_3 = metaData.unknown3
         header.unknown_4 = metaData.unknown4
         header.entry_count = entries.count
-        header.group_id = groupID
+        // The table of contents is what the game actually looks the ID up in;
+        // whether the header repeats it is a per-game convention. PBR leaves
+        // this word zero in every archive it ships, so writing the table's
+        // value here would move all 1,095 of them off the game's own layout.
+        header.group_id = engine.data.fsys.writesGroupIDInHeaderValue ? groupID : 0
         
-        // Entries are addressed by filename in the registry that drives a
-        // repack, so a duplicate would make the mapping ambiguous and
-        // silently point two entries at one string. Reject it up front.
-        let duplicateFilenames = Dictionary(grouping: entries, by: \.filename)
-            .filter { $0.value.count > 1 }
-            .keys
-            .sorted()
-        guard duplicateFilenames.isEmpty else {
-            throw FSYSArchiveError.duplicateFilenames(duplicateFilenames)
-        }
-
         let result = GoDData(byteOrder: .big)
         result.pad(by: header.length)
 
@@ -271,18 +252,33 @@ public final class FSYSArchive {
         let stringTableAddress = result.length
         header.file_names_pointer = stringTableAddress
 
-        var nameOffsetsByEntryFilename = [String: Int]()
-        entries.forEach { entry in
-            nameOffsetsByEntryFilename[entry.filename] = result.length
+        // One string per entry, in entry order, with the offsets kept by
+        // index rather than by name.
+        //
+        // Two entries sharing a name is ordinary in these archives — it's how
+        // a map's files are grouped, `D2_valley_1.fsys` holds six entries
+        // called `D2_valley_1` — and the games' own packer repeats the string
+        // for each one rather than pointing both at a single copy (checked
+        // across Colosseum and XD, including `people_archive`'s two
+        // `agent_m_a2` and the 776 `(null)` entries of
+        // `stm_se_nakigoe_archive`, all packed back to back with no gaps).
+        // Keying these by name collapsed the duplicates onto one offset, so
+        // the writer used to reject an archive it could have written
+        // correctly.
+        var nameOffsets = [Int]()
+        nameOffsets.reserveCapacity(entries.count)
+        for entry in entries {
+            nameOffsets.append(result.length)
             result.appendString(entry.metadata.name, format: .utf8, includeTerminator: true)
         }
-        var fullnameOffsetsByEntryName = [String: Int]()
-        entries.forEach { entry in
+        var fullNameOffsets = [Int]()
+        fullNameOffsets.reserveCapacity(entries.count)
+        for entry in entries {
             guard metaData.debugFlag else {
-                fullnameOffsetsByEntryName[entry.filename] = 0
-                return
+                fullNameOffsets.append(0)
+                continue
             }
-            fullnameOffsetsByEntryName[entry.filename] = result.length
+            fullNameOffsets.append(result.length)
             // Prefer the archive's own stored string; `entry.filename` is
             // the derived pretty form and round-trips lossily.
             result.appendString(
@@ -313,7 +309,7 @@ public final class FSYSArchive {
         
         let fileTypesEnum = engine.fileTypesEnum
         
-        for entry in entries {
+        for (entryIndex, entry) in entries.enumerated() {
             let currentEntryAddress = result.length
             let metaData = StructData(definition: entryMetadataStruct, byteOrder: .big)
             metaData.identifier = entry.metadata.identifier
@@ -325,8 +321,8 @@ public final class FSYSArchive {
             metaData.file_type_index = fileTypeCase.rawValue / 2
             metaData.data_address = currentEntryAddress
             metaData.flags = entry.metadata.compress ? 0x80000000 : 0
-            metaData.full_filename_pointer = fullnameOffsetsByEntryName[entry.filename] ?? 0
-            metaData.filename_pointer = nameOffsetsByEntryFilename[entry.filename] ?? 0
+            metaData.full_filename_pointer = fullNameOffsets[entryIndex]
+            metaData.filename_pointer = nameOffsets[entryIndex]
             
             if entry.metadata.compress {
                 let lzssHeader = StructData(definition: lzssHeaderStruct, byteOrder: .big)
@@ -342,6 +338,10 @@ public final class FSYSArchive {
                 
                 lzssHeader.compressed_size = compressedSize
                 metaData.file_size = compressedSize
+
+                if engine.data.lzss.writesUncompressedChecksum {
+                    lzssHeader.unknown = Int(CRC32.compute(entry.data.rawBytes))
+                }
                 
                 result.append(lzssHeader.data)
                 result.append(compressed)

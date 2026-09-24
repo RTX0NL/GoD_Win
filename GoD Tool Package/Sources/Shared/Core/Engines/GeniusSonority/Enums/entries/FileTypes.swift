@@ -28,8 +28,14 @@ extension GeniusSonorityEngine.Enums.Defaults {
             .init(name: "gpt", rawValue: 0x22),
             .init(name: "gpd", rawValue: 0x24),
             .init(name: "drel", rawValue: 0x26),
-            .init(name: "isd", rawValue: 0x28),
-            .init(name: "ish", rawValue: 0x2a),
+            // The games' own filenames name these the other way round from
+            // the order the type codes suggest: every entry of type 0x28 that
+            // stores a filename ends it `.ish`, and every 0x2A one `.isd`
+            // (48 of each on the XD US disc, the same on PAL). 0x28 is the
+            // `I_SF` header, 0x2A the ADPCM stream it describes — which is
+            // also the order `dumpAudios` reads them in.
+            .init(name: "ish", rawValue: 0x28),
+            .init(name: "isd", rawValue: 0x2a),
             .init(name: "thh", rawValue: 0x2c),
             .init(name: "thd", rawValue: 0x2e),
             .init(name: "gsw", rawValue: 0x30),

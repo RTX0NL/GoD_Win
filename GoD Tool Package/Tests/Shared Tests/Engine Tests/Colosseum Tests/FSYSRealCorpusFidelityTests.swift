@@ -172,6 +172,69 @@ final class FSYSRealCorpusFidelityTests: XCTestCase {
         }
     }
 
+    /// Archives that hold several entries under one name and file type.
+    ///
+    /// The writer used to key its name table by name, so these came out with
+    /// two entries pointing at one string — and rather than write that, it
+    /// refused the archive, which is what stopped every Colosseum and XD disc
+    /// from rebuilding (1 archive per Colosseum disc, 21 on XD US, 196 on XD
+    /// PAL). The games' own packer simply repeats the string, so these have
+    /// to repack byte-identically like any other.
+    ///
+    /// Named rather than discovered: they are a handful of files among
+    /// thousands, and naming them means the test says which shape it covers.
+    func testArchivesWithRepeatedEntryNamesRepackByteIdentically() throws {
+        let known: [GSGame: [String]] = [
+            .colosseum: ["people_archive.fsys"],
+            .galeOfDarkness: [
+                "people_archive.fsys",
+                "stm_se_nakigoe_archive.fsys",
+                "bingo_menu_fr.fsys",
+                "battle_disk_fr.fsys",
+            ],
+        ]
+        var checked = 0
+
+        for corpus in try availableCorpora() {
+            let engine = GeniusSonorityEngine.defaultEngine(for: corpus.game)
+            for name in known[corpus.game] ?? [] {
+                guard let url = locate(name, in: corpus.root),
+                      let rawData = try? Data(contentsOf: url) else { continue }
+                let raw = [UInt8](rawData)
+                let archive = try FSYSArchive(data: GoDData(byteStream: raw, byteOrder: .big), engine: engine)
+
+                // The archive is only interesting if it still has the shape
+                // this test is about.
+                let repeated = Dictionary(grouping: archive.entries) {
+                    "\($0.metadata.name).\($0.metadata.fileType)"
+                }.filter { $0.value.count > 1 }
+                XCTAssertFalse(repeated.isEmpty,
+                               "[\(corpus.label)] \(name) no longer holds entries sharing a name and type")
+
+                let rebuilt = try archive.data(groupID: archive.groupID, engine: engine).rawBytes
+                if rebuilt != raw {
+                    let detail = rebuilt.count != raw.count
+                        ? "length \(raw.count) vs \(rebuilt.count)"
+                        : (0..<raw.count).first { raw[$0] != rebuilt[$0] }
+                            .map { String(format: "first diff @0x%X", $0) } ?? "?"
+                    XCTFail("[\(corpus.label)] \(name) did not repack byte-identically: \(detail)")
+                }
+                checked += 1
+            }
+        }
+
+        try XCTSkipIf(checked == 0, "no archive with repeated entry names found in the corpus")
+    }
+
+    /// Finds a file by name anywhere under `root`.
+    private func locate(_ name: String, in root: String) -> URL? {
+        guard let e = FileManager.default.enumerator(
+            at: URL(fileURLWithPath: root), includingPropertiesForKeys: nil
+        ) else { return nil }
+        for case let url as URL in e where url.lastPathComponent == name { return url }
+        return nil
+    }
+
     /// Zero-entry archives reserve one 0x10 unit for each of the empty offset
     /// and string tables — a shape the writer used to collapse away, which
     /// made the rebuilt file 32 bytes short.
@@ -220,6 +283,8 @@ final class FSYSRealCorpusFidelityTests: XCTestCase {
             }
         }
 
-        XCTAssertGreaterThan(checked, 0, "found no zero-entry archives to check")
+        // Battle Revolution ships none, so a PBR-only corpus has nothing to
+        // check here — skip rather than fail on a shape the disc doesn't have.
+        try XCTSkipIf(checked == 0, "no zero-entry archives in this corpus")
     }
 }

@@ -65,8 +65,16 @@ public struct GeniusSonorityEngine: Engine {
             ["FsysTOCEntry"].contains($0.name)
         })
 
+        // Every Genius Sonority game stores `(null)` for an entry whose name
+        // the packer never filled in, so the unpack names those by archive +
+        // index for all three rather than only for PBR. XD relies on it most:
+        // without it ~1200 entries per disc share nine names and overwrite
+        // each other on the way out.
+        data.fsys.scrubbedFilenamePlaceholder = "(null)"
+
         switch game {
         case .colosseum:
+            data.saveCard = Data.colosseumSaveCard
             data.fsys.fileMetaDataPadding = 0x20
             // Colosseum's packer leaves 12 bytes of 0x11 in every entry's
             // metadata padding. Verified constant across all 1028 entries
@@ -80,6 +88,7 @@ public struct GeniusSonorityEngine: Engine {
                 "mdat": "dat"
             ]
         case .galeOfDarkness:
+            data.saveCard = Data.galeOfDarknessSaveCard
             data.fsys.fileMetaDataPadding = 0x40
             data.toc.unknown = 0x201
             // XD is the only game that ships an extra typed REL
@@ -94,6 +103,9 @@ public struct GeniusSonorityEngine: Engine {
         case .battleRevolution:
             data.fsys.fileMetaDataPadding = 0x40
             data.toc.unknown = 0x251
+            // PBR's packer checksums every compressed entry; Colo and XD
+            // leave that header field zero.
+            data.lzss.writesUncompressedChecksum = true
             structsList.append(Structs.Defaults.fsysTOCEntryStructFull)
             enumList.append(Enums.Defaults.fileTypesPBREnum)
             enumList.append(fsysTOC?.enumeration ?? Enums.Defaults.fsysGroupIDsPBREnum)
@@ -111,6 +123,7 @@ public struct GeniusSonorityEngine: Engine {
             data.fsys.menuFsysNames = Data.FSYS.defaultColoMenuFsysNames
             data.fsys.battlefieldFsysNames = Data.FSYS.defaultColoBattlefieldFsysNames
             data.fsys.commonFsysNames = Data.FSYS.defaultColoCommonFsysNames
+            data.fsys.miscFsysNames = Data.FSYS.defaultColoMiscFsysNames
             data.fsys.characterImageFsysNames = ["chara_big", "chara_small"]
             data.fsys.archiveFileTypeFolders = [
                 "poke_face": ["gtx": "/Assets/Images/Pokemon/Faces"],
@@ -132,6 +145,8 @@ public struct GeniusSonorityEngine: Engine {
             data.fsys.menuFsysNames = Data.FSYS.defaultXDMenuFsysNames
             data.fsys.battlefieldFsysNames = Data.FSYS.defaultXDBattlefieldFsysNames
             data.fsys.commonFsysNames = Data.FSYS.defaultXDCommonFsysNames
+            data.fsys.miscFsysNames = Data.FSYS.defaultXDMiscFsysNames
+            data.fsys.sceneFsysNames = Data.FSYS.defaultXDSceneFsysNames
             data.fsys.characterImageFsysNames = ["chara_big", "chara_small"]
             data.fsys.archiveFileTypeFolders = [
                 "poke_face": ["gtx": "/Assets/Images/Pokemon/Faces"],
@@ -150,10 +165,15 @@ public struct GeniusSonorityEngine: Engine {
                 ],
             ]
         case .battleRevolution:
-            // Every PBR entry is stored as "(null)"; the unpack names files
-            // by archive + index instead.
-            data.fsys.scrubbedFilenamePlaceholder = "(null)"
             data.fsys.fileTypeFolders = Data.FSYS.defaultPBRFileTypeFolders
+            // The Wii Home Menu library, which is the console's, not the
+            // game's. Mirrors its disc path under /Platform rather than
+            // scattering by file type — see `platformDirectories`.
+            data.fsys.platformDirectories = Data.FSYS.defaultPBRPlatformDirectories
+            data.fsys.platformBaseFolder = "/Platform"
+            // Every PBR archive leaves the header's group-ID word zero and
+            // lets the table of contents carry the ID.
+            data.fsys.writesGroupIDInHeader = false
             // Self-contained sets grouped one folder per archive.
             data.fsys.archiveSubfolderRoutes = [
                 .init(matchPrefix: "pkx_",      baseFolder: "/Assets/Models/Pokemon", stripPrefix: "pkx_"),
@@ -217,17 +237,21 @@ public struct GeniusSonorityEngine: Engine {
     /// the entry filename, and the parent FSYS archive name.
     ///
     /// Resolution priority:
-    /// 1. Strip language suffix from archive name
+    /// 0. Fonts, always to the fonts folder (the font ops work over it)
+    /// 1. Per-archive subfolder route (PBR model/effect sets)
     /// 2. Per-file override (archiveFileOverrides)
-    /// 3. Character image FSYS override (gtx/atx only)
-    /// 4. Menu FSYS image override (gtx/atx only)
-    /// 5. Common FSYS image override (gtx/atx only)
-    /// 6. Battlefield FSYS override (models → Battlefields, scripts → Battlefields)
-    /// 7. MSG routing by FSYS category (map/menu/misc)
-    /// 8. Archive-specific override by file type
-    /// 9. Archive-specific override by entry file extension
-    /// 10. Standard file type mapping (also checks entry file extension)
-    /// 11. Default folder
+    /// 3. Misc / scene FSYS override (whole archive to its own folder)
+    /// 4. Character image FSYS override (gtx/atx only)
+    /// 5. Menu FSYS image override (gtx/atx only)
+    /// 6. Menu FSYS flash-menu override (gsw only)
+    /// 7. Common FSYS image override (gtx/atx only)
+    /// 8. Battlefield FSYS override (models → Battlefields, scripts → Battlefields)
+    /// 9. MSG routing by FSYS category (map/menu/misc)
+    /// 10. Archive-specific override by file type
+    /// 11. Archive-specific override by entry file extension
+    /// 12. Image fallback
+    /// 13. Standard file type mapping (also checks entry file extension)
+    /// 14. Default folder
     public func resolveFolder(
         forFileType fileType: String,
         entryFilename: String,
@@ -245,7 +269,20 @@ public struct GeniusSonorityEngine: Engine {
         let isImage = fileType == "gtx" || fileType == "atx"
         let isModel = fileType == "dat" || fileType == "col" || fileType == "mdat" || fileType == "dats"
 
-        // 0. Per-archive subfolder route: the whole archive is one set (a
+        // 0. A font is always filed under the fonts folder, whichever archive
+        // it came from. `dumpFonts` and `pbrFontsDump` work over that one
+        // folder, so a font routed into a per-archive folder by the rules
+        // below would silently drop out of the font pipeline — 7 of XD US's
+        // fonts and 1 of Colosseum's are in archives those rules catch. The
+        // hazard those rules guard against, two builds of one file landing on
+        // each other, is already handled for fonts: each carries its entry
+        // index (see `projectFilename`) and the unpack splits whatever still
+        // collides.
+        if fileType == "fnt", let fontsFolder = fsys.fileTypeFolders["fnt"] {
+            return FolderResolution(folder: fontsFolder, languageSubfolder: language)
+        }
+
+        // 1. Per-archive subfolder route: the whole archive is one set (a
         // Pokémon model, a move effect, a battlefield) and groups into a
         // single subfolder rather than scattering by file type. Optional
         // engine data — nil (Colo/XD) skips straight to the type routing.
@@ -260,28 +297,61 @@ public struct GeniusSonorityEngine: Engine {
             return FolderResolution(folder: route.baseFolder.folder(subName), languageSubfolder: language)
         }
 
-        // 1. Per-file override for specific entries in specific archives
+        // 2. Per-file override for specific entries in specific archives
         if let archiveOverrides = fsys.archiveFileOverrides[baseName],
            let folder = archiveOverrides[entryName] {
             return FolderResolution(folder: folder, languageSubfolder: language)
         }
 
-        // 2. Character image FSYS
+        // 3. Misc FSYS: the whole archive goes to a folder of its own.
+        //
+        // These carry their own versions of files the real maps and menus
+        // also ship, so routing them by type drops them on top of the ones
+        // the game loads — `worldmap`'s map snapshots landed on `world_map`'s,
+        // and the cave archives' Poké Ball models on `people_archive`'s.
+        if fsys.miscFsysNames.contains(baseName) {
+            return FolderResolution(
+                folder: fsys.miscArchivesBaseFolder.folder(baseName),
+                languageSubfolder: language
+            )
+        }
+
+        // 3b. Scene FSYS: same treatment, own base folder. A cutscene stages
+        // a place the game already ships and brings its own build of it —
+        // `ending_Scene04` has its own `M6_out` map model, the move demos
+        // their own `worldmap_menu.rel`.
+        if fsys.sceneFsysNames.contains(baseName) {
+            return FolderResolution(
+                folder: fsys.sceneArchivesBaseFolder.folder(baseName),
+                languageSubfolder: language
+            )
+        }
+
+        // 4. Character image FSYS
         if isImage && fsys.characterImageFsysNames.contains(baseName) {
             return FolderResolution(folder: fsys.characterImagesFolder, languageSubfolder: language)
         }
 
-        // 3. Menu FSYS images
+        // 5. Menu FSYS images
         if isImage && fsys.menuFsysNames.contains(baseName) {
             return FolderResolution(folder: fsys.menuImagesBaseFolder.folder(baseName), languageSubfolder: language)
         }
 
-        // 4. Common FSYS images
+        // 6. Menu FSYS flash menus — same reasoning as the images above, and
+        // the same fix: two menu archives ship different `.gsw` under one
+        // name (`bingo_bingo_bar_00` in both `bingo_menu` and `flashmenu`),
+        // so each archive keeps its own folder instead of sharing one.
+        if fileType == "gsw" && fsys.menuFsysNames.contains(baseName),
+           let flashFolder = fsys.fileTypeFolders["gsw"] {
+            return FolderResolution(folder: flashFolder.folder(baseName), languageSubfolder: language)
+        }
+
+        // 7. Common FSYS images
         if isImage && fsys.commonFsysNames.contains(baseName) {
             return FolderResolution(folder: fsys.commonImagesFolder, languageSubfolder: language)
         }
 
-        // 5. Battlefield FSYS
+        // 8. Battlefield FSYS
         if fsys.battlefieldFsysNames.contains(baseName) {
             if isModel {
                 return FolderResolution(folder: fsys.battlefieldModelsFolder, languageSubfolder: language)
@@ -292,7 +362,7 @@ public struct GeniusSonorityEngine: Engine {
             // Other file types from battlefields fall through to standard routing
         }
 
-        // 6. MSG routing by FSYS category
+        // 9. MSG routing by FSYS category
         if fileType == "msg" {
             if fsys.mapFsysNames.contains(baseName) || fsys.battlefieldFsysNames.contains(baseName) {
                 return FolderResolution(folder: fsys.msgMapFolder, languageSubfolder: language)
@@ -303,24 +373,24 @@ public struct GeniusSonorityEngine: Engine {
             }
         }
 
-        // 5. Archive-specific override matching file type
+        // 10. Archive-specific override matching file type
         if let archiveOverrides = fsys.archiveFileTypeFolders[baseName] {
             if let folder = archiveOverrides[fileType] {
                 return FolderResolution(folder: folder, languageSubfolder: language)
             }
-            // 6. Archive-specific override matching entry file extension
+            // 11. Archive-specific override matching entry file extension
             if let entryExtension, entryExtension != fileType, let folder = archiveOverrides[entryExtension] {
                 return FolderResolution(folder: folder, languageSubfolder: language)
             }
         }
 
-        // 6b. Image fallback: an image that matched no specific route groups
+        // 12. Image fallback: an image that matched no specific route groups
         // under its archive name rather than a single shared folder.
         if isImage, !baseName.isEmpty, let base = fsys.imagesFallbackBaseFolder {
             return FolderResolution(folder: base.folder(baseName), languageSubfolder: language)
         }
 
-        // 7. Standard file type mapping
+        // 13. Standard file type mapping
         if let folder = fsys.fileTypeFolders[fileType] {
             return FolderResolution(folder: folder, languageSubfolder: language)
         }
@@ -330,7 +400,7 @@ public struct GeniusSonorityEngine: Engine {
             return FolderResolution(folder: folder, languageSubfolder: language)
         }
 
-        // 8. Default
+        // 14. Default
         return FolderResolution(folder: fsys.defaultFolder, languageSubfolder: language)
     }
 
@@ -357,17 +427,42 @@ public struct GeniusSonorityEngine: Engine {
         return base.folder(codes[code] ?? code)
     }
 
-    /// The on-disk name for an extracted entry. When the entry's stored name
-    /// is the engine's scrubbed placeholder (PBR writes `(null)` for every
-    /// entry), the name is derived from the archive stem and the entry's
-    /// index so it's unique within the archive; otherwise the derived pretty
-    /// `filename` is used unchanged (Colo/XD).
-    public func projectFilename(forEntryNamed entryName: String, filename: String, index: Int, archiveName: String) -> String {
-        guard let placeholder = data.fsys.scrubbedFilenamePlaceholder, entryName == placeholder else {
-            return filename
-        }
+    /// The on-disk name for an extracted entry. An entry whose stored name is
+    /// the engine's scrubbed placeholder is named after the archive it came
+    /// from plus its index, which is unique within the archive and — because
+    /// the archive stem is in it — across the disc; any other entry keeps its
+    /// derived pretty `filename`.
+    ///
+    /// `indexed` gives a *named* entry the same index suffix. An entry name
+    /// is only unique inside its own archive, and is usually the archive's
+    /// own name rather than the file's, so it can't identify a file that is
+    /// pooled across archives: on the XD US disc three names — `fight`,
+    /// `world_map` and `M2_enter_1F` — are each claimed by two different
+    /// fonts. The index distinguishes those without inventing a name.
+    ///
+    /// The archive's own stem is used, not the language-stripped base the
+    /// folder routing works from: stripping makes `battle_disk_fr` and
+    /// `battle_disk_ge` produce the same names, which clashes for 27 names on
+    /// the XD US disc and 84 on PAL. With the stem, no name collides on any
+    /// of the six GameCube discs, and no PBR archive carries a language
+    /// suffix at all, so nothing there changes shape.
+    public func projectFilename(
+        forEntryNamed entryName: String,
+        filename: String,
+        index: Int,
+        archiveName: String,
+        indexed: Bool = false
+    ) -> String {
+        let placeholder = data.fsys.scrubbedFilenamePlaceholderValue
         let ext = File(filename).fileType.map { "." + $0 } ?? ""
-        let (baseName, _) = stripLanguageSuffix(from: archiveName)
-        return baseName + "_" + String(format: "%04d", index) + ext
+        let suffix = "_" + String(format: "%03d", index) + ext
+        // A nameless entry can still carry a full filename the packer did
+        // fill in — 154 of XD US's do — and that real name beats anything
+        // derived. The pretty `filename` already prefers it, so what decides
+        // this is whether *that* came out as the placeholder too.
+        guard entryName == placeholder, filename.withoutExtensions == placeholder else {
+            return indexed ? filename.withoutExtensions + suffix : filename
+        }
+        return archiveName + suffix
     }
 }

@@ -2,8 +2,46 @@ import GoDFoundation
 import GoDEngine
 import Structs
 
+/// The disc's table of contents as a project artifact.
+///
+/// The rebuild derives most of the table from the archives it finds, which
+/// loses the entries naming archives the disc doesn't actually ship — 11 on
+/// the XD US disc, where the table lists the PAL-only `pocket_menu_ge`,
+/// `fight_common_uk` and friends. Those are complete entries with real group
+/// IDs, not stray strings, so dropping them shortens the table. This manifest
+/// carries every entry the disc listed; one whose `file` is empty is exactly
+/// such a dangling name, written back verbatim with nothing to pack.
+public struct FsysTOCManifest: Codable {
+    public struct Entry: Codable {
+        /// The name as the table's own string table stores it.
+        public let name: String
+        public let groupID: Int
+        /// Path of the archive's registry in the project, or empty when the
+        /// disc lists a name it ships no archive for.
+        public let file: String
+
+        public init(name: String, groupID: Int, file: String) {
+            self.name = name
+            self.groupID = groupID
+            self.file = file
+        }
+    }
+
+    public let entries: [Entry]
+
+    public init(entries: [Entry]) {
+        self.entries = entries
+    }
+
+    /// Entries the project has no archive for, which the rebuild has to
+    /// re-emit from here or lose.
+    public var danglingEntries: [Entry] { entries.filter { $0.file.isEmpty } }
+}
+
 public final class FsysTOC {
     public static var formatName = "FsysTOC"
+    /// Filename of the project-side manifest, beside `FST.json`.
+    public static let manifestFileName = "GSfsys.toc.json"
     
     public var unknown: Int
     public var padding: Int?
@@ -22,6 +60,14 @@ public final class FsysTOC {
         )
     }
     
+    /// Every listed name with its group ID, in the order the table stores
+    /// them (ascending by group ID, which is how both games write it).
+    public var listedEntries: [(name: String, groupID: Int)] {
+        fsysIDsByFilename
+            .map { (name: $0.key, groupID: $0.value) }
+            .sorted { $0.groupID < $1.groupID }
+    }
+
     public init(fsysIDsByFilename: [String : Int] = [:], unknown: Int) {
         self.unknown = unknown
         self.fsysIDsByFilename = fsysIDsByFilename
