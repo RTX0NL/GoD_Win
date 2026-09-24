@@ -38,6 +38,8 @@ protocol OperationHandler {
     func gciBuild(config: GCIOps.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func xdSaveDump(config: XDSaveOps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func xdSaveBuild(config: XDSaveOps.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func saveSectionsDump(config: SaveSectionsOps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func saveSectionsBuild(config: SaveSectionsOps.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func coloSaveDump(config: ColoSaveOps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func coloSaveBuild(config: ColoSaveOps.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func convert(config: Convert.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
@@ -49,6 +51,13 @@ protocol OperationHandler {
     func pbrFontsDump(config: PBRFontDump.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func pbrFontBuild(config: PBRFontBuild.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func pbrFontsBuild(config: PBRFontBuild.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func pbrStringsDump(config: PBRStringsDump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func pbrStringsBuild(config: PBRStringsBuild.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func compress(config: Compress.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func decompress(config: Decompress.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func compressFiles(config: Compress.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func decompressFiles(config: Decompress.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func runExecutable(config: RunExecutable.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
 }
 
 /// Production handler: forwards each operation to its engine wrapper.
@@ -149,6 +158,14 @@ struct EngineOperationHandler: OperationHandler {
         try XDSaveOps.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
     }
 
+    func saveSectionsDump(config: SaveSectionsOps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try SaveSectionsOps.dump(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func saveSectionsBuild(config: SaveSectionsOps.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try SaveSectionsOps.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
     func coloSaveDump(config: ColoSaveOps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try ColoSaveOps.dump(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
     }
@@ -191,5 +208,33 @@ struct EngineOperationHandler: OperationHandler {
 
     func pbrFontsBuild(config: PBRFontBuild.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try PBRFontBuild.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func pbrStringsDump(config: PBRStringsDump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try PBRStringsDump.dump(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func pbrStringsBuild(config: PBRStringsBuild.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try PBRStringsBuild.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func compress(config: Compress.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try Compress.run(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func decompress(config: Decompress.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try Decompress.run(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func compressFiles(config: Compress.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try Compress.run(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func decompressFiles(config: Decompress.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try Decompress.run(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func runExecutable(config: RunExecutable.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try RunExecutable.run(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
     }
 }

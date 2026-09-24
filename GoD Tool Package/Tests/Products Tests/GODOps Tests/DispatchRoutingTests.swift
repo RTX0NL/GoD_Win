@@ -309,8 +309,26 @@ final class DispatchRoutingTests: XCTestCase {
         XCTAssertEqual(config.outputDolPath, File("/project/Built/main.dol"))
         XCTAssertEqual(config.dolphinEngine, Folder("/project/Engines/Dolphin Engine"))
         XCTAssertNil(config.symbolMapPath)
+        XCTAssertNil(config.outputSymbolMapPath)
         XCTAssertNil(config.typeMapPath)
         XCTAssertNil(config.bssEntryListPath)
+    }
+
+    func testDolAssemblyRoutingCarriesTheSymbolMapPaths() throws {
+        let spy = try route("""
+        { "dolAssembly": { "config": {
+            "codeFolder": "/project/Source/main",
+            "outputDolPath": "/project/Built/main.dol",
+            "symbolMapPath": "/project/Engines/XD Engine/Resources/dol.map",
+            "outputSymbolMapPath": "/project/Engines/XD Engine/Resources/dol.map",
+            "dolphinEngine": "/project/Engines/Dolphin Engine"
+        } } }
+        """)
+        guard case let .dolAssembly(config) = try singleOperation(spy) else {
+            return XCTFail("Expected dolAssembly")
+        }
+        XCTAssertEqual(config.symbolMapPath, File("/project/Engines/XD Engine/Resources/dol.map"))
+        XCTAssertEqual(config.outputSymbolMapPath, File("/project/Engines/XD Engine/Resources/dol.map"))
     }
 
     // MARK: - REL
@@ -507,12 +525,16 @@ final class DispatchRoutingTests: XCTestCase {
         guard case let .gciDump(config) = try singleOperation(spy) else {
             return XCTFail("Expected gciDump")
         }
-        guard case let .dumpGCI(gciFile, outputFolder, overwrite) = config.operations.enabledEntries.first else {
+        guard case let .dumpGCI(gciFile, outputFolder, overwrite, saveEngine)
+                = config.operations.enabledEntries.first else {
             return XCTFail("Expected dumpGCI")
         }
         XCTAssertEqual(gciFile, File("/project/save.gci"))
         XCTAssertEqual(outputFolder, Folder("/project/Save"))
         XCTAssertTrue(overwrite)
+        // Optional; absent means look the save-card shape up from the
+        // gamecode rather than a project engine folder.
+        XCTAssertNil(saveEngine)
     }
 
     func testGCIBuildRouting() throws {
@@ -578,6 +600,53 @@ final class DispatchRoutingTests: XCTestCase {
         XCTAssertEqual(inputFolder, Folder("/project/Save/Dumped"))
         XCTAssertEqual(unpackedFolder, Folder("/project/Save"))
         XCTAssertTrue(decrypted)
+    }
+
+    // MARK: - Save sections
+
+    func testSaveSectionsDumpRouting() throws {
+        let spy = try route("""
+        { "saveSectionsDump": { "config": { "operations": [ { "operation": { "dumpSaveSections": {
+            "slotFolder": "/project/Source/Save/Latest Slot",
+            "overwrite": true,
+            "layout": "/project/Engines/XD Engine/Resources/save_section_layout.json",
+            "engines": [ "/project/Engines/XD Engine" ],
+            "flagsTable": "/project/Engines/XD Engine/Resources/general_flags.csv"
+        } }, "enabled": "YES" } ] } } }
+        """)
+        guard case let .saveSectionsDump(config) = try singleOperation(spy) else {
+            return XCTFail("Expected saveSectionsDump")
+        }
+        guard case let .dumpSaveSections(slotFolder, overwrite, layout, engines, flagsTable) = config.operations.enabledEntries.first else {
+            return XCTFail("Expected dumpSaveSections")
+        }
+        XCTAssertEqual(slotFolder, Folder("/project/Source/Save/Latest Slot"))
+        XCTAssertTrue(overwrite)
+        XCTAssertEqual(layout, File("/project/Engines/XD Engine/Resources/save_section_layout.json"))
+        XCTAssertEqual(engines, [Folder("/project/Engines/XD Engine")])
+        XCTAssertEqual(flagsTable, File("/project/Engines/XD Engine/Resources/general_flags.csv"))
+    }
+
+    /// `flagsTable` is optional — a layout of plain structs needs no table.
+    func testSaveSectionsBuildRoutingWithoutAFlagTable() throws {
+        let spy = try route("""
+        { "saveSectionsBuild": { "config": { "operations": [ { "operation": { "buildSaveSections": {
+            "slotFolder": "/project/Source/Save/Latest Slot",
+            "overwrite": true,
+            "layout": "/project/layout.json",
+            "engines": [ ]
+        } }, "enabled": "YES" } ] } } }
+        """)
+        guard case let .saveSectionsBuild(config) = try singleOperation(spy) else {
+            return XCTFail("Expected saveSectionsBuild")
+        }
+        guard case let .buildSaveSections(slotFolder, _, layout, engines, flagsTable) = config.operations.enabledEntries.first else {
+            return XCTFail("Expected buildSaveSections")
+        }
+        XCTAssertEqual(slotFolder, Folder("/project/Source/Save/Latest Slot"))
+        XCTAssertEqual(layout, File("/project/layout.json"))
+        XCTAssertTrue(engines.isEmpty)
+        XCTAssertNil(flagsTable)
     }
 
     // MARK: - Colosseum save
@@ -764,6 +833,46 @@ final class DispatchRoutingTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(spy.calls.first).settings.verbose)
     }
 
+    /// The MCP server's `run_operation` tool is this entry point with a bare
+    /// operation object, so every operation family has to decode through
+    /// it — the compression ops are the newest and have no config-file
+    /// precedent to fall back on.
+    func testRunOperationDecodesCompressionOperations() throws {
+        let spy = SpyOperationHandler()
+        let compress = """
+        { "compress": { "config": {
+            "inputFile": "/project/in/model.dat", "format": "yaz0", "overwrite": true,
+            "options": { "alignment": 16 }
+        } } }
+        """
+        let decompressFiles = """
+        { "decompressFiles": { "config": {
+            "inputFolder": "/project/packed", "outputFolder": "/project/out",
+            "overwrite": true, "recursive": true, "range": { "offset": 32 }
+        } } }
+        """
+        for json in [compress, decompressFiles] {
+            try GODOps.runOperation(
+                json: Data(json.utf8),
+                settingsJSON: nil,
+                fileSystem: StreamedFileSystem(materializing: InMemoryFST()),
+                logger: SilentLogger(),
+                handler: spy
+            )
+        }
+        XCTAssertEqual(spy.calls.count, 2)
+        guard case let .compress(config) = spy.calls[0].operation else {
+            return XCTFail("Expected compress")
+        }
+        XCTAssertEqual(config.format, .yaz0)
+        XCTAssertEqual(config.options?.alignment, 16)
+        guard case let .decompressFiles(batch) = spy.calls[1].operation else {
+            return XCTFail("Expected decompressFiles")
+        }
+        XCTAssertEqual(batch.range?.offset, 32)
+        XCTAssertNil(batch.format)
+    }
+
     // MARK: - Convert
 
     func testConvertDecodeFileRouting() throws {
@@ -772,7 +881,7 @@ final class DispatchRoutingTests: XCTestCase {
             "inputFile": "/project/in/common.msg",
             "outputFolder": "/project/out",
             "overwrite": true,
-            "format": "msgColo"
+            "format": "msg-colo"
         } }, "enabled": "YES" } ] } } }
         """)
         guard case let .convert(config) = try singleOperation(spy) else {
@@ -797,13 +906,15 @@ final class DispatchRoutingTests: XCTestCase {
             "outputFolder": "/project/out",
             "overwrite": false,
             "structName": "TestRecord",
-            "engines": ["/project/Engines/Some Engine", "/project/Engines/Other Engine"]
+            "engines": ["/project/Engines/Some Engine", "/project/Engines/Other Engine"],
+            "fileOffset": 16,
+            "count": 3
         } }, "enabled": "YES" } ] } } }
         """)
         guard case let .convert(config) = try singleOperation(spy) else {
             return XCTFail("Expected convert")
         }
-        guard case let .decodeStructTable(inputFile, outputFolder, overwrite, structName, engines) = config.operations.enabledEntries.first else {
+        guard case let .decodeStructTable(inputFile, outputFolder, overwrite, structName, engines, fileOffset, count) = config.operations.enabledEntries.first else {
             return XCTFail("Expected decodeStructTable")
         }
         XCTAssertEqual(inputFile, File("/project/in/table.bin"))
@@ -811,6 +922,37 @@ final class DispatchRoutingTests: XCTestCase {
         XCTAssertFalse(overwrite)
         XCTAssertEqual(structName, "TestRecord")
         XCTAssertEqual(engines, [Folder("/project/Engines/Some Engine"), Folder("/project/Engines/Other Engine")])
+        XCTAssertEqual(fileOffset, 16)
+        XCTAssertEqual(count, 3)
+    }
+
+    func testConvertStructOffsetsAreOptionalInJSON() throws {
+        // Older configs carry none of fileOffset / count / insertOffset.
+        let spy = try route("""
+        { "convert": { "config": { "operations": [
+          { "operation": { "decodeStruct": {
+              "inputFile": "/project/in/one.bin", "outputFolder": "/project/out", "overwrite": true,
+              "structName": "TestRecord", "engines": ["/project/Engines/Some Engine"]
+          } }, "enabled": "YES" },
+          { "operation": { "encodeStructTable": {
+              "inputFile": "/project/json/table.json", "outputFolder": "/project/bin", "overwrite": true,
+              "structName": "TestRecord", "engines": ["/project/Engines/Some Engine"], "insertOffset": 32
+          } }, "enabled": "YES" }
+        ] } } }
+        """)
+        guard case let .convert(config) = try singleOperation(spy) else {
+            return XCTFail("Expected convert")
+        }
+        let entries = config.operations.enabledEntries
+        XCTAssertEqual(entries.count, 2)
+        guard case let .decodeStruct(_, _, _, _, _, fileOffset) = entries[0] else {
+            return XCTFail("Expected decodeStruct")
+        }
+        XCTAssertNil(fileOffset)
+        guard case let .encodeStructTable(_, _, _, _, _, insertOffset) = entries[1] else {
+            return XCTFail("Expected encodeStructTable")
+        }
+        XCTAssertEqual(insertOffset, 32)
     }
 
     // MARK: - Nintendo archives (U8 / NARC)
@@ -913,9 +1055,18 @@ final class DispatchRoutingTests: XCTestCase {
         }
     }
 
-    func testProcessIgnoresFilesWithoutExtension() throws {
-        // No file type → silently skipped, never dispatched.
-        try GODOps.process(inputFile: File("/tmp/no-extension"), toolVersion: "0.0.0")
+    func testProcessRejectsFilesWithoutExtension() throws {
+        // An extensionless input used to be skipped silently, so pointing the
+        // tool at something it can't open (a Wii NAND `PbrSaveData`, say)
+        // printed nothing and exited 0. It now says what it couldn't open.
+        XCTAssertThrowsError(
+            try GODOps.process(inputFile: File("/tmp/no-extension"), toolVersion: "0.0.0")
+        ) { error in
+            guard case GODOps.DispatchError.noFileExtension = error else {
+                return XCTFail("expected noFileExtension, got \(error)")
+            }
+            XCTAssertTrue("\(error)".contains("no file extension"))
+        }
     }
 
     // MARK: - PBR fonts
@@ -981,5 +1132,209 @@ final class DispatchRoutingTests: XCTestCase {
         }
         XCTAssertEqual(config.fontsFolder, Folder("/project/Source/Fonts"))
         XCTAssertEqual(config.outputFolder, Folder("/project/Unpacked/Data/Text/Fonts"))
+    }
+
+    func testPBRStringsDumpRouting() throws {
+        let spy = try route("""
+        { "pbrStringsDump": { "config": {
+            "unpackedFolder": "/project/Build/Unpacked",
+            "messagesFolder": "/project/Build/Unpacked/Data/Text/Messages",
+            "directoryFile": "/project/Build/Unpacked/Data/Common/common_091.bin",
+            "outputFile": "/project/Source/Text/Strings.json",
+            "overwrite": true
+        } } }
+        """)
+        guard case let .pbrStringsDump(config) = try singleOperation(spy) else {
+            return XCTFail("Expected pbrStringsDump")
+        }
+        XCTAssertEqual(config.unpackedFolder, Folder("/project/Build/Unpacked"))
+        XCTAssertEqual(config.messagesFolder, Folder("/project/Build/Unpacked/Data/Text/Messages"))
+        XCTAssertEqual(config.directoryFile, File("/project/Build/Unpacked/Data/Common/common_091.bin"))
+        XCTAssertEqual(config.outputFile, File("/project/Source/Text/Strings.json"))
+        XCTAssertTrue(config.overwrite)
+    }
+
+    func testPBRStringsBuildRouting() throws {
+        let spy = try route("""
+        { "pbrStringsBuild": { "config": {
+            "stringsFile": "/project/Source/Text/Strings.json",
+            "unpackedFolder": "/project/Build/Unpacked",
+            "overwrite": true
+        } } }
+        """)
+        guard case let .pbrStringsBuild(config) = try singleOperation(spy) else {
+            return XCTFail("Expected pbrStringsBuild")
+        }
+        XCTAssertEqual(config.stringsFile, File("/project/Source/Text/Strings.json"))
+        XCTAssertEqual(config.unpackedFolder, Folder("/project/Build/Unpacked"))
+        XCTAssertTrue(config.overwrite)
+    }
+
+    // MARK: - Compression
+
+    func testCompressRouting() throws {
+        let spy = try route("""
+        { "compress": { "config": {
+            "inputFile": "/project/Source/Models/absol.dat",
+            "format": "yaz0",
+            "outputFile": "/project/Build/absol.dat.szs",
+            "overwrite": true,
+            "options": { "alignment": 32, "deferredMatching": false, "maxChainLength": 64 }
+        } } }
+        """)
+        guard case let .compress(config) = try singleOperation(spy) else {
+            return XCTFail("Expected compress")
+        }
+        XCTAssertEqual(config.inputFile, File("/project/Source/Models/absol.dat"))
+        XCTAssertEqual(config.format, .yaz0)
+        XCTAssertEqual(config.outputFile, File("/project/Build/absol.dat.szs"))
+        XCTAssertTrue(config.overwrite)
+        XCTAssertEqual(config.options?.alignment, 32)
+        XCTAssertEqual(config.options?.deferredMatching, false)
+        XCTAssertEqual(config.options?.maxChainLength, 64)
+        XCTAssertNil(config.options?.windowBits)
+    }
+
+    func testCompressRoutingRejectsAnUnknownFormat() {
+        XCTAssertThrowsError(try route("""
+        { "compress": { "config": {
+            "inputFile": "/project/in.bin", "format": "zstd", "overwrite": true
+        } } }
+        """))
+    }
+
+    func testDecompressRoutingWithRangeAndNoFormat() throws {
+        let spy = try route("""
+        { "decompress": { "config": {
+            "inputFile": "/project/Build/Contents/files/common.fsys",
+            "range": { "offset": 1440 },
+            "outputFile": "/project/Source/common_entry0.bin",
+            "overwrite": false
+        } } }
+        """)
+        guard case let .decompress(config) = try singleOperation(spy) else {
+            return XCTFail("Expected decompress")
+        }
+        XCTAssertEqual(config.inputFile, File("/project/Build/Contents/files/common.fsys"))
+        XCTAssertNil(config.format)
+        XCTAssertEqual(config.range?.offset, 1440)
+        XCTAssertNil(config.range?.length)
+        XCTAssertEqual(config.outputFile, File("/project/Source/common_entry0.bin"))
+        XCTAssertFalse(config.overwrite)
+        XCTAssertNil(config.options)
+    }
+
+    func testDecompressRoutingWithNamedRawLZSS() throws {
+        let spy = try route("""
+        { "decompress": { "config": {
+            "inputFile": "/project/in/stream.lzss",
+            "format": "lzss-raw",
+            "overwrite": true,
+            "options": { "windowBits": 12, "lengthBits": 4, "threshold": 2 }
+        } } }
+        """)
+        guard case let .decompress(config) = try singleOperation(spy) else {
+            return XCTFail("Expected decompress")
+        }
+        XCTAssertEqual(config.format, .lzssRaw)
+        XCTAssertNil(config.range)
+        XCTAssertNil(config.outputFile)
+        XCTAssertEqual(config.options, .init(windowBits: 12, lengthBits: 4, threshold: 2))
+    }
+
+    func testCompressFilesRouting() throws {
+        let spy = try route("""
+        { "compressFiles": { "config": {
+            "inputFolder": "/project/Source/Raw",
+            "outputFolder": "/project/Build/Compressed",
+            "format": "lzss",
+            "overwrite": true,
+            "recursive": true,
+            "extensions": ["dat", ".gtx"],
+            "outputExtension": "lzss"
+        } } }
+        """)
+        guard case let .compressFiles(config) = try singleOperation(spy) else {
+            return XCTFail("Expected compressFiles")
+        }
+        XCTAssertEqual(config.inputFolder, Folder("/project/Source/Raw"))
+        XCTAssertEqual(config.outputFolder, Folder("/project/Build/Compressed"))
+        XCTAssertEqual(config.format, .lzss)
+        XCTAssertTrue(config.recursive)
+        XCTAssertEqual(config.extensions, ["dat", ".gtx"])
+        XCTAssertEqual(config.outputExtension, "lzss")
+        XCTAssertNil(config.options)
+    }
+
+    func testDecompressFilesRouting() throws {
+        let spy = try route("""
+        { "decompressFiles": { "config": {
+            "inputFolder": "/project/Build/Compressed",
+            "outputFolder": "/project/Source/Raw",
+            "overwrite": true,
+            "recursive": false
+        } } }
+        """)
+        guard case let .decompressFiles(config) = try singleOperation(spy) else {
+            return XCTFail("Expected decompressFiles")
+        }
+        XCTAssertEqual(config.inputFolder, Folder("/project/Build/Compressed"))
+        XCTAssertEqual(config.outputFolder, Folder("/project/Source/Raw"))
+        XCTAssertNil(config.format)
+        XCTAssertNil(config.range)
+        XCTAssertFalse(config.recursive)
+        XCTAssertNil(config.extensions)
+    }
+
+    // MARK: - External programs
+
+    func testRunExecutableRouting() throws {
+        let spy = try route("""
+        { "runExecutable": { "config": {
+            "executablePath": "/usr/local/bin/vgmstream-cli",
+            "arguments": ["-o", "./Build/bgm.wav", "./Source/bgm.ish"],
+            "standardInput": ["yes", "2"],
+            "workingDirectory": "/project",
+            "outputFile": "/project/Build/vgmstream.log",
+            "overwrite": false,
+            "failOnNonZeroExit": false
+        } } }
+        """)
+        guard case let .runExecutable(config) = try singleOperation(spy) else {
+            return XCTFail("Expected runExecutable")
+        }
+        XCTAssertEqual(config.executablePath, File("/usr/local/bin/vgmstream-cli"))
+        XCTAssertEqual(config.arguments, ["-o", "./Build/bgm.wav", "./Source/bgm.ish"])
+        XCTAssertEqual(config.standardInput, ["yes", "2"])
+        XCTAssertEqual(config.workingDirectory, Folder("/project"))
+        XCTAssertEqual(config.outputFile, File("/project/Build/vgmstream.log"))
+        XCTAssertEqual(config.overwrite, false)
+        XCTAssertEqual(config.failOnNonZeroExit, false)
+    }
+
+    /// Everything but the program itself is optional, and an absent field
+    /// stays absent rather than decoding as an empty list — the operation
+    /// reads nil as "no arguments" / "no input", so the two must not be
+    /// confused with an explicit empty one.
+    func testRunExecutableRoutingWithOnlyThePath() throws {
+        let spy = try route("""
+        { "runExecutable": { "config": { "executablePath": "./tools/patch.sh" } } }
+        """)
+        guard case let .runExecutable(config) = try singleOperation(spy) else {
+            return XCTFail("Expected runExecutable")
+        }
+        XCTAssertEqual(config.executablePath, File("./tools/patch.sh"))
+        XCTAssertNil(config.arguments)
+        XCTAssertNil(config.standardInput)
+        XCTAssertNil(config.workingDirectory)
+        XCTAssertNil(config.outputFile)
+        XCTAssertNil(config.overwrite)
+        XCTAssertNil(config.failOnNonZeroExit)
+    }
+
+    func testRunExecutableRoutingRequiresAPath() {
+        XCTAssertThrowsError(try route("""
+        { "runExecutable": { "config": { "arguments": ["--help"] } } }
+        """))
     }
 }

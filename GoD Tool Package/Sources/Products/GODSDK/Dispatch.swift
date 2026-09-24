@@ -24,11 +24,16 @@ public enum GODOps {
 
     public enum DispatchError: Error, CustomStringConvertible {
         case unsupportedFileType(String, File)
+        case noFileExtension(File)
+
+        private static let recognized = "iso, gcm, ciso, wbfs, wia, rvz, gci, fsys, json"
 
         public var description: String {
             switch self {
             case let .unsupportedFileType(ext, file):
-                return "Unsupported file type '\(ext)' for file \(file.path)"
+                return "Unsupported file type '\(ext)' for file \(file.path). Recognized: \(Self.recognized)"
+            case let .noFileExtension(file):
+                return "Cannot tell what \(file.path) is — it has no file extension. Recognized: \(Self.recognized)"
             }
         }
     }
@@ -41,7 +46,11 @@ public enum GODOps {
     /// stamps it into the project (`/Engines/Version.txt`) so a project can
     /// say which version dumped it; the other paths don't use it.
     public static func process(inputFile: File, toolVersion: String, logger: Logger? = nil) throws {
-        guard let fileType = inputFile.fileType else { return }
+        // An input with no extension used to return silently, so pointing the
+        // tool at (say) a Wii NAND `PbrSaveData` printed nothing and exited 0.
+        guard let fileType = inputFile.fileType else {
+            throw DispatchError.noFileExtension(inputFile)
+        }
         switch fileType {
         case "iso", "gcm", "ciso", "wbfs", "wia", "rvz":
             try setupProject(discImage: inputFile, toolVersion: toolVersion)
@@ -225,6 +234,10 @@ public enum GODOps {
             try handler.xdSaveDump(config: xdConfig, settings: settings, fileSystem: fileSystem, logger: logger)
         case .xdSaveBuild(let xdConfig):
             try handler.xdSaveBuild(config: xdConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .saveSectionsDump(let sectionsConfig):
+            try handler.saveSectionsDump(config: sectionsConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .saveSectionsBuild(let sectionsConfig):
+            try handler.saveSectionsBuild(config: sectionsConfig, settings: settings, fileSystem: fileSystem, logger: logger)
         case .coloSaveDump(let coloConfig):
             try handler.coloSaveDump(config: coloConfig, settings: settings, fileSystem: fileSystem, logger: logger)
         case .coloSaveBuild(let coloConfig):
@@ -251,6 +264,20 @@ public enum GODOps {
             try handler.pbrFontBuild(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
         case .pbrFontsBuild(let cfg):
             try handler.pbrFontsBuild(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .pbrStringsDump(let cfg):
+            try handler.pbrStringsDump(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .pbrStringsBuild(let cfg):
+            try handler.pbrStringsBuild(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .compress(let cfg):
+            try handler.compress(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .decompress(let cfg):
+            try handler.decompress(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .compressFiles(let cfg):
+            try handler.compressFiles(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .decompressFiles(let cfg):
+            try handler.decompressFiles(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .runExecutable(let cfg):
+            try handler.runExecutable(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
         }
     }
 

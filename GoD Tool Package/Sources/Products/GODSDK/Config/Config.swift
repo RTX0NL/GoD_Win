@@ -33,6 +33,8 @@ struct GoddessConfig: Codable {
         case gciBuild(config: GCIOps.BuildConfig)
         case xdSaveDump(config: XDSaveOps.DumpConfig)
         case xdSaveBuild(config: XDSaveOps.BuildConfig)
+        case saveSectionsDump(config: SaveSectionsOps.DumpConfig)
+        case saveSectionsBuild(config: SaveSectionsOps.BuildConfig)
         case coloSaveDump(config: ColoSaveOps.DumpConfig)
         case coloSaveBuild(config: ColoSaveOps.BuildConfig)
         case convert(config: Convert.Config)
@@ -44,6 +46,13 @@ struct GoddessConfig: Codable {
         case pbrFontsDump(config: PBRFontDump.BatchConfig)
         case pbrFontBuild(config: PBRFontBuild.SingleConfig)
         case pbrFontsBuild(config: PBRFontBuild.BatchConfig)
+        case pbrStringsDump(config: PBRStringsDump.Config)
+        case pbrStringsBuild(config: PBRStringsBuild.Config)
+        case compress(config: Compress.SingleConfig)
+        case decompress(config: Decompress.SingleConfig)
+        case compressFiles(config: Compress.BatchConfig)
+        case decompressFiles(config: Decompress.BatchConfig)
+        case runExecutable(config: RunExecutable.Config)
     }
     
     let name: String

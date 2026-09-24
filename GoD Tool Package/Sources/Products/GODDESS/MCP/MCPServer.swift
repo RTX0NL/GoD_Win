@@ -137,14 +137,46 @@ let goddessTools: [Tool] = [
         annotations: .init(readOnlyHint: false, destructiveHint: true, openWorldHint: false)
     ),
     Tool(
+        name: "list_operations",
+        description: """
+        List every GODDESS operation with its shape (flat or container) and a \
+        one-line summary. Call describe_operation for one operation's fields \
+        and example JSON before using run_operation.
+        """,
+        inputSchema: objectSchema(properties: [:]),
+        annotations: .init(readOnlyHint: true, destructiveHint: false, openWorldHint: false)
+    ),
+    Tool(
+        name: "describe_operation",
+        description: """
+        Describe one GODDESS operation: its config fields, the nested \
+        operations of a container operation, and example JSON, followed by the \
+        JSON conventions every operation object follows. Served from the \
+        GODDESS Configuration Reference embedded in the binary.
+        """,
+        inputSchema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "name": .object([
+                    "type": .string("string"),
+                    "description": .string("Operation name, as listed by list_operations"),
+                    "enum": .array(OperationName.allCases.map { .string($0.rawValue) }),
+                ]),
+            ]),
+            "required": .array([.string("name")]),
+        ]),
+        annotations: .init(readOnlyHint: true, destructiveHint: false, openWorldHint: false)
+    ),
+    Tool(
         name: "run_operation",
         description: """
         Run a single GODDESS operation from an inline JSON object, without \
         authoring a config file. The 'operation' object uses the same shape as \
         one entry's 'operation' field in a config (e.g. \
         {"dolDisassembly": {"config": {...}}}). Optional 'settings' overrides \
-        logging/keys. See the GODDESS Configuration Reference for the full \
-        operation catalog. Use for one-off steps; use run_config for a pipeline.
+        logging/keys. Operations: \(OperationName.allCases.map(\.rawValue).joined(separator: ", ")). \
+        Call describe_operation for an operation's fields and an example. Use \
+        for one-off steps; use run_config for a pipeline.
         """,
         inputSchema: .object([
             "type": .string("object"),
@@ -205,6 +237,21 @@ private func handleToolCall(_ params: CallTool.Parameters, logger: GoDFoundation
         let file = try requiredFile()
         try GODOps.runConfig(at: file, logger: logger)
         return "Ran config \(file.fileName)."
+
+    case "list_operations":
+        return OperationCatalog.listing
+
+    case "describe_operation":
+        guard let name = args["name"]?.stringValue, !name.isEmpty else {
+            throw MCPToolError.missingArgument("name")
+        }
+        guard let text = OperationCatalog.description(of: name) else {
+            throw MCPToolError.badInput(
+                "Unknown operation '\(name)'. Known operations: "
+                + OperationName.allCases.map(\.rawValue).joined(separator: ", ")
+            )
+        }
+        return text
 
     case "run_operation":
         guard let operationValue = args["operation"] else {

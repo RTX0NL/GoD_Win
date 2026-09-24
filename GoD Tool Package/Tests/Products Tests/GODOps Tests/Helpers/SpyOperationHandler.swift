@@ -120,6 +120,14 @@ final class SpyOperationHandler: OperationHandler {
         try record(.xdSaveDump(config: config), settings)
     }
 
+    func saveSectionsDump(config: SaveSectionsOps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.saveSectionsDump(config: config), settings)
+    }
+
+    func saveSectionsBuild(config: SaveSectionsOps.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.saveSectionsBuild(config: config), settings)
+    }
+
     func xdSaveBuild(config: XDSaveOps.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try record(.xdSaveBuild(config: config), settings)
     }
@@ -165,8 +173,36 @@ final class SpyOperationHandler: OperationHandler {
         try record(.pbrFontsBuild(config: config), settings)
     }
 
+    func pbrStringsDump(config: PBRStringsDump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.pbrStringsDump(config: config), settings)
+    }
+
+    func pbrStringsBuild(config: PBRStringsBuild.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.pbrStringsBuild(config: config), settings)
+    }
+
     func convert(config: Convert.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try record(.convert(config: config), settings)
+    }
+
+    func compress(config: Compress.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.compress(config: config), settings)
+    }
+
+    func decompress(config: Decompress.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.decompress(config: config), settings)
+    }
+
+    func compressFiles(config: Compress.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.compressFiles(config: config), settings)
+    }
+
+    func decompressFiles(config: Decompress.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.decompressFiles(config: config), settings)
+    }
+
+    func runExecutable(config: RunExecutable.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.runExecutable(config: config), settings)
     }
 }
 
