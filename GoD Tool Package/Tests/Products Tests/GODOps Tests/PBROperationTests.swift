@@ -60,7 +60,12 @@ final class PBROperationTests: XCTestCase {
     private func makeUnpackedTree(
         tableIndex: Int,
         entryCount: Int,
-        stride: Int
+        stride: Int,
+        /// Byte offsets within each entry to fill, and the byte to fill them
+        /// with — for standing in for what the real packer leaves in a
+        /// record's gaps.
+        fillingEntryOffsets offsetsToFill: [Int] = [],
+        with fillByte: UInt8 = 0
     ) throws -> (fst: InMemoryFST, unpacked: Folder, binary: File) {
         let fst = InMemoryFST()
         let unpacked = Folder("/project/Unpacked")
@@ -83,6 +88,12 @@ final class PBROperationTests: XCTestCase {
         put(headerSize, at: 0x10)
         put(entryCount * stride, at: 0x14)
         put(bytes.count, at: 0x20)   // relocation_table_offset = end of file
+
+        for row in 0..<entryCount {
+            for offset in offsetsToFill {
+                bytes[headerSize + row * stride + offset] = fillByte
+            }
+        }
 
         try fst.writeFile(
             GoDData(byteStream: bytes, byteOrder: .big),
@@ -255,6 +266,92 @@ final class PBROperationTests: XCTestCase {
         XCTAssertEqual(
             Array(rebuilt[0].data.rawBytes), Array(original),
             "the typed table must reassemble byte-for-byte"
+        )
+    }
+
+    /// The same round trip over a table whose gaps aren't zero.
+    ///
+    /// The packer fills a record's alignment gaps with `0xD0`, and those
+    /// bytes have no CSV column to ride in — so the dump measures them, the
+    /// registry carries them, and the repack writes them back. Before that,
+    /// 14 of the PAL disc's 33 tables came back zeroed across their gaps and
+    /// nothing said so: the CSV was identical on a re-dump, because the CSV
+    /// was never where the bytes lived.
+    func testPackerFillerSurvivesTheRoundTrip() throws {
+        // `PBRItem`'s two padding runs: one byte at +0x13, two at +0x26.
+        let (fst, unpacked, binary) = try makeUnpackedTree(
+            tableIndex: 19, entryCount: 4, stride: 0x28,
+            fillingEntryOffsets: [0x13, 0x26, 0x27], with: 0xD0
+        )
+        let original = try XCTUnwrap(try XCTUnwrap(fst.readFile(at: unpacked.file(binary.path))).allData).rawBytes
+
+        let engines = Folder("/project/Engines")
+        let pbr = installEngine(try PBREngine.defaults(), under: engines, in: fst)
+        try PBROps.dump(
+            config: PBROps.DumpConfig(operations: [
+                OperationConfig(
+                    operation: .dumpCommonTables(
+                        unpackedFolder: unpacked, overwrite: true, japanese: false, pbrEngine: pbr
+                    ),
+                    enabled: .yes
+                )
+            ]),
+            settings: .default, fileSystem: fst, logger: SilentLogger()
+        )
+
+        let registry: FSYSRegistry = try fst.decodeJSON(
+            from: unpacked.folder("Archives").file("common.fsys.json")
+        )
+        let typedEntry = try XCTUnwrap(registry.entries.first { $0.dataTable != nil })
+        let dataTable = try XCTUnwrap(typedEntry.dataTable)
+        XCTAssertEqual(
+            dataTable.entryPaddingFills,
+            [StructPaddingFill(offset: 0x13, length: 1, byte: 0xD0),
+             StructPaddingFill(offset: 0x26, length: 2, byte: 0xD0)],
+            "the dump records what it found in the record's gaps"
+        )
+
+        let structEngine = try GenericEngine(combining: [pbr], in: fst)
+        var defs = [String: StructDefinition]()
+        defs[dataTable.entryStructName]  = try structEngine.getStruct(dataTable.entryStructName)
+        defs[dataTable.headerStructName] = try structEngine.getStruct(dataTable.headerStructName)
+
+        let genius = GeniusSonorityEngine.defaultEngine(for: .battleRevolution)
+        let rebuilt = try genius.resolveArchiveEntries(
+            registryEntry: typedEntry, sourceFolder: unpacked,
+            fileSystem: fst, structDefinitions: defs
+        )
+        XCTAssertEqual(
+            Array(rebuilt[0].data.rawBytes), Array(original),
+            "the filler has to come back with the rest of the table"
+        )
+    }
+
+    /// A "padding" run that differs from row to row carries information, so
+    /// the record is wrong about it. The table keeps its binary rather than
+    /// becoming a CSV that silently drops those bytes.
+    func testPaddingThatVariesBetweenRowsDemotesTheTable() throws {
+        let (fst, unpacked, binary) = try makeUnpackedTree(
+            tableIndex: 19, entryCount: 4, stride: 0x28
+        )
+        // Make one row's +0x13 disagree with the others'.
+        let data = try XCTUnwrap(try XCTUnwrap(fst.readFile(at: unpacked.file(binary.path))).allData)
+        var bytes = data.rawBytes
+        bytes[0x30 + 0x13] = 0xD0
+        bytes[0x30 + 0x28 + 0x13] = 0x11
+        try fst.writeFile(
+            GoDData(byteStream: bytes, byteOrder: .big),
+            at: unpacked.file(binary.path), overwrite: true
+        )
+
+        let logger = RecordingLogger()
+        try typeTables(fst, unpacked, japanese: false, logger: logger)
+
+        XCTAssertNotNil(fst.readFile(at: unpacked.file(binary.path)), "the raw member stays")
+        XCTAssertNil(fst.readFile(at: unpacked.file("/Data/Common/Items/Items.csv")))
+        XCTAssertTrue(
+            logger.warnings.contains { $0.contains("Items") },
+            "the demotion should name the table: \(logger.warnings)"
         )
     }
 }

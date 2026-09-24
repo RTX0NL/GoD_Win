@@ -3,6 +3,7 @@ import Foundation
 import GoDFoundation
 import GeniusSonority
 import GTX
+import TestSupport
 
 /// GSW-specific format behavior beyond the protocol members: tag stream
 /// walk, texture detection, truncation handling. Each test exercises a
@@ -126,7 +127,7 @@ final class GSWTests: XCTestCase {
     /// Real XD GSWs use version 7, a known frame rate, and 0x2580 at
     /// header offset 0x10. Each field is asserted independently.
     func testRealSmallSample_headerFieldsMatchKnownValues() throws {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/battle_disk_ge/battle_disk_ge 0012.gsw"
+        let path = SampleCorpus.xdGameFile("battle_disk_ge/battle_disk_ge 0012.gsw")
         guard FileManager.default.fileExists(atPath: path),
               let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             throw XCTSkip("battle_disk_ge 0012.gsw not available")
@@ -140,7 +141,7 @@ final class GSWTests: XCTestCase {
 
     /// Medium sample has 3 textures with non-contiguous IDs.
     func testRealMediumSample_has3Textures() throws {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/bingo_menu_it/bingo_menu_it 0009.gsw"
+        let path = SampleCorpus.xdGameFile("bingo_menu_it/bingo_menu_it 0009.gsw")
         guard FileManager.default.fileExists(atPath: path),
               let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             throw XCTSkip("bingo_menu_it 0009.gsw not available")
@@ -151,7 +152,7 @@ final class GSWTests: XCTestCase {
 
     /// Large sample has 21 textures.
     func testRealLargeSample_has21Textures() throws {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/title/title_start_00.gsw"
+        let path = SampleCorpus.xdGameFile("title/title_start_00.gsw")
         guard FileManager.default.fileExists(atPath: path),
               let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             throw XCTSkip("title_start_00.gsw not available")
@@ -163,7 +164,7 @@ final class GSWTests: XCTestCase {
     /// The tag walker must land exactly at EOF. Validates the sum of
     /// per-tag lengths matches filesize−header.
     func testTagStreamReachesEOFExactly() throws {
-        let path = "/Users/stars/Documents/GoD Tool/XD GoD Tool/Game Files/battle_disk_ge/battle_disk_ge 0012.gsw"
+        let path = SampleCorpus.xdGameFile("battle_disk_ge/battle_disk_ge 0012.gsw")
         guard FileManager.default.fileExists(atPath: path),
               let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             throw XCTSkip("GSW sample not available")

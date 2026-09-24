@@ -12,7 +12,23 @@ public extension ColosseumEngine {
 
         static public var allItems: [StructMap] {
             [
+                ColosseumStructDefaults.saveSlotHeaderStruct,
                 ColosseumStructDefaults.characterModelStruct,
+                // main.dol tables
+                ColosseumStructDefaults.abilityStruct,
+                ColosseumStructDefaults.statusEffectStruct,
+                ColosseumStructDefaults.tmStruct,
+                ColosseumStructDefaults.typeStruct,
+                ColosseumStructDefaults.itemStruct,
+                ColosseumStructDefaults.validItemStruct,
+                ColosseumStructDefaults.textureInfoStruct,
+                ColosseumStructDefaults.textureStruct,
+                ColosseumStructDefaults.textureEUStruct,
+                ColosseumStructDefaults.textureRenderingStruct,
+                ColosseumStructDefaults.pkxModelStruct,
+                ColosseumStructDefaults.unownPKXModelStruct,
+                ColosseumStructDefaults.shinyPKXModelStruct,
+                ColosseumStructDefaults.wzxMoveAnimationStruct,
                 // common.rel tables
                 ColosseumStructDefaults.legendaryPokemonStruct,
                 ColosseumStructDefaults.pokefaceStruct,

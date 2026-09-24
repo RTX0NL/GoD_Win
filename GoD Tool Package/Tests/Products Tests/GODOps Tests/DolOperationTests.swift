@@ -133,14 +133,20 @@ final class DolOperationTests: XCTestCase {
         dolphinFolder: Folder,
         typeMapPath: File? = nil,
         engines: [Folder]? = nil,
-        registry: FileFormatRegistry = .all()
+        registry: FileFormatRegistry = .all(),
+        symbolMapPath: File? = nil,
+        outputSymbolMapPath: File? = nil,
+        allowResizedChunks: Bool? = nil
     ) throws {
         let config = DolAssembly.Config(
             codeFolder: Folder("/project/Disassembly/main"),
             outputDolPath: File("/project/rebuilt.dol"),
+            symbolMapPath: symbolMapPath,
+            outputSymbolMapPath: outputSymbolMapPath,
             dolphinEngine: dolphinFolder,
             typeMapPath: typeMapPath,
-            engines: engines
+            engines: engines,
+            allowResizedChunks: allowResizedChunks
         )
         try DolAssembly.assemble(config: config, settings: .default, fileSystem: fst, logger: SilentLogger(), registry: registry)
     }
@@ -264,6 +270,10 @@ final class DolOperationTests: XCTestCase {
     /// Growing a `.file` chunk by editing its artifact must shift every
     /// label after it in the section, and pointers to those labels must
     /// follow. Pointers to addresses before the chunk stay put.
+    ///
+    /// The shift is what `allowResizedChunks` exists to gate: it is right
+    /// here, because the edit was deliberate, and wrong when a writer
+    /// re-derives a chunk a few bytes longer by accident.
     func testDolDataFileChunkResizeShiftsDownstreamPointers() throws {
         let (fst, dolphinFolder, engine) = try makeProject()
         let dataBytes: [UInt8] = [
@@ -285,7 +295,7 @@ final class DolOperationTests: XCTestCase {
             overwrite: true
         )
 
-        try assemble(in: fst, dolphinFolder: dolphinFolder, registry: registry)
+        try assemble(in: fst, dolphinFolder: dolphinFolder, registry: registry, allowResizedChunks: true)
 
         let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData)
         let rebuilt = try Dol(data: rebuiltData, dolphinEngine: engine)
@@ -295,6 +305,155 @@ final class DolOperationTests: XCTestCase {
         ] + grownBlob + [0xCA, 0xFE, 0xBA, 0xBE]
         XCTAssertEqual(rebuilt.dataSections[0].data.rawBytes, expected,
                        "Pointer past the grown chunk must shift; pointer before it must not")
+    }
+
+    // MARK: - Chunk size enforcement
+
+    /// A chunk that rebuilds shorter than it was dumped at is padded back
+    /// to size rather than pulling everything after it backwards. The MSG
+    /// writer re-derives its string layout and lands a byte or two under on
+    /// real discs, which is what used to move every later symbol.
+    func testAChunkThatRebuildsShortIsPaddedBackToSize() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let dataBytes: [UInt8] = [
+            0x80, 0x00, 0x40, 0x10,             // pointer → the chunk after the blob
+            0x80, 0x00, 0x40, 0x08,             // pointer → blob start, so a label lands there
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // blob (8 bytes)
+            0xCA, 0xFE, 0xBA, 0xBE,
+        ]
+        try seedDol(in: fst, engine: engine, dataBytes: dataBytes)
+        let typeMapPath = try writeTypeMap(in: fst, blobSize: 8)
+        let registry = blobRegistry()
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, registry: registry)
+
+        // Shrink the blob from 8 bytes to 5 by editing its artifact.
+        let shortBlob: [UInt8] = [0x01, 0x02, 0x03, 0x04, 0x05]
+        try fst.writeFile(
+            GoDData(byteStream: shortBlob.map { $0 ^ 0xFF }, byteOrder: .big),
+            at: File("/project/Disassembly/main/data0/lbl_80004008/blob.blob.enc"),
+            overwrite: true
+        )
+
+        try assemble(in: fst, dolphinFolder: dolphinFolder, registry: registry)
+
+        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData)
+        let rebuilt = try Dol(data: rebuiltData, dolphinEngine: engine)
+        let expected: [UInt8] = [
+            0x80, 0x00, 0x40, 0x10,             // unshifted: the label after the blob has not moved
+            0x80, 0x00, 0x40, 0x08,
+        ] + shortBlob + [0x00, 0x00, 0x00]      // three zero bytes of padding
+            + [0xCA, 0xFE, 0xBA, 0xBE]
+        XCTAssertEqual(rebuilt.dataSections[0].data.rawBytes, expected)
+    }
+
+    /// A chunk that rebuilds longer stops the assembly by default, naming
+    /// itself: it would move every symbol after it, and the type map that
+    /// sits on top of the symbol map names its chunks by label.
+    func testAChunkThatRebuildsLongStopsTheAssembly() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let dataBytes: [UInt8] = [
+            0x00, 0x00, 0x00, 0x00,
+            0x80, 0x00, 0x40, 0x08,             // pointer → blob start, so a label lands there
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+            0xCA, 0xFE, 0xBA, 0xBE,
+        ]
+        try seedDol(in: fst, engine: engine, dataBytes: dataBytes)
+        let typeMapPath = try writeTypeMap(in: fst, blobSize: 8)
+        let registry = blobRegistry()
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, registry: registry)
+
+        let grownBlob: [UInt8] = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A]
+        try fst.writeFile(
+            GoDData(byteStream: grownBlob.map { $0 ^ 0xFF }, byteOrder: .big),
+            at: File("/project/Disassembly/main/data0/lbl_80004008/blob.blob.enc"),
+            overwrite: true
+        )
+
+        XCTAssertThrowsError(
+            try assemble(in: fst, dolphinFolder: dolphinFolder, registry: registry)
+        ) { error in
+            guard case let DolAssemblyErrors.chunkOverflow(section, label, recorded, assembled, _) = error else {
+                return XCTFail("Expected chunkOverflow, got \(error)")
+            }
+            XCTAssertEqual(section, "data0")
+            XCTAssertEqual(label, "lbl_80004008")
+            XCTAssertEqual(recorded, 8)
+            XCTAssertEqual(assembled, 10)
+        }
+    }
+
+    /// A manifest written before chunk sizes were recorded has nothing to
+    /// check against, and must still assemble.
+    func testAChunkWithNoRecordedSizeIsNotEnforced() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let dataBytes: [UInt8] = [0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04]
+        try seedDol(in: fst, engine: engine, dataBytes: dataBytes)
+        try disassemble(in: fst, dolphinFolder: dolphinFolder)
+
+        // Strip every `size` from the manifest, as an old dump would have it.
+        let manifestFile = File("/project/Disassembly/main/data0/manifest.json")
+        let raw = try XCTUnwrap(fst.readFile(at: manifestFile)?.allData)
+        var manifest = try JSONDecoder().decode(DataSectionManifest.self, from: raw)
+        manifest.chunks = manifest.chunks.map {
+            .init(label: $0.label, type: $0.type, file: $0.file, structType: $0.structType)
+        }
+        try fst.writeFile(try JSONEncoder().encode(manifest), at: manifestFile, overwrite: true)
+
+        try assemble(in: fst, dolphinFolder: dolphinFolder)
+        let rebuiltData = try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData)
+        let rebuilt = try Dol(data: rebuiltData, dolphinEngine: engine)
+        XCTAssertEqual(rebuilt.dataSections[0].data.rawBytes, dataBytes)
+    }
+
+    // MARK: - Symbol map rewrite
+
+    /// The assembly writes the symbol map back out at the addresses it
+    /// produced. Without that, a rebuild that shifts anything leaves the
+    /// map — and the type map layered on it — pointing at the old
+    /// addresses, and the next dump types the wrong bytes.
+    func testAssemblyWritesTheSymbolMapItProduced() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let dataBytes: [UInt8] = [
+            0x80, 0x00, 0x40, 0x08,             // pointer → label at +0x08
+            0x00, 0x00, 0x00, 0x00,
+            0xCA, 0xFE, 0xBA, 0xBE,
+        ]
+        try seedDol(in: fst, engine: engine, dataBytes: dataBytes)
+        try disassemble(in: fst, dolphinFolder: dolphinFolder)
+
+        let inputMap = File("/project/dol.map")
+        try fst.writeFile(
+            GoDData(string: """
+            .text section layout
+            80003100 00000018 80003100 0 __start\tos.a __start.o
+            """, format: .utf8),
+            at: inputMap, overwrite: true
+        )
+
+        let outputMap = File("/project/rebuilt.map")
+        try assemble(
+            in: fst, dolphinFolder: dolphinFolder,
+            symbolMapPath: inputMap, outputSymbolMapPath: outputMap
+        )
+
+        let written = try XCTUnwrap(fst.readFile(at: outputMap)?.allData)
+        let symbols = SymbolMapParser().parse(written.string(format: .utf8))
+        let byName = Dictionary(symbols.map { ($0.name, $0.address) }, uniquingKeysWith: { a, _ in a })
+
+        XCTAssertEqual(byName["__start"], 0x8000_3100, "an input symbol keeps its address when nothing moved")
+        XCTAssertEqual(
+            byName["lbl_80004008"], 0x8000_4008,
+            "a data chunk label the input map never had is added, so the type map can still resolve it"
+        )
+    }
+
+    /// No output path, no map: the assembly leaves the project's map alone.
+    func testAssemblyWritesNoSymbolMapWhenNoPathIsGiven() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        try seedDol(in: fst, engine: engine, dataBytes: [0xDE, 0xAD, 0xBE, 0xEF])
+        try disassemble(in: fst, dolphinFolder: dolphinFolder)
+        try assemble(in: fst, dolphinFolder: dolphinFolder)
+        XCTAssertNil(fst.readFile(at: File("/project/rebuilt.map"))?.allData)
     }
 
     // MARK: - Shiftability guards
@@ -375,7 +534,10 @@ final class DolOperationTests: XCTestCase {
         let asmConfig = DolAssembly.Config(
             codeFolder: Folder("/project/Disassembly/main"),
             outputDolPath: File("/project/rebuilt.dol"),
-            dolphinEngine: dolphinFolder
+            dolphinEngine: dolphinFolder,
+            // The resize is the point of this test, so accept it and let
+            // the SDA guard have its say about where it landed.
+            allowResizedChunks: true
         )
         try DolAssembly.assemble(config: asmConfig, settings: .default, fileSystem: fst, logger: logger)
 
@@ -401,7 +563,8 @@ final class DolOperationTests: XCTestCase {
         let asmConfig = DolAssembly.Config(
             codeFolder: Folder("/project/Disassembly/main"),
             outputDolPath: File("/project/rebuilt.dol"),
-            dolphinEngine: dolphinFolder
+            dolphinEngine: dolphinFolder,
+            allowResizedChunks: true
         )
         try DolAssembly.assemble(config: asmConfig, settings: .default, fileSystem: fst, logger: logger)
 

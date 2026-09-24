@@ -19,11 +19,13 @@ enum DolAssembly {
                 codeFolder: config.codeFolder,
                 outputDolPath: config.outputDolPath,
                 symbolMapPath: config.symbolMapPath,
+                outputSymbolMapPath: config.outputSymbolMapPath,
                 typeMapPath: config.typeMapPath,
                 bssEntryListPath: config.bssEntryListPath,
                 engineFolders: config.engines ?? [],
                 sdaBase: config.sdaBase,
                 sda2Base: config.sda2Base,
+                allowResizedChunks: config.allowResizedChunks ?? false,
                 in: fileSystem,
                 logger: logger
             )

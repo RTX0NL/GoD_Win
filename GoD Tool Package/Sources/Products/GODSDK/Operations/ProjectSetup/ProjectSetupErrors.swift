@@ -7,7 +7,6 @@ public enum ProjectSetupErrors: GoDError {
     case fsysParseFailed(File, underlying: String, ErrorTrace)
     case invalidGameID(ErrorTrace)
     case unsupportedInputFormat(format: String, reason: String, file: File, ErrorTrace)
-    case unrecognizedGCIGamecode(String, ErrorTrace)
 
     public var description: String {
         switch self {
@@ -23,8 +22,6 @@ public enum ProjectSetupErrors: GoDError {
             return "Error: Couldn't read Game ID\n\(errorTrace)"
         case let .unsupportedInputFormat(format, reason, file, errorTrace):
             return "Error: \(file.path) is a \(format) image, which setup can't open: \(reason)\n\(errorTrace)"
-        case let .unrecognizedGCIGamecode(gamecode, errorTrace):
-            return "Error: GCI gamecode '\(gamecode)' is not a known XD/Colo save\n\(errorTrace)"
         }
     }
 }

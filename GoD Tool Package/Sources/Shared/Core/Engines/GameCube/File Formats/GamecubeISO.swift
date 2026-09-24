@@ -239,7 +239,7 @@ public final class GamecubeISO: FileSystemTree {
             isoData.write(dolData, atAddress: dolOffset)
             
             // Set fst.bin
-            let fstAlignment = max(dolphinEngine.data.systemFiles.fstOffsetMultiplier, 1)
+            let fstAlignment = max(dolphinEngine.data.systemFiles.fstOffsetAlignment, 1)
             let fstOffset = (dolOffset + dolData.length).aligned(to: fstAlignment)
             bootStruct.fst_offset = fstOffset
             

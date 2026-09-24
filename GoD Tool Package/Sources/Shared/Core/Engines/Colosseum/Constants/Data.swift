@@ -81,6 +81,18 @@ public extension ColosseumEngine {
             public var mapRelTypeMapType1: File = "Resources/map_rel_typemap_type1.json"
             public var mapRelTypeMapType2: File = "Resources/map_rel_typemap_type2.json"
             public var pocketMenuSymbolMap: File = "Resources/pocket_menu_symbols.json"
+            /// The flag descriptor table — the schema half of Colosseum's flag
+            /// system, 3593 × 8 bytes inside `common.rel`. Region-neutral path;
+            /// US and PAL ship a byte-identical table and JP differs in exactly
+            /// one byte (flag 9 sits in bank 1 on US/PAL and bank 2 on JP,
+            /// which shifts every later flag in both banks), so `ProjectSetup`
+            /// writes the ROM's own. See `Documentation/Assembly Analysis/
+            /// Data Structures/Flags.md`.
+            public var generalFlagsTable: File = "Resources/general_flags.csv"
+            /// Typed regions inside save sections. Colosseum's flags live in
+            /// `Tail`, which is itself a struct, so the banks are addressed by
+            /// property rather than byte offset.
+            public var saveSectionLayout: File = "Resources/save_section_layout.json"
             /// Relative path of the DOL symbol map. No map is bundled
             /// yet for Colosseum; `ProjectSetup` writes a region-matched
             /// map here once one lands in the bundle.
@@ -98,6 +110,8 @@ public extension ColosseumEngine {
                 mapRelTypeMapType1: File = "Resources/map_rel_typemap_type1.json",
                 mapRelTypeMapType2: File = "Resources/map_rel_typemap_type2.json",
                 pocketMenuSymbolMap: File = "Resources/pocket_menu_symbols.json",
+                generalFlagsTable: File = "Resources/general_flags.csv",
+                saveSectionLayout: File = "Resources/save_section_layout.json",
                 dolSymbolMap: File = "Resources/dol.map",
                 dolTypeMap: File = "Resources/dol_typemap.json"
             ) {
@@ -107,6 +121,8 @@ public extension ColosseumEngine {
                 self.mapRelTypeMapType1 = mapRelTypeMapType1
                 self.mapRelTypeMapType2 = mapRelTypeMapType2
                 self.pocketMenuSymbolMap = pocketMenuSymbolMap
+                self.generalFlagsTable = generalFlagsTable
+                self.saveSectionLayout = saveSectionLayout
                 self.dolSymbolMap = dolSymbolMap
                 self.dolTypeMap = dolTypeMap
             }

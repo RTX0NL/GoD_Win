@@ -28,6 +28,7 @@ public extension XDEngine {
                 XDStructDefaults.wzxMoveAnimationStruct,
                 XDStructDefaults.textureInfoStruct,
                 XDStructDefaults.textureStruct,
+                XDStructDefaults.textureJPStruct,
                 XDStructDefaults.characterModelStruct,
                 // common.rel structs
                 XDStructDefaults.moveStruct,
@@ -64,6 +65,7 @@ public extension XDEngine {
                 XDStructDefaults.pokespotEncounterStruct,
                 XDStructDefaults.roomStruct,
                 XDStructDefaults.roomJPStruct,
+                XDStructDefaults.generalFlagStruct,
                 // Deck structs (per trainer deck file)
                 XDStructDefaults.deckTrainerStruct,
                 XDStructDefaults.deckTrainerPokemonStruct,
@@ -73,6 +75,7 @@ public extension XDEngine {
                 XDStructDefaults.saveWazaStruct,
                 XDStructDefaults.saveItemStruct,
                 XDStructDefaults.savePokemonStruct,
+                XDStructDefaults.saveSlotHeaderStruct,
                 XDStructDefaults.saveConfigStruct,
                 XDStructDefaults.saveTrainer1Struct,
                 XDStructDefaults.saveBoxStruct,
@@ -83,6 +86,25 @@ public extension XDEngine {
                 XDStructDefaults.saveBattleRuleStruct,
                 XDStructDefaults.saveBattleModeStruct,
                 XDStructDefaults.saveShadowPokemonStruct,
+                // Sections identified from the game's own savedata BIOS
+                // (see "XD save sections" in CLAUDE.md).
+                XDStructDefaults.saveMailboxStruct,
+                XDStructDefaults.saveFlagsStruct,
+                XDStructDefaults.saveFlagsTailStruct,
+                XDStructDefaults.saveExRibbonStruct,
+                XDStructDefaults.saveReliveStageStruct,
+                XDStructDefaults.saveReliveStruct,
+                XDStructDefaults.saveAnywaySaveHeaderStruct,
+                // Japanese-build variants of the four sections whose
+                // layout the international releases widened. Registered
+                // unconditionally — which set a save actually uses is
+                // `Data.sectionStructTypes`, chosen per region by
+                // `XDEngine.defaultEngine(forGameID:)`.
+                XDStructDefaults.saveConfigStructJP,
+                XDStructDefaults.savePCBoxStructJP,
+                XDStructDefaults.saveBattleRuleStructJP,
+                XDStructDefaults.saveBattleModeStructJP,
+                XDStructDefaults.saveShadowPokemonStructJP,
             ]
         }
     }

@@ -32,6 +32,26 @@ public struct XDEngine: Engine {
         try .init(data: Data(), enums: Enums(), structs: Structs())
     }
 
+    /// The engine for a specific XD build.
+    ///
+    /// Only the save-section struct bindings vary: XD shipped in Japan
+    /// first and the international builds widened four sections, so a JP
+    /// save needs `sectionStructTypes` pointed at the JP structs. Binding
+    /// the international structs to a JP save doesn't mis-decode it — the
+    /// dump notices the size mismatch and falls back to a raw `.bin` — but
+    /// it does cost the player every editable section that differs,
+    /// including `PCBox`, which is most of what a save editor is for.
+    ///
+    /// An unknown game ID gets the international bindings, which is what
+    /// `defaults()` has always returned.
+    public static func defaultEngine(forGameID gameID: String) throws -> XDEngine {
+        var data = Data()
+        if gameID == PokemonXD.gameIDJP {
+            data.sectionStructTypes = Data.japaneseSectionStructTypes
+        }
+        return try .init(data: data, enums: Enums(), structs: Structs())
+    }
+
     /// Copies the Swift-package-bundled reference resources into the
     /// engine folder during project setup. Each entry is keyed by the
     /// relative `File` declared on `Data.Resources`, so consumers can
@@ -58,6 +78,10 @@ public struct XDEngine: Engine {
         // tableres2.rel is identical on US and PAL and absent on JP, so its
         // map isn't region-keyed.
         add(data.resources.tableres2TypeMap, named: "tableres2_typemap.json")
+        // The flag descriptor table is region-independent, so unlike the maps
+        // above there is nothing for ProjectSetup to overwrite per region.
+        add(data.resources.generalFlagsTable, named: "general_flags.csv")
+        add(data.resources.saveSectionLayout, named: "save_section_layout.json")
         // DOL symbol map is region-specific — written by `ProjectSetup`
         // once the ROM's game ID is known, not bundled at engine-write
         // time.

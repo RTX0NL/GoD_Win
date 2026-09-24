@@ -197,12 +197,21 @@ enum Project {
 
         // Engines carry region-neutral resource paths; which bytes land in
         // them depends on the disc's region, so the profile resolves that.
+        //
+        // A profile names a DOL symbol map path whether or not this region
+        // ships one — XD and Colosseum do, Battle Revolution does not — so
+        // the assembly config keys its map rewrite off what actually landed,
+        // not off the declared path.
+        var installedDOLSymbolMap = false
         if let profile {
             let engineFolder = enginesFolder.folder(profile.engineName)
             for resource in profile.regionalResources(gameID) {
                 try projectFileSystem.writeFile(
                     resource.data, at: engineFolder.file(resource.path.path), overwrite: true
                 )
+                if resource.path.path == profile.dolSymbolMapResource.path {
+                    installedDOLSymbolMap = true
+                }
             }
         }
 
@@ -240,6 +249,16 @@ enum Project {
             // editable artifacts live. Both `.FNT` and `.f3d` land here.
             let pbrFontsFolder = unpackedFolder.folder("Data").folder("Text").folder("Fonts")
             let pbrFontsSourceFolder = sourceFolder.folder("Text").folder("Fonts")
+            // Where the FSYS unpack drops PBR's message binaries (one folder
+            // per language) and the `common.fsys` member that maps a string
+            // id to one of them, and where the editable catalogue lives.
+            let pbrMessagesFolder = unpackedFolder.folder("Data").folder("Text").folder("Messages")
+            let pbrStringDirectoryFile = unpackedFolder.folder("Data").folder("Common").file(
+                PBREngine.Data().stringDirectoryFileName(
+                    japanese: PokemonBattleRevolution.usesJapaneseTableOrder(gameID: gameID)
+                )
+            )
+            let pbrStringsSourceFile = sourceFolder.folder("Text").file("Strings.json")
 
             var buildOperations: [OperationConfig<GoddessConfig.Operations>] = []
 
@@ -254,6 +273,22 @@ enum Project {
                             config: PBRFontBuild.BatchConfig(
                                 fontsFolder: pbrFontsSourceFolder.prefixed("."),
                                 outputFolder: pbrFontsFolder.prefixed("."),
+                                overwrite: true
+                            )
+                        ),
+                        enabled: .no
+                    )
+                )
+
+                // Strings back to their binaries, also ahead of the repack.
+                // Disabled by default: it overwrites every message file, so
+                // a user opts in once they've edited the catalogue.
+                buildOperations.append(
+                    OperationConfig(
+                        operation: .pbrStringsBuild(
+                            config: PBRStringsBuild.Config(
+                                stringsFile: pbrStringsSourceFile.prefixed("."),
+                                unpackedFolder: unpackedFolder.prefixed("."),
                                 overwrite: true
                             )
                         ),
@@ -423,6 +458,24 @@ enum Project {
                             )
                         ),
                         enabled: .no
+                    )
+                )
+
+                // Every string on the disc into one document. Enabled, unlike
+                // the fonts: it's the only way to read the game's text, and
+                // it costs one pass over ~30 files.
+                dumpOperations.append(
+                    OperationConfig(
+                        operation: .pbrStringsDump(
+                            config: PBRStringsDump.Config(
+                                unpackedFolder: unpackedFolder.prefixed("."),
+                                messagesFolder: pbrMessagesFolder.prefixed("."),
+                                directoryFile: pbrStringDirectoryFile.prefixed("."),
+                                outputFile: pbrStringsSourceFile.prefixed("."),
+                                overwrite: false
+                            )
+                        ),
+                        enabled: .yes
                     )
                 )
             }
@@ -631,6 +684,13 @@ enum Project {
             // a user opts in once they have edited the disassembly. The symbol
             // and type maps mirror the dump's so typed chunks resolve the same
             // way on the way back in.
+            //
+            // The assembly writes the symbol map back over the one it read.
+            // An edit that changes a chunk's size moves every symbol after it,
+            // and the type map names its tables by label, so a map left at the
+            // pre-build addresses would have the next dump type the wrong
+            // bytes. Point it elsewhere to keep the original, or drop the
+            // field to leave the map alone.
             let dolFile = contentsFolder.folder("sys").file("main.dol")
             buildOperations.append(
                 OperationConfig(
@@ -642,6 +702,11 @@ enum Project {
                             symbolMapPath: profile.map { profile in
                                 gameEngineFolder.file(profile.dolSymbolMapResource.path).prefixed(".")
                             },
+                            outputSymbolMapPath: installedDOLSymbolMap
+                                ? profile.map { profile in
+                                    gameEngineFolder.file(profile.dolSymbolMapResource.path).prefixed(".")
+                                }
+                                : nil,
                             dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
                             typeMapPath: profile?.dolTypeMapResource.map { resource in
                                 gameEngineFolder.file(resource.path).prefixed(".")

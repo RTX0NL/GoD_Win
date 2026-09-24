@@ -14,41 +14,40 @@ public extension XDEngine {
         /// chunk system: `.binary` for raw, `.struct` for typed
         /// instances, `.table` for typed runs.
         ///
-        /// Identities resolved by matching the empirically observed
-        /// on-card section sizes against the RAM `SystemSaveData` block
-        /// sizes documented in the XD disassembly
-        /// (`Overview/Save System.md` §2 + `Data Structures/
-        /// SystemSaveData.md`). The correspondence is tight (e.g. phys 7
-        /// = 0x2400 ≈ Shadow-Pokémon RAM block 0x2410; phys 15 = 0xC800 =
-        /// AnywaySave 0xC800; phys 14 = 0x2298 ≈ Purification/Relive
-        /// 0x22B0). Note two corrections to PKHeX's tentative names:
-        /// index 7 is the global **Shadow Pokémon Status** table (not
-        /// "ShadowInfo"), and index 14 is the **Purification** / Relic-
-        /// Forest state (game symbol `Relive`, not "Purifier"). We use
-        /// the English "Shadow Pokémon" term throughout, though the
-        /// game's own symbols say "DarkPokemon" (Japanese). Indices 3
-        /// and 9 are small opaque blocks not yet matched to a named RAM
-        /// block; 8 is the composite flag-bank bundle (FlagLevel0/1/2 +
-        /// ExRibbon, ≈0x6B4).
+        /// Every identity here is the game's own, read out of
+        /// `_memcardStoreSaveData_multi` — the routine that serializes the
+        /// RAM save buffer onto the card. It writes the sections in this
+        /// exact order, taking each one's size from the slot header's
+        /// 16-entry u16 table at +0x20 and its source from
+        /// `savedataGetStatus`, whose jump table resolves to the named
+        /// `savedataBiosGet<Name>Ptr` accessors. All 16 sizes match this
+        /// array position-for-position on real US, PAL and JP saves.
+        ///
+        /// Two names are corrections to PKHeX's tentative ones: index 7
+        /// is the global **Shadow Pokémon Status** table (not
+        /// "ShadowInfo"), and 14 is the **Purify Chamber** (game symbol
+        /// `Relive`, not "Purifier"). We use the English "Shadow Pokémon"
+        /// term throughout, though the game's own symbols say
+        /// "DarkPokemon". See "XD save sections" in CLAUDE.md.
         public var saveSections: [SaveSectionSpec] = Self.defaultSaveSections
 
         static let defaultSaveSections: [SaveSectionSpec] = [
             .structInstance(name: "Config"),                    // 0  0x88   → XDSaveConfig (Gamedata)
             .structInstance(name: "Trainer"),                   // 1  0x978  → XDSaveTrainer (Hero)
             .structInstance(name: "PCBox"),                     // 2  0xBC50 → XDSavePCBox
-            .binary(name: "Section3"),                          // 3  0x4A   (opaque small block)
+            .structInstance(name: "Mailbox"),                   // 3  0x4A   → XDSaveMailbox (savedataBiosGetMailboxPtr)
             .structInstance(name: "Daycare"),                   // 4  0xCC   → XDSaveDaycare (Sodateya)
             .structInstance(name: "StrategyMemo"),              // 5  0x1774 → XDSaveStrategyMemo (PDA memos)
             .structInstance(name: "BattleMode"),                // 6  0x364  → XDSaveBattleMode (Taisen rule save; game symbol "_TOOL_SAVEDATA")
             .table(name: "ShadowStatusTable", count: 128),      // 7  0x2400 → 128 × ShadowPokemonStatus
-            .binary(name: "Flags"),                             // 8  0x6B4  flag bit-banks: FlagLevel0(0x20)/1(0x80)/2(0x630-trunc)/ExRibbon(0x20). Raw chunk — decode via future flag op (descriptor table `flag_data` is in common.rel, 6B entries)
-            .binary(name: "Section9"),                          // 9  0xB    (opaque tiny block)
-            .binary(name: "Yobi1"),                             // 10 0x400  (reserved block 1)
+            .binary(name: "Flags"),                             // 8  0x6B4  → dumps raw; `saveSectionsDump` decodes it into flags + tail
+            .structInstance(name: "ExRibbon"),                  // 9  0xB    → XDSaveExRibbon (savedataBiosGetExRibbonPtr; 11 ribbon slots)
+            .binary(name: "Yobi1"),                             // 10 0x400  reserve ("yobi" = spare). The serializer reserves card space for 10-13 but never copies into them, so their bytes are uninitialised buffer, not save state
             .binary(name: "Yobi2"),                             // 11 0x800  (reserved block 2)
             .binary(name: "Yobi3"),                             // 12 0x1000 (reserved block 3)
             .binary(name: "Yobi4"),                             // 13 0x2000 (reserved block 4)
-            .binary(name: "Purification"),                      // 14 0x2298 (Relic Forest / Purify Chamber state; game symbol "Relive")
-            .binary(name: "CurrentMapState"),                   // 15 0xC800 (save-anywhere snapshot; game symbol "AnywaySave")
+            .structInstance(name: "Purification"),              // 14 0x2298 → XDSaveRelive: 9 Purify Chamber sets × 0x3D8 (game symbol "Relive")
+            .binary(name: "CurrentMapState"),                   // 15 0xC800 save-anywhere snapshot (game symbol "AnywaySave"). 0x20-byte header then a variable-length floor/character blob — +0x04 non-zero means data present, +0x08 is an offset within the body; the body itself stays opaque
         ]
 
         /// Section index → registered struct definition name. The
@@ -74,6 +73,29 @@ public extension XDEngine {
             5: "XDSaveStrategyMemo",
             6: "XDSaveBattleMode",
             7: "ShadowPokemonStatus",
+            3: "XDSaveMailbox",
+            8: "XDSaveFlags",
+            9: "XDSaveExRibbon",
+            14: "XDSaveRelive",
+        ]
+
+        /// Bindings for the Japanese build. XD released in Japan first and
+        /// the international versions widened four of these sections, so
+        /// four indices point at JP structs; `Trainer`, `Daycare` and
+        /// `StrategyMemo` are the same size on every build and share one
+        /// definition. Selected by `XDEngine.defaultEngine(forGameID:)`.
+        static let japaneseSectionStructTypes: [Int: String] = [
+            0: "XDSaveConfigJP",
+            1: "XDSaveTrainer",
+            2: "XDSavePCBoxJP",
+            4: "XDSaveDaycare",
+            5: "XDSaveStrategyMemo",
+            6: "XDSaveBattleModeJP",
+            7: "ShadowPokemonStatusJP",
+            3: "XDSaveMailbox",
+            8: "XDSaveFlags",
+            9: "XDSaveExRibbon",
+            14: "XDSaveRelive",
         ]
 
         /// Slot-format TOC table offsets (size table, offset table, body
@@ -216,6 +238,20 @@ public extension XDEngine {
             /// message tables. US and PAL ship byte-identical copies, so one
             /// map serves both; the JP disc has no `common_dvdeth.fsys`.
             public var tableres2TypeMap: File = "Resources/tableres2_typemap.json"
+            /// `common.rel`'s `GeneralFlags` descriptor table, as the CSV the
+            /// REL dump produces — the schema half of the flag system. The
+            /// save's flag banks are undelimited bits; this says how wide each
+            /// flag is and which bank it lives in, so the save dump needs it to
+            /// decode section 8 into flags. Bundled because a save project has
+            /// no disc to read `common.rel` from, and because the table is
+            /// byte-identical on US, PAL and JP — one copy serves every build,
+            /// unlike the address-keyed type and symbol maps above.
+            public var generalFlagsTable: File = "Resources/general_flags.csv"
+            /// Typed regions inside save sections the save dump writes as one
+            /// raw `.bin` — read by `saveSectionsDump`/`saveSectionsBuild`.
+            /// Offsets are within the section, so this is region-neutral as
+            /// long as the section's own layout is.
+            public var saveSectionLayout: File = "Resources/save_section_layout.json"
 
             public init(
                 commonRelSymbolMap: File = "Resources/common_rel_symbols.json",
@@ -225,7 +261,9 @@ public extension XDEngine {
                 pocketMenuSymbolMap: File = "Resources/pocket_menu_symbols.json",
                 dolSymbolMap: File = "Resources/dol.map",
                 dolTypeMap: File = "Resources/dol_typemap.json",
-                tableres2TypeMap: File = "Resources/tableres2_typemap.json"
+                tableres2TypeMap: File = "Resources/tableres2_typemap.json",
+                generalFlagsTable: File = "Resources/general_flags.csv",
+                saveSectionLayout: File = "Resources/save_section_layout.json"
             ) {
                 self.commonRelSymbolMap = commonRelSymbolMap
                 self.commonRelTypeMap = commonRelTypeMap
@@ -235,6 +273,8 @@ public extension XDEngine {
                 self.dolSymbolMap = dolSymbolMap
                 self.dolTypeMap = dolTypeMap
                 self.tableres2TypeMap = tableres2TypeMap
+                self.generalFlagsTable = generalFlagsTable
+                self.saveSectionLayout = saveSectionLayout
             }
         }
 

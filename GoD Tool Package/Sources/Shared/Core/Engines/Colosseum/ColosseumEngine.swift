@@ -56,6 +56,10 @@ public struct ColosseumEngine: Engine {
         add(data.resources.mapRelTypeMapType1, named: "map_rel_typemap_type1.json")
         add(data.resources.mapRelTypeMapType2, named: "map_rel_typemap_type2.json")
         add(data.resources.pocketMenuSymbolMap, named: "pocket_menu_symbols.json")
+        // US is the bundled default so the file is never empty; `ProjectSetup`
+        // writes the JP table over it when the disc is Japanese.
+        add(data.resources.generalFlagsTable, named: "general_flags_us.csv")
+        add(data.resources.saveSectionLayout, named: "save_section_layout.json")
         // DOL symbol map is also region-specific — written by `ProjectSetup`.
         return result
     }
@@ -72,6 +76,14 @@ public enum PokemonColosseum {
         gameIDUS,
         gameIDEU
     ]
+
+    /// The flag descriptor table for a build. US and PAL are byte-identical;
+    /// JP differs in one byte, which is enough to move every later flag in two
+    /// of the three banks, so the region matters.
+    public static func generalFlagsTableData(for gameID: String) -> GoDData? {
+        guard let suffix = regionSuffix(for: gameID) else { return nil }
+        return bundledResource(named: "general_flags_\(suffix == "eu" ? "us" : suffix).csv")
+    }
 
     /// Returns the symbol map data for the given game ID, if available as a bundled resource.
     public static func symbolMapData(for gameID: String) -> GoDData? {

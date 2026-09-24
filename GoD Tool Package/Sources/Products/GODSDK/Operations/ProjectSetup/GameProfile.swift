@@ -170,6 +170,9 @@ struct GameProfile {
                 if let relTypes = PokemonColosseum.commonRelTypeMapData(for: gameID) {
                     result.append((resources.commonRelTypeMap, relTypes))
                 }
+                if let flags = PokemonColosseum.generalFlagsTableData(for: gameID) {
+                    result.append((resources.generalFlagsTable, flags))
+                }
                 return result
             },
             makeEngine: { try ColosseumEngine.defaults() }
