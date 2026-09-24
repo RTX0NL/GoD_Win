@@ -32,6 +32,15 @@ This document lists the reference implementations, specifications, and documenta
   those decisions over a hash chain instead of a linear window scan, and
   documents where it knowingly diverges.
 
+## PNG encoding and decoding
+
+### Vendored Implementation
+- **swift-png** by Diana Ma (tayloraswift) — Apache 2.0, version 4.5.1. The
+  `LZ77` and `PNG` targets are vendored verbatim under
+  `Sources/Shared/Dependencies/Third Party/swift-png/`, with the license
+  alongside them. One local patch to `LZ77.DeflatorBuffers.Stream`'s final
+  flush, documented in that folder's README; everything else is unmodified.
+
 ## U8 / NARC archives
 
 ### Documentation
@@ -80,6 +89,19 @@ across all 33 tables, and every bone/animation slot of 321 model rows
 resolved against the bone and action names inside the `.sdr` each row points
 at. See `PBRCommonTableRealCorpusTests`.
 
+## Symbol maps (Colosseum, XD)
+
+### Data Sources
+- **Colo-XD-PBR-symbol-maps** ([StarsMmd/Colo-XD-PBR-symbol-maps](https://github.com/StarsMmd/Colo-XD-PBR-symbol-maps)) —
+  community symbol maps in Dolphin `.map` format. `GXXE`/`GXXP`/`GXXJ.map` and
+  `GC6E`/`GC6P`/`GC6J.map` are bundled in the XD and Colosseum engines and
+  installed by `ProjectSetup` for the disc's own region. XD's carry the
+  original CodeWarrior names and object files; Colosseum's are mostly
+  positional (`zz_XXXXXXX`), which still supplies the chunk boundaries the
+  data sections are split on.
+- **NXXJ01** (the XD demo's development map, in the same repository) — the
+  source of the names `match-symbols.py` propagates to the retail builds.
+
 ## Species / move / item enums (Colosseum, XD, Battle Revolution)
 
 ### Data Sources
@@ -115,8 +137,11 @@ Colosseum and XD share one definition because their ability names occupy the
 same message ids in the same order, verified run-for-run — not merely because
 both are Generation III. Two things the derivation corrected: the list runs to
 **77 (`AIR LOCK`)**, not 76 — PDA omits `CACOPHONY`, which no Pokémon has —
-and XD's table is 123 rows of which only 1–77 hold real entries, the remainder
-carrying uninitialised `name_id`s.
+and XD's table is 78 rows — 0 blank, then 1–77 — which is what the game's own
+count word, the size of `pokemon_tokusei_data` (0x3A8 ÷ 12) and the first
+non-ability byte all say. (An earlier version of this note read "123 rows of
+which only 1–77 hold real entries"; that came from the shipped type map's
+count, which was wrong. The extra 45 "rows" were the next object.)
 
 ### Behaviour enums (move target / category / effect type, contest category, item pocket)
 Ported from the legacy tool's `enums/XG*.swift` and
