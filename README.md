@@ -190,7 +190,7 @@ Register it with a client — for example, Claude Code:
 claude mcp add goddess -- /path/to/GODDESS mcp
 ```
 
-The server drives the exact same code paths as the CLI and exposes four tools:
+The server drives the exact same code paths as the CLI and exposes six tools:
 
 | Tool | Purpose |
 |---|---|
@@ -198,10 +198,14 @@ The server drives the exact same code paths as the CLI and exposes four tools:
 | `unpack_fsys` | Unpack a standalone `.fsys` archive (mirrors mode 2). |
 | `run_config` | Run the enabled operations in a config file (mirrors mode 3). |
 | `run_operation` | Run a single operation from an inline JSON object, no config file needed. |
+| `list_operations` | Every operation with its shape and a one-line summary. |
+| `describe_operation` | One operation's fields, nested operations and example JSON, on demand. |
 
 Long operations stream progress to the client via MCP log notifications. The
-tool schemas reference the same [Configuration Reference](Documentation/GODDESS%20Configuration%20Reference.md)
-for the shape of `run_operation`'s `operation` object.
+[Configuration Reference](Documentation/GODDESS%20Configuration%20Reference.md)
+is embedded in the binary, so `describe_operation` serves the same text a
+reader of that document sees; `run_operation`'s description names every
+operation so a client can discover them without reading anything else.
 
 ## How to build
 
