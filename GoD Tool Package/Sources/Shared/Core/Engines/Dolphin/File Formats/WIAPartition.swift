@@ -253,22 +253,27 @@ public struct WIAExceptionList: Equatable {
     /// store multiple prefixed lists).
     public static func decode(from binary: GoDData, at offset: Int) throws -> (WIAExceptionList, consumed: Int) {
         binary.setByteOrder(.big)
-        guard offset + prefixSize <= binary.length else {
+        return try decode(from: binary.rawBytes, at: offset)
+    }
+
+    /// Parse from a plain byte buffer. The group decoder works this way —
+    /// its payload is already a decompressed `[UInt8]`, and wrapping each
+    /// one in a `GoDData` just to read a two-byte count would copy the
+    /// whole chunk.
+    public static func decode(from bytes: [UInt8], at offset: Int) throws -> (WIAExceptionList, consumed: Int) {
+        guard offset >= 0, offset + prefixSize <= bytes.count else {
             throw FileFormatErrors.invalid(format: "wia")
         }
-        let n: UInt16 = binary.readSafely(atAddress: offset)
+        let n = Int(bytes[offset]) << 8 | Int(bytes[offset + 1])
         var cur = offset + prefixSize
         var exceptions: [Exception] = []
-        exceptions.reserveCapacity(Int(n))
-        for _ in 0..<Int(n) {
-            guard cur + exceptionSize <= binary.length else {
+        exceptions.reserveCapacity(n)
+        for _ in 0..<n {
+            guard cur + exceptionSize <= bytes.count else {
                 throw FileFormatErrors.invalid(format: "wia")
             }
-            let o: UInt16 = binary.readSafely(atAddress: cur)
-            guard let hash = binary.read(atAddress: cur + 2, length: 20)?.rawBytes else {
-                throw FileFormatErrors.invalid(format: "wia")
-            }
-            exceptions.append(Exception(offset: o, hash: hash))
+            let o = UInt16(bytes[cur]) << 8 | UInt16(bytes[cur + 1])
+            exceptions.append(Exception(offset: o, hash: Array(bytes[(cur + 2)..<(cur + 22)])))
             cur += exceptionSize
         }
         return (WIAExceptionList(exceptions: exceptions), consumed: cur - offset)

@@ -125,3 +125,121 @@ final class RVZPackingTests: XCTestCase {
         XCTAssertThrowsError(try RVZPacking.decode(bytes))
     }
 }
+
+// MARK: - PRNG golden vectors
+
+/// Cross-checks against an independent implementation of the generator,
+/// written from the published specification's formulation: state words kept
+/// untransformed and the `>> 24 / >> 18 / >> 8 / raw` extraction applied at
+/// output time.
+///
+/// `RVZPacking.PRNG` instead folds that extraction into the state at
+/// initialization, which is what the reference decoder does — sound because
+/// the transform is a mask-and-shift and so commutes with the generator's
+/// XOR-only advance. These vectors are what says the two really do agree,
+/// rather than that the reasoning sounded right.
+extension RVZPackingTests {
+
+    private static func seed(_ f: (Int) -> UInt8) -> [UInt8] {
+        (0..<68).map(f)
+    }
+
+    private func hex(_ bytes: [UInt8]) -> String {
+        bytes.map { String(format: "%02x", $0) }.joined()
+    }
+
+    func testPRNGMatchesTheSpecificationsOutputForAKnownSeed() {
+        var prng = RVZPacking.PRNG(seed: Self.seed { UInt8(($0 * 7 + 3) % 256) })
+        XCTAssertEqual(
+            hex(prng.read(32)),
+            "caba85c0c54deb3eb69db66f0d4c923fae83055c3bdedb730fe39d62402a3c06"
+        )
+    }
+
+    func testPRNGMatchesTheSpecificationForAnAllZeroSeed() {
+        // An all-zero seed expands to an all-zero state, and the generator
+        // is pure XOR — so it stays zero. Worth pinning because a decoder
+        // that seeded wrongly would produce noise here.
+        var prng = RVZPacking.PRNG(seed: [UInt8](repeating: 0, count: 68))
+        XCTAssertEqual(prng.read(32), [UInt8](repeating: 0, count: 32))
+    }
+
+    func testPRNGMatchesTheSpecificationForAnAllOnesSeed() {
+        var prng = RVZPacking.PRNG(seed: [UInt8](repeating: 0xFF, count: 68))
+        XCTAssertEqual(
+            hex(prng.read(32)),
+            "1fc3fb32fe9cbf62f0053ce4fe9c8f43600017c7fbe04f608c19330107defc80"
+        )
+    }
+
+    /// `forward` has to leave the generator exactly where reading and
+    /// discarding would.
+    func testForwardMatchesReadingAndDiscarding() {
+        let seed = Self.seed { UInt8(($0 * 7 + 3) % 256) }
+        var skipped = RVZPacking.PRNG(seed: seed)
+        skipped.forward(0x1234)
+        XCTAssertEqual(
+            hex(skipped.read(32)),
+            "5554af90ceaf1748f161854096897a6ee03c1413f94bc0405ab42d2c555bb9f8"
+        )
+        var read = RVZPacking.PRNG(seed: seed)
+        _ = read.read(0x1234)
+        var forwarded = RVZPacking.PRNG(seed: seed)
+        forwarded.forward(0x1234)
+        XCTAssertEqual(read.read(64), forwarded.read(64))
+    }
+
+    /// The state advances after every 521 words (2084 bytes), so a read that
+    /// straddles that boundary is where an off-by-one shows up.
+    func testPRNGCrossesItsCycleBoundary() {
+        var prng = RVZPacking.PRNG(seed: Self.seed { UInt8(($0 * 7 + 3) % 256) })
+        prng.forward(2084 - 5)
+        XCTAssertEqual(hex(prng.read(16)), "76f027e1cb76b7e87bebfc2a7a0d531e")
+    }
+
+    // MARK: - Offset-aware unpacking
+
+    /// A junk run does not start from the seed alone: the generator is first
+    /// advanced by the run's offset modulo 32 KiB. Two runs with the same
+    /// seed at different offsets therefore produce different bytes, which is
+    /// the whole reason the offset is threaded through the decoder.
+    func testUnpackPositionsTheGeneratorByTheRunsOffset() throws {
+        let seed = Self.seed { UInt8($0 &+ 1) }
+        let stream = RVZPacking.encode([.packed(size: 64, seed: seed)])
+
+        let atZero = try RVZPacking.unpack(stream, expandedSize: 64, dataOffset: 0)
+        let atBlock = try RVZPacking.unpack(stream, expandedSize: 64, dataOffset: 0x8000)
+        let offBlock = try RVZPacking.unpack(stream, expandedSize: 64, dataOffset: 0x100)
+
+        XCTAssertEqual(atZero, atBlock, "offsets a whole block apart are the same position")
+        XCTAssertNotEqual(atZero, offBlock, "an offset inside a block must shift the stream")
+
+        var expected = RVZPacking.PRNG(seed: seed)
+        expected.forward(0x100)
+        XCTAssertEqual(offBlock, expected.read(64))
+    }
+
+    func testUnpackMixesLiteralAndJunkSegmentsAndTracksTheOffset() throws {
+        let seed = Self.seed { UInt8($0 &* 3 &+ 5) }
+        let literal: [UInt8] = Array(repeating: 0xEE, count: 100)
+        let stream = RVZPacking.encode([
+            .literal(bytes: literal),
+            .packed(size: 50, seed: seed),
+        ])
+        let unpacked = try RVZPacking.unpack(stream, expandedSize: 150, dataOffset: 0x20)
+        XCTAssertEqual(Array(unpacked.prefix(100)), literal)
+        // The junk run begins 100 bytes after the stream's own start.
+        var expected = RVZPacking.PRNG(seed: seed)
+        expected.forward(0x20 + 100)
+        XCTAssertEqual(Array(unpacked.suffix(50)), expected.read(50))
+    }
+
+    /// A stream that expands to the wrong length means the group was
+    /// mis-framed, and every byte after it in the chunk would be misplaced.
+    func testUnpackRejectsAStreamOfTheWrongLength() {
+        let stream = RVZPacking.encode([.literal(bytes: [1, 2, 3, 4])])
+        XCTAssertThrowsError(try RVZPacking.unpack(stream, expandedSize: 5, dataOffset: 0))
+        XCTAssertThrowsError(try RVZPacking.unpack(stream, expandedSize: 3, dataOffset: 0))
+        XCTAssertNoThrow(try RVZPacking.unpack(stream, expandedSize: 4, dataOffset: 0))
+    }
+}

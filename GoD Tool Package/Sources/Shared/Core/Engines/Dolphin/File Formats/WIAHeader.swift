@@ -23,9 +23,16 @@ import GoDFoundation
 
 public struct WIAFileHeader: Equatable {
 
-    public static let magic: [UInt8] = [0x57, 0x49, 0x41, 0x01]  // "WIA\x01"
+    /// wit's magic, and the one Dolphin's own spec document names.
+    public static let wiaMagic: [UInt8] = [0x57, 0x49, 0x41, 0x01]  // "WIA\x01"
+    /// Dolphin writes this for the RVZ variant. Files in the wild carry it,
+    /// and it is inside the range `fileHeadHash` covers, so it has to be
+    /// kept rather than normalized to the WIA spelling.
+    public static let rvzMagic: [UInt8] = [0x52, 0x56, 0x5A, 0x01]  // "RVZ\x01"
     public static let fixedSize: Int = 0x48
 
+    /// The four magic bytes exactly as stored.
+    public var magic: [UInt8]
     public var version: UInt32
     public var versionCompatible: UInt32
     public var discSize: UInt32             // bytes of `wia_disc_t` that follow
@@ -35,6 +42,7 @@ public struct WIAFileHeader: Equatable {
     public var fileHeadHash: [UInt8]        // SHA-1 (20 bytes) over bytes [0x00..0x34)
 
     public init(
+        magic: [UInt8] = WIAFileHeader.wiaMagic,
         version: UInt32 = 0,
         versionCompatible: UInt32 = 0,
         discSize: UInt32 = 0,
@@ -43,6 +51,7 @@ public struct WIAFileHeader: Equatable {
         wiaFileSize: UInt64 = 0,
         fileHeadHash: [UInt8] = [UInt8](repeating: 0, count: 20)
     ) {
+        self.magic = magic
         self.version = version
         self.versionCompatible = versionCompatible
         self.discSize = discSize
@@ -58,9 +67,10 @@ public struct WIAFileHeader: Equatable {
             throw FileFormatErrors.invalid(format: "wia")
         }
         guard let magic = binary.read(atAddress: 0, length: 4)?.rawBytes,
-              magic == WIAFileHeader.magic else {
+              magic == WIAFileHeader.wiaMagic || magic == WIAFileHeader.rvzMagic else {
             throw FileFormatErrors.invalid(format: "wia")
         }
+        self.magic = magic
         self.version = binary.readSafely(atAddress: 0x04)
         self.versionCompatible = binary.readSafely(atAddress: 0x08)
         self.discSize = binary.readSafely(atAddress: 0x0C)
@@ -81,7 +91,8 @@ public struct WIAFileHeader: Equatable {
     /// filling them with the correct SHA-1 values before calling.
     public var binaryData: GoDData {
         let out = GoDData(byteOrder: .big)
-        for b in WIAFileHeader.magic { out.append(b) }
+        for b in magic.prefix(4) { out.append(b) }
+        for _ in magic.count..<4 { out.append(UInt8(0)) }
         out.append(version)
         out.append(versionCompatible)
         out.append(discSize)

@@ -246,8 +246,11 @@ repeat until end-of-stream:
 
 ### Junk PRNG
 
-A **Lagged Fibonacci Generator**, not the same PRNG as NKit's junk
-stream:
+A **Lagged Fibonacci Generator** — the same generator NKit's
+`JunkStream` reproduces, because both describe the same physical disc
+padding. Only the seeding differs: NKit derives the state from
+(game ID, disc number, block index), while RVZ carries the 68 bytes
+inline.
 
 - Parameters: `f = xor`, `j = 32`, `k = 521`
 - State: 521 × UInt32 ring buffer
@@ -255,9 +258,32 @@ stream:
   output)
 - Then one cycle produces 521 words (2084 bytes)
 
-The 68-byte seed is: first 17 state words initialised directly, rest
-derived by XOR recurrence (effectively the same expansion NKit uses,
-but with different seed source).
+The 68-byte seed initialises the first 17 state words directly; the
+remaining 504 come from `buffer[i] = (buffer[i-17] << 23) ^
+(buffer[i-16] >> 9) ^ buffer[i-1]`.
+
+Bytes come out of a word as `>> 24`, `>> 18`, `>> 8`, raw — note the
+18, not 16. That quirk can be folded into the state at initialization
+instead of applied at output, which is what the reference decoder
+does: the transform is a mask-and-shift, so it is linear over XOR and
+commutes with the generator's XOR-only advance step.
+
+### The seed alone does not position the generator
+
+Junk is generated per 32 KiB disc block, so before emitting a run the
+generator is advanced by `offset % 0x8000` bytes, where `offset` is
+where the run's first byte lands:
+
+- for a `wia_raw_data_t`, relative to the start of the disc;
+- for a `wia_part_t`, relative to the start of that partition's
+  data — with the hashes **not** counted, yet the modulus still 32 KiB
+  rather than 31.
+
+The offset advances by every byte the packing stream produces,
+literal segments included, not just by the junk runs. A decoder that
+seeds from the 68 bytes and starts emitting reproduces only the runs
+that happen to begin on a 32 KiB boundary; everything else comes out
+as plausible-looking noise that is not the disc's.
 
 ### Note
 
