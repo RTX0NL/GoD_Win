@@ -101,7 +101,7 @@ public extension GeniusSonorityEngine {
         /// the honest artifact is the bytes, not a silently-missing file.
         func noteFallback(_ entry: FSYSArchive.Entry, _ reason: String) {
             warnings.append(
-                "\(archiveName): entry '\(entry.metadata.name).\(entry.metadata.fileType)' "
+                "\(archiveName): entry '\(entry.metadata.name).\(entry.metadata.fileExtension)' "
                 + "\(reason) — extracted as raw bytes."
             )
         }
@@ -145,7 +145,10 @@ public extension GeniusSonorityEngine {
         }
 
         for (entryIndex, entry) in archive.entries.enumerated() {
-            let fileType = entry.metadata.fileType
+            // `fileExtension` rather than the optional type: neither game's
+            // `fileTypeFolders` maps "bin" anywhere but the default folder, so
+            // a nil-typed entry routes exactly where it did before.
+            let fileType = entry.metadata.fileExtension
 
             var targetFolder = self.resolveFolder(
                 forFileType: fileType,
@@ -651,7 +654,7 @@ public extension GeniusSonorityEngine {
             )
             return [FSYSArchive.Entry(
                 metadata: registryEntry.metadata,
-                filename: registryEntry.metadata.name + "." + registryEntry.metadata.fileType,
+                filename: registryEntry.metadata.name + "." + registryEntry.metadata.fileExtension,
                 data: bytes
             )]
         }
@@ -666,12 +669,12 @@ public extension GeniusSonorityEngine {
             return [
                 FSYSArchive.Entry(
                     metadata: registryEntry.metadata,
-                    filename: registryEntry.metadata.name + "." + registryEntry.metadata.fileType,
+                    filename: registryEntry.metadata.name + "." + registryEntry.metadata.fileExtension,
                     data: thh
                 ),
                 FSYSArchive.Entry(
                     metadata: thdMetadata,
-                    filename: thdMetadata.name + "." + thdMetadata.fileType,
+                    filename: thdMetadata.name + "." + thdMetadata.fileExtension,
                     data: thd
                 )
             ]
@@ -706,7 +709,7 @@ public extension GeniusSonorityEngine {
                 entryData = gtxData
             }
         }
-        let filename = registryEntry.metadata.name + "." + registryEntry.metadata.fileType
+        let filename = registryEntry.metadata.name + "." + registryEntry.metadata.fileExtension
         return [
             FSYSArchive.Entry(
                 metadata: registryEntry.metadata,

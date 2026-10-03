@@ -40,13 +40,14 @@ final class PBRDeckStructTests: XCTestCase {
 
         var checked = 0
         for entry in archive.entries {
-            guard let structName = structForType[entry.metadata.fileType] else { continue }
+            guard let fileType = entry.metadata.fileType,
+                  let structName = structForType[fileType] else { continue }
             let stride = try engine.getStruct(structName).length
             let data = entry.data
             data.setByteOrder(.big)
             let count = Int(data.readSafely(atAddress: 0x08) as UInt32)
             XCTAssertEqual(0x10 + count * stride, data.length,
-                           "\(entry.metadata.fileType) (\(structName), stride \(stride)) tiles \(count) entries")
+                           "\(fileType) (\(structName), stride \(stride)) tiles \(count) entries")
             checked += 1
         }
         XCTAssertGreaterThan(checked, 0, "found deck entries to check")

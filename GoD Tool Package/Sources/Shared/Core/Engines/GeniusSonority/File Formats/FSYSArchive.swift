@@ -36,8 +36,23 @@ public final class FSYSArchive {
     
     public struct Entry {
         public struct MetaData: Codable {
+            /// Extension used on disk for an entry whose stored type the
+            /// engine's `FileTypes` enum doesn't name. FSYS types are even and
+            /// the first named one is 2 in both namespaces, so a stored 0 means
+            /// "no type" rather than a type the enum is missing — all six
+            /// GameCube discs and both PBR builds that carry such entries carry
+            /// only 0 (Colosseum 22 per disc, XD 3, PBR US 19 / PAL 23).
+            public static let defaultFileExtension = "bin"
+
             public let name: String
-            public let fileType: String
+            /// The entry's file type as the engine's `FileTypes` enum names it,
+            /// or nil when the archive stores a value the enum doesn't name.
+            /// Nil is the semantic "no type" and is written back as index 0, so
+            /// it round-trips exactly; the repack reads the type from here and
+            /// never from the filename, which is what lets a nil-typed entry
+            /// share the `.bin` suffix on disk with the genuine `bin` type
+            /// (0x34 in Colo/XD, 0x02 in PBR) without the two being confused.
+            public let fileType: String?
             public let identifier: Int
             public let compress: Bool
             public let includesFullFilename: Bool?
@@ -50,9 +65,14 @@ public final class FSYSArchive {
             /// this field existed) when it wasn't captured.
             public let fullFilename: String?
 
+            /// The suffix this entry takes in the project filesystem: its type
+            /// name, or `bin` when it has none. Derived rather than stored so a
+            /// registry can't disagree with the file beside it.
+            public var fileExtension: String { fileType ?? Self.defaultFileExtension }
+
             public init(
                 name: String,
-                fileType: String,
+                fileType: String?,
                 identifier: Int,
                 compress: Bool,
                 includesFullFilename: Bool?,
@@ -126,7 +146,14 @@ public final class FSYSArchive {
         self.entries = try fileMetaDataList.map { metaData in
             guard let metaData else { throw FileFormatErrors.invalid(format: Self.formatName) }
             
-            let fileType: Enum.Case? = metaData.file_type
+            // `file_type` resolves through an `allowUnknownCases` enum, so an
+            // unnamed raw value comes back as a synthesized `FileTypes_<raw>`
+            // case rather than nil. Keep only a case the enum actually
+            // declares: anything else is "no type" and is modelled as nil.
+            let storedFileType: Enum.Case? = metaData.file_type
+            let namedFileType: Enum.Case? = storedFileType.flatMap { stored in
+                engine.fileTypesEnum.values.first { $0.rawValue == stored.rawValue }
+            }
             let identifier: Int = try metaData.identifier
             
             let fileNameOffset: Int = try metaData.filename_pointer
@@ -160,11 +187,11 @@ public final class FSYSArchive {
                 fileName = name
             } else {
                 let fileTypeReplacements = engine.data.fsys.fileTypeReplacements
-                var fileTypeName = fileType?.name ?? ""
+                var fileTypeName = namedFileType?.name ?? Entry.MetaData.defaultFileExtension
                 if let replacement = fileTypeReplacements[fileTypeName] {
                     fileTypeName = replacement
                 }
-                let fileExtension = fileType != nil ? "." + fileTypeName : ""
+                let fileExtension = "." + fileTypeName
                 
                  if engine.data.fsys.fileExtensionSuffixes.contains(where: { entryName.endsWith("_" + $0) }) {
                     var nameParts = entryName.split(separator: "_")
@@ -200,7 +227,9 @@ public final class FSYSArchive {
             return Entry(
                 metadata: Entry.MetaData(
                     name: entryName,
-                    fileType: fileType?.name ?? "", // make sure to use actual unique file type, not the displayed file type
+                    // The declared case name, not the displayed one — and nil
+                    // rather than a synthesized name when the type is unnamed.
+                    fileType: namedFileType?.name,
                     identifier: identifier,
                     compress: isCompressed,
                     includesFullFilename: fullFilenameOffset != 0,
@@ -313,12 +342,18 @@ public final class FSYSArchive {
             let currentEntryAddress = result.length
             let metaData = StructData(definition: entryMetadataStruct, byteOrder: .big)
             metaData.identifier = entry.metadata.identifier
-            // Route the file type through the throwing setter: an entry whose
-            // type isn't in the engine's `FileTypes` enum used to be written
-            // as type 0 with no complaint, silently corrupting the repack.
-            try metaData.setEnumCase("file_type", named: entry.metadata.fileType)
-            let fileTypeCase = try fileTypesEnum.get(entry.metadata.fileType)
-            metaData.file_type_index = fileTypeCase.rawValue / 2
+            // Route a named file type through the throwing setter: an entry
+            // whose type isn't in the engine's `FileTypes` enum used to be
+            // written as type 0 with no complaint, silently corrupting the
+            // repack. A nil type is the one case where 0 is correct — it is
+            // what the archive stored — so it is written explicitly.
+            if let fileTypeName = entry.metadata.fileType {
+                try metaData.setEnumCase("file_type", named: fileTypeName)
+                metaData.file_type_index = try fileTypesEnum.get(fileTypeName).rawValue / 2
+            } else {
+                metaData.set("file_type", to: nil as Enum.Case?)
+                metaData.file_type_index = 0
+            }
             metaData.data_address = currentEntryAddress
             metaData.flags = entry.metadata.compress ? 0x80000000 : 0
             metaData.full_filename_pointer = fullNameOffsets[entryIndex]

@@ -190,7 +190,8 @@ extension PBROps {
         if let deckRegistry: FSYSRegistry = try? fileSystem.decodeJSON(from: deckRegistryFile) {
             var deckEntries = [FSYSRegistry.Entry]()
             for entry in deckRegistry.entries {
-                guard let deck = pbrEngine.deckTable(forType: entry.metadata.fileType),
+                guard let fileType = entry.metadata.fileType,
+                      let deck = pbrEngine.deckTable(forType: fileType),
                       let binData = fileSystem.readFile(at: unpackedFolder.file(entry.file.path))?.allData else {
                     deckEntries.append(entry)
                     continue

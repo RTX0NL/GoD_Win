@@ -61,7 +61,7 @@ extension ColoXD {
                 var registryEntries = [FSYSRegistry.Entry]()
                 for entry in archive.entries {
                     let targetFolder = gsEngine.resolveFolder(
-                        forFileType: entry.metadata.fileType,
+                        forFileType: entry.metadata.fileExtension,
                         entryFilename: entry.filename,
                         archiveName: archiveName
                     ).resolvedFolder

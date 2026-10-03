@@ -47,9 +47,9 @@ extension Project {
         // the entry index on collision.
         var usedNames = Set<String>()
         for (index, entry) in archive.entries.enumerated() {
-            var outputName = "\(entry.metadata.name).\(entry.metadata.fileType)"
+            var outputName = "\(entry.metadata.name).\(entry.metadata.fileExtension)"
             if usedNames.contains(outputName) {
-                outputName = "\(entry.metadata.name)_\(index).\(entry.metadata.fileType)"
+                outputName = "\(entry.metadata.name)_\(index).\(entry.metadata.fileExtension)"
             }
             usedNames.insert(outputName)
             try fileSystem.writeFile(entry.data, at: outputFolder.file(outputName), overwrite: true)

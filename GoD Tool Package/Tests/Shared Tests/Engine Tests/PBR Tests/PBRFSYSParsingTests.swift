@@ -50,9 +50,12 @@ final class PBRFSYSParsingTests: XCTestCase {
 
         XCTAssertEqual(archive.entries.count, 93, "common.fsys entry count")
 
+        // An entry whose stored type the enum doesn't name has a nil `fileType`;
+        // bucket those under a sentinel so the histogram still accounts for them.
+        let untyped = "(none)"
         var typeCounts = [String: Int]()
         for entry in archive.entries {
-            typeCounts[entry.metadata.fileType, default: 0] += 1
+            typeCounts[entry.metadata.fileType ?? untyped, default: 0] += 1
             // Every PBR entry stores the literal placeholder rather than a name.
             XCTAssertEqual(entry.metadata.name, "(null)", "entry name is the scrubbed placeholder")
         }
@@ -61,9 +64,15 @@ final class PBRFSYSParsingTests: XCTestCase {
         XCTAssertEqual(typeCounts["gtx"], 56, "0x0C textures")
         XCTAssertEqual(typeCounts["scd"], 1, "0x12 script")
         XCTAssertEqual(typeCounts["fnt"], 1, "0x16 font")
-        // 0x00 isn't a named PBR type; with allowUnknownCases it round-trips as
-        // FileTypes_0 rather than throwing or collapsing to type 0.
-        XCTAssertEqual(typeCounts["FileTypes_0"], 2, "0x00 unnamed type round-trips")
+        // 0x00 is no named type at all, so it reads back as nil rather than a
+        // synthesized `FileTypes_0`. These 2 sit beside the 33 `bin` above, and
+        // both dump with a `.bin` suffix — the type is recovered from the
+        // registry, never the filename, so sharing the suffix is safe while
+        // sharing an enum case name would not be.
+        XCTAssertEqual(typeCounts[untyped], 2, "0x00 reads back as no type")
+        XCTAssertEqual(archive.entries.filter { $0.metadata.fileType == nil }
+                        .allSatisfy { $0.metadata.fileExtension == "bin" }, true,
+                       "an untyped entry falls back to the .bin extension")
 
         // Payloads decompress to non-empty data (LZSS through the shared path).
         for entry in archive.entries {
@@ -100,7 +109,7 @@ final class PBRFSYSParsingTests: XCTestCase {
         for name in urls {
             let a = try XCTUnwrap(try archive(name, in: folder, engine: engine),
                                   "failed to read \(name)")
-            a.entries.forEach { typeNames.insert($0.metadata.fileType) }
+            a.entries.forEach { if let t = $0.metadata.fileType { typeNames.insert(t) } }
             parsed += 1
         }
 
