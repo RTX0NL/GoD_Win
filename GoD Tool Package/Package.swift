@@ -24,10 +24,6 @@ let package = Package(
             targets: ["GoD Tool UI"]
         ),
         .executable(
-            name: "GoD Tool CLI",
-            targets: ["GoD Tool CLI"]
-        ),
-        .executable(
             name: "Discord Plays Orre",
             targets: ["Discord Plays Orre"]
         ),
@@ -90,17 +86,6 @@ let package = Package(
             path: "Sources/Products/GoD Tool UI"
         ),
         .executableTarget(
-            name: "GoD Tool CLI",
-            dependencies: [
-                "GoDFoundation",
-                "GoDEngine",
-                "GameCube",
-                "GoDCLI",
-                "Persistence"
-            ],
-            path: "Sources/Products/GoD Tool CLI"
-        ),
-        .executableTarget(
             name: "Discord Plays Orre",
             dependencies: [
             ],
@@ -147,14 +132,6 @@ let package = Package(
 //                .product(name: "TokamakShim", package: "Tokamak")
             ],
             path: "Sources/Shared/Core/Contexts/GUI"
-        ),
-        .target(
-            name: "GoDCLI",
-            dependencies: [
-                "GoDFoundation",
-                "Persistence"
-            ],
-            path: "Sources/Shared/Core/Contexts/CLI"
         ),
         
         // MARK: - Core Library Engine Targets
