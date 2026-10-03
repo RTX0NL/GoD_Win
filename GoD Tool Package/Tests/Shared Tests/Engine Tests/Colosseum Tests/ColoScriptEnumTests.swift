@@ -99,6 +99,14 @@ final class ColoScriptEnumTests: XCTestCase {
             try compiled("characterEndSpeech(GroupID.protagonists, ResourceID.rui)"),
             try compiled("characterEndSpeech(0, 101)")
         )
+        // `cameraPresetFromFile` takes the same group space even though its
+        // `(groupID, fileID)` shape reads like FSYS archive addressing — the
+        // one typing here that needed the project owner to confirm rather
+        // than being derivable from the signature.
+        XCTAssertEqual(
+            try compiled("cameraPresetFromFile(GroupID.protagonists, 3, true, false)"),
+            try compiled("cameraPresetFromFile(0, 3, true, false)")
+        )
     }
 
     /// text -> binary -> text: the bytes the enum spelling compiles to render

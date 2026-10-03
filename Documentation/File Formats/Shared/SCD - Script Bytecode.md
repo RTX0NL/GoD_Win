@@ -263,8 +263,19 @@ instructions, label fixup) → `ColoScriptAssembler` (binary writer).
 `ColoScriptSourceEmitter` (dialect text, Swift or Python flavour) ⇄
 `ColoScriptTextParser` + `ColoScriptCompiler`. **All round-trip stages —
 including full binary → source text → compile → binary in BOTH dialects —
-are byte-exact on the entire 142-file US corpus** (`ColoScriptDecomp --roundtrip`,
-`ColoScriptRoundTripTests`).
+are byte-exact on the entire 142-file US corpus**
+(`ColoScriptRoundTripTests.testCorpusRoundTripAllStages`, which checks every
+stage per script and skips when the corpus is absent).
+
+The decompiler has no CLI of its own. It is reached through the
+`dumpColoScripts` / `dumpColoScript` operations (and `buildColoScripts` /
+`buildColoScript` on the way back), so it reports through the project's
+logger like every other operation rather than printing. A
+`ColoScriptDecomp` harness used to carry a second copy of the same pipeline
+plus some one-off analysis modes (opcode listings, variable/global/builtin
+censuses); its findings are in this document and in
+`Documentation/File Formats/Colosseum/Script Builtin Functions.md`, and it
+is gone.
 
 Dialect rules that make the text lossless:
 - Reserved constants `__scriptType`, `__compilerMetadata`; flat typed global
@@ -280,6 +291,28 @@ Dialect rules that make the text lossless:
   `else:` / `pass`, `and`/`or`/`not`, `True`/`False`, `# comments`,
   module-level `__SCRIPT_TYPE__`-style constants and bare `gvarN = 0`
   declarations; everything else is shared with the Swift flavour.
+- Python flavour, built-in calls: each argument is a **keyword argument**
+  naming the parameter the signature gives that position —
+  `dialogDisplaySilentMessage(msgID=7, unk1=True, unk2=False)`,
+  `getDNASampleSpecies(sampleID=1)`. Swift leaves them positional. Both
+  compile to the same bytecode, so this is a spelling and not a format.
+  Three positions carry no label and cannot: a `dup(x, n)` run, which fills
+  several parameter slots from one read; an argument past the signature's
+  declared parameters; and `printf` or computed-ID `builtin[...]` calls,
+  which have no signature to read names from. So a label is written where
+  one exists and is never required on the way back in — but one that *is*
+  written and disagrees with the signature's name for that position is an
+  error, because a label exists to say which parameter is being set. Labels
+  are positional documentation; reordering them the way Python allows is
+  not supported.
+- Enum-typed arguments: a parameter the engine declares as an `.enumRef` is
+  written `EnumName.case` (`soundPlayPokemonCry(pokemon=PokemonSpecies.PIKACHU)`)
+  and read back through the same enum, resolved across the operation's
+  `engines` list in order. A raw value the enum doesn't name falls back to
+  the integer rather than a synthesized name, and an enum name no engine
+  declares is an error. Free at the byte level: a literal variable wrap
+  carries no push of its own, so the enum spelling and the integer spelling
+  lower identically.
 - Computed arena access via `globals[expr]` / `globalsF[expr]` /
   `globalsO[expr]` / `locals[expr]` (accessor spells the access mask);
   `&` marks pushVar-form reads; `dup(x, n)` is a count-n pushMultiVar.

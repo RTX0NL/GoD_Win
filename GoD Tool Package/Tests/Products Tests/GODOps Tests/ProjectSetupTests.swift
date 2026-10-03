@@ -349,6 +349,89 @@ final class ProjectSetupTests: XCTestCase {
         XCTAssertEqual(Project.versionStampFileName, "Version.txt")
     }
 
+    // MARK: - Colosseum scripts
+
+    /// The chained step ships disabled like every other asset step, but it has
+    /// to *be there*: before this, the generated config knew nothing about
+    /// scripts, and the only thing that ran them was the audit driver
+    /// injecting the operation itself.
+    func testColosseumDumpConfigCarriesADisabledScriptStep() throws {
+        let (fst, project) = try runSetup(gameID: PokemonColosseum.gameIDUS)
+        let dump = try decodeConfig(project.folder("Config").file("Dump-Config.json"), in: fst)
+        let steps = dump.operations.compactMap { entry -> ColoXD.DumpConfig.Operations? in
+            guard case let .coloXDDump(config) = entry.operation else { return nil }
+            return config.operations.first(where: {
+                if case .dumpColoScripts = $0.operation { return true }
+                return false
+            })?.operation
+        }
+        guard case let .dumpColoScripts(scriptsFolder, outputFolder, _, language, _, _) = steps.first else {
+            return XCTFail("Expected a dumpColoScripts step, got \(dump.operations.count) operations")
+        }
+        XCTAssertEqual(scriptsFolder, Folder("./Build/Unpacked/Assets/Scripts"))
+        XCTAssertEqual(outputFolder, Folder("./Source/Scripts"))
+        XCTAssertEqual(language, .python)
+    }
+
+    func testColosseumBuildConfigCarriesADisabledScriptStep() throws {
+        let (fst, project) = try runSetup(gameID: PokemonColosseum.gameIDUS)
+        let build = try decodeConfig(project.folder("Config").file("Build-Config.json"), in: fst)
+        let steps = build.operations.compactMap { entry -> ColoXD.BuildConfig.Operations? in
+            guard case let .coloXDBuild(config) = entry.operation else { return nil }
+            return config.operations.first(where: {
+                if case .buildColoScripts = $0.operation { return true }
+                return false
+            })?.operation
+        }
+        guard case let .buildColoScripts(sourceFolder, outputFolder, _, _, _) = steps.first else {
+            return XCTFail("Expected a buildColoScripts step")
+        }
+        XCTAssertEqual(sourceFolder, Folder("./Source/Scripts"))
+        // Back over the unpacked `.scd` files, which is where the FSYS packer
+        // reads them from — writing anywhere else rebuilds nothing.
+        XCTAssertEqual(outputFolder, Folder("./Build/Unpacked/Assets/Scripts"))
+    }
+
+    /// XD's dialect has a parser and an opcode table but no compiler, so an XD
+    /// project gets no script step rather than one that throws on every file.
+    func testXDProjectHasNoScriptSteps() throws {
+        let (fst, project) = try runSetup(gameID: PokemonXD.gameIDUS)
+        let dump = try decodeConfig(project.folder("Config").file("Dump-Config.json"), in: fst)
+        for entry in dump.operations {
+            guard case let .coloXDDump(config) = entry.operation else { continue }
+            for step in config.operations {
+                if case .dumpColoScripts = step.operation {
+                    XCTFail("XD project should not carry a Colosseum script step")
+                }
+            }
+        }
+        XCTAssertNil(fst.inspectFile(at: project.folder("Config").file("Dump-Scripts-Config.json")))
+    }
+
+    /// The standalone configs are the runnable half: enabled, overwriting, and
+    /// each with a launcher of its own.
+    func testColosseumProjectShipsStandaloneScriptConfigs() throws {
+        let (fst, project) = try runSetup(gameID: PokemonColosseum.gameIDUS)
+
+        let dump = try decodeConfig(project.folder("Config").file("Dump-Scripts-Config.json"), in: fst)
+        guard case let .coloXDDump(dumpInner) = dump.operations.first?.operation,
+              case let .dumpColoScripts(_, _, overwrite, language, _, _)
+                = dumpInner.operations.enabledEntries.first else {
+            return XCTFail("Expected an enabled dumpColoScripts")
+        }
+        XCTAssertTrue(overwrite, "re-running the dump alone is the point of this config")
+        XCTAssertEqual(language, .python)
+
+        let build = try decodeConfig(project.folder("Config").file("Build-Scripts-Config.json"), in: fst)
+        guard case let .coloXDBuild(buildInner) = build.operations.first?.operation,
+              case .buildColoScripts = buildInner.operations.enabledEntries.first else {
+            return XCTFail("Expected an enabled buildColoScripts")
+        }
+
+        XCTAssertNotNil(fst.inspectFile(at: project.folder("Scripts").file("Dump-Scripts.sh")))
+        XCTAssertNotNil(fst.inspectFile(at: project.folder("Scripts").file("Build-Scripts.sh")))
+    }
+
     func testLauncherScriptsAreWrittenForBothConfigs() throws {
         let (fst, project) = try runSetup(gameID: PokemonXD.gameIDUS)
         XCTAssertNotNil(fst.inspectFile(at: project.folder("Scripts").file("Dump.sh")))

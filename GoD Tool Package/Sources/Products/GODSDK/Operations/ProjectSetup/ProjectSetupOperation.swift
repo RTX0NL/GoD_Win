@@ -224,9 +224,15 @@ enum Project {
             return folders
         }()
 
-        // Build config generation
         let buildConfig: GoddessConfig
         let dumpConfig: GoddessConfig
+        // Configs for one job rather than the whole pipeline, written beside
+        // `Dump-Config.json` and given a launcher of their own. A step in the
+        // main chain ships disabled like every other asset step, so there has
+        // to be something a user can run without first editing a 40-operation
+        // config — and re-running one format alone is the normal case while
+        // editing it.
+        var standaloneConfigs: [(file: File, config: GoddessConfig)] = []
 
         if isWii {
             let wiiEngine = try WiiEngine.defaults()
@@ -511,6 +517,13 @@ enum Project {
             let messagesFolder = unpackedFolder.folder("Data").folder("Text").folder("Messages")
             // Editable per-MSG JSON files.
             let messagesSourceFolder = sourceFolder.folder("Text").folder("Messages")
+            // FSYS unpack puts raw .scd files here, Colosseum's battlefield
+            // scripts in a `Battlefields/` subfolder under it. Both batch
+            // operations mirror relative folders, so that nesting survives
+            // the round trip.
+            let scriptsFolder = unpackedFolder.folder("Assets").folder("Scripts")
+            // Decompiled script source, one file per `.scd`.
+            let scriptsSourceFolder = sourceFolder.folder("Scripts")
             // FSYS unpack puts raw .atx files under /Unpacked/Assets/Images/Misc.
             let atxFolder = unpackedFolder.folder("Assets").folder("Images").folder("Misc")
             // Per-ATX project subfolders (each with `<name>.atx.json` + frame PNGs).
@@ -557,6 +570,20 @@ enum Project {
                     overwrite: true
                 ), enabled: .no),
             ]
+            // Only Colosseum: XD's `.scd` dialect has a parser and an opcode
+            // table but no emitter, compiler or operation yet, so an XD
+            // project gets no script step rather than one that always throws.
+            .conditionalAppend(
+                profile?.family == .colosseum,
+                contents: [
+                    OperationConfig(operation: .buildColoScripts(
+                        sourceFolder: scriptsSourceFolder.prefixed("."),
+                        outputFolder: scriptsFolder.prefixed("."),
+                        overwrite: true,
+                        gameEngine: gameEngineFolder.prefixed(".")
+                    ), enabled: .no),
+                ]
+            )
 
             let assetDumpSteps: [OperationConfig<ColoXD.DumpConfig.Operations>] = [
                 OperationConfig(operation: .dumpFlashMenus(
@@ -581,6 +608,67 @@ enum Project {
                     overwrite: false
                 ), enabled: .no),
             ]
+            .conditionalAppend(
+                profile?.family == .colosseum,
+                contents: [
+                    OperationConfig(operation: .dumpColoScripts(
+                        scriptsFolder: scriptsFolder.prefixed("."),
+                        outputFolder: scriptsSourceFolder.prefixed("."),
+                        overwrite: false,
+                        language: .python,
+                        gameEngine: gameEngineFolder.prefixed(".")
+                    ), enabled: .no),
+                ]
+            )
+
+            if profile?.family == .colosseum {
+                // The same two operations as the chained steps, enabled —
+                // a standalone config whose only operation ships disabled
+                // would do nothing when run.
+                standaloneConfigs.append((
+                    configFolder.file("Dump-Scripts-Config.json"),
+                    GoddessConfig(
+                        name: "Dump Colosseum scripts",
+                        description: "Decompile every .scd in the unpacked disc to Python source",
+                        settingsFile: settingsFile.prefixed("."),
+                        rootFolder: "..",
+                        operations: [OperationConfig(
+                            operation: .coloXDDump(config: ColoXD.DumpConfig(operations: [
+                                OperationConfig(operation: .dumpColoScripts(
+                                    scriptsFolder: scriptsFolder.prefixed("."),
+                                    outputFolder: scriptsSourceFolder.prefixed("."),
+                                    // Overwriting is the point of re-running
+                                    // this one on its own.
+                                    overwrite: true,
+                                    language: .python,
+                                    gameEngine: gameEngineFolder.prefixed(".")
+                                ), enabled: .yes)
+                            ])),
+                            enabled: .yes
+                        )]
+                    )
+                ))
+                standaloneConfigs.append((
+                    configFolder.file("Build-Scripts-Config.json"),
+                    GoddessConfig(
+                        name: "Build Colosseum scripts",
+                        description: "Compile script source back to the .scd files the FSYS pack reads",
+                        settingsFile: settingsFile.prefixed("."),
+                        rootFolder: "..",
+                        operations: [OperationConfig(
+                            operation: .coloXDBuild(config: ColoXD.BuildConfig(operations: [
+                                OperationConfig(operation: .buildColoScripts(
+                                    sourceFolder: scriptsSourceFolder.prefixed("."),
+                                    outputFolder: scriptsFolder.prefixed("."),
+                                    overwrite: true,
+                                    gameEngine: gameEngineFolder.prefixed(".")
+                                ), enabled: .yes)
+                            ])),
+                            enabled: .yes
+                        )]
+                    )
+                ))
+            }
 
             // One chain for every Genius Sonority GameCube game. The two
             // blocks this replaces were identical apart from the FSYS
@@ -884,6 +972,10 @@ enum Project {
         let dumpConfigFile = configFolder.file("Dump-Config.json")
         try projectFileSystem.encodeJSON(dumpConfig, to: dumpConfigFile, overwrite: false)
 
+        for standalone in standaloneConfigs {
+            try projectFileSystem.encodeJSON(standalone.config, to: standalone.file, overwrite: false)
+        }
+
         let projectFolder = Folder(isoInputFile.path.withoutExtensions + " project")
         try fileSystem.createFolder(at: projectFolder, overwrite: false)
         try fileSystem.importFST(projectFileSystem, from: Folder("/"), to: projectFolder, overwrite: false)
@@ -900,7 +992,7 @@ enum Project {
         )
 
         try LauncherScript.write(
-            for: [buildConfigFile, dumpConfigFile],
+            for: [buildConfigFile, dumpConfigFile] + standaloneConfigs.map(\.file),
             in: projectFolder,
             fileSystem: fileSystem
         )

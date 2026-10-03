@@ -21,11 +21,29 @@ Everything else is layered evidence:
 - **Return types**: a function returns Int when the corpus consumes its result
   (usage is all-or-nothing per function) or the legacy tool declares it.
   `Void` results are never consumed by any script.
-- Types are deliberately limited to Int / Float / Bool / String so modded
-  games remain expressible; semantic ID spaces (message IDs, flag IDs, battle
-  IDs, ...) are the modder's concern. Observed ID ranges live in the census
-  data, summarized in `SCD - Script Bytecode.md`. (No native builtin takes a
+- Primitive types are Int / Float / Bool / String. (No native builtin takes a
   String — strings only appear as relocated `printf` format pointers.)
+  Observed ID ranges live in the census data, summarized in
+  `SCD - Script Bytecode.md`.
+- **28 parameters additionally declare an enum**, written in script source as
+  `EnumName.case`. Modded games stay expressible because a value the enum
+  doesn't name falls back to the integer, and both spellings compile to the
+  same bytecode — so declaring an enum costs nothing and is reversible.
+  The whole table has been audited against the 42 enums the Colosseum engine
+  reaches; what is typed, and why nothing else is, lives next to the
+  declarations in `Colosseum/Constants/Data.swift`. In short: every
+  `groupID` / `resourceID` / `targetGID` / `targetRID` / `argGID` / `argRID`
+  on the 21 named `character*` builtins, `cameraPresetFromFile`'s `groupID`
+  (42) — the same group space, despite the `(groupID, fileID)` shape reading
+  like FSYS archive addressing — plus `transitionBegin`'s `transitionID` (28),
+  `playerReceiveItem`'s `itemID` (119) and `soundPlayPokemonCry`'s `pokemon`
+  (218). The remaining semantic ID spaces
+  (message IDs, flag IDs, battle IDs, room IDs, ...) have no enum declared
+  anywhere and stay the modder's concern until one exists.
+- Return types stay primitive: the formatter abstracts arguments only, so an
+  enum return would read as live typing and change nothing.
+  `getDNASampleSpecies` (205) and `playerGetCouponsLastArea` (239) are the
+  two that would benefit if return abstraction is ever added.
 
 Call counts are across the 142 US map scripts.
 

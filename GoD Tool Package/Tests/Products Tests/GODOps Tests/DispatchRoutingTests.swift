@@ -209,6 +209,87 @@ final class DispatchRoutingTests: XCTestCase {
         XCTAssertTrue(overwrite)
     }
 
+    func testColoScriptDumpRouting() throws {
+        let spy = try route("""
+        { "coloXDDump": { "config": { "operations": [ { "operation": { "dumpColoScripts": {
+            "scriptsFolder": "/project/Unpacked/Assets/Scripts",
+            "outputFolder": "/project/Source/Scripts",
+            "overwrite": false,
+            "language": "python",
+            "gameEngine": "/project/Engines/Colosseum Engine",
+            "engines": [
+                "/project/Engines/Colosseum Engine",
+                "/project/Engines/Pokemon Engine"
+            ]
+        } }, "enabled": "YES" } ] } } }
+        """)
+        guard case let .coloXDDump(config) = try singleOperation(spy) else {
+            return XCTFail("Expected coloXDDump")
+        }
+        guard case let .dumpColoScripts(scriptsFolder, outputFolder, overwrite, language, gameEngine, engines)
+            = config.operations.enabledEntries.first else {
+            return XCTFail("Expected dumpColoScripts")
+        }
+        XCTAssertEqual(scriptsFolder, Folder("/project/Unpacked/Assets/Scripts"))
+        XCTAssertEqual(outputFolder, Folder("/project/Source/Scripts"))
+        XCTAssertFalse(overwrite)
+        XCTAssertEqual(language, .python)
+        XCTAssertEqual(gameEngine, Folder("/project/Engines/Colosseum Engine"))
+        // Order is the resolution order, so it has to survive decoding.
+        XCTAssertEqual(engines, [
+            Folder("/project/Engines/Colosseum Engine"),
+            Folder("/project/Engines/Pokemon Engine"),
+        ])
+    }
+
+    /// `engines` is optional, and a config written without it still routes —
+    /// the operation then resolves enums through `gameEngine` alone.
+    func testColoScriptDumpRoutingWithoutEngines() throws {
+        let spy = try route("""
+        { "coloXDDump": { "config": { "operations": [ { "operation": { "dumpColoScript": {
+            "scdFile": "/project/Unpacked/Assets/Scripts/M1_out_1.scd",
+            "outputFolder": "/project/Source/Scripts",
+            "overwrite": true,
+            "language": "swift",
+            "gameEngine": "/project/Engines/Colosseum Engine"
+        } }, "enabled": "YES" } ] } } }
+        """)
+        guard case let .coloXDDump(config) = try singleOperation(spy) else {
+            return XCTFail("Expected coloXDDump")
+        }
+        guard case let .dumpColoScript(scdFile, _, _, language, _, engines)
+            = config.operations.enabledEntries.first else {
+            return XCTFail("Expected dumpColoScript")
+        }
+        XCTAssertEqual(scdFile, File("/project/Unpacked/Assets/Scripts/M1_out_1.scd"))
+        XCTAssertEqual(language, .swift)
+        XCTAssertNil(engines)
+    }
+
+    func testColoScriptBuildRouting() throws {
+        let spy = try route("""
+        { "coloXDBuild": { "config": { "operations": [ { "operation": { "buildColoScripts": {
+            "sourceFolder": "/project/Source/Scripts",
+            "outputFolder": "/project/Unpacked/Assets/Scripts",
+            "overwrite": true,
+            "gameEngine": "/project/Engines/Colosseum Engine",
+            "engines": [ "/project/Engines/Colosseum Engine" ]
+        } }, "enabled": "YES" } ] } } }
+        """)
+        guard case let .coloXDBuild(config) = try singleOperation(spy) else {
+            return XCTFail("Expected coloXDBuild")
+        }
+        guard case let .buildColoScripts(sourceFolder, outputFolder, overwrite, gameEngine, engines)
+            = config.operations.enabledEntries.first else {
+            return XCTFail("Expected buildColoScripts")
+        }
+        XCTAssertEqual(sourceFolder, Folder("/project/Source/Scripts"))
+        XCTAssertEqual(outputFolder, Folder("/project/Unpacked/Assets/Scripts"))
+        XCTAssertTrue(overwrite)
+        XCTAssertEqual(gameEngine, Folder("/project/Engines/Colosseum Engine"))
+        XCTAssertEqual(engines, [Folder("/project/Engines/Colosseum Engine")])
+    }
+
     // MARK: - PBR
 
     func testPBRDumpRouting() throws {

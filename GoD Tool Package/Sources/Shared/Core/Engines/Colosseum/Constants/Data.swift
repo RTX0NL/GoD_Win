@@ -131,12 +131,10 @@ public extension ColosseumEngine {
             self.sectionStructTypes = sectionStructTypes ?? Self.defaultSectionStructTypes
         }
 
-        /// Look up a function name by ID
         public func builtInName(for id: Int) -> String? {
             scriptBuiltInFunctions[String(id)]?.name
         }
 
-        /// All function names keyed by integer ID
         public var builtInNamesByID: [Int: String] {
             var result = [Int: String]()
             for (key, def) in scriptBuiltInFunctions {
@@ -173,7 +171,7 @@ public extension ColosseumEngine.Data {
         // declaring an enum here costs nothing at the byte level and is
         // reversible if a mapping turns out to be wrong.
         //
-        // Only params whose meaning is established get one. 27 do, and the
+        // Only params whose meaning is established get one. 28 do, and the
         // whole table has been audited against the 42 enums the Colosseum
         // engine reaches, so what is *not* typed is a decision rather than an
         // omission:
@@ -184,17 +182,15 @@ public extension ColosseumEngine.Data {
         //     Every parameter in that number space is now typed; `argGID` /
         //     `argRID` on 165 and 181 were missed first time round purely
         //     because they aren't spelled `target*`.
+        //   * `cameraPresetFromFile`'s `groupID` (42) is the *same* group
+        //     space, confirmed by the project owner. The `(groupID, fileID)`
+        //     shape reads like FSYS archive addressing, which is why this one
+        //     was held back pending evidence — it is a character group with a
+        //     file index beside it, not an archive group.
         //   * `transitionID` (28), `itemID` (119), `pokemon` (218) — one
         //     builtin each, named by the legacy tool and unambiguous.
         //
         // Not typed, with the reason:
-        //   * `cameraPresetFromFile`'s `groupID` (42) is followed by a
-        //     `fileID`, so it is very likely an FSYS archive group — a
-        //     different number space from a character group, and reachable
-        //     through `FsysGroupIDs` in the GeniusSonority engine if it ever
-        //     is one. What would settle it is the range of values the corpus
-        //     passes; typing it on the name alone would put archive filenames
-        //     on character groups.
         //   * The `*UnknownN` builtins keep `argN` names and plain integers.
         //     Naming the slot would be a guess, and a guess here puts a
         //     confident wrong name in every script that calls it.
@@ -253,7 +249,7 @@ public extension ColosseumEngine.Data {
             "39": f("cameraUnknown39", [("arg0", .float), ("arg1", .float), ("arg2", .float)]),
             "40": f("cameraSetPosition", [("x", .float), ("y", .float), ("z", .float)]),
             "41": f("cameraSetRotation", [("x", .float), ("y", .float), ("z", .float)]),
-            "42": f("cameraPresetFromFile", [("groupID", .integer), ("fileID", .integer), ("unk1", .bool), ("unk2", .bool)]),
+            "42": f("cameraPresetFromFile", [("groupID", .enumRef("GroupID")), ("fileID", .integer), ("unk1", .bool), ("unk2", .bool)]),
             "43": f("cameraUnknown43"),
             "44": f("cameraUnknown44"),
             "45": f("cameraUnknown45"),

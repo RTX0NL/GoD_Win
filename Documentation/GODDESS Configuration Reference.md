@@ -220,6 +220,18 @@ unpacked disc. Nested operations:
 - `dumpFlashMenu` / `dumpMessage` / `dumpATX` / `dumpAudio` — single-file
   variants of the above (`gswFile` / `msgFile` + `variant` / `atxFile` /
   `ishFile` + `isdFile` respectively, plus `outputFolder`, `overwrite`).
+- `dumpColoScripts` — decompile every `.scd` under a folder to source text.
+  Colosseum only; XD's script dialect has no compiler yet.
+  | Field | Type | Meaning |
+  |---|---|---|
+  | `scriptsFolder` | path | Input folder of `.scd` files. Searched recursively, so Colosseum's `Battlefields/` subfolder is mirrored into the output. |
+  | `outputFolder` | path | Output folder for the source files. |
+  | `overwrite` | bool | Replace existing output. |
+  | `language` | string | `"python"` or `"swift"` — which dialect to emit. Either one recompiles to the same bytecode. |
+  | `gameEngine` | path | Colosseum engine folder. Supplies the builtin function signatures the source names. |
+  | `engines` | [path]? | Engine folders whose enums resolve a signature's `enumRef` parameter types, consulted in order (first match wins). Absent = just `gameEngine`, which carries every enum its own signatures currently name. |
+- `dumpColoScript` — single-file variant (`scdFile` in place of
+  `scriptsFolder`, same remaining fields).
 
 **`coloXDBuild`** *(container)* — rebuild Genius Sonority assets and repack.
 Nested operations:
@@ -252,6 +264,19 @@ Nested operations:
 - `buildFont` / `buildFlashMenu` / `buildMessage` / `buildATX` / `buildAudio`
   — single-file variants (`metadataFile` / `jsonFile` in; `outputFile` — or
   `ishOutputFile` + `isdOutputFile` for audio — out; plus `overwrite`).
+- `buildColoScripts` — compile a folder of script source back to `.scd`.
+  Reads `.py` and `.swift` alike, since both dialects describe the same
+  bytecode. Write the output back over the unpacked `.scd` files and run it
+  *before* the FSYS pack, which is the only thing that writes archives.
+  | Field | Type | Meaning |
+  |---|---|---|
+  | `sourceFolder` | path | Input folder of script source. |
+  | `outputFolder` | path | Where the rebuilt `.scd` files go. |
+  | `overwrite` | bool | Replace existing files. |
+  | `gameEngine` | path | Colosseum engine folder. |
+  | `engines` | [path]? | Engine folders resolving `EnumName.case` constants in the source, in order. A constant naming an enum none of them declares fails the build rather than compiling to a guess. |
+- `buildColoScript` — single-file variant (`sourceFile`, `outputFile`,
+  `overwrite`, `gameEngine`, `engines`).
 
 ### Battle Revolution
 
