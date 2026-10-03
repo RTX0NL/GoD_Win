@@ -58,6 +58,7 @@ extension ColoXD {
     ) throws {
         try dumpSingle(
             file: ishFile,
+            label: "ISF audio",
             outputFolder: outputFolder,
             overwrite: overwrite,
             fileSystem: fileSystem,

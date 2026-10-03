@@ -1,5 +1,6 @@
 import GoDFoundation
 import ScriptDecompiler
+import Structs
 
 /// Parses decompiled Colosseum script source (the Swift-flavoured dialect
 /// emitted by `ColoExprFormatter` + `ColoScriptSourceHeader`) back into
@@ -37,15 +38,33 @@ public struct ColoScriptTextParser {
 
     public enum ParseError: Error, CustomStringConvertible {
         case unexpected(String, line: Int)
+        /// `Name.case` whose `Name` none of the engines declares. Not silently
+        /// treated as something else: the only other thing `identifier .
+        /// identifier` could be is a typo, and resolving it to a number by
+        /// guesswork would compile a script that means something the author
+        /// did not write.
+        case unknownEnum(String, line: Int)
+        /// `Name.case` where the enum is known and the case is not.
+        case unknownEnumCase(enumName: String, caseName: String, line: Int)
         public var description: String {
             switch self {
-            case .unexpected(let what, let line): return "parse error at line \(line): \(what)"
+            case .unexpected(let what, let line):
+                return "parse error at line \(line): \(what)"
+            case .unknownEnum(let name, let line):
+                return "parse error at line \(line): no engine declares an enum named '\(name)'"
+            case .unknownEnumCase(let enumName, let caseName, let line):
+                return "parse error at line \(line): enum '\(enumName)' has no case '\(caseName)'"
             }
         }
     }
 
     /// Built-in name → function ID (reverse of the engine's definition table)
     private let builtinIDs: [String: Int]
+    /// Engine enums by name, resolving the `Name.case` constants the emitter
+    /// writes for a parameter whose signature declares an `.enumRef`. Empty
+    /// means no qualified constant can be resolved — and one in the source is
+    /// then an error rather than a guess.
+    private let enums: [String: Enum]
     /// Function index → declared `-> Int` (filled by the signature pre-pass)
     private var functionReturns = [Int: Bool]()
     private var gvarTypes = [ColoValueType]()
@@ -59,10 +78,11 @@ public struct ColoScriptTextParser {
     /// Declared argument types of the function being parsed (by display index)
     private var currentArgTypes = [ColoValueType]()
 
-    public init(builtInFunctions: [Int: ScriptFunctionDef]) {
+    public init(builtInFunctions: [Int: ScriptFunctionDef], enums: [String: Enum] = [:]) {
         var ids = [String: Int]()
         for (id, def) in builtInFunctions { ids[def.name] = id }
         self.builtinIDs = ids
+        self.enums = enums
     }
 
     // MARK: - Lexer
@@ -662,6 +682,17 @@ public struct ColoScriptTextParser {
             return inner
 
         case .identifier(let name):
+            // `Name.case` — an enum constant. Checked before anything else
+            // because the dialect has no other member syntax: nothing else
+            // emits an identifier followed by `.`, so this shape can only be
+            // an enum reference, and reading it first gives a precise error
+            // instead of "unknown identifier PokemonSpecies".
+            if stream.matchSymbol(".") {
+                return .constant(.integer(try resolveEnumCase(
+                    enumName: name, stream: &stream, line: line
+                )))
+            }
+
             switch name {
             case "true", "True": return .constant(.integer(1))
             case "false", "False": return .constant(.integer(0))
@@ -725,6 +756,31 @@ public struct ColoScriptTextParser {
         default:
             throw ParseError.unexpected("unexpected token \(token.kind)", line: line)
         }
+    }
+
+    /// Resolves the `case` half of a `Name.case` constant to its raw value.
+    ///
+    /// The value is all the bytecode carries, so this returns an integer and
+    /// the shape is indistinguishable afterwards from a literal the author
+    /// typed as a number — which is what makes the enum form free: the
+    /// emitter writes `Name.case` only where a signature declares the enum,
+    /// and both spellings lower to the same push.
+    private func resolveEnumCase(
+        enumName: String,
+        stream: inout Stream,
+        line: Int
+    ) throws -> Int32 {
+        guard let caseToken = stream.advance(),
+              case .identifier(let caseName) = caseToken.kind else {
+            throw ParseError.unexpected("expected a case name after '\(enumName).'", line: line)
+        }
+        guard let definition = enums[enumName] else {
+            throw ParseError.unknownEnum(enumName, line: line)
+        }
+        guard let value = try? definition.get(caseName) else {
+            throw ParseError.unknownEnumCase(enumName: enumName, caseName: caseName, line: line)
+        }
+        return Int32(truncatingIfNeeded: value.rawValue)
     }
 
     private mutating func parseCallArgs(_ stream: inout Stream, localArgBase: Int) throws -> [ColoExpr] {

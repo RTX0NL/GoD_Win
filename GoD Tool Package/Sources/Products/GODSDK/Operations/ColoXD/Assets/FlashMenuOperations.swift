@@ -49,6 +49,7 @@ extension ColoXD {
     ) throws {
         try dumpSingle(
             file: gswFile,
+            label: "flash menu",
             outputFolder: outputFolder,
             layout: flashMenuLayout,
             overwrite: overwrite,

@@ -77,14 +77,16 @@ extension ColoXD {
                 outputFolder: Folder,
                 overwrite: Bool,
                 language: ColoScriptLanguage,
-                gameEngine: Folder
+                gameEngine: Folder,
+                engines: [Folder]? = nil
             )
             case dumpColoScript(
                 scdFile: File,
                 outputFolder: Folder,
                 overwrite: Bool,
                 language: ColoScriptLanguage,
-                gameEngine: Folder
+                gameEngine: Folder,
+                engines: [Folder]? = nil
             )
         }
         

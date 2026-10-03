@@ -1,6 +1,7 @@
 import XCTest
 import GoDFoundation
 import ScriptDecompiler
+import Structs
 @testable import Colosseum
 
 /// Round-trip coverage for the Colosseum script pipeline:
@@ -17,6 +18,15 @@ final class ColoScriptRoundTripTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeVar(_ mask: UInt8) -> ColoScriptVar { .decode(from: mask) }
+
+    /// The enum set the dump/build operations resolve against — the game
+    /// engine's own, which is what `engines` defaults to.
+    private var engineEnums: [String: Enum] {
+        Dictionary(
+            ColosseumEngine.Enums.allItems.map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
 
     /// Assemble instruction bytes into a minimal single-function script file
     private func makeScript(bytecode: [UInt8], functionCount: Int = 1) throws -> ColoScript {
@@ -501,7 +511,8 @@ final class ColoScriptRoundTripTests: XCTestCase {
     // MARK: - 5. Full corpus (skips when the project dump is absent)
 
     func testCorpusRoundTripAllStages() throws {
-        let corpusPath = "/Users/stars/Documents/Projects/GoD-Tool/scripts/Colo US project/Build/Unpacked/Assets/Scripts"
+        let corpusPath = ProcessInfo.processInfo.environment["GODDESS_COLO_SCRIPT_CORPUS"]
+            ?? "/Users/stars/Documents/Projects/GoD-Tool/scripts/Colo US project/Build/Unpacked/Assets/Scripts"
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: corpusPath),
               !names.isEmpty else {
             throw XCTSkip("Colosseum script corpus not present")
@@ -535,14 +546,20 @@ final class ColoScriptRoundTripTests: XCTestCase {
                 }
             }
 
-            // Stages 4+5: full source-text round trips (Swift and Python dialects)
+            // Stages 4+5: full source-text round trips (Swift and Python
+            // dialects), with the enums the operations resolve — so the
+            // corpus is what checks that an `EnumName.case` argument comes
+            // back as the value it was rendered from. `GroupID` and
+            // `ResourceID` are on 19 of the character builtins, which every
+            // map script calls, so this is the only place the enum path gets
+            // exercised at scale.
             let builtins = ColosseumEngine.Data.defaultBuiltInFunctions.reduce(into: [Int: ScriptFunctionDef]()) { result, pair in
                 if let id = Int(pair.key) { result[id] = pair.value }
             }
-            let emitter = ColoScriptSourceEmitter(builtInFunctions: builtins)
+            let emitter = ColoScriptSourceEmitter(builtInFunctions: builtins, enums: engineEnums)
             for syntax in [ColoScriptSourceHeader.Syntax.swift, .python] {
                 let text = emitter.decompileToText(script: script, fileName: name, syntax: syntax)
-                var parser = ColoScriptTextParser(builtInFunctions: builtins)
+                var parser = ColoScriptTextParser(builtInFunctions: builtins, enums: engineEnums)
                 do {
                     let compiled = try ColoScriptCompiler().compile(parser.parse(text)).rawBytes
                     if compiled != [UInt8](raw) {

@@ -62,11 +62,15 @@ extension ColoXD {
         logger: Logger?,
         artifacts: (File, String) throws -> [FileData]
     ) throws {
+        let task = "Dump \(label) files"
+        logger?.log(.taskStatus(taskName: task, status: .started))
+
         let inputs = fileSystem.scan(folder, matches: predicate)
         logger?.log(.info("Found \(inputs.count) \(label) file(s)"))
 
         var skipped = 0
-        for scanned in inputs {
+        var lastPercent = -1
+        for (index, scanned) in inputs.enumerated() {
             let stem = scanned.file.fileName.withoutExtensions
             var destination = outputFolder.folder(scanned.relativeFolder.path)
             if case .perAssetFolder = layout { destination = destination.folder(stem) }
@@ -86,17 +90,23 @@ extension ColoXD {
                 skipped += 1
                 logger?.log(.warning("Failed to dump \(label) \(scanned.file.fileName): \(error)"))
             }
+            report(progress: index + 1, of: inputs.count, last: &lastPercent, task: task, logger: logger)
         }
 
         if skipped > 0 {
             logger?.log(.warning("Skipped \(skipped) of \(inputs.count) \(label) file(s)"))
         }
+        // `completed(false)` is the only line a non-verbose run would see if
+        // some of the batch failed — `info` is suppressed unless `verbose`,
+        // so without this a partial pass reads as a clean one.
+        logger?.log(.taskStatus(taskName: task, status: .completed(skipped == 0)))
     }
 
     /// Single-file counterpart to `dumpBatch`. A failure here is the whole
     /// operation, so it propagates rather than being counted.
     static func dumpSingle(
         file: File,
+        label: String,
         outputFolder: Folder,
         layout: AssetLayout = .flat,
         overwrite: Bool,
@@ -104,20 +114,54 @@ extension ColoXD {
         logger: Logger?,
         artifacts: (File, String) throws -> [FileData]
     ) throws {
+        // A single file still gets a task status, because `info` is suppressed
+        // unless the project's `Settings.json` sets `verbose` — so without this
+        // the only thing a default run prints for a one-file operation is
+        // whatever went wrong.
+        let task = "Dump \(label) file"
+        logger?.log(.taskStatus(taskName: task, status: .started))
+
         let stem = file.fileName.withoutExtensions
         let destination: Folder
         switch layout {
         case .flat:           destination = outputFolder
         case .perAssetFolder: destination = outputFolder.folder(stem)
         }
-        try writeArtifacts(
-            try artifacts(file, stem),
-            into: destination,
-            stem: stem,
-            overwrite: overwrite,
-            fileSystem: fileSystem,
-            logger: logger
-        )
+        do {
+            try writeArtifacts(
+                try artifacts(file, stem),
+                into: destination,
+                stem: stem,
+                overwrite: overwrite,
+                fileSystem: fileSystem,
+                logger: logger
+            )
+        } catch {
+            logger?.log(.taskStatus(taskName: task, status: .completed(false)))
+            throw error
+        }
+        logger?.log(.taskStatus(taskName: task, status: .completed(true)))
+    }
+
+    /// Logs `.progress` once per whole percentage point.
+    ///
+    /// The throttle is the only reason this isn't written inline twice: a
+    /// 2,540-file batch logging every item buries everything else the run has
+    /// to say, and `info` is suppressed unless the project's `Settings.json`
+    /// sets `verbose` — which the generated one doesn't — so `taskStatus` is
+    /// what a default run actually sees.
+    private static func report(
+        progress completed: Int,
+        of total: Int,
+        last: inout Int,
+        task: String,
+        logger: Logger?
+    ) {
+        guard total > 0 else { return }
+        let percent = completed * 100 / total
+        guard percent != last else { return }
+        last = percent
+        logger?.log(.taskStatus(taskName: task, status: .progress(Percentage(Double(percent)))))
     }
 
     private static func writeArtifacts(
@@ -158,6 +202,9 @@ extension ColoXD {
         logger: Logger?,
         binaries: (File, String) throws -> [FileData]
     ) throws {
+        let task = "Build \(label) files"
+        logger?.log(.taskStatus(taskName: task, status: .started))
+
         let inputs = fileSystem.scan(folder, matches: predicate)
         logger?.log(.info("Building \(inputs.count) \(label) file(s)"))
 
@@ -168,7 +215,8 @@ extension ColoXD {
         // stopping at the first one, which is how a single bad font atlas
         // used to leave 103 of Colosseum JP's 137 fonts unbuilt.
         var failures = [String]()
-        for scanned in inputs {
+        var lastPercent = -1
+        for (index, scanned) in inputs.enumerated() {
             let stem = stemOf(scanned.file)
             let destination = buildDestination(
                 mirroring: scanned.relativeFolder, under: outputFolder, layout: layout
@@ -199,8 +247,10 @@ extension ColoXD {
                 failures.append(scanned.file.fileName)
                 logger?.log(.warning("Failed to build \(label) \(scanned.file.fileName): \(error)"))
             }
+            report(progress: index + 1, of: inputs.count, last: &lastPercent, task: task, logger: logger)
         }
 
+        logger?.log(.taskStatus(taskName: task, status: .completed(failures.isEmpty)))
         if !failures.isEmpty {
             throw AssetBatchError.buildFailures(label: label, names: failures, total: inputs.count)
         }

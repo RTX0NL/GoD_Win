@@ -49,6 +49,7 @@ extension ColoXD {
         let parsedVariant = MSGFile.Variant(configValue: variant)
         try dumpSingle(
             file: msgFile,
+            label: "message",
             outputFolder: outputFolder,
             overwrite: overwrite,
             fileSystem: fileSystem,

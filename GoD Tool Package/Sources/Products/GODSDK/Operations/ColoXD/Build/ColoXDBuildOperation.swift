@@ -141,16 +141,18 @@ extension ColoXD {
                     fileSystem: fileSystem, logger: logger
                 )
 
-            case let .buildColoScripts(sourceFolder, outputFolder, overwrite, gameEngine):
+            case let .buildColoScripts(sourceFolder, outputFolder, overwrite, gameEngine, engines):
                 try buildColoScripts(
                     in: sourceFolder, outputFolder: outputFolder, overwrite: overwrite,
-                    gameEngine: gameEngine, fileSystem: fileSystem, logger: logger
+                    gameEngine: gameEngine, engines: engines,
+                    fileSystem: fileSystem, logger: logger
                 )
 
-            case let .buildColoScript(sourceFile, outputFile, overwrite, gameEngine):
+            case let .buildColoScript(sourceFile, outputFile, overwrite, gameEngine, engines):
                 try buildColoScript(
                     sourceFile: sourceFile, outputFile: outputFile, overwrite: overwrite,
-                    gameEngine: gameEngine, fileSystem: fileSystem, logger: logger
+                    gameEngine: gameEngine, engines: engines,
+                    fileSystem: fileSystem, logger: logger
                 )
             }
         }

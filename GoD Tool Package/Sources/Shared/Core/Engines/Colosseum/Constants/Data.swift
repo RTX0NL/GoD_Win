@@ -175,8 +175,25 @@ public extension ColosseumEngine.Data {
         // Generated from the engine's native dispatch table (US DOL @0x802E1CF0)
         // merged with corpus usage evidence and legacy tool names — see
         // Documentation/File Formats/Colosseum/Script Builtin Functions.md.
-        // Types are restricted to integer/float/bool/string; semantic ID
-        // types (messages, flags, ...) are intentionally not encoded here.
+        //
+        // A parameter typed `.enumRef` is written in script source as
+        // `EnumName.case` and read back through the same enum, so the name has
+        // to be one the operation's `engines` list declares. A raw value the
+        // enum doesn't name falls back to the integer rather than a
+        // synthesized name, and both spellings lower to the same push — so
+        // declaring an enum here costs nothing at the byte level and is
+        // reversible if a mapping turns out to be wrong.
+        //
+        // Only params whose meaning is established get one. `groupID` /
+        // `resourceID` are typed on the named `character*` builtins, whose
+        // enums were authored for exactly those slots (`protagonists`, `wes`,
+        // `rui`) — but deliberately NOT on `cameraPresetFromFile`, where
+        // `groupID` is followed by a `fileID` and so is very likely an archive
+        // group in a different number space. The `characterUnknownN` builtins
+        // keep `argN` names and plain integers: naming the slot would be a
+        // guess, and a guess here puts a confident wrong name in every script
+        // that calls it. The remaining semantic ID types (messages, flags, …)
+        // have no enum yet and stay integers.
         return [
             "1": f("taskUnknown1", [("arg0", .integer), ("arg1", .integer), ("arg2", .integer)]),
             "2": f("randomNumberMod", [("max", .integer)], ret: .integer),
@@ -205,7 +222,7 @@ public extension ColosseumEngine.Data {
             "25": f("openShopDialog", [("martID", .integer)]),
             "26": f("sysUnknown26"),
             "27": f("sysUnknown27"),
-            "28": f("transitionBegin", [("transitionID", .integer), ("duration", .float)]),
+            "28": f("transitionBegin", [("transitionID", .enumRef("TransitionID")), ("duration", .float)]),
             "29": f("transitionWait", [("unk", .bool)]),
             "30": f("playerUnknown30"),
             "31": f("playerProcessEvents"),
@@ -224,33 +241,33 @@ public extension ColosseumEngine.Data {
             "44": f("cameraUnknown44"),
             "45": f("cameraUnknown45"),
             "46": f("cameraUnknown46", [("arg0", .bool)]),
-            "47": f("characterHide", [("resourceID", .integer)]),
+            "47": f("characterHide", [("resourceID", .enumRef("ResourceID"))]),
             "48": f("cameraUnknown48", [("arg0", .integer), ("arg1", .integer), ("arg2", .integer), ("arg3", .float)]),
             "49": f("cameraUnknown49"),
-            "50": f("characterSetVisibility", [("groupID", .integer), ("resourceID", .integer), ("visible", .bool)]),
-            "51": f("characterSetAnimation", [("groupID", .integer), ("resourceID", .integer), ("animID", .integer), ("unk", .bool), ("repeat", .bool)]),
+            "50": f("characterSetVisibility", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("visible", .bool)]),
+            "51": f("characterSetAnimation", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("animID", .integer), ("unk", .bool), ("repeat", .bool)]),
             "52": f("characterUnknown52", [("arg0", .integer), ("arg1", .integer)]),
-            "53": f("characterWaitForAnimation", [("groupID", .integer), ("resourceID", .integer), ("unk", .bool)]),
-            "54": f("characterTalk", [("groupID", .integer), ("resourceID", .integer), ("msgID", .integer)]),
-            "55": f("characterEndSpeech", [("groupID", .integer), ("resourceID", .integer)]),
+            "53": f("characterWaitForAnimation", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("unk", .bool)]),
+            "54": f("characterTalk", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("msgID", .integer)]),
+            "55": f("characterEndSpeech", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID"))]),
             "56": f("characterUnknown56", [("arg0", .integer), ("arg1", .integer)]),
             "57": f("characterUnknown57", [("arg0", .integer), ("arg1", .integer)]),
-            "58": f("characterCheckWithinBounds", [("groupID", .integer), ("resourceID", .integer), ("x1", .float), ("y1", .float), ("x2", .float), ("y2", .float)], ret: .integer),
-            "59": f("characterSetPosition", [("groupID", .integer), ("resourceID", .integer), ("x", .float), ("y", .float), ("z", .float)]),
-            "60": f("characterRotateAroundAxes", [("groupID", .integer), ("resourceID", .integer), ("x", .float), ("y", .float), ("z", .float)]),
-            "61": f("characterMoveToPosition", [("groupID", .integer), ("resourceID", .integer), ("x", .integer), ("y", .float), ("z", .float), ("arg5", .float)]),
-            "62": f("characterWaitForMovement", [("groupID", .integer), ("resourceID", .integer), ("unk", .bool)]),
-            "63": f("characterClearFlags", [("groupID", .integer), ("resourceID", .integer), ("flagBits", .integer)]),
-            "64": f("characterSetFlags", [("groupID", .integer), ("resourceID", .integer), ("flagBits", .integer)]),
+            "58": f("characterCheckWithinBounds", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("x1", .float), ("y1", .float), ("x2", .float), ("y2", .float)], ret: .integer),
+            "59": f("characterSetPosition", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("x", .float), ("y", .float), ("z", .float)]),
+            "60": f("characterRotateAroundAxes", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("x", .float), ("y", .float), ("z", .float)]),
+            "61": f("characterMoveToPosition", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("x", .integer), ("y", .float), ("z", .float), ("arg5", .float)]),
+            "62": f("characterWaitForMovement", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("unk", .bool)]),
+            "63": f("characterClearFlags", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("flagBits", .integer)]),
+            "64": f("characterSetFlags", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("flagBits", .integer)]),
             "65": f("characterUnknown65", [("arg0", .integer), ("arg1", .integer)]),
-            "66": f("characterMoveToPositionSlow", [("groupID", .integer), ("resourceID", .integer), ("x", .integer), ("y", .integer), ("z", .integer)]),
+            "66": f("characterMoveToPositionSlow", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("x", .integer), ("y", .integer), ("z", .integer)]),
             "67": f("characterUnknown67", [("arg0", .integer), ("arg1", .integer)]),
-            "68": f("characterTurnToAngle", [("groupID", .integer), ("resourceID", .integer), ("angle", .float)]),
+            "68": f("characterTurnToAngle", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("angle", .float)]),
             "69": f("characterUnknown69", [("arg0", .integer), ("arg1", .integer), ("arg2", .float)]),
-            "70": f("characterAttachToCharacter", [("groupID", .integer), ("resourceID", .integer), ("targetGID", .integer), ("targetRID", .integer), ("unk", .integer)]),
+            "70": f("characterAttachToCharacter", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("targetGID", .enumRef("GroupID")), ("targetRID", .enumRef("ResourceID")), ("unk", .integer)]),
             "71": f("characterUnknown71", [("arg0", .integer), ("arg1", .integer)]),
             "72": f("characterUnknown72", [("arg0", .integer), ("arg1", .integer), ("arg2", .integer)]),
-            "73": f("characterRunToPosition", [("groupID", .integer), ("resourceID", .integer), ("x", .float), ("y", .float), ("z", .float)]),
+            "73": f("characterRunToPosition", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("x", .float), ("y", .float), ("z", .float)]),
             "74": f("characterUnknown74", [("arg0", .integer), ("arg1", .integer), ("arg2", .bool)]),
             "75": f("characterUnknown75", [("arg0", .integer), ("arg1", .integer)]),
             "76": f("characterUnknown76", [("arg0", .integer), ("arg1", .integer)]),
@@ -295,8 +312,8 @@ public extension ColosseumEngine.Data {
             "115": f("systemUnknown115", [("arg0", .integer), ("arg1", .integer), ("arg2", .bool), ("arg3", .bool)]),
             "116": f("systemUnknown116", [("arg0", .integer)]),
             "117": f("systemUnknown117", [("arg0", .integer), ("arg1", .bool)]),
-            "118": f("characterSetProperty", [("resourceID", .integer), ("value", .bool)]),
-            "119": f("playerReceiveItem", [("itemID", .integer), ("quantity", .integer)]),
+            "118": f("characterSetProperty", [("resourceID", .enumRef("ResourceID")), ("value", .bool)]),
+            "119": f("playerReceiveItem", [("itemID", .enumRef("Items")), ("quantity", .integer)]),
             "120": f("systemUnknown120", [("arg0", .integer)], ret: .integer),
             "121": f("systemUnknown121"),
             "122": f("systemUnknown122", [("arg0", .integer)]),
@@ -308,7 +325,7 @@ public extension ColosseumEngine.Data {
             "128": f("mapSetReturnMap", [("currentRoom", .integer), ("previousRoom", .integer), ("warpPointIndex", .integer)]),
             "129": f("systemUnknown129"),
             "130": f("soundUnknown130", [("arg0", .integer), ("arg1", .integer), ("arg2", .integer)]),
-            "131": f("characterSurpriseAnimation", [("groupID", .integer), ("resourceID", .integer), ("unk", .bool)]),
+            "131": f("characterSurpriseAnimation", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("unk", .bool)]),
             "132": f("dialogSetMessageVar", [("varIndex", .integer), ("value", .integer)]),
             "133": f("systemUnknown133", [("arg0", .integer)]),
             "134": f("systemUnknown134", ret: .integer),
@@ -328,7 +345,7 @@ public extension ColosseumEngine.Data {
             "148": f("cameraUnknown148", [("arg0", .float)]),
             "149": f("cameraUnknown149", [("arg0", .float)]),
             "150": f("cameraUnknown150", [("arg0", .float)]),
-            "151": f("characterFaceDirection", [("groupID", .integer), ("resourceID", .integer), ("direction", .bool)]),
+            "151": f("characterFaceDirection", [("groupID", .enumRef("GroupID")), ("resourceID", .enumRef("ResourceID")), ("direction", .bool)]),
             "152": f("battleStartWithOptions", [("battleID", .integer), ("unk1", .bool), ("unk2", .bool)]),
             "153": f("soundUnknown153", [("arg0", .integer)]),
             "154": f("characterUnknown154", [("arg0", .integer), ("arg1", .integer), ("arg2", .integer), ("arg3", .integer), ("arg4", .integer)]),
@@ -342,7 +359,7 @@ public extension ColosseumEngine.Data {
             "162": f("mapUnknown162"),
             "163": f("useCologne", [("arg0", .integer), ("arg1", .integer)]),
             "164": f("characterUnknown164", [("arg0", .integer), ("arg1", .integer), ("arg2", .float), ("arg3", .float), ("arg4", .float), ("arg5", .float)]),
-            "165": f("characterFaceCharacter", [("targetGID", .integer), ("targetRID", .integer), ("argGID", .integer), ("argRID", .integer), ("speed", .float)]),
+            "165": f("characterFaceCharacter", [("targetGID", .enumRef("GroupID")), ("targetRID", .enumRef("ResourceID")), ("argGID", .integer), ("argRID", .integer), ("speed", .float)]),
             "166": f("systemUnknown166", [("arg0", .integer), ("arg1", .integer), ("arg2", .integer)]),
             "167": f("systemUnknown167", [("arg0", .integer)]),
             "168": f("characterUnknown168", [("arg0", .bool), ("arg1", .integer)]),
@@ -358,7 +375,7 @@ public extension ColosseumEngine.Data {
             "178": f("characterUnknown178", [("arg0", .integer), ("arg1", .integer), ("arg2", .float)]),
             "179": f("cameraUnknown179", [("arg0", .float), ("arg1", .bool)]),
             "180": f("getCurrentFloorID", ret: .integer),
-            "181": f("characterTurnHeadTowards", [("argGID", .integer), ("argRID", .integer), ("targetGID", .integer), ("targetRID", .integer)]),
+            "181": f("characterTurnHeadTowards", [("argGID", .integer), ("argRID", .integer), ("targetGID", .enumRef("GroupID")), ("targetRID", .enumRef("ResourceID"))]),
             "182": f("menuUnknown182", [("arg0", .integer)]),
             "183": f("systemUnknown183", [("arg0", .integer)]),
             "184": f("systemUnknown184"),
@@ -395,7 +412,7 @@ public extension ColosseumEngine.Data {
             "215": f("sysUnknown215", [("arg0", .integer), ("arg1", .integer)]),
             "216": f("menuUnknown216", [("arg0", .bool)]),
             "217": f("playerReceiveGiftPokemon", [("giftPokemonID", .integer)], ret: .integer),
-            "218": f("soundPlayPokemonCry", [("pokemon", .integer)]),
+            "218": f("soundPlayPokemonCry", [("pokemon", .enumRef("PokemonSpecies"))]),
             "219": f("systemUnknown219", [("arg0", .integer), ("arg1", .integer)]),
             "220": f("sysUnknown220", ret: .integer),
             "221": f("systemUnknown221", [("arg0", .integer), ("arg1", .integer), ("arg2", .integer)]),

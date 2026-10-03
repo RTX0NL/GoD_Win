@@ -86,13 +86,15 @@ extension ColoXD {
                 sourceFolder: Folder,
                 outputFolder: Folder,
                 overwrite: Bool,
-                gameEngine: Folder
+                gameEngine: Folder,
+                engines: [Folder]? = nil
             )
             case buildColoScript(
                 sourceFile: File,
                 outputFile: File,
                 overwrite: Bool,
-                gameEngine: Folder
+                gameEngine: Folder,
+                engines: [Folder]? = nil
             )
         }
 

@@ -53,6 +53,7 @@ extension ColoXD {
     ) throws {
         try dumpSingle(
             file: atxFile,
+            label: "ATX texture",
             outputFolder: outputFolder,
             layout: atxLayout,
             overwrite: overwrite,

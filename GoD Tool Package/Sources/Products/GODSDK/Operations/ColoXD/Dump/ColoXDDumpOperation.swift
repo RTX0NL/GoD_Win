@@ -136,17 +136,17 @@ extension ColoXD {
                     overwrite: overwrite, fileSystem: fileSystem, logger: logger
                 )
 
-            case let .dumpColoScripts(scriptsFolder, outputFolder, overwrite, language, gameEngine):
+            case let .dumpColoScripts(scriptsFolder, outputFolder, overwrite, language, gameEngine, engines):
                 try dumpColoScripts(
                     in: scriptsFolder, outputFolder: outputFolder, overwrite: overwrite,
-                    language: language, gameEngine: gameEngine,
+                    language: language, gameEngine: gameEngine, engines: engines,
                     fileSystem: fileSystem, logger: logger
                 )
 
-            case let .dumpColoScript(scdFile, outputFolder, overwrite, language, gameEngine):
+            case let .dumpColoScript(scdFile, outputFolder, overwrite, language, gameEngine, engines):
                 try dumpColoScript(
                     scdFile: scdFile, outputFolder: outputFolder, overwrite: overwrite,
-                    language: language, gameEngine: gameEngine,
+                    language: language, gameEngine: gameEngine, engines: engines,
                     fileSystem: fileSystem, logger: logger
                 )
             }
