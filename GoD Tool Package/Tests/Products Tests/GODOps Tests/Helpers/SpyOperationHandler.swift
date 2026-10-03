@@ -100,6 +100,18 @@ final class SpyOperationHandler: OperationHandler {
         try record(.cisoBuild(config: config), settings)
     }
 
+    func rvzDump(config: RVZDump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.rvzDump(config: config), settings)
+    }
+
+    func nkitDump(config: NKitDump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.nkitDump(config: config), settings)
+    }
+
+    func nkitBuild(config: NKitBuild.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.nkitBuild(config: config), settings)
+    }
+
     func gciDump(config: GCIOps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try record(.gciDump(config: config), settings)
     }
@@ -218,5 +230,9 @@ final class RecordingLogger: Logger {
 
     var warnings: [String] {
         entries.compactMap { if case .warning(let message) = $0 { return message } else { return nil } }
+    }
+
+    var errors: [String] {
+        entries.compactMap { if case .error(let message) = $0 { return message } else { return nil } }
     }
 }

@@ -95,8 +95,8 @@ let goddessTools: [Tool] = [
         name: "setup_project",
         description: """
         Set up a GODDESS editing project. Call this FIRST when starting work on \
-        a new ROM or save. Accepts a GameCube/Wii disc image (.iso/.gcm/.ciso; \
-        .wia/.rvz are recognized but must be converted to raw ISO first) or a \
+        a new ROM or save. Accepts a GameCube/Wii disc image (.iso/.gcm/.ciso/.wbfs/.wia/.rvz, \
+        which are decoded automatically) or a \
         memory-card save (.gci). Creates a '<name> project' (disc) or \
         '<name> save project' (save) folder next to the input, containing the \
         unpacked contents, exported engine definitions, and ready-to-run \
@@ -218,7 +218,10 @@ private func handleToolCall(_ params: CallTool.Parameters, logger: GoDFoundation
             throw MCPToolError.badInput("Input path has no file extension")
         }
         switch ext {
-        case "iso", "gcm", "ciso", "wia", "rvz":
+        // Every container `ProjectSetup` can decode. `wbfs` was missing
+        // here while setup handled it, so the MCP path refused a file the
+        // CLI accepted.
+        case "iso", "gcm", "ciso", "wbfs", "wia", "rvz":
             try GODOps.setupProject(discImage: file, toolVersion: Version.semanticVersion)
             return "Set up editing project from \(file.fileName)."
         case "gci":

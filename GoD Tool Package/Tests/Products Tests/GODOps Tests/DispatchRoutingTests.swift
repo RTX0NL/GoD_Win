@@ -467,6 +467,22 @@ final class DispatchRoutingTests: XCTestCase {
         XCTAssertTrue(config.overwrite)
     }
 
+    func testRVZDumpRouting() throws {
+        let spy = try route("""
+        { "rvzDump": { "config": {
+            "rvzPath": "/project/game.rvz",
+            "isoPath": "/project/game.iso",
+            "overwrite": true
+        } } }
+        """)
+        guard case let .rvzDump(config) = try singleOperation(spy) else {
+            return XCTFail("Expected rvzDump")
+        }
+        XCTAssertEqual(config.rvzPath, File("/project/game.rvz"))
+        XCTAssertEqual(config.isoPath, File("/project/game.iso"))
+        XCTAssertTrue(config.overwrite)
+    }
+
     func testCISOBuildRouting() throws {
         let spy = try route("""
         { "cisoBuild": { "config": {
@@ -483,6 +499,56 @@ final class DispatchRoutingTests: XCTestCase {
         XCTAssertEqual(config.cisoPath, File("/project/game.ciso"))
         XCTAssertEqual(config.blockSize, 2097152)
         XCTAssertFalse(config.overwrite)
+    }
+
+    // MARK: - NKit
+
+    func testNKitDumpRouting() throws {
+        let spy = try route("""
+        { "nkitDump": { "config": {
+            "nkitPath": "/project/game.nkit.iso",
+            "isoPath": "/project/game.iso",
+            "overwrite": true
+        } } }
+        """)
+        guard case let .nkitDump(config) = try singleOperation(spy) else {
+            return XCTFail("Expected nkitDump")
+        }
+        XCTAssertEqual(config.nkitPath, File("/project/game.nkit.iso"))
+        XCTAssertEqual(config.isoPath, File("/project/game.iso"))
+        XCTAssertTrue(config.overwrite)
+    }
+
+    func testNKitBuildRouting() throws {
+        let spy = try route("""
+        { "nkitBuild": { "config": {
+            "isoPath": "/project/game.iso",
+            "nkitPath": "/project/game.nkit.iso",
+            "junkOverrideID": "GC6E",
+            "overwrite": false
+        } } }
+        """)
+        guard case let .nkitBuild(config) = try singleOperation(spy) else {
+            return XCTFail("Expected nkitBuild")
+        }
+        XCTAssertEqual(config.isoPath, File("/project/game.iso"))
+        XCTAssertEqual(config.nkitPath, File("/project/game.nkit.iso"))
+        XCTAssertEqual(config.junkOverrideID, "GC6E")
+        XCTAssertFalse(config.overwrite)
+    }
+
+    func testNKitBuildRoutingWithoutAJunkOverride() throws {
+        let spy = try route("""
+        { "nkitBuild": { "config": {
+            "isoPath": "/project/game.iso",
+            "nkitPath": "/project/game.nkit.iso",
+            "overwrite": true
+        } } }
+        """)
+        guard case let .nkitBuild(config) = try singleOperation(spy) else {
+            return XCTFail("Expected nkitBuild")
+        }
+        XCTAssertNil(config.junkOverrideID)
     }
 
     // MARK: - GCI

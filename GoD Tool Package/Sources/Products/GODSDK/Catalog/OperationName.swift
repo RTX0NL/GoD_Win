@@ -33,6 +33,9 @@ public enum OperationName: String, CaseIterable, Codable {
     case relsBuild
     case cisoDump
     case cisoBuild
+    case rvzDump
+    case nkitDump
+    case nkitBuild
     case gciDump
     case gciBuild
     case xdSaveDump
@@ -83,6 +86,9 @@ extension GoddessConfig.Operations {
         case .relsBuild: return .relsBuild
         case .cisoDump: return .cisoDump
         case .cisoBuild: return .cisoBuild
+        case .rvzDump: return .rvzDump
+        case .nkitDump: return .nkitDump
+        case .nkitBuild: return .nkitBuild
         case .gciDump: return .gciDump
         case .gciBuild: return .gciBuild
         case .xdSaveDump: return .xdSaveDump

@@ -9,6 +9,7 @@ These formats are used by both Colosseum and XD with the same or very similar st
 ### Archives & Compression
 - [FSYS - Archive Container](Shared/FSYS%20-%20Archive%20Container.md) — Main game archive with LZSS compression (type `0x90`). The 16-byte `LZSS` header + stream a compressed entry holds is also a standalone format (`LZSSHeaderedCompressor`, `CompressionFormat.lzss`), reachable through the `compress` / `decompress` operations as `lzss`; the bare stream is `lzss-raw`
 - [Yaz0/Yay0 - Nintendo LZ77 Compression](Shared/Yaz0%20Yay0%20-%20Nintendo%20LZ77%20Compression.md) — Nintendo's own codec. Not used by Colosseum/XD/PBR; support exists for general GameCube/Wii titles and as a prerequisite for RARC and U8. Exposed by the `compress` / `decompress` operations
+- Zstandard — RFC 8878. Decode only, in `GoDFoundation/Data/Compression/Zstd/`; present because RVZ group payloads are Zstandard frames. Pure Swift, like the package's other algorithms. Not in `CompressionFormat` and not reachable from the `compress` / `decompress` operations, which promise a codec that runs both ways
 - [Binary Patches - UPS, IPS, BPS, xdelta](Shared/Binary%20Patches%20-%20UPS%20IPS%20BPS%20xdelta.md) — the four patch formats, created and applied by the `createPatch` / `applyPatch` operations. Not game formats: they describe the difference between any two files
 - [U8/NARC - Nintendo Archives](Shared/U8%20NARC%20-%20Nintendo%20Archives.md) — Nintendo's own containers, big and little endian, discriminated by the direction their magic is spelled. PBR ships both (`.arc`/`.narc`)
 
@@ -16,7 +17,7 @@ These formats are used by both Colosseum and XD with the same or very similar st
 - [CISO - Compact ISO](Shared/CISO%20-%20Compact%20ISO.md) — Zero-block-omitting GC/Wii image; read and written
 - [NKIT - Lossless Shrunk ISO](Shared/NKIT%20-%20Lossless%20Shrunk%20ISO.md) — Junk-stripped image; GameCube trailing-truncation restore only
 - [WBFS - Wii Backup File System](Shared/WBFS%20-%20Wii%20Backup%20File%20System.md) — Block-mapped Wii disc container; restored as a lazy view
-- [RVZ - Dolphin Disc Image](Shared/RVZ%20-%20Dolphin%20Disc%20Image.md) — WIA/RVZ; header and group table parse, no decompressor yet
+- [RVZ - Dolphin Disc Image](Shared/RVZ%20-%20Dolphin%20Disc%20Image.md) — WIA/RVZ; restored to a raw ISO by `rvzDump` (Zstandard and uncompressed images; bzip2/LZMA/PURGE refused by name). Read only — GoD-Tool has no Zstandard encoder to write one with
 
 ### 3D Models
 - [DAT - HAL Model Format](Shared/DAT%20-%20HAL%20Model%20Format.md) — Character/room 3D models, HSD format (type `0x04`/`0x02`)

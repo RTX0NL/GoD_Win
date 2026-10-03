@@ -42,9 +42,9 @@ enum Project {
         // / `.wbfs` / `.nkit.iso` at the same entry point as a raw ISO.
         let detected = DiscImageFormat.detect(in: rawInput)
         // A raw image stays a readable and is never held. CISO and NKit
-        // decode to a buffer; a WBFS stays a readable too — its disc is a
-        // block map over the container, and the view resolves reads
-        // through it, so nothing is unpacked up front.
+        // decode to a buffer; a WBFS and a WIA/RVZ stay readables too — the
+        // first is a block map over the container, the second decodes the
+        // group a read lands in, so neither is unpacked up front.
         let isoData: GoDReadable
         switch detected {
         case .gamecubeISO, .wiiISO, .unknown:
@@ -57,10 +57,9 @@ enum Project {
             }
             isoData = try CISOConverter.dump(ciso: whole)
         case .nkitGC:
-            guard let whole = rawInput.allData else {
-                throw ProjectSetupErrors.isoNotFound(isoInputFile, .init())
-            }
-            isoData = try NKitGCConverter.dump(nkit: whole)
+            // The NKit codec walks the image rather than holding it, so
+            // the readable goes straight in.
+            isoData = try NKitGCConverter.dump(nkit: rawInput)
         case .wbfs:
             isoData = try WBFSFile(binary: rawInput).firstDiscImage()
         case .nkitWii:
@@ -76,15 +75,11 @@ enum Project {
                 file: isoInputFile, .init()
             )
         case .wiaOrRVZ:
-            // The header and group table parse; the payload is zstd /
-            // bzip2 / LZMA-compressed and there is no decompressor in the
-            // package for any of the three.
-            throw ProjectSetupErrors.unsupportedInputFormat(
-                format: detected.description,
-                reason: "its data is zstd/bzip2/LZMA-compressed and GoD-Tool has no decompressor for those "
-                    + "yet (the header and group table parse, the data does not). "
-                    + "Convert it to a plain .iso with Dolphin or wit first.",
-                file: isoInputFile, .init()
+            // Stays a readable, like a WBFS: the view decodes the group a
+            // read lands in, so setup's header reads and the copy into the
+            // project never hold the restored disc.
+            isoData = try RVZImage(binary: rawInput).discImageView(
+                partitionRestorer: WiiRVZPartitionRestorer()
             )
         }
 
@@ -92,7 +87,6 @@ enum Project {
             throw ProjectSetupErrors.invalidGameID(.init())
         }
 
-        // Detect disc type
         let wiiMagic: UInt32 = isoData.readSafely(atAddress: 0x18)
         let isWii = wiiMagic == 0x5D1C9EA3
 
@@ -157,7 +151,6 @@ enum Project {
             }
         }
 
-        // Game-specific struct engine
         if let profile {
             engines.append(try profile.makeEngine())
         }
@@ -498,7 +491,7 @@ enum Project {
             )
 
         } else {
-            // GameCube disc — existing logic
+            // GameCube disc
             let gamecubeEngine = try GamecubeEngine.defaults()
 
             var buildOperations: [OperationConfig<GoddessConfig.Operations>] = []

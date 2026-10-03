@@ -67,8 +67,9 @@ public enum GODOps {
 
     // MARK: - Project setup
 
-    /// Set up an editing project from a GameCube/Wii disc image (raw or
-    /// CISO/NKit; `.wia`/`.rvz` recognized but not yet decodable).
+    /// Set up an editing project from a GameCube/Wii disc image (raw, or a
+    /// CISO / WBFS / GameCube NKit / WIA / RVZ container, which are decoded
+    /// first).
     /// `toolVersion` is stamped into the project's `/Engines/Version.txt`.
     public static func setupProject(discImage: File, toolVersion: String) throws {
         try Project.setup(iso: discImage, toolVersion: toolVersion)
@@ -222,6 +223,12 @@ public enum GODOps {
             try handler.cisoDump(config: cisoConfig, settings: settings, fileSystem: fileSystem, logger: logger)
         case .cisoBuild(let cisoConfig):
             try handler.cisoBuild(config: cisoConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .rvzDump(let rvzConfig):
+            try handler.rvzDump(config: rvzConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .nkitDump(let nkitConfig):
+            try handler.nkitDump(config: nkitConfig, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .nkitBuild(let nkitConfig):
+            try handler.nkitBuild(config: nkitConfig, settings: settings, fileSystem: fileSystem, logger: logger)
         case .gciDump(let gciConfig):
             try handler.gciDump(config: gciConfig, settings: settings, fileSystem: fileSystem, logger: logger)
         case .gciBuild(let gciConfig):

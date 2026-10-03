@@ -32,6 +32,9 @@ protocol OperationHandler {
     func relsBuild(config: RelsBuild.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func cisoDump(config: CISODump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func cisoBuild(config: CISOBuild.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func rvzDump(config: RVZDump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func nkitDump(config: NKitDump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func nkitBuild(config: NKitBuild.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func gciDump(config: GCIOps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func gciBuild(config: GCIOps.BuildConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func xdSaveDump(config: XDSaveOps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
@@ -132,6 +135,18 @@ struct EngineOperationHandler: OperationHandler {
 
     func cisoBuild(config: CISOBuild.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try CISOBuild.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func rvzDump(config: RVZDump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try RVZDump.dump(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func nkitDump(config: NKitDump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try NKitDump.dump(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func nkitBuild(config: NKitBuild.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try NKitBuild.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
     }
 
     func gciDump(config: GCIOps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
