@@ -74,6 +74,8 @@ public struct StructDefinition: Equatable, Nameable {
                 longest = max(longest, 4)
             case .padding:
                 longest = max(longest, 1)
+            case .bits(let layout):
+                longest = max(longest, layout.storage.length)
             }
         }
         return longest
@@ -232,6 +234,24 @@ public struct StructDefinition: Equatable, Nameable {
         return properties.first { folded($0.name) == target }?.name
     }
 
+    /// A bit field of `keypath`'s container that its last segment probably
+    /// meant, for the same "did you mean" diagnostics as
+    /// `closestPropertyName(to:)`.
+    public func closestBitFieldName(to keypath: String) -> String? {
+        let parts = keypath.split(separator: ".").map(String.init)
+        guard parts.count >= 2,
+              case .bits(let layout)? = property(for: parts.dropLast().joined(separator: ".")) else {
+            return nil
+        }
+        let key = parts[parts.count - 1]
+        guard layout.field(named: key) == nil else { return nil }
+        func folded(_ s: String) -> String {
+            s.replacingOccurrences(of: "_", with: "").replacingOccurrences(of: " ", with: "").lowercased()
+        }
+        let target = folded(key)
+        return layout.fields.first { folded($0.name) == target }?.name
+    }
+
     public func offset(for keypath: String) -> Int? {
         let keypathParts = keypath.split(separator: ".").map(String.init)
         guard let currentKey = keypathParts.first else { return nil }
@@ -264,6 +284,40 @@ public struct StructDefinition: Equatable, Nameable {
         }
 
         return nil
+    }
+
+    /// Where a `<container>.<field>` keypath's bits live, or nil if the
+    /// keypath doesn't name one.
+    ///
+    /// `offset(for:)` and `property(for:)` deliberately return nil for a
+    /// bit keypath: the last segment of `flags.visible` isn't a property,
+    /// so there is no byte offset and no `StructProperty` to hand back.
+    /// Returning the *container's* offset would be worse than nil — a
+    /// caller that then reads `property.length` bytes there would get the
+    /// whole container and call it the field.
+    public func bitLocation(for keypath: String) -> BitLocation? {
+        let parts = keypath.split(separator: ".").map(String.init)
+        guard parts.count >= 2 else { return nil }
+        let containerPath = parts.dropLast().joined(separator: ".")
+        guard case .bits(let layout)? = property(for: containerPath),
+              let offset = offset(for: containerPath),
+              let field = layout.field(named: parts[parts.count - 1]) else {
+            return nil
+        }
+        return BitLocation(byteOffset: offset, layout: layout, field: field)
+    }
+
+    public struct BitLocation: Equatable {
+        /// Byte offset of the containing integer within the struct.
+        public let byteOffset: Int
+        public let layout: BitFieldLayout
+        public let field: BitFieldLayout.Field
+
+        public init(byteOffset: Int, layout: BitFieldLayout, field: BitFieldLayout.Field) {
+            self.byteOffset = byteOffset
+            self.layout = layout
+            self.field = field
+        }
     }
 
     public func property(for keypath: String) -> StructProperty? {
@@ -377,6 +431,37 @@ public extension StructDefinition.Property {
 
     static func padding(length: Int) -> StructDefinition.Property {
         StructDefinition.Property(name: StructDefinition.paddingPropertyName, type: .array(.uint8, count: length))
+    }
+
+    /// An integer split into named bit ranges. Bit 0 is the **most**
+    /// significant bit of `storage`, and the ranges must tile it exactly,
+    /// most significant first.
+    static func bits(
+        name: String,
+        storage: IntegerProperties = .uint8,
+        description: String? = nil,
+        fields: [BitFieldLayout.Field]
+    ) -> StructDefinition.Property {
+        StructDefinition.Property(
+            name: name,
+            type: .bits(BitFieldLayout(storage: storage, fields: fields)),
+            description: description
+        )
+    }
+
+    /// An array of bit containers, all sharing one layout.
+    static func bitsArray(
+        name: String,
+        count: Int,
+        storage: IntegerProperties = .uint8,
+        description: String? = nil,
+        fields: [BitFieldLayout.Field]
+    ) -> StructDefinition.Property {
+        StructDefinition.Property(
+            name: name,
+            type: .array(.bits(BitFieldLayout(storage: storage, fields: fields)), count: count),
+            description: description
+        )
     }
 }
 

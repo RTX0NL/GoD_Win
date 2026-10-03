@@ -13,16 +13,17 @@ import GoDFoundation
 /// One CSV column: a scalar leaf of the struct, at a known byte offset.
 public struct StructCSVColumn: Equatable {
 
-    /// The header text. Sub-struct fields are dotted paths
-    /// (`stats.attack`); array elements are bracketed and **1-indexed**
-    /// (`moves[1]`), because the file is meant to be read by a person.
+    /// The header text. Sub-struct fields and bit fields are dotted paths
+    /// (`stats.attack`, `flags.visible`); array elements are bracketed and
+    /// **1-indexed** (`moves[1]`), because the file is meant to be read by
+    /// a person.
     public let header: String
 
-    /// The leaf's declared type. Character arrays keep their array type —
-    /// a whole string is one column, not one column per character.
-    public let type: StructProperty
+    /// What the column holds.
+    public let kind: Kind
 
-    /// Byte offset of the leaf within an entry.
+    /// Byte offset within an entry. For a bit field that is where its
+    /// *container* starts — the field itself has no byte of its own.
     public let offset: Int
 
     /// Key this leaf uses in `StructData.labelValues`, for `.label` leaves
@@ -31,11 +32,34 @@ public struct StructCSVColumn: Equatable {
     /// format rather than a display choice.
     public let labelKey: String?
 
-    public init(header: String, type: StructProperty, offset: Int, labelKey: String? = nil) {
+    public enum Kind: Equatable {
+        /// A scalar leaf of its declared type. Character arrays keep their
+        /// array type — a whole string is one column, not one per
+        /// character.
+        case value(StructProperty)
+        /// One named bit range of the integer at `offset`. There is no
+        /// column for the container itself: two columns writing the same
+        /// bytes would make the result depend on header order.
+        case bits(BitFieldLayout, BitFieldLayout.Field)
+    }
+
+    /// Bytes the column reads. A bit field reads its whole container.
+    public var length: Int {
+        switch kind {
+        case .value(let type): return type.length
+        case .bits(let layout, _): return layout.storage.length
+        }
+    }
+
+    public init(header: String, kind: Kind, offset: Int, labelKey: String? = nil) {
         self.header = header
-        self.type = type
+        self.kind = kind
         self.offset = offset
         self.labelKey = labelKey
+    }
+
+    public init(header: String, type: StructProperty, offset: Int, labelKey: String? = nil) {
+        self.init(header: header, kind: .value(type), offset: offset, labelKey: labelKey)
     }
 }
 
@@ -50,6 +74,9 @@ public enum StructCSVSchema {
     ///     won't round-trip byte-identically; that's a signal the run isn't
     ///     padding and should be typed as a real field.
     ///   * `.primitive(.void)`, which occupies no bytes.
+    ///   * a bit container itself — its named ranges get the columns, and
+    ///     a column for the whole integer would write the same bytes a
+    ///     second time.
     public static func columns(of definition: StructDefinition) -> [StructCSVColumn] {
         var columns = [StructCSVColumn]()
         appendColumns(
@@ -109,6 +136,15 @@ public enum StructCSVSchema {
 
         case .primitive, .enumeration:
             columns.append(.init(header: header, type: type, offset: offset))
+
+        case .bits(let layout):
+            for field in layout.fields {
+                columns.append(.init(
+                    header: header + "." + field.name,
+                    kind: .bits(layout, field),
+                    offset: offset
+                ))
+            }
 
         case .label:
             columns.append(.init(header: header, type: type, offset: offset, labelKey: labelKey))

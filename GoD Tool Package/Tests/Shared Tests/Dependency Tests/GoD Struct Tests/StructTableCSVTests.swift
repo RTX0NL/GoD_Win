@@ -531,4 +531,141 @@ final class StructTableCSVTests: XCTestCase {
         )
         XCTAssertEqual(lines(try StructTableCSV.encode(table: table)), ["a,b", "1,2", "3,4", ""])
     }
+
+    // MARK: - Bit fields
+
+    /// XD's map-REL character flags byte, in MSB-0 terms: bit 0 is `0x80`.
+    private var characterFlags: StructDefinition.Property {
+        .bits(name: "flags", fields: [
+            .flag(name: "visible", bit: 0),
+            .flag(name: "placed_on_load", bit: 1),
+            .flag(name: "has_collision", bit: 2),
+            .abstraction(name: "color", bits: 3...4, enumeration: colors),
+            .number(name: "unknown_5_7", bits: 5...7),
+        ])
+    }
+
+    func testEncodesOneCellPerBitField() throws {
+        let def = definition("Character", [characterFlags])
+        // 0xC5 = 1100 0101: visible and placed set, no collision,
+        // color bits 3:4 = 00 (Red), unknown bits 5:7 = 101 (5).
+        let text = try StructTableCSV.encode(entries: [entry(def, [0xC5])], definition: def)
+        XCTAssertEqual(lines(text), [
+            "flags.visible,flags.placed_on_load,flags.has_collision,flags.color,flags.unknown_5_7",
+            "true,true,false,Red,5",
+            "",
+        ])
+    }
+
+    func testEncodesAnUnnamedEnumValueAsTheInteger() throws {
+        let def = definition("Character", [
+            .bits(name: "flags", fields: [
+                .abstraction(name: "color", bits: 0...1, enumeration: openColors),
+                .number(name: "rest", bits: 2...7),
+            ]),
+        ])
+        // Raw 3 has no case; the cell is the number, never a synthesized
+        // `Open_Colors_3` that couldn't be told from a real name.
+        let text = try StructTableCSV.encode(entries: [entry(def, [0xC0])], definition: def)
+        XCTAssertEqual(lines(text)[1], "3,0")
+    }
+
+    func testDecodesEachBitFieldIntoItsOwnBits() throws {
+        let def = definition("Character", [characterFlags])
+        let header = "flags.visible,flags.placed_on_load,flags.has_collision,flags.color,flags.unknown_5_7"
+        let result = try StructTableCSV.decode(
+            header + "\ntrue,false,true,Blue,1",
+            definition: def
+        )
+        XCTAssertEqual(result.warnings, [])
+        // visible 0x80 + collision 0x20 + color 2 at bits 3:4 (0x10) + 1
+        XCTAssertEqual(result.entries.first?.data.rawBytes, [0xB1])
+    }
+
+    func testBitColumnsMayBeReorderedInTheFile() throws {
+        let def = definition("Character", [characterFlags])
+        let ordered = try StructTableCSV.decode(
+            "flags.visible,flags.color\ntrue,Blue",
+            definition: def
+        )
+        let reversed = try StructTableCSV.decode(
+            "flags.color,flags.visible\nBlue,true",
+            definition: def
+        )
+        // Disjoint ranges, read-modify-write: order can't matter.
+        XCTAssertEqual(
+            reversed.entries.first?.data.rawBytes,
+            ordered.entries.first?.data.rawBytes
+        )
+        // visible 0x80 + color Blue (2) at bits 3:4 = 0x10
+        XCTAssertEqual(ordered.entries.first?.data.rawBytes, [0x90])
+    }
+
+    func testABlankBitCellLeavesItsBitsZero() throws {
+        let def = definition("Character", [characterFlags])
+        let result = try StructTableCSV.decode(
+            "flags.visible,flags.unknown_5_7\n,7",
+            definition: def
+        )
+        XCTAssertEqual(result.entries.first?.data.rawBytes, [0x07])
+    }
+
+    func testARejectedBitCellNamesItsColumn() throws {
+        let def = definition("Character", [characterFlags])
+        XCTAssertThrowsError(
+            try StructTableCSV.decode("flags.visible\nmaybe", definition: def)
+        ) { error in
+            XCTAssertTrue("\(error)".contains("flags.visible"), "\(error)")
+        }
+        XCTAssertThrowsError(
+            try StructTableCSV.decode("flags.color\nMauve", definition: def)
+        ) { error in
+            XCTAssertTrue("\(error)".contains("Colors"), "\(error)")
+        }
+    }
+
+    func testBitFieldsRoundTripByteIdentically() throws {
+        let def = definition("Character", [
+            .uint8(name: "model"),
+            characterFlags,
+            .bits(name: "behavior", storage: .uint16, fields: [
+                .number(name: "move_type", bits: 0...2),
+                .number(name: "talk_start", bits: 3...4),
+                .number(name: "talk_end", bits: 5...6),
+                .number(name: "signed_trim", bits: 7...10, signed: true),
+                .number(name: "unknown_11_15", bits: 11...15),
+            ]),
+        ])
+        for raw in [[0x12, 0x00, 0x00, 0x00], [0x34, 0xFF, 0xFF, 0xFF], [0x56, 0xA5, 0x5A, 0xC3]] {
+            let bytes = raw.map(UInt8.init)
+            let text = try StructTableCSV.encode(entries: [entry(def, bytes)], definition: def)
+            let rebuilt = try StructTableCSV.decode(text, definition: def)
+            XCTAssertEqual(rebuilt.warnings, [])
+            XCTAssertEqual(rebuilt.entries.first?.data.rawBytes, bytes, "round trip of \(bytes)")
+        }
+    }
+
+    func testALittleEndianContainerNumbersBitsInItsValue() throws {
+        let def = definition("Wide", [
+            .bits(name: "word", storage: .uint16, fields: [
+                .flag(name: "top", bit: 0),
+                .number(name: "rest", bits: 1...15),
+            ]),
+        ])
+        // Bit 0 is the top bit of the *value*, so on disc it lands in the
+        // second byte when the data is little-endian.
+        let little = StructData(
+            definition: def,
+            data: GoDData(byteStream: [0x00, 0x00], byteOrder: .little)
+        )
+        little.setBits("word.top", to: 1)
+        XCTAssertEqual(little.data.rawBytes, [0x00, 0x80])
+
+        let big = StructData(
+            definition: def,
+            data: GoDData(byteStream: [0x00, 0x00], byteOrder: .big)
+        )
+        big.setBits("word.top", to: 1)
+        XCTAssertEqual(big.data.rawBytes, [0x80, 0x00])
+    }
 }

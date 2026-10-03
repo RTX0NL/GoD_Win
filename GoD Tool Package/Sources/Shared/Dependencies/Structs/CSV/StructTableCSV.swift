@@ -63,11 +63,34 @@ public enum StructTableCSV {
         of entry: StructData,
         row: Int
     ) throws -> String {
-        guard let bytes: GoDData = entry.data.read(atAddress: column.offset, length: column.type.length) else {
+        guard let bytes: GoDData = entry.data.read(atAddress: column.offset, length: column.length) else {
             throw StructCSVError.unreadableField(column: column.header, row: row, .init())
         }
 
-        if case .label = column.type {
+        let type: StructProperty
+        switch column.kind {
+        case .bits(let layout, let field):
+            guard let value = StructData.readBitField(
+                field: field, layout: layout,
+                from: entry.data, atOffset: column.offset, byteOrder: entry.byteOrder
+            ) else {
+                throw StructCSVError.unreadableField(column: column.header, row: row, .init())
+            }
+            switch field.value {
+            case .boolean:
+                return value != 0 ? "true" : "false"
+            case .enumeration(let definition):
+                // Same rule as a whole-field enum: an unnamed value is a
+                // number, not a synthesized `Enum_<raw>` name.
+                return definition.values.first(where: { $0.rawValue == value })?.name ?? String(value)
+            case .unsigned, .signed:
+                return String(value)
+            }
+        case .value(let valueType):
+            type = valueType
+        }
+
+        if case .label = type {
             if let name = entry.labelValues[column.labelKey ?? column.header] {
                 return name
             }
@@ -90,7 +113,7 @@ public enum StructTableCSV {
             return value
         }
 
-        switch column.type {
+        switch type {
         case .enumeration(let definition):
             let raw = try integer(
                 width: definition.propertyType.length,
@@ -130,9 +153,9 @@ public enum StructTableCSV {
             }
             return bytes.readString(atAddress: 0, format: format, maxCharacters: count) ?? ""
 
-        case .label, .subStruct, .padding:
+        case .label, .subStruct, .padding, .bits:
             // `.label` returned above; the schema never emits a column for
-            // a whole sub-struct or for padding.
+            // a whole sub-struct, for padding, or for a bit container.
             throw StructCSVError.unreadableField(column: column.header, row: row, .init())
         }
     }
@@ -330,9 +353,10 @@ public enum StructTableCSV {
         // Everything else routes through `StructData.writeValue`, so the
         // byte-level rules live in one place.
         func writeValue(_ value: Any) throws {
+            guard case .value(let type) = column.kind else { return }
             try StructData.writeValue(
                 value,
-                type: column.type,
+                type: type,
                 propertyName: column.header,
                 into: entry.data,
                 atOffset: column.offset,
@@ -349,7 +373,43 @@ public enum StructTableCSV {
             )
         }
 
-        switch column.type {
+        let type: StructProperty
+        switch column.kind {
+        case .bits(let layout, let field):
+            // Blank leaves the bits as they are — a row starts zeroed, so
+            // that is zero, exactly as an absent column elsewhere.
+            guard !trimmed.isEmpty else { return }
+            let value: Int
+            switch field.value {
+            case .boolean:
+                guard let parsed = parseBool(trimmed) else { throw fail("true or false") }
+                value = parsed ? 1 : 0
+            case .enumeration(let definition):
+                if let resolved = try? definition.get(trimmed) {
+                    value = resolved.rawValue
+                } else if let raw = parseInt(trimmed) {
+                    value = raw
+                } else {
+                    throw fail("a case name of '\(definition.name)' or an integer")
+                }
+            case .unsigned, .signed:
+                guard let parsed = parseInt(trimmed) else { throw fail("an integer") }
+                value = parsed
+            }
+            try StructData.writeBitField(
+                value,
+                field: field,
+                layout: layout,
+                into: entry.data,
+                atOffset: column.offset,
+                byteOrder: entry.byteOrder
+            )
+            return
+        case .value(let valueType):
+            type = valueType
+        }
+
+        switch type {
         case .label:
             guard !trimmed.isEmpty else { return }
             entry.labelValues[column.labelKey ?? column.header] = trimmed
@@ -410,7 +470,7 @@ public enum StructTableCSV {
             // Only character arrays reach here (see the schema).
             try writeValue(cell)
 
-        case .subStruct, .padding:
+        case .subStruct, .padding, .bits:
             return
         }
     }

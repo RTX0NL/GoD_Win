@@ -112,7 +112,15 @@ public class StructData {
             self.getString(member, format: .utf8)
         }
         set {
-            guard let newValue, let type = definition.property(for: member) else {
+            guard let newValue else { return }
+            if let location = definition.bitLocation(for: member) {
+                if case .enumeration(let enumeration) = location.field.value,
+                   let enumCase = try? enumeration.get(newValue) {
+                    setBits(member, to: enumCase.rawValue)
+                }
+                return
+            }
+            guard let type = definition.property(for: member) else {
                 return
             }
             switch type {
@@ -129,6 +137,22 @@ public class StructData {
     
     public subscript(dynamicMember member: String) -> Enum.Case {
         get throws {
+            if let location = definition.bitLocation(for: member) {
+                guard case .enumeration(let enumDefinition) = location.field.value else {
+                    throw StructError.TypeMismatch(
+                        key: member,
+                        propertyType: .bits(location.layout),
+                        type: Enum.Case.self,
+                        struct: self,
+                        .init()
+                    )
+                }
+                guard let rawValue = getBits(member) else {
+                    throw StructError.MissingKey(key: member, struct: self, .init())
+                }
+                return try enumDefinition.get(rawValue)
+            }
+
             guard let type = definition.property(for: member) else {
                 throw StructError.MissingKey(key: member, struct: self, .init())
             }
@@ -154,18 +178,60 @@ public class StructData {
 
     // MARK: - Label accessors
 
-    /// Get the label name for a label property
     public func getLabel(_ keypath: String) -> String? {
         guard let property = definition.property(for: keypath),
               case .label = property else { return nil }
         return labelValues[keypath]
     }
 
-    /// Set the label name for a label property
     public func setLabel(_ keypath: String, to labelName: String?) {
         guard let property = definition.property(for: keypath),
               case .label = property else { return }
         labelValues[keypath] = labelName
+    }
+
+    // MARK: - Bit field accessors
+
+    /// The integer a bit field lives in, as raw bits.
+    private func readStorage(_ location: StructDefinition.BitLocation) -> UInt64? {
+        let width = location.layout.storage.length
+        guard let bytes: GoDData = data.read(atAddress: location.byteOffset, length: width),
+              let raw = StructData.readInteger(
+                  from: bytes, width: width, signed: false, byteOrder: byteOrder
+              ) else {
+            return nil
+        }
+        return UInt64(bitPattern: Int64(raw))
+    }
+
+    private func writeStorage(_ storage: UInt64, _ location: StructDefinition.BitLocation) {
+        try? StructData.writeInteger(
+            Int(bitPattern: UInt(storage)),
+            width: location.layout.storage.length,
+            signed: false,
+            into: data,
+            atOffset: location.byteOffset,
+            byteOrder: byteOrder
+        )
+    }
+
+    /// The value of the bit field `keypath` names, or nil if it names none.
+    public func getBits(_ keypath: String) -> Int? {
+        guard let location = definition.bitLocation(for: keypath),
+              let storage = readStorage(location) else { return nil }
+        return location.layout.extract(location.field, fromStorage: storage)
+    }
+
+    /// Writes one bit field, leaving every other bit of its container as it
+    /// was — two fields share bytes, so this is the one property type whose
+    /// write has to be read-modify-write. The value is truncated to the
+    /// field's width, so it can never reach a neighbour's bits.
+    @discardableResult
+    public func setBits(_ keypath: String, to value: Int) -> Bool {
+        guard let location = definition.bitLocation(for: keypath),
+              let storage = readStorage(location) else { return false }
+        writeStorage(location.layout.insert(value, for: location.field, intoStorage: storage), location)
+        return true
     }
 
     // MARK: - Data accessors
@@ -183,11 +249,29 @@ public class StructData {
             FileHandle.standardError.write(Data(
                 "WARNING: struct '\(definition.name)' has no property '\(keypath)' — did you mean '\(suggestion)'?\n".utf8
             ))
+        } else if let suggestion = definition.closestBitFieldName(to: keypath) {
+            FileHandle.standardError.write(Data(
+                "WARNING: struct '\(definition.name)' has no bit field '\(keypath)' — did you mean '\(suggestion)'?\n".utf8
+            ))
         }
         #endif
     }
 
     public func get(_ keypath: String) -> GoDData? {
+        // A bit field has no bytes of its own, so what comes back is its
+        // *value*, in the narrowest whole number of bytes that holds it —
+        // not the container's bytes, which belong to its neighbours too.
+        if let location = definition.bitLocation(for: keypath) {
+            guard let storage = readStorage(location) else { return nil }
+            let value = location.layout.extract(location.field, fromStorage: storage)
+            let width = (location.field.width + 7) / 8
+            let out = GoDData(length: width, byteOrder: byteOrder)
+            try? StructData.writeInteger(
+                value, width: width, signed: false, into: out, atOffset: 0, byteOrder: byteOrder
+            )
+            return out
+        }
+
         guard let offset = definition.offset(for: keypath),
               let length = definition.property(for: keypath)?.length else {
             warnIfNearMiss(keypath)
@@ -198,6 +282,8 @@ public class StructData {
     }
     
     public func get(_ keypath: String) -> Int? {
+        if let value = getBits(keypath) { return value }
+
         guard let data: GoDData = get(keypath),
               let property = definition.property(for: keypath) else { return nil }
         
@@ -210,6 +296,10 @@ public class StructData {
             return getInteger(type)
         case .enumeration(let definition):
             return getInteger(definition.propertyType)
+        case .bits(let layout):
+            // The container as a whole. Its named ranges are read through
+            // `getBits`, which ran first.
+            return getInteger(layout.storage)
         case .primitive, .array, .subStruct, .label, .padding:
             return Int(data: data)
         }
@@ -233,6 +323,12 @@ public class StructData {
     }
     
     public func get(_ keypath: String) -> Enum.Case? {
+        if let location = definition.bitLocation(for: keypath) {
+            guard case .enumeration(let enumDefinition) = location.field.value,
+                  let rawValue = getBits(keypath) else { return nil }
+            return try? enumDefinition.get(rawValue)
+        }
+
         guard let type = definition.property(for: keypath) else {
             return nil
         }
@@ -254,11 +350,24 @@ public class StructData {
     }
     
     public func set(_ keypath: String, to value: Int?) {
+        if setBits(keypath, to: value ?? 0) { return }
         let data = (value ?? 0).rawData(byteOrder: self.byteOrder)
         set(keypath, to: data)
     }
 
     public func set(_ keypath: String, to value: GoDData?) {
+        if definition.bitLocation(for: keypath) != nil {
+            // The bytes carry the field's value, read at their own width
+            // (that's what `get` hands out); nil clears the field.
+            let value = value.flatMap {
+                StructData.readInteger(
+                    from: $0, width: $0.length, signed: false, byteOrder: byteOrder
+                )
+            }
+            setBits(keypath, to: value ?? 0)
+            return
+        }
+
         guard let offset = definition.offset(for: keypath),
               let length = definition.property(for: keypath)?.length else {
             warnIfNearMiss(keypath)
@@ -314,6 +423,20 @@ public class StructData {
     /// at whatever it already held (zero, for a fresh struct). A file type
     /// the engine's enum doesn't list would then be written as type 0.
     public func setEnumCase(_ keypath: String, named caseName: String) throws {
+        if let location = definition.bitLocation(for: keypath) {
+            guard case .enumeration(let enumeration) = location.field.value else {
+                throw StructError.TypeMismatch(
+                    key: keypath,
+                    propertyType: .bits(location.layout),
+                    type: Enum.Case.self,
+                    struct: self,
+                    .init()
+                )
+            }
+            setBits(keypath, to: try enumeration.get(caseName).rawValue)
+            return
+        }
+
         guard let type = definition.property(for: keypath) else {
             throw StructError.MissingKey(key: keypath, struct: self, .init())
         }
@@ -380,6 +503,20 @@ extension StructData: CustomStringConvertible {
                 result += "\(name) = \(labelName) <label>\n"
             case .array(_, let count):
                 result += "\(name): \(count) items <\(typeName)>\n"
+            case .bits(let layout):
+                result += "\(name) <\(typeName)>:\n"
+                for field in layout.fields {
+                    let value = getBits("\(name).\(field.name)") ?? 0
+                    switch field.value {
+                    case .boolean:
+                        result += "  \(field.name) = \(value != 0)\n"
+                    case .enumeration(let enumeration):
+                        let enumValue = try? enumeration.get(value)
+                        result += "  \(field.name) = \(enumValue?.name ?? "unknown") (\(value))\n"
+                    case .unsigned, .signed:
+                        result += "  \(field.name) = \(value)\n"
+                    }
+                }
             case .padding:
                 continue
             }
@@ -445,6 +582,37 @@ extension StructData: Encodable {
             )
         }
         
+        // A bit container encodes as an object of its named ranges, the
+        // way a sub-struct does. The container's own integer is never
+        // emitted: two spellings of the same bytes would let an edit to
+        // one be silently overwritten by the other.
+        func encodeBits(
+            layout: BitFieldLayout,
+            from data: GoDData,
+            into container: inout KeyedEncodingContainer<CustomCodingKeys>
+        ) throws {
+            let raw = StructData.readInteger(
+                from: data, width: layout.storage.length, signed: false, byteOrder: data.byteOrder
+            ) ?? 0
+            let storage = UInt64(bitPattern: Int64(raw))
+            for field in layout.fields {
+                let key = CustomCodingKeys(field.name)
+                let value = layout.extract(field, fromStorage: storage)
+                switch field.value {
+                case .boolean:
+                    try container.encode(value != 0, forKey: key)
+                case .enumeration(let definition):
+                    if let enumCase = try? definition.get(value) {
+                        try container.encode(enumCase.name, forKey: key)
+                    } else {
+                        try container.encode(value, forKey: key)
+                    }
+                case .unsigned, .signed:
+                    try container.encode(value, forKey: key)
+                }
+            }
+        }
+
         func encode(
             data: GoDData,
             type: StructProperty,
@@ -536,6 +704,15 @@ extension StructData: Encodable {
                         try encodeEnum(definition: definition, from: data, into: &container)
                     }
                     offset += definition.propertyType.length
+                }
+            case .bits(let layout):
+                var offset = 0
+                for _ in 0 ..< count {
+                    if let element: GoDData = data.read(atAddress: offset, length: layout.storage.length) {
+                        var nested = container.nestedContainer(keyedBy: CustomCodingKeys.self)
+                        try encodeBits(layout: layout, from: element, into: &nested)
+                    }
+                    offset += layout.storage.length
                 }
             case .array(let subProperty, let subCount):
                 var offset = 0
@@ -667,6 +844,9 @@ extension StructData: Encodable {
                 } else {
                     try container.encode(raw, forKey: key)
                 }
+            case .bits(let layout):
+                var nested = container.nestedContainer(keyedBy: CustomCodingKeys.self, forKey: key)
+                try encodeBits(layout: layout, from: data, into: &nested)
             case .array(let subProperty, let count):
                 var container = container.nestedUnkeyedContainer(forKey: key)
                 try encode(data: data, type: subProperty, count: count, labels: labels, container: &container)
@@ -932,6 +1112,20 @@ public extension StructData {
                 labelValues: &labelValues,
                 byteOrder: byteOrder
             )
+        case .bits(let layout):
+            // An object of named ranges, like a sub-struct. A bare integer
+            // for the whole container is refused: one spelling per value.
+            guard let nested = value as? [String: Any] else {
+                throw decodingError("expected object of named bit fields for '\(propertyName)'", offset)
+            }
+            try writeBits(
+                nested,
+                layout: layout,
+                propertyName: propertyName,
+                into: data,
+                atOffset: offset,
+                byteOrder: byteOrder
+            )
         case .subStruct(let definition):
             guard let nested = value as? [String: Any] else {
                 throw decodingError("expected object for sub-struct '\(definition.name)' at '\(propertyName)'", offset)
@@ -946,6 +1140,109 @@ public extension StructData {
                 labelValues: &labelValues,
                 byteOrder: byteOrder
             )
+        }
+    }
+
+    // MARK: - Bit fields
+
+    /// Reads one named bit range out of the container at `offset`.
+    /// Internal because the CSV codec is a second serialization over the
+    /// same bytes and must not re-derive the masking.
+    internal static func readBitField(
+        field: BitFieldLayout.Field,
+        layout: BitFieldLayout,
+        from data: GoDData,
+        atOffset offset: Int,
+        byteOrder: ByteOrder
+    ) -> Int? {
+        let width = layout.storage.length
+        guard let bytes: GoDData = data.read(atAddress: offset, length: width),
+              let raw = readInteger(from: bytes, width: width, signed: false, byteOrder: byteOrder) else {
+            return nil
+        }
+        return layout.extract(field, fromStorage: UInt64(bitPattern: Int64(raw)))
+    }
+
+    /// Writes one named bit range, read-modify-write, leaving every other
+    /// bit of the container alone. The only property type whose write has
+    /// to do this — two fields share bytes.
+    internal static func writeBitField(
+        _ value: Int,
+        field: BitFieldLayout.Field,
+        layout: BitFieldLayout,
+        into data: GoDData,
+        atOffset offset: Int,
+        byteOrder: ByteOrder
+    ) throws {
+        let width = layout.storage.length
+        let existing = data.read(atAddress: offset, length: width).flatMap {
+            readInteger(from: $0, width: width, signed: false, byteOrder: byteOrder)
+        } ?? 0
+        let storage = layout.insert(value, for: field, intoStorage: UInt64(bitPattern: Int64(existing)))
+        try writeInteger(
+            Int(bitPattern: UInt(storage)),
+            width: width,
+            signed: false,
+            into: data,
+            atOffset: offset,
+            byteOrder: byteOrder
+        )
+    }
+
+    /// Writes a whole container from an object of named ranges. A field the
+    /// object doesn't mention keeps the bits it already has.
+    private static func writeBits(
+        _ node: [String: Any],
+        layout: BitFieldLayout,
+        propertyName: String,
+        into data: GoDData,
+        atOffset offset: Int,
+        byteOrder: ByteOrder
+    ) throws {
+        for field in layout.fields {
+            guard let raw = node[field.name] else { continue }
+            try writeBitField(
+                bitValue(raw, field: field, propertyName: propertyName, offset: offset),
+                field: field,
+                layout: layout,
+                into: data,
+                atOffset: offset,
+                byteOrder: byteOrder
+            )
+        }
+    }
+
+    /// One JSON value for one bit range, by the range's declared kind.
+    private static func bitValue(
+        _ raw: Any?,
+        field: BitFieldLayout.Field,
+        propertyName: String,
+        offset: Int
+    ) throws -> Int {
+        switch field.value {
+        case .boolean:
+            guard let value = coerceToBool(raw) else {
+                throw decodingError("expected bool for bit field '\(propertyName).\(field.name)'", offset)
+            }
+            return value ? 1 : 0
+        case .enumeration(let definition):
+            if let name = raw as? String {
+                if let resolved = try? definition.get(name) { return resolved.rawValue }
+                let prefix = definition.unknownCasePrefix
+                if name.hasPrefix(prefix), let synthesized = Int(name.dropFirst(prefix.count)) {
+                    return synthesized
+                }
+            }
+            if let value = coerceToInt(raw) { return value }
+            throw decodingError(
+                "expected case name or raw value for enum '\(definition.name)' at '\(propertyName).\(field.name)'",
+                offset
+            )
+        case .unsigned, .signed:
+            guard let value = coerceToInt(raw) else {
+                throw decodingError("expected number for bit field '\(propertyName).\(field.name)'", offset)
+            }
+            return value
         }
     }
 

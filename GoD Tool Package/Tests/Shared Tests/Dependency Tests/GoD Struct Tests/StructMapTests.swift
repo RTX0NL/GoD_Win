@@ -206,4 +206,111 @@ final class StructMapTests: XCTestCase {
         let json = #"{"name":"X","wordSize":1,"alignmentStyle":"none","properties":["uint8 a"]}"#
         XCTAssertThrowsError(try JSONDecoder().decode(StructMap.self, from: json.data(format: .utf8)))
     }
+
+    // MARK: - Bit fields
+
+    /// A `properties` entry in its object form. A bit layout is a list, so
+    /// it can't be a `"<type> <name>"` string — and the object is the only
+    /// property form that carries a description per field.
+    private func bitMapJSON(_ propertyObject: String, extra: [String] = []) -> GoDData {
+        let entries = ([propertyObject] + extra.map { "\"\($0)\"" }).joined(separator: ",")
+        let json = "{\"name\":\"Packed\",\"description\":null,\"wordSize\":1,"
+            + "\"alignmentStyle\":\"none\",\"properties\":[\(entries)]}"
+        return json.data(format: .utf8)
+    }
+
+    private static let flagsObject = """
+    {"name":"flags","description":"the packed byte","storage":"uint8","bits":[
+      {"name":"kind","range":"0:2","enum":"Kinds","description":"floor kind"},
+      {"name":"visible","range":"3","type":"boolean"},
+      {"name":"delta","range":"4:5","type":"signed"},
+      {"name":"unknown_6_7","range":"6:7"}
+    ]}
+    """
+
+    func testParsesABitFieldObject() throws {
+        let map = try JSONDecoder().decode(
+            StructMap.self,
+            from: bitMapJSON(Self.flagsObject, extra: ["uint8 after"])
+        )
+        XCTAssertEqual(map.properties.count, 2)
+        XCTAssertEqual(map.properties[0].name, "flags")
+        XCTAssertEqual(map.properties[0].description, "the packed byte")
+        XCTAssertEqual(map.properties[1].name, "after")
+
+        guard case .bits(let bitMap) = map.properties[0].type else {
+            return XCTFail("expected a bit field, got \(map.properties[0].type)")
+        }
+        XCTAssertEqual(bitMap.storage, .uint8)
+        XCTAssertEqual(bitMap.fields.map(\.name), ["kind", "visible", "delta", "unknown_6_7"])
+        XCTAssertEqual(bitMap.fields.map(\.bits), [0...2, 3...3, 4...5, 6...7])
+        XCTAssertEqual(bitMap.fields.map(\.value), [
+            .enumeration(name: "Kinds"), .boolean, .signed, .unsigned,
+        ])
+        XCTAssertEqual(bitMap.fields[0].description, "floor kind")
+    }
+
+    func testParsesAnArrayOfBitContainers() throws {
+        let object = """
+        {"name":"pair","description":null,"storage":"uint16","count":2,"bits":[
+          {"name":"whole","range":"0:15"}
+        ]}
+        """
+        let map = try JSONDecoder().decode(StructMap.self, from: bitMapJSON(object))
+        guard case .array(.bits(let bitMap), let count) = map.properties[0].type else {
+            return XCTFail("expected an array of bit fields, got \(map.properties[0].type)")
+        }
+        XCTAssertEqual(count, 2)
+        XCTAssertEqual(bitMap.storage, .uint16)
+    }
+
+    func testBitFieldsRoundTripThroughEncodeAndDecode() throws {
+        let decoded = try JSONDecoder().decode(
+            StructMap.self,
+            from: bitMapJSON(Self.flagsObject, extra: ["uint8 after"])
+        )
+        let reEncoded = try XCTUnwrap(decoded.encodeJSON())
+        let again = try JSONDecoder().decode(StructMap.self, from: reEncoded)
+        XCTAssertEqual(again.properties.map(\.name), decoded.properties.map(\.name))
+        XCTAssertEqual(again.properties.map(\.type), decoded.properties.map(\.type))
+        XCTAssertEqual(again.properties.map(\.description), decoded.properties.map(\.description))
+    }
+
+    func testBadStorageTypeThrows() {
+        let object = """
+        {"name":"flags","description":null,"storage":"uint7","bits":[{"name":"a","range":"0:7"}]}
+        """
+        XCTAssertThrowsError(try JSONDecoder().decode(StructMap.self, from: bitMapJSON(object)))
+    }
+
+    func testBadRangeThrows() {
+        for range in ["2:0", "", "a:b", "0:1:2"] {
+            let object = """
+            {"name":"flags","description":null,"storage":"uint8","bits":[{"name":"a","range":"\(range)"}]}
+            """
+            XCTAssertThrowsError(
+                try JSONDecoder().decode(StructMap.self, from: bitMapJSON(object)),
+                "range '\(range)' should be refused"
+            )
+        }
+    }
+
+    func testBadValueKindThrows() {
+        let object = """
+        {"name":"flags","description":null,"storage":"uint8","bits":[
+          {"name":"a","range":"0:7","type":"float"}
+        ]}
+        """
+        XCTAssertThrowsError(try JSONDecoder().decode(StructMap.self, from: bitMapJSON(object)))
+    }
+
+    func testBothTypeAndEnumThrows() {
+        // The enum reference *is* the type; two answers to one question.
+        let object = """
+        {"name":"flags","description":null,"storage":"uint8","bits":[
+          {"name":"a","range":"0:7","type":"unsigned","enum":"Kinds"}
+        ]}
+        """
+        XCTAssertThrowsError(try JSONDecoder().decode(StructMap.self, from: bitMapJSON(object)))
+    }
 }

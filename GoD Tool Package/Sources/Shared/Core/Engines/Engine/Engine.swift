@@ -112,6 +112,51 @@ public extension Engine {
                     return .label
                 case .padding(let length):
                     return .padding(length: length)
+                case .bits(let map):
+                    var fields = [BitFieldLayout.Field]()
+                    for field in map.fields {
+                        let value: BitFieldLayout.Value
+                        switch field.value {
+                        case .unsigned:
+                            value = .unsigned
+                        case .signed:
+                            value = .signed
+                        case .boolean:
+                            value = .boolean
+                        case .enumeration(let enumName):
+                            guard let def: Enum = getEnum(enumName) else {
+                                throw EngineDecodingError.missingEnumProperty(
+                                    structName: name,
+                                    property: "\(fieldName).\(field.name)",
+                                    enumName: enumName,
+                                    .init()
+                                )
+                            }
+                            try Self.validateCaseNames(of: def)
+                            value = .enumeration(def)
+                        }
+                        fields.append(.init(
+                            name: field.name,
+                            bits: field.bits,
+                            value: value,
+                            description: field.description
+                        ))
+                    }
+                    let layout = BitFieldLayout(storage: map.storage, fields: fields)
+                    // A layout that doesn't tile its storage, or overlaps,
+                    // or holds an enum case too wide for its run, would
+                    // read and write silently wrong bits — so it is refused
+                    // where the engine loads, not where it is serialized.
+                    let issues = layout.issues
+                    guard issues.isEmpty else {
+                        throw EngineDecodingError.invalidBitFieldLayout(
+                            structName: name,
+                            property: fieldName,
+                            issues: issues.map(\.description),
+                            .init()
+                        )
+                    }
+                    return .bits(layout)
                 }
             }
             let type = try toProperty(field: field.type)

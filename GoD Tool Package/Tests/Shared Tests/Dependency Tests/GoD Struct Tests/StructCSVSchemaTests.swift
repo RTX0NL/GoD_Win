@@ -170,4 +170,79 @@ final class StructCSVSchemaTests: XCTestCase {
         let def = definition("Empty", [.padding(length: 4)])
         XCTAssertTrue(StructCSVSchema.columns(of: def).isEmpty)
     }
+
+    // MARK: - Bit fields
+
+    private var flagsByte: StructDefinition.Property {
+        .bits(name: "flags", fields: [
+            .number(name: "kind", bits: 0...2),
+            .flag(name: "visible", bit: 3),
+            .number(name: "unknown_4_7", bits: 4...7),
+        ])
+    }
+
+    func testEachBitFieldGetsItsOwnDottedColumn() {
+        let def = definition("Packed", [.uint8(name: "before"), flagsByte, .uint8(name: "after")])
+        XCTAssertEqual(headers(def), [
+            "before", "flags.kind", "flags.visible", "flags.unknown_4_7", "after",
+        ])
+    }
+
+    func testBitColumnsCarryTheirContainersOffset() {
+        // A bit field has no byte of its own, so every column of one
+        // container shares the container's offset — and the next property
+        // still starts one byte later.
+        let def = definition("Packed", [.uint8(name: "before"), flagsByte, .uint8(name: "after")])
+        XCTAssertEqual(offsets(def), [
+            "before": 0, "flags.kind": 1, "flags.visible": 1, "flags.unknown_4_7": 1, "after": 2,
+        ])
+    }
+
+    func testNoColumnIsEmittedForTheContainerItself() {
+        // Two columns writing the same bytes would make the decoded row
+        // depend on header order.
+        let def = definition("Packed", [flagsByte])
+        XCTAssertFalse(headers(def).contains("flags"))
+    }
+
+    func testBitColumnsCarryTheFieldNotTheContainer() {
+        let def = definition("Packed", [flagsByte])
+        let columns = StructCSVSchema.columns(of: def)
+        guard case .bits(let layout, let field) = columns[1].kind else {
+            return XCTFail("expected a bit column")
+        }
+        XCTAssertEqual(field.name, "visible")
+        XCTAssertEqual(layout.storage, .uint8)
+        // The column reads the whole container, not one byte of a wider one.
+        XCTAssertEqual(columns[1].length, 1)
+    }
+
+    func testBitFieldsInsideASubStructAndAnArray() {
+        let inner = StructDefinition(
+            name: "Inner", wordSize: 4, alignmentStyle: .none, properties: [flagsByte]
+        )
+        let def = definition("Outer", [
+            .subStruct(name: "sub", defintion: inner),
+            .bitsArray(name: "pair", count: 2, fields: [
+                .flag(name: "on", bit: 0),
+                .number(name: "rest", bits: 1...7),
+            ]),
+        ])
+        XCTAssertEqual(headers(def), [
+            "sub.flags.kind", "sub.flags.visible", "sub.flags.unknown_4_7",
+            "pair[1].on", "pair[1].rest", "pair[2].on", "pair[2].rest",
+        ])
+        XCTAssertEqual(offsets(def)["pair[2].on"], 2)
+    }
+
+    func testAWiderContainerKeepsOneOffsetForEveryField() {
+        let def = definition("Wide", [
+            .bits(name: "word", storage: .uint16, fields: [
+                .number(name: "high", bits: 0...3),
+                .number(name: "low", bits: 4...15),
+            ]),
+            .uint8(name: "after"),
+        ])
+        XCTAssertEqual(offsets(def), ["word.high": 0, "word.low": 0, "after": 2])
+    }
 }

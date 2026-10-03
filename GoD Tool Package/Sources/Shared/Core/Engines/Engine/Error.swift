@@ -17,6 +17,7 @@ public enum EngineDecodingError: Error, CustomStringConvertible {
     case invalidStructPropertyNames(structName: String, names: [String], ErrorTrace)
     case duplicateStructPropertyNames(structName: String, names: [String], ErrorTrace)
     case invalidEnumCaseNames(enumName: String, names: [String], ErrorTrace)
+    case invalidBitFieldLayout(structName: String, property: String, issues: [String], ErrorTrace)
     case generic(ErrorTrace)
     
     public var description: String {
@@ -57,6 +58,11 @@ public enum EngineDecodingError: Error, CustomStringConvertible {
             return "Error: Enum '\(enumName)' has invalid case names: \(names.joined(separator: ", ")). "
                 + "A case name must start with a letter or '_' and contain no whitespace, so it can't be "
                 + "confused with a raw value and survives the '<name> = <rawValue>' codec.\n\(errorTrace)"
+        case let .invalidBitFieldLayout(structName, property, issues, errorTrace):
+            return "Error: Bit field '\(property)' of struct '\(structName)' isn't a usable layout:\n"
+                + issues.map { "  - " + $0 }.joined(separator: "\n")
+                + "\nBit 0 is the most significant bit of the storage integer, and the fields must tile "
+                + "it exactly, most significant first.\n\(errorTrace)"
         case let .generic(errorTrace):
             return "Error: Something went wrong\n\(errorTrace)"
         }

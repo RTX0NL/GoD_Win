@@ -14,6 +14,9 @@ public indirect enum StructField: Equatable {
     case enumeration(name: String)
     case label
     case padding(length: Int)
+    /// An integer split into named bit ranges, with its enum references
+    /// still unresolved. Serialized as an object, not as a type string.
+    case bits(BitFieldMap)
 
     public static func string(format: StringFormats, length: Int) -> StructField {
         return .array(.primitive(.character(format)), count: length)
@@ -56,6 +59,8 @@ extension StructField: CustomStringConvertible {
                 return "label"
             case .padding(length: let length):
                 return "void[\(length)]"
+            case .bits(let map):
+                return map.description
             }
         }
         return typeString(self)

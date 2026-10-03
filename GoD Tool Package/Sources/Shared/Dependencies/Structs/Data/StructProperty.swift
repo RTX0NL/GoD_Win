@@ -15,7 +15,7 @@ public enum IntegerProperties: String, Codable, Equatable, CaseIterable {
     case uint32, int32
     case uint64, int64
     
-    var length: Int {
+    public var length: Int {
         switch self {
         case .uint8, .int8:
             return 1
@@ -32,7 +32,7 @@ public enum IntegerProperties: String, Codable, Equatable, CaseIterable {
 
     /// Whether the type is a signed (two's-complement) integer.
     /// Drives sign-extension when reading and is byte-order agnostic.
-    var isSigned: Bool {
+    public var isSigned: Bool {
         switch self {
         case .int8, .int16, .int24, .int32, .int64:
             return true
@@ -89,6 +89,10 @@ public indirect enum StructProperty: Equatable {
     case enumeration(Enum)
     case label
     case padding(length: Int)
+    /// An integer split into named bit ranges. It occupies its storage
+    /// type's bytes, so every offset walk treats it as that integer; the
+    /// named ranges inside are addressed as `<property>.<field>`.
+    case bits(BitFieldLayout)
 
     public static func string(format: StringFormats, length: Int) -> StructProperty {
         return .array(.primitive(.character(format)), count: length)
@@ -108,6 +112,8 @@ public indirect enum StructProperty: Equatable {
             return 4
         case .padding(let length):
             return length
+        case .bits(let layout):
+            return layout.storage.length
         }
     }
 
@@ -127,6 +133,8 @@ public indirect enum StructProperty: Equatable {
             return 4
         case .padding:
             return 1
+        case .bits(let layout):
+            return StructProperty.primitive(.integer(layout.storage)).alignment
         }
     }
 }
@@ -248,6 +256,7 @@ extension StructProperty: CustomStringConvertible {
         case .enumeration(let definition): return "enum " + definition.name
         case .label: return "label"
         case .padding(let length): return "void[\(length)]"
+        case .bits(let layout): return layout.description
         }
     }
 }

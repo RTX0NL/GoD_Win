@@ -95,6 +95,17 @@ final class StructPropertyCoverageTests: XCTestCase {
         XCTAssertEqual(StructProperty.string(format: .utf16_big, length: 4).length, 8)
     }
 
+    func testBitsLengthIsItsStorage() {
+        for storage in [IntegerProperties.uint8, .uint16, .uint24, .uint32, .uint64] {
+            let bitCount = storage.length * 8
+            let property = StructProperty.bits(BitFieldLayout(
+                storage: storage,
+                fields: [.number(name: "whole", bits: 0...(bitCount - 1))]
+            ))
+            XCTAssertEqual(property.length, storage.length)
+        }
+    }
+
     // MARK: - StructProperty alignment
 
     func testAlignment24BitIsOne() {
@@ -122,6 +133,19 @@ final class StructPropertyCoverageTests: XCTestCase {
         XCTAssertEqual(StructProperty.enumeration(weekEnum).alignment, 1)
     }
 
+    func testAlignmentBitsFollowsItsStorage() {
+        func property(_ storage: IntegerProperties) -> StructProperty {
+            .bits(BitFieldLayout(
+                storage: storage,
+                fields: [.number(name: "whole", bits: 0...(storage.length * 8 - 1))]
+            ))
+        }
+        XCTAssertEqual(property(.uint8).alignment, 1)
+        XCTAssertEqual(property(.uint16).alignment, 2)
+        XCTAssertEqual(property(.uint24).alignment, 1)   // same as a uint24 field
+        XCTAssertEqual(property(.uint32).alignment, 4)
+    }
+
     func testAlignmentSubStruct() {
         let def = StructDefinition(name: "S", wordSize: 4, alignmentStyle: .cStyle,
                                    properties: [.uint8(name: "a"), .uint32(name: "b")])
@@ -139,6 +163,13 @@ final class StructPropertyCoverageTests: XCTestCase {
         XCTAssertEqual(StructProperty.enumeration(weekEnum).description, "enum DaysOfWeek")
         let def = StructDefinition(name: "Inner", wordSize: 1, alignmentStyle: .none, properties: [.uint8(name: "x")])
         XCTAssertEqual(StructProperty.subStruct(def).description, "struct Inner")
+        XCTAssertEqual(
+            StructProperty.bits(BitFieldLayout(
+                storage: .uint16,
+                fields: [.number(name: "whole", bits: 0...15)]
+            )).description,
+            "bits(uint16)"
+        )
     }
 
     func testStaticAccessors() {
