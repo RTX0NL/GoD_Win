@@ -53,3 +53,26 @@ final class GeneratedReadable: GoDReadable {
         return GoDData(byteStream: (start ..< start + count).map(byte), byteOrder: byteOrder)
     }
 }
+
+extension GoDReadable {
+    /// Every byte of a readable, a window at a time.
+    ///
+    /// The tests' own rather than the production helper of the same shape, and
+    /// deliberately so: these files are committed alongside the codecs they
+    /// exercise, and a test that reaches for a method added somewhere else
+    /// cannot be compiled from the commit that needs it. Named apart from
+    /// anything on `GoDReadable` so that neither shadows the other.
+    func allBytes(windowSize: Int = 1 << 20) throws -> GoDData {
+        let out = GoDData(data: Data(count: length), byteOrder: byteOrder)
+        var offset = 0
+        while offset < length {
+            let count = min(max(1, windowSize), length - offset)
+            guard let window = read(atAddress: offset, length: count), window.length == count else {
+                throw GoDReadableError.readFailed(offset: offset, length: count, total: length)
+            }
+            out.write(window, atAddress: UInt(offset))
+            offset += count
+        }
+        return out
+    }
+}

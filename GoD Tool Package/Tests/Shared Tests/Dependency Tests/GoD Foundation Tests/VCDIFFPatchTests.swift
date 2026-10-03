@@ -20,7 +20,7 @@ final class VCDIFFPatchTests: XCTestCase {
     private func patchBytes(_ source: [UInt8], _ target: [UInt8], encoder: VCDIFFEncoder = VCDIFFEncoder()) throws -> [UInt8] {
         try VCDIFFPatchCodec(encoder: encoder)
             .createPatch(source: data(source), target: data(target))
-            .materialized()
+            .allBytes()
             .rawBytes
     }
 
@@ -35,7 +35,7 @@ final class VCDIFFPatchTests: XCTestCase {
         let codec = VCDIFFPatchCodec()
         let applied = try codec.apply(patch: data(patch), to: data(source), direction: nil, validateInput: true)
         XCTAssertEqual(
-            try applied.output.materialized().rawBytes, target, "apply", file: file, line: line
+            try applied.output.allBytes().rawBytes, target, "apply", file: file, line: line
         )
         XCTAssertEqual(
             ReferenceVCDIFF.apply(patch, to: source), target, "reference apply", file: file, line: line
@@ -279,7 +279,7 @@ final class VCDIFFPatchTests: XCTestCase {
         let applied = try VCDIFFPatchCodec().apply(
             patch: data(good), to: data([]), direction: nil, validateInput: true
         )
-        XCTAssertEqual(try applied.output.materialized().rawBytes, bytes)
+        XCTAssertEqual(try applied.output.allBytes().rawBytes, bytes)
         XCTAssertTrue(applied.warnings.isEmpty, "a checksummed patch needs no caveat")
 
         let bad = realPatch(withChecksum: 0xDEAD_BEEF)

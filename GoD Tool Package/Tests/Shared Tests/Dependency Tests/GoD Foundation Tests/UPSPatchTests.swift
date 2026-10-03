@@ -21,7 +21,7 @@ final class UPSPatchTests: XCTestCase {
 
     private func patchBytes(_ source: [UInt8], _ target: [UInt8]) throws -> [UInt8] {
         let patch = try UPSPatchCodec().createPatch(source: data(source), target: data(target))
-        return try patch.materialized().rawBytes
+        return try patch.allBytes().rawBytes
     }
 
     /// Create a patch between the two, then check it applies both ways —
@@ -42,7 +42,7 @@ final class UPSPatchTests: XCTestCase {
         )
         XCTAssertEqual(forward.direction, .forward, "direction", file: file, line: line)
         XCTAssertEqual(
-            try forward.output.materialized().rawBytes, target,
+            try forward.output.allBytes().rawBytes, target,
             "forward apply", file: file, line: line
         )
         XCTAssertNoThrow(
@@ -56,7 +56,7 @@ final class UPSPatchTests: XCTestCase {
         // Identical files make a patch whose two sides are indistinguishable,
         // so "forward" is the honest answer there.
         XCTAssertEqual(
-            try reverse.output.materialized().rawBytes, source,
+            try reverse.output.allBytes().rawBytes, source,
             "reverse apply", file: file, line: line
         )
 
@@ -214,9 +214,9 @@ final class UPSPatchTests: XCTestCase {
         source[0] = 0x01
         target[0] = 0x02
         let codec = UPSPatchCodec()
-        let patch = try codec.createPatch(source: data(source), target: data(target)).materialized()
+        let patch = try codec.createPatch(source: data(source), target: data(target)).allBytes()
         let applied = try codec.apply(patch: patch, to: data(source), direction: nil, validateInput: true)
-        XCTAssertEqual(try applied.output.materialized().rawBytes, target)
+        XCTAssertEqual(try applied.output.allBytes().rawBytes, target)
     }
 
     func testFuzzedPairsRoundTrip() throws {
@@ -257,7 +257,7 @@ final class UPSPatchTests: XCTestCase {
         let patch = try codec.createPatch(source: source, target: target)
         XCTAssertNil(patch.allData, "the patch is a view, not a buffer")
 
-        let patchBytes = try patch.materialized()
+        let patchBytes = try patch.allBytes()
         let applied = try codec.apply(
             patch: WindowOnlyReadable(patchBytes.rawBytes),
             to: source,
@@ -265,7 +265,7 @@ final class UPSPatchTests: XCTestCase {
             validateInput: true
         )
         XCTAssertNil(applied.output.allData, "the patched output is a view, not a buffer")
-        XCTAssertEqual(try applied.output.materialized().rawBytes, target.bytes)
+        XCTAssertEqual(try applied.output.allBytes().rawBytes, target.bytes)
     }
 
     // MARK: - Corrupt patches
@@ -331,7 +331,7 @@ final class UPSPatchTests: XCTestCase {
             patch: data(patch), to: data(target), direction: nil, validateInput: true
         )
         XCTAssertEqual(reverse.direction, .reverse)
-        XCTAssertEqual(try reverse.output.materialized().rawBytes, source)
+        XCTAssertEqual(try reverse.output.allBytes().rawBytes, source)
     }
 
     func testAHunkAfterOneThatFilledThePatchIsMalformed() {
@@ -372,11 +372,11 @@ final class UPSPatchTests: XCTestCase {
         XCTAssertFalse(application.warnings.isEmpty, "a mismatch that was let past must be reported")
         // The XOR still lands where the patch says, so the output is the
         // input with the same difference applied.
-        XCTAssertEqual(try application.output.materialized().rawBytes, [9, 9, UInt8(9 ^ 3 ^ 4)])
+        XCTAssertEqual(try application.output.allBytes().rawBytes, [9, 9, UInt8(9 ^ 3 ^ 4)])
         // ...and it is not the file the patch promised, which the output
         // check is what catches.
         XCTAssertThrowsError(try UPSPatchCodec().validate(
-            output: try application.output.materialized(), of: application
+            output: try application.output.allBytes(), of: application
         )) { error in
             guard case PatchError.outputChecksumMismatch = error else {
                 return XCTFail("expected an output checksum mismatch, got \(error)")

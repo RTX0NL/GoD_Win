@@ -128,7 +128,7 @@ final class PatchRealCorpusTests: XCTestCase {
             // input through both must give the same bytes, and that exercises
             // this patch's real hunk offsets and variable-width integers.
             let synthetic = GoDData(byteStream: [UInt8](repeating: 0x5A, count: ups.sourceSize), byteOrder: .big)
-            let mine = try UPSPatchedView(input: synthetic, patch: patch, ups: ups, direction: .forward).materialized()
+            let mine = try UPSPatchedView(input: synthetic, patch: patch, ups: ups, direction: .forward).allBytes()
             let theirs = ReferenceUPS.applyForward(patch.rawBytes, to: synthetic.rawBytes)
             XCTAssertEqual(mine.rawBytes.count, ups.targetSize, file.lastPathComponent)
             XCTAssertEqual(mine.rawBytes, theirs, file.lastPathComponent)
@@ -165,7 +165,7 @@ final class PatchRealCorpusTests: XCTestCase {
             let synthetic = [UInt8](repeating: 0xA5, count: size)
             let mine = try IPSPatchedView(
                 input: GoDData(byteStream: synthetic, byteOrder: .big), patch: patch, ips: ips
-            ).materialized()
+            ).allBytes()
             let theirs = ReferenceIPS.apply(patch.rawBytes, to: synthetic)
             XCTAssertEqual(mine.rawBytes, theirs, name)
             checked += 1

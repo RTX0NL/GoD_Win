@@ -18,7 +18,7 @@ final class BPSPatchTests: XCTestCase {
     }
 
     private func patchBytes(_ source: [UInt8], _ target: [UInt8]) throws -> [UInt8] {
-        try BPSPatchCodec().createPatch(source: data(source), target: data(target)).materialized().rawBytes
+        try BPSPatchCodec().createPatch(source: data(source), target: data(target)).allBytes().rawBytes
     }
 
     /// Assemble a patch from action bytes, with a correct header and footer, so
@@ -60,7 +60,7 @@ final class BPSPatchTests: XCTestCase {
             patch: data(patch), to: data(source), direction: nil, validateInput: true
         )
         XCTAssertEqual(
-            try applied.output.materialized().rawBytes, target, "apply", file: file, line: line
+            try applied.output.allBytes().rawBytes, target, "apply", file: file, line: line
         )
         XCTAssertNoThrow(
             try BPSPatchCodec().validate(output: data(target), of: applied),
@@ -135,7 +135,7 @@ final class BPSPatchTests: XCTestCase {
         let applied = try BPSPatchCodec().apply(
             patch: data(patch), to: data([]), direction: nil, validateInput: true
         )
-        XCTAssertEqual(try applied.output.materialized().rawBytes, target)
+        XCTAssertEqual(try applied.output.allBytes().rawBytes, target)
         XCTAssertEqual(ReferenceBPS.apply(patch, to: []), target)
     }
 
@@ -156,7 +156,7 @@ final class BPSPatchTests: XCTestCase {
         let applied = try BPSPatchCodec().apply(
             patch: data(patch), to: data(source), direction: nil, validateInput: true
         )
-        XCTAssertEqual(try applied.output.materialized().rawBytes, target)
+        XCTAssertEqual(try applied.output.allBytes().rawBytes, target)
         XCTAssertEqual(ReferenceBPS.apply(patch, to: source), target)
     }
 
@@ -184,7 +184,7 @@ final class BPSPatchTests: XCTestCase {
         let applied = try BPSPatchCodec().apply(
             patch: data(patch), to: data(source), direction: nil, validateInput: true
         )
-        XCTAssertEqual(try applied.output.materialized().rawBytes, target)
+        XCTAssertEqual(try applied.output.allBytes().rawBytes, target)
     }
 
     // MARK: - Malformed
@@ -269,7 +269,7 @@ final class BPSPatchTests: XCTestCase {
             patch: data(patch), to: data([4, 5, 6]), direction: nil, validateInput: false
         )
         XCTAssertFalse(forced.warnings.isEmpty)
-        XCTAssertEqual(try forced.output.materialized().rawBytes, [4, 9, 6])
+        XCTAssertEqual(try forced.output.allBytes().rawBytes, [4, 9, 6])
     }
 
     func testAnInputOfTheWrongSizeIsRefused() throws {
@@ -315,10 +315,10 @@ final class BPSPatchTests: XCTestCase {
         let patch = try codec.createPatch(source: source, target: target)
         XCTAssertNil(patch.allData, "the patch is a view")
         let applied = try codec.apply(
-            patch: try patch.materialized(), to: source, direction: nil, validateInput: true
+            patch: try patch.allBytes(), to: source, direction: nil, validateInput: true
         )
         XCTAssertNil(applied.output.allData, "nothing is built until it is read")
-        XCTAssertEqual(try applied.output.materialized().rawBytes, target.bytes)
+        XCTAssertEqual(try applied.output.allBytes().rawBytes, target.bytes)
         XCTAssertNotNil(applied.output.allData, "and the built target is then held")
     }
 }

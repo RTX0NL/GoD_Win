@@ -17,7 +17,7 @@ final class IPSPatchTests: XCTestCase {
     }
 
     private func patchBytes(_ source: [UInt8], _ target: [UInt8]) throws -> [UInt8] {
-        try IPSPatchCodec().createPatch(source: data(source), target: data(target)).materialized().rawBytes
+        try IPSPatchCodec().createPatch(source: data(source), target: data(target)).allBytes().rawBytes
     }
 
     /// Create, apply through the production view, and check the same patch
@@ -33,7 +33,7 @@ final class IPSPatchTests: XCTestCase {
             patch: data(patch), to: data(source), direction: nil, validateInput: true
         )
         XCTAssertEqual(
-            try applied.output.materialized().rawBytes, target,
+            try applied.output.allBytes().rawBytes, target,
             "apply", file: file, line: line
         )
         XCTAssertEqual(
@@ -123,7 +123,7 @@ final class IPSPatchTests: XCTestCase {
         let size = IPSPatch.terminatorOffset + 4
         let source = GeneratedReadable(length: size, fill: 0xAA)
         let target = GeneratedReadable(length: size, fill: 0xAA, overrides: [IPSPatch.terminatorOffset: 0x55])
-        let patch = try IPSPatchCodec().createPatch(source: source, target: target).materialized()
+        let patch = try IPSPatchCodec().createPatch(source: source, target: target).allBytes()
         let records = try IPSPatch.parse(patch).records
         XCTAssertEqual(records.count, 1)
         XCTAssertEqual(records[0].offset, IPSPatch.terminatorOffset - 1)
@@ -159,7 +159,7 @@ final class IPSPatchTests: XCTestCase {
         let applied = try IPSPatchCodec().apply(
             patch: data(patch), to: data([0, 0, 0]), direction: nil, validateInput: true
         )
-        XCTAssertEqual(try applied.output.materialized().rawBytes, [0xAA, 0xCC, 0x00])
+        XCTAssertEqual(try applied.output.allBytes().rawBytes, [0xAA, 0xCC, 0x00])
         XCTAssertEqual(ReferenceIPS.apply(patch, to: [0, 0, 0]), [0xAA, 0xCC, 0x00])
     }
 
