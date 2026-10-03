@@ -1,12 +1,11 @@
 {
-  "channelCount" : 2,
+  "creationDate" : "2004-01-09",
   "interleaveSize" : 32768,
   "loop" : {
     "enabled" : false,
-    "endSample" : 0,
-    "startSample" : 0
+    "endSeconds" : 0.031875,
+    "startSeconds" : 0
   },
-  "sampleRate" : 8000,
-  "toolDate" : 0,
+  "streamEndSeconds" : 0.031875,
   "wavPath" : "isf_sample.wav"
 }

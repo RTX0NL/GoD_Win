@@ -180,6 +180,9 @@ public enum ISFFixtures {
             name: name,
             sampleRate: 8000,
             channelCount: 2,
+            // The one creation date every real ISH carries, so the golden
+            // manifest exercises the ISO spelling rather than `0x00000000`.
+            creationDate: 0x2004_0109,
             samples: samples
         )
     }

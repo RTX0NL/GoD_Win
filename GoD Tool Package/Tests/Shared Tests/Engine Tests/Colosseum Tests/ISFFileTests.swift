@@ -6,7 +6,7 @@
 //  — instead we pin the following invariants:
 //
 //    • Header metadata (sampleRate, channelCount, interleaveSize,
-//      toolDate, loop flags) round-trips exactly through parse →
+//      creationDate, loop flags) round-trips exactly through parse →
 //      serialize → parse.
 //    • Loop sample-position math is lossless in the sample domain (byte
 //      offsets may shift slightly because of ADPCM framing — but samples
@@ -40,7 +40,7 @@ final class ISFFileTests: XCTestCase {
         sampleRate: UInt32 = 32000,
         channelCount: UInt32 = 2,
         interleaveSize: UInt32 = 0x8000,
-        loop: ISFFile.Loop = .disabled,
+        loop: ISFFile.Loop? = nil,
         samples: [Int16]
     ) throws -> (ish: GoDData, isd: GoDData) {
         let isf = ISFFile(
@@ -91,13 +91,18 @@ final class ISFFileTests: XCTestCase {
             generateSine(frequency: 440, sampleRate: 32000, durationSeconds: 0.1),
             generateSine(frequency: 660, sampleRate: 32000, durationSeconds: 0.1)
         )
-        let expectedLoop = ISFFile.Loop(enabled: true, startSample: 0, endSample: UInt64(pcm.count / 2))
+        // Deliberately not frame-aligned: a nibble address is stored
+        // verbatim, so nothing here may drift. An earlier version of this
+        // test tolerated 14 samples of slop, which is exactly what the
+        // broken byte-offset conversion produced.
+        let expectedLoop = ISFFile.Loop(enabled: true, startNibble: 19426, endNibble: 917503)
         let original = ISFFile(
             sampleRate: 48000,
             channelCount: 2,
             interleaveSize: 0x8000,
-            toolDate: 0x20260422,
+            creationDate: 0x20260422,
             loop: expectedLoop,
+            streamEndNibble: 898367,
             samples: pcm
         )
         let (ish, isd) = try original.ishISDBytes()
@@ -106,14 +111,41 @@ final class ISFFileTests: XCTestCase {
         XCTAssertEqual(parsed.sampleRate, 48000)
         XCTAssertEqual(parsed.channelCount, 2)
         XCTAssertEqual(parsed.interleaveSize, 0x8000)
-        XCTAssertEqual(parsed.toolDate, 0x20260422)
-        XCTAssertEqual(parsed.loop.enabled, true)
-        XCTAssertEqual(parsed.loop.startSample, expectedLoop.startSample)
-        // End sample may round because of ADPCM byte alignment (loop
-        // points are stored as byte offsets on disk). Assert it lands
-        // within one ADPCM frame (14 samples) of the original.
-        let endDelta = Int(parsed.loop.endSample) - Int(expectedLoop.endSample)
-        XCTAssertLessThanOrEqual(abs(endDelta), 14, "loop end drifted > 14 samples")
+        XCTAssertEqual(parsed.creationDate, 0x20260422)
+        XCTAssertEqual(parsed.loop, expectedLoop)
+        XCTAssertEqual(parsed.streamEndNibble, 898367)
+    }
+
+    /// The whole 0x40-byte header has to come back, including the word at
+    /// 0x28 that used to be written as zero and the 0x2C..0x3F run that
+    /// really is reserved.
+    func testHeaderBytesRoundTripExactly() throws {
+        let pcm = interleave(
+            generateSine(frequency: 440, sampleRate: 32000, durationSeconds: 0.1),
+            generateSine(frequency: 660, sampleRate: 32000, durationSeconds: 0.1)
+        )
+        let original = ISFFile(
+            sampleRate: 31862,
+            channelCount: 2,
+            creationDate: 0x20040109,
+            loop: ISFFile.Loop(enabled: true, startNibble: 131, endNibble: 3657),
+            streamEndNibble: 3653,
+            samples: pcm
+        )
+        let (ish, isd) = try original.ishISDBytes()
+        let reparsed = try ISFFile(ish: ish, isd: isd, name: "test")
+        let (rebuilt, _) = try reparsed.ishISDBytes()
+
+        XCTAssertEqual(
+            rebuilt.read(atAddress: 0, length: 0x40)?.rawBytes,
+            ish.read(atAddress: 0, length: 0x40)?.rawBytes,
+            "the ISH header must rebuild byte-identically"
+        )
+        XCTAssertEqual(
+            ish.read(atAddress: 0x2C, length: 0x14)?.rawBytes,
+            [UInt8](repeating: 0, count: 0x14),
+            "0x2C..0x3F is reserved and zero on all 565 real headers"
+        )
     }
 
     func testLoopDisabledRoundTripsAsDisabled() throws {
@@ -123,19 +155,51 @@ final class ISFFileTests: XCTestCase {
         XCTAssertFalse(parsed.loop.enabled)
     }
 
-    func testLoopByteSampleMathIsInverse() {
-        // Samples → bytes → samples must round-trip (inside the regime
-        // where the conversion is information-preserving, i.e. sample
-        // counts that land on frame boundaries).
-        let casesByChannelCount: [Int] = [1, 2]
-        for channels in casesByChannelCount {
-            for sample in stride(from: UInt64(0), to: UInt64(10000), by: 14) {
-                let byte = ISFFile.sampleToByteOffset(sample: sample, channelCount: channels)
-                let roundTrip = ISFFile.byteOffsetToSample(byte: byte, channelCount: channels)
-                XCTAssertEqual(roundTrip, sample,
-                               "sample \(sample) at \(channels)ch didn't round-trip through byte math")
+    /// Every nibble address that names a sample must survive
+    /// nibble → sample → nibble. The two header nibbles of each frame name
+    /// no sample and are the only addresses that don't.
+    func testNibbleSampleMathIsInverse() {
+        for nibble in UInt32(0)..<UInt32(10_000) {
+            let sample = ISFFile.sample(forNibble: nibble)
+            guard nibble % 16 >= 2 else {
+                // A frame's two header nibbles name no sample, so they
+                // resolve to that frame's first sample and are the only
+                // addresses that don't come back.
+                XCTAssertEqual(sample, Int(nibble / 16) * 14)
+                continue
+            }
+            XCTAssertEqual(ISFFile.nibble(forSample: sample), nibble,
+                           "nibble \(nibble) didn't round-trip through sample \(sample)")
+        }
+    }
+
+    /// Seconds is the manifest's unit, so it has to be exactly invertible
+    /// at every sample rate the games ship. These are the real rates at
+    /// the extremes of the 71 found in the corpus.
+    func testSecondsRoundTripExactlyAtCorpusSampleRates() {
+        for rate in [UInt32(30672), 31497, 31862, 32000, 32115, 44100] {
+            for nibble in stride(from: UInt32(2), to: UInt32(2_000_000), by: 9973) {
+                // Only addresses that name a sample can round-trip; a
+                // frame's two header nibbles resolve to its first sample.
+                guard nibble % UInt32(ISFFile.nibblesPerFrame) >= 2 else { continue }
+                let seconds = ISFFile.seconds(forNibble: nibble, sampleRate: rate)
+                XCTAssertEqual(
+                    ISFFile.nibble(forSeconds: seconds, sampleRate: rate), nibble,
+                    "nibble \(nibble) at \(rate) Hz didn't survive \(seconds) s"
+                )
             }
         }
+    }
+
+    /// The precision isn't arbitrary — three decimal places is not enough,
+    /// so nobody should "tidy" `secondsPrecision` downwards.
+    func testThreeDecimalPlacesWouldNotBeEnough() {
+        let rate = UInt32(44100)
+        let nibble = UInt32(917503)
+        let sample = ISFFile.sample(forNibble: nibble)
+        let coarse = (Double(sample) / Double(rate) * 1000).rounded() / 1000
+        XCTAssertNotEqual(ISFFile.nibble(forSeconds: coarse, sampleRate: rate), nibble)
+        XCTAssertEqual(ISFFile.secondsPrecision, 6)
     }
 
     // MARK: - Silence passthrough
@@ -228,7 +292,7 @@ final class ISFFileTests: XCTestCase {
         var isf = ISFFile(
             sampleRate: 32000,
             channelCount: 2,
-            loop: ISFFile.Loop(enabled: true, startSample: 100, endSample: 3000),
+            loop: ISFFile.Loop(enabled: true, startNibble: 117, endNibble: 3001),
             samples: pcm
         )
         isf.name = "track"
@@ -244,12 +308,98 @@ final class ISFFileTests: XCTestCase {
         XCTAssertEqual(rebuilt.sampleRate, 32000)
         XCTAssertEqual(rebuilt.channelCount, 2)
         XCTAssertEqual(rebuilt.loop.enabled, true)
-        XCTAssertEqual(rebuilt.loop.startSample, 100)
-        XCTAssertEqual(rebuilt.loop.endSample, 3000)
+        XCTAssertEqual(rebuilt.loop.startNibble, 117)
+        XCTAssertEqual(rebuilt.loop.endNibble, 3001)
+        XCTAssertEqual(rebuilt.streamEndNibble, isf.streamEndNibble)
         // WAV preserves PCM exactly, so the interleaved samples must
         // match bit-for-bit (no DSP ADPCM is involved between `outputs`
         // and `init(outputs:)`).
         XCTAssertEqual(rebuilt.samples, isf.samples)
+    }
+
+    /// The WAV is the authority on rate and channel count, and the manifest
+    /// carries neither — so dropping in audio at another rate is an ordinary
+    /// edit rather than a mismatch to refuse. This is what removing those two
+    /// fields bought; keeping them meant a pair that could disagree.
+    func testWAVIsTheAuthorityOnRateAndChannelCount() throws {
+        let pcm = interleave(
+            generateSine(frequency: 880, sampleRate: 32000, durationSeconds: 0.1),
+            generateSine(frequency: 1320, sampleRate: 32000, durationSeconds: 0.1)
+        )
+        var isf = ISFFile(
+            sampleRate: 32000,
+            channelCount: 2,
+            loop: ISFFile.Loop(enabled: true, startNibble: 131, endNibble: 3657),
+            samples: pcm
+        )
+        isf.name = "track"
+        let artifacts = try isf.outputs
+
+        // The manifest must not mention either field.
+        let json = try XCTUnwrap(artifacts.byFile[File("track.isf.json")])
+        let text = try XCTUnwrap(String(data: json.data, encoding: .utf8))
+        XCTAssertFalse(text.contains("sampleRate"), "rate belongs to the WAV, not the manifest")
+        XCTAssertFalse(text.contains("channelCount"), "channel count belongs to the WAV")
+
+        // Swap the companion WAV for the same PCM at another rate, leaving
+        // the manifest untouched.
+        let resampled = try WAVFile(sampleRate: 48000, channelCount: 2, samples: pcm).encoded()
+        let edited = artifacts.map { artifact in
+            artifact.file.fileName.hasSuffix(".wav")
+                ? FileData(file: artifact.file, data: resampled)
+                : artifact
+        }
+
+        let rebuilt = try ISFFile(outputs: edited)
+        XCTAssertEqual(rebuilt.sampleRate, 48000, "the WAV's rate has to win")
+        XCTAssertEqual(rebuilt.channelCount, 2)
+        // The loop is stored in seconds, so the same instant is a different
+        // nibble address once the rate changes.
+        XCTAssertNotEqual(rebuilt.loop.startNibble, isf.loop.startNibble)
+        XCTAssertEqual(
+            rebuilt.loop.startNibble,
+            ISFFile.nibble(
+                forSeconds: ISFFile.seconds(forNibble: isf.loop.startNibble, sampleRate: 32000),
+                sampleRate: 48000
+            )
+        )
+    }
+
+    /// The creation date is stored as a hex-coded `0xYYYYMMDD` word and written
+    /// to the manifest as an ISO 8601 date. `0x20040109` is the only value
+    /// on any of the three games' discs; the platform's own convention is
+    /// visible in the SDK apploader beside it, which spells its date
+    /// `2004/05/21` in ASCII — the `21` can only be a day.
+    func testToolDateIsWrittenAsAnISODate() {
+        XCTAssertEqual(ISFFile.isoDate(forCreationDate: 0x2004_0109), "2004-01-09")
+        XCTAssertEqual(ISFFile.creationDate(forISODate: "2004-01-09"), 0x2004_0109)
+        // Both of the era's reference dates, for good measure.
+        XCTAssertEqual(ISFFile.isoDate(forCreationDate: 0x2004_0521), "2004-05-21")
+        XCTAssertEqual(ISFFile.isoDate(forCreationDate: 0x2002_0905), "2002-09-05")
+    }
+
+    /// A word that isn't a date keeps its bytes as a hex literal rather than
+    /// being coerced into a nonsense date.
+    func testNonDateToolDateRoundTripsAsHex() {
+        for word: UInt32 in [0, 0x1234_5678, 0x2004_1332, 0x2004_0100, 0xFFFF_FFFF] {
+            let text = ISFFile.isoDate(forCreationDate: word)
+            XCTAssertTrue(text.hasPrefix("0x"), "\(text) should have fallen back to hex")
+            XCTAssertEqual(ISFFile.creationDate(forISODate: text), word)
+        }
+    }
+
+    /// Every valid hex-coded date round-trips through the ISO spelling.
+    func testEveryValidHexCodedDateRoundTrips() {
+        for year in stride(from: 1990, through: 2010, by: 5) {
+            for month in 1...12 {
+                for day in [1, 9, 10, 19, 28, 31] {
+                    let word = UInt32(String(format: "%04d%02d%02d", year, month, day), radix: 16)!
+                    let text = ISFFile.isoDate(forCreationDate: word)
+                    XCTAssertEqual(text, String(format: "%04d-%02d-%02d", year, month, day))
+                    XCTAssertEqual(ISFFile.creationDate(forISODate: text), word)
+                }
+            }
+        }
     }
 
     // MARK: - Helpers
