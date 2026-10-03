@@ -1,5 +1,5 @@
 {
-  "originHash" : "d8555559cac9c13ffa2c70e119a63c5328a1d691243ef0a0278e3aab64987a29",
+  "originHash" : "aa8d9eadd3cd518bf0be069345c51d2fff8942e75df2029603646529fc113ad9",
   "pins" : [
     {
       "identity" : "eventsource",
@@ -53,15 +53,6 @@
       "state" : {
         "revision" : "0b18836bd8b0162e7e17a995a3fbee20ed8f3b2b",
         "version" : "2.101.3"
-      }
-    },
-    {
-      "identity" : "swift-png",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tayloraswift/swift-png",
-      "state" : {
-        "revision" : "8a0bcd4df5e4b307c804937776a56dd6ecdf6396",
-        "version" : "4.5.1"
       }
     },
     {
