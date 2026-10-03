@@ -128,7 +128,8 @@ Open:
    back byte-identical on every one. A wrong tag layout or a wrong lane
    order would fail the tag check on the first real save, so the layout
    above is validated against the game's own output rather than only
-   against itself. See `Documentation/Save-Round-Trip-Audit-2026-09.md`.
+   against itself. See `Documentation/Plans/Save-Round-Trip-Audit-2026-09.md`, an
+   untracked working document.
 
 3. **No rebuilt save has been booted in an emulator.** The tags
    validate and the sections round-trip, but nothing has yet confirmed
@@ -156,7 +157,8 @@ The 0xA8 bytes before the sub-blocks are now typed as
 counter, the key seed at `0x08`, the tag region at `0x10`, the 16 × u16
 sub-block sizes at `0x20` and the 16 offsets at `0x40` (each a `u32`
 stored low half first). Layout and measurements in
-[`XD Save Slot - From-Scratch Rebuild Plan.md`](./XD%20Save%20Slot%20-%20From-Scratch%20Rebuild%20Plan.md).
+`Documentation/Plans/XD Save Slot - From-Scratch Rebuild Plan.md`, an
+untracked working document.
 
 The cipher is wired into `xdSaveDump` / `xdSaveBuild` and runs by
 default in projects produced by `Project.setup(gci:)`. Users with

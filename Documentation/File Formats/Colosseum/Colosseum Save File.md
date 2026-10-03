@@ -4,7 +4,8 @@ Colosseum's `.gci` save is implemented and round-trips byte-identically:
 20 of 20 real saves across US, PAL and JP rebuild to the original bytes
 with the source file deleted first, so the rebuild derives everything
 rather than copying it forward. See
-[`Documentation/Save-Round-Trip-Audit-2026-09.md`](../../Save-Round-Trip-Audit-2026-09.md).
+`Documentation/Plans/Save-Round-Trip-Audit-2026-09.md`, an untracked
+working document.
 
 This brief is the Colosseum-specific detail. The envelope it sits in —
 the directory entry, the banner, the animated icon and the comment
@@ -106,7 +107,7 @@ blank cards in the audit corpus are refused.
 
 ## References
 
-- `Documentation/Save-Round-Trip-Audit-2026-09.md` — the round-trip measurements.
+- `Documentation/Plans/Save-Round-Trip-Audit-2026-09.md` — the round-trip measurements (untracked).
 - [`GCI - GameCube Memory Card Save.md`](../Shared/GCI%20-%20GameCube%20Memory%20Card%20Save.md) — the envelope, generic to every GameCube game.
 - [`XD Save Encryption.md`](../XD/XD%20Save%20Encryption.md) — XD's cipher, a different algorithm from Colosseum's.
 - `Documentation/Assembly Analysis/Overview/Save System.md` — XD-side disassembly notes; its card-layout table applies to both games.
