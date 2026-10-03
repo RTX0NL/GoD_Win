@@ -48,4 +48,40 @@ public enum CRC32 {
         let idx = Int((crc ^ UInt32(byte)) & 0xFF)
         return table[idx] ^ (crc >> 8)
     }
+
+    /// CRC-32 of a readable, pulled in windows.
+    ///
+    /// Here rather than at a call site because the alternative is `allData`,
+    /// and the sources that need checksumming are exactly the ones that must
+    /// not be buffered: a disc image, a patch, a lazily patched view.
+    ///
+    /// `range` limits it to part of the source — a patch format whose footer
+    /// stores the checksum of everything ahead of it needs that.
+    ///
+    /// A source that fails a read part way through yields a checksum over what
+    /// it did produce. That cannot be mistaken for success: the value won't
+    /// match whatever it is being compared against, so a broken source
+    /// surfaces as a checksum error rather than as silent acceptance.
+    public static func compute(
+        _ readable: GoDReadable,
+        bytes range: Range<Int>? = nil,
+        windowSize: Int = 8 << 20
+    ) -> UInt32 {
+        let window = max(1, windowSize)
+        let bounds = range ?? 0 ..< readable.length
+        var crc: UInt32 = 0xFFFF_FFFF
+        var offset = bounds.lowerBound
+        while offset < bounds.upperBound {
+            let count = min(window, bounds.upperBound - offset)
+            var read = 0
+            autoreleasepool {
+                guard let chunk = readable.read(atAddress: offset, length: count) else { return }
+                crc = update(crc, bytes: chunk.rawBytes)
+                read = max(1, chunk.length)
+            }
+            guard read > 0 else { break }
+            offset += read
+        }
+        return crc ^ 0xFFFF_FFFF
+    }
 }

@@ -110,10 +110,17 @@ extension FileHandleAccess {
             var offset = 0
             while offset < source.length {
                 let count = min(copyChunkSize, source.length - offset)
-                guard let chunk = source.read(atAddress: offset, length: count) else {
-                    throw FSTErrors.failedToWriteFile(file, .init())
+                // Each window is a fresh `Data` (and, through a view, whatever
+                // it read to produce it). Without a pool those live until the
+                // loop ends, so the "streamed" write peaks at the file's size
+                // rather than at one window — measured at 613 MB for a 199 MB
+                // patch-and-verify, 228 MB with pools.
+                try autoreleasepool {
+                    guard let chunk = source.read(atAddress: offset, length: count) else {
+                        throw FSTErrors.failedToWriteFile(file, .init())
+                    }
+                    try handle.write(contentsOf: chunk.data)
                 }
-                try handle.write(contentsOf: chunk.data)
                 offset += count
             }
         } catch let error as FSTErrors {
