@@ -82,10 +82,11 @@ public class InMemoryFST: FileSystemTree {
             throw FSTErrors.itemExists(path.path, .init())
         }
         // An in-memory tree has to hold the bytes; there is nowhere else to
-        // put them. A source that won't produce a buffer can't be stored.
-        guard let data = file.allData else {
-            throw FSTErrors.failedToWriteFile(path, .init())
-        }
+        // put them. So a lazy source is materialized rather than refused —
+        // storing it is the whole point, and `materialized` is where that cost
+        // is stated. The on-disk tree instead streams it in windows through
+        // `FileHandleAccess.write` and never holds it at all.
+        let data = try file.materialized()
         fst[path.path] = .file(data)
         registerChild(path: path.path)
     }

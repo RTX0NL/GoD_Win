@@ -47,7 +47,9 @@ final class WiiISORoundTripTests: XCTestCase {
             wiiEngine: wiiEngine,
             dolphinEngine: dolphinEngine
         )
-        let rebuilt = try iso.encryptedData(commonKey: WiiDiscFixtures.commonKey)
+        // `encryptedData` now returns a lazy composition; these tests read the
+        // rebuilt disc all over the place, so they take the buffer explicitly.
+        let rebuilt = try iso.encryptedData(commonKey: WiiDiscFixtures.commonKey).materialized()
         let result = RoundTrip(original: isoData, expected: expected, rebuilt: rebuilt)
         Self.sharedRoundTrip = result
         return result

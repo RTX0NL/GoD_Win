@@ -42,6 +42,46 @@ public protocol GoDReadable {
     func read(atAddress address: UInt, length: UInt) -> GoDData?
 }
 
+public enum GoDReadableError: Error, CustomStringConvertible {
+    case readFailed(offset: Int, length: Int, total: Int)
+
+    public var description: String {
+        switch self {
+        case let .readFailed(offset, length, total):
+            return "Failed to read \(length) bytes at \(offset) from a \(total)-byte source"
+        }
+    }
+}
+
+public extension GoDReadable {
+    /// Build one buffer holding every byte, whatever the source is.
+    ///
+    /// The counterpart to `allData`, and deliberately a different question.
+    /// `allData` asks whether a source *already has* a buffer, or can make one
+    /// cheaply, and returns nil when it can't — so a lazy view over a disc
+    /// answers nil and nothing accidentally pulls gigabytes. This one always
+    /// produces the buffer, a window at a time, which means the call site is
+    /// where a caller states it has somewhere to put the bytes.
+    ///
+    /// Prefer neither where the work is a copy: `FileHandleAccess.write`
+    /// already streams a readable to disk in windows, so writing one out never
+    /// needs a buffer at all.
+    func materialized(chunkSize: Int = 8 << 20) throws -> GoDData {
+        if let whole = allData { return whole }
+        let out = GoDData(data: Data(count: length), byteOrder: byteOrder)
+        var offset = 0
+        while offset < length {
+            let count = min(chunkSize, length - offset)
+            guard let chunk = read(atAddress: offset, length: count), chunk.length > 0 else {
+                throw GoDReadableError.readFailed(offset: offset, length: count, total: length)
+            }
+            out.write(chunk, atAddress: UInt(offset))
+            offset += chunk.length
+        }
+        return out
+    }
+}
+
 public extension GoDReadable {
     /// Nothing to hand over unless a conformer says otherwise. Defaulting to
     /// nil rather than to a full read keeps the expensive answer opt-in: a

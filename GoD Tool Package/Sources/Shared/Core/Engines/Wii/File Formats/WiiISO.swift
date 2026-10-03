@@ -272,58 +272,69 @@ public final class WiiISO: FileSystemTree {
     // MARK: - Rebuild to encrypted ISO
 
     /// Rebuild the full Wii ISO from partition contents.
-    public func encryptedData(commonKey: [UInt8], logger: Logger? = nil) throws -> GoDData {
+    /// Rebuild the whole disc as a readable, encrypting lazily.
+    ///
+    /// Returns a composition rather than a buffer: the unencrypted regions and
+    /// the partition table are small and produced here, while each partition
+    /// is a view that hashes and encrypts a 2 MiB group at a time as it is
+    /// read. `FileHandleAccess.write` pulls it in 8 MB windows, so a 4.7 GB
+    /// disc is written with a few megabytes resident instead of several copies
+    /// of itself.
+    ///
+    /// A caller that genuinely needs the bytes in hand can ask for
+    /// `materialized()`, which states that cost at the call site.
+    public func encryptedData(commonKey: [UInt8], logger: Logger? = nil) throws -> GoDReadable {
         let taskName = "Build Wii ISO"
         logger?.log(.taskStatus(taskName: taskName, status: .started))
 
-        let isoData = GoDData(length: 0, byteOrder: .big)
+        var pieces = [GoDCompositeData.Piece]()
+        pieces.append(.init(offset: 0, source: discHeader, name: "disc header"))
+        pieces.append(.init(offset: 0x4E000, source: regionSettings, name: "region settings"))
 
-        // Write disc header
-        isoData.write(discHeader, atAddress: 0)
+        // The second magic word sits in the unencrypted region rather than in
+        // any file we dump, so a rebuild has to re-emit it — wit and the drive
+        // firmware use it to recognize a Wii disc.
+        pieces.append(.init(
+            offset: Self.discMagicWord2Offset,
+            source: GoDData(Self.discMagicWord2, byteOrder: .big),
+            name: "disc magic word 2"
+        ))
 
-        // Write region settings
-        isoData.write(regionSettings, atAddress: 0x4E000)
-
-        // Restore the second magic word. It sits in the unencrypted region
-        // rather than in any file we dump, so a rebuild has to re-emit it —
-        // wit and the drive firmware use it to recognize a Wii disc.
-        isoData.write(Self.discMagicWord2, atAddress: Self.discMagicWord2Offset)
-
-        // Build partition table and write partitions
+        // Partition table: the count and entry-table pointer, then one entry
+        // per partition. Built as one piece covering the whole table rather
+        // than a run of scalar writes into a shared buffer.
         let partTableOffset = wiiEngine.data.disc.partitionTableOffset
-
-        let partCount = UInt32(partitions.count)
         let partEntriesOffset = partTableOffset + 0x20
-
-        isoData.write(partCount, atAddress: partTableOffset)
-        isoData.write(UInt32(partEntriesOffset >> 2), atAddress: partTableOffset + 4)
-
+        let table = GoDData(length: 0x20 + partitions.count * 8, byteOrder: .big)
+        table.write(UInt32(partitions.count), atAddress: 0)
+        table.write(UInt32(partEntriesOffset >> 2), atAddress: 4)
         for i in 1..<4 {
-            isoData.write(UInt32(0), atAddress: partTableOffset + i * 8)
-            isoData.write(UInt32(0), atAddress: partTableOffset + i * 8 + 4)
+            table.write(UInt32(0), atAddress: i * 8)
+            table.write(UInt32(0), atAddress: i * 8 + 4)
         }
 
         var currentOffset = 0x50000
-
         for (i, (name, partition)) in partitions.enumerated() {
             currentOffset = currentOffset.aligned(to: 0x8000)
 
-            let entryOffset = partEntriesOffset + i * 8
-            isoData.write(UInt32(currentOffset >> 2), atAddress: entryOffset)
-            isoData.write(UInt32(partition.type), atAddress: entryOffset + 4)
-
             logger?.log(.info("Writing \(name) partition at offset 0x\(String(currentOffset, radix: 16, uppercase: true))"))
             let encryptedPartition = try partition.encrypt(commonKey: commonKey, logger: logger)
-            isoData.write(encryptedPartition, atAddress: currentOffset)
 
+            let entryOffset = 0x20 + i * 8
+            table.write(UInt32(currentOffset >> 2), atAddress: entryOffset)
+            table.write(UInt32(partition.type), atAddress: entryOffset + 4)
+
+            pieces.append(.init(offset: currentOffset, source: encryptedPartition, name: "\(name) partition"))
             currentOffset += encryptedPartition.length
         }
+        pieces.append(.init(offset: partTableOffset, source: table, name: "partition table"))
 
         // Not padded to disc capacity here: that is the separate fillISO
         // operation's job, and doing it unconditionally would make every
-        // rebuild — including a test-sized one — a 4.7 GB allocation.
+        // rebuild — including a test-sized one — a 4.7 GB image.
+        let iso = try GoDCompositeData(pieces: pieces, byteOrder: .big)
         logger?.log(.taskStatus(taskName: taskName, status: .completed(true)))
-        return isoData
+        return iso
     }
 
     // MARK: - Build from FST

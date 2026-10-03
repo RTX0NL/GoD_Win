@@ -28,6 +28,9 @@ extension WiiOps {
                     wiiEngine: wiiEngine,
                     dolphinEngine: dolphinEngine
                 )
+                // A lazy composition, not a buffer: `writeFile` pulls it in
+                // 8 MB windows, hashing and encrypting one 2 MiB group at a
+                // time, so a 4.7 GB disc never becomes resident.
                 let isoData = try iso.encryptedData(commonKey: commonKey, logger: logger)
 
                 if overwrite || fileSystem.inspectFile(at: isoPath) == nil {

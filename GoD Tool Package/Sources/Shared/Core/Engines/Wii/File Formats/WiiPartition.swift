@@ -304,7 +304,14 @@ public final class WiiPartition: FileSystemTree {
     /// payload — bi2, apploader, DOL, FST, user files — with boot.bin updated to
     /// match. Every offset boot.bin and the FST record is stored >> 2 on a Wii
     /// disc, which is what the read path multiplies back up.
-    private func rebuiltGameFilesystem(taskName: String, logger: Logger?) throws -> GoDData {
+    /// Lay out the partition's decrypted contents without assembling them.
+    ///
+    /// Every part stays where it is — the system files and each user file are
+    /// read from the backing tree on demand — so a partition whose payload is
+    /// four gigabytes costs its layout, not its size. The offsets are all
+    /// computed eagerly, because boot.bin records them and the FST is built
+    /// from them.
+    private func rebuiltGameFilesystem(taskName: String, logger: Logger?) throws -> GoDReadable {
         let partFiles = wiiEngine.data.partitionFiles
         let systemFiles = dolphinEngine.data.systemFiles
         let offsetMultiplier = max(wiiEngine.data.disc.fstOffsetMultiplier, 1)
@@ -314,7 +321,7 @@ public final class WiiPartition: FileSystemTree {
             return FileFormatErrors.failedToEncode(format: Self.formatName, target: "Wii partition")
         }
 
-        let decryptedData = GoDData(length: 0, byteOrder: .big)
+        var pieces = [GoDCompositeData.Piece]()
 
         guard let bootFileData = readFile(at: partFiles.bootFile)?.allData,
               let bootStruct = bootFileData.read(struct: dolphinEngine.bootDataStruct, atAddress: 0) else {
@@ -322,17 +329,19 @@ public final class WiiPartition: FileSystemTree {
             throw encodingFailure()
         }
 
-        guard let bi2Data = readFile(at: partFiles.bi2File)?.allData else { throw encodingFailure() }
-        decryptedData.write(bi2Data, atAddress: systemFiles.bi2DataOffset)
+        // Read as readables, not buffers: only their lengths are needed to
+        // place them, and a user file can be gigabytes.
+        guard let bi2Data = readFile(at: partFiles.bi2File) else { throw encodingFailure() }
+        pieces.append(.init(offset: systemFiles.bi2DataOffset, source: bi2Data, name: "bi2.bin"))
 
-        guard let apploaderData = readFile(at: partFiles.apploaderFile)?.allData else { throw encodingFailure() }
+        guard let apploaderData = readFile(at: partFiles.apploaderFile) else { throw encodingFailure() }
         let apploaderOffset = systemFiles.apploaderOffset
-        decryptedData.write(apploaderData, atAddress: apploaderOffset)
+        pieces.append(.init(offset: apploaderOffset, source: apploaderData, name: "apploader"))
 
-        guard let dolData = readFile(at: partFiles.executableFile)?.allData else { throw encodingFailure() }
+        guard let dolData = readFile(at: partFiles.executableFile) else { throw encodingFailure() }
         let dolAlignment = max(systemFiles.dolOffsetAlignment, 1)
         let dolOffset = (apploaderOffset + apploaderData.length).aligned(to: dolAlignment)
-        decryptedData.write(dolData, atAddress: dolOffset)
+        pieces.append(.init(offset: dolOffset, source: dolData, name: "main.dol"))
 
         let fstManifest = DolphinFST(fileSystem: self, root: partFiles.filesFolder)
         // boot.bin stores the FST size >> 2 as well, so reserve whole words.
@@ -347,7 +356,7 @@ public final class WiiPartition: FileSystemTree {
             dolphinEngine: dolphinEngine,
             offsetMultiplier: offsetMultiplier
         )
-        decryptedData.write(fstData, atAddress: fstOffset)
+        pieces.append(.init(offset: fstOffset, source: fstData, name: "fst.bin"))
 
         bootStruct.main_executable_offset = dolOffset / offsetMultiplier
         bootStruct.fst_offset = fstOffset / offsetMultiplier
@@ -357,19 +366,34 @@ public final class WiiPartition: FileSystemTree {
 
         logger?.log(.info("  Layout: DOL @ 0x\(String(dolOffset, radix: 16)), FST @ 0x\(String(fstOffset, radix: 16)), user @ 0x\(String(userOffset, radix: 16))"))
 
-        let sortedFiles = fstManifest.files.sorted(by: { $0.value.offsetInUserSection < $1.value.offsetInUserSection })
-        for (file, value) in sortedFiles {
-            guard let fileData = fst.readFile(at: file)?.allData else { throw encodingFailure() }
-            decryptedData.write(fileData, atAddress: userOffset + value.offsetInUserSection)
+        for (file, value) in fstManifest.files {
+            guard let fileData = fst.readFile(at: file) else { throw encodingFailure() }
+            pieces.append(.init(
+                offset: userOffset + value.offsetInUserSection,
+                source: fileData,
+                name: file.path
+            ))
         }
 
-        // boot.bin last, now that every offset it records is known.
-        decryptedData.write(struct: bootStruct, atAddress: systemFiles.bootDataOffset)
-        return decryptedData
+        // boot.bin is placed like everything else; it was written last when
+        // this built a buffer, because only then were the offsets it records
+        // known. They still are — they are just recorded before placement
+        // rather than after.
+        let bootData = GoDData(length: 0, byteOrder: .big)
+        bootData.write(struct: bootStruct, atAddress: 0)
+        pieces.append(.init(offset: systemFiles.bootDataOffset, source: bootData, name: "boot.bin"))
+
+        return try GoDCompositeData(pieces: pieces, byteOrder: .big)
     }
 
     /// Rebuild the partition into encrypted binary data.
-    public func encrypt(commonKey: [UInt8], logger: Logger? = nil) throws -> GoDData {
+    ///
+    /// Returns a readable rather than a buffer. The prefix — ticket, header,
+    /// TMD, cert chain, H3 table — is produced eagerly, because the header
+    /// records the lengths of everything after it and the TMD is signed over
+    /// the H3 table. Only the data region is lazy, and that is where all the
+    /// size is.
+    public func encrypt(commonKey: [UInt8], logger: Logger? = nil) throws -> GoDReadable {
         let partFiles = wiiEngine.data.partitionFiles
         let taskName = "Encrypt \(typeName) partition"
         logger?.log(.taskStatus(taskName: taskName, status: .started))
@@ -377,11 +401,11 @@ public final class WiiPartition: FileSystemTree {
         // Only DATA partitions carry a game filesystem to lay out again. UPDATE
         // and CHANNEL partitions were dumped as one opaque decrypted blob, so
         // that blob *is* their payload — asking them for a boot.bin would fail.
-        let decryptedData: GoDData
+        let decryptedData: GoDReadable
         if type == 0 {
             decryptedData = try rebuiltGameFilesystem(taskName: taskName, logger: logger)
         } else {
-            guard let blob = readFile(at: Self.partitionDataFile)?.allData else {
+            guard let blob = readFile(at: Self.partitionDataFile) else {
                 logger?.log(.error("Failed to read \(Self.partitionDataFile.path) for \(typeName) partition encryption"))
                 logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
                 throw FileFormatErrors.failedToEncode(format: Self.formatName, target: "Wii partition")
@@ -400,15 +424,18 @@ public final class WiiPartition: FileSystemTree {
             throw FileFormatErrors.failedToEncode(format: Self.formatName, target: "Wii partition")
         }
 
-        // Encrypt the entire decrypted user data, building the full H0/H1/H2/H3 hash tree.
-        // encryptPartitionData zero-pads up to a whole number of 64-cluster groups.
-        let (encryptedBytes, h3TableBytes) = WiiCrypto.encryptPartitionData(
-            decryptedUserData: decryptedData.rawBytes,
+        // H3 first, in its own SHA-only pass: it sits ahead of the data in the
+        // partition, and the TMD is signed over it, so both have to be settled
+        // before a sequential writer reaches the first encrypted byte.
+        let h3TableBytes = WiiCrypto.h3Table(forDecryptedUserData: decryptedData)
+        let h3TableData = GoDData(byteStream: h3TableBytes, byteOrder: .big)
+        // The data region itself encrypts a group at a time as it is read.
+        let encryptedData = WiiEncryptedPartitionDataView(
+            decryptedUserData: decryptedData,
             titleKey: titleKey
         )
-        let encryptedData = GoDData(byteStream: encryptedBytes, byteOrder: .big)
-        let h3TableData = GoDData(byteStream: h3TableBytes, byteOrder: .big)
-        logger?.log(.info("  Encrypted \(encryptedBytes.count / 0x8000) clusters (\(encryptedBytes.count) bytes); rebuilt H3 table"))
+        logger?.log(.info("  Encrypting \(encryptedData.length / 0x8000) clusters "
+            + "(\(encryptedData.length) bytes); rebuilt H3 table"))
 
         // Persist the rebuilt H3 table into the /sys h3 file image.
         try fst.writeFile(h3TableData, at: partFiles.h3File, overwrite: true)
@@ -424,31 +451,37 @@ public final class WiiPartition: FileSystemTree {
         try fst.writeFile(fakesignedTMD, at: partFiles.tmdFile, overwrite: true)
 
         // Build partition: ticket + header area + TMD + cert + H3 + encrypted data
-        let result = GoDData(byteOrder: .big)
-
-        // Write ticket at offset 0
-        result.write(ticket, atAddress: 0)
-
-        // Partition header at offset 0x2A4
         let tmdOffsetInPartition = 0x2C0
         let certOffsetInPartition = (tmdOffsetInPartition + fakesignedTMD.length).aligned(to: 0x20)
         let h3OffsetInPartition = (certOffsetInPartition + certChain.length).aligned(to: 0x20)
         let dataOffsetInPartition = (h3OffsetInPartition + 0x18000).aligned(to: 0x8000)
 
-        // Write header
-        result.write(UInt32(fakesignedTMD.length), atAddress: 0x2A4)
-        result.write(UInt32(tmdOffsetInPartition >> 2), atAddress: 0x2A8)
-        result.write(UInt32(certChain.length), atAddress: 0x2AC)
-        result.write(UInt32(certOffsetInPartition >> 2), atAddress: 0x2B0)
-        result.write(UInt32(h3OffsetInPartition >> 2), atAddress: 0x2B4)
-        result.write(UInt32(dataOffsetInPartition >> 2), atAddress: 0x2B8)
-        result.write(UInt32(encryptedData.length >> 2), atAddress: 0x2BC)
+        // The header block sits between the ticket and the TMD, so it is one
+        // placed piece rather than a run of writes into a shared buffer.
+        let header = GoDData(length: 0x2C0 - 0x2A4, byteOrder: .big)
+        header.write(UInt32(fakesignedTMD.length), atAddress: 0x00)
+        header.write(UInt32(tmdOffsetInPartition >> 2), atAddress: 0x04)
+        header.write(UInt32(certChain.length), atAddress: 0x08)
+        header.write(UInt32(certOffsetInPartition >> 2), atAddress: 0x0C)
+        header.write(UInt32(h3OffsetInPartition >> 2), atAddress: 0x10)
+        header.write(UInt32(dataOffsetInPartition >> 2), atAddress: 0x14)
+        header.write(UInt32(encryptedData.length >> 2), atAddress: 0x18)
 
-        // Write fakesigned TMD, cert, rebuilt H3 table, and encrypted data.
-        result.write(fakesignedTMD, atAddress: tmdOffsetInPartition)
-        result.write(certChain, atAddress: certOffsetInPartition)
-        result.write(h3TableData, atAddress: h3OffsetInPartition)
-        result.write(encryptedData, atAddress: dataOffsetInPartition)
+        // A ticket longer than 0x2A4 used to have its tail overwritten by the
+        // header; clamping it keeps that behaviour, since pieces may not
+        // overlap.
+        let ticketPiece = ticket.length > 0x2A4
+            ? (ticket.read(atAddress: 0, length: 0x2A4) ?? ticket)
+            : ticket
+
+        let result = try GoDCompositeData(pieces: [
+            .init(offset: 0, source: ticketPiece, name: "ticket"),
+            .init(offset: 0x2A4, source: header, name: "partition header"),
+            .init(offset: tmdOffsetInPartition, source: fakesignedTMD, name: "tmd"),
+            .init(offset: certOffsetInPartition, source: certChain, name: "cert chain"),
+            .init(offset: h3OffsetInPartition, source: h3TableData, name: "h3"),
+            .init(offset: dataOffsetInPartition, source: encryptedData, name: "encrypted data"),
+        ], byteOrder: .big)
 
         logger?.log(.taskStatus(taskName: taskName, status: .completed(true)))
         return result

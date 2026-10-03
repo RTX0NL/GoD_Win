@@ -124,33 +124,42 @@ public struct WiiCrypto {
         return GoDData(byteStream: clusterBytes, byteOrder: .big)
     }
 
-    /// Build and encrypt one 0x8000-byte cluster from its user data and hash tables.
-    private static func buildEncryptedCluster(
-        userBytes: [UInt8],
+    /// Lay one cluster's hash tables into its 0x400-byte hash block.
+    ///
+    /// Separate from encryption because a format may need to *edit* the
+    /// block between the two steps: WIA/RVZ carries hash exceptions, which
+    /// override individual hashes after they are recomputed and before they
+    /// are encrypted.
+    public static func hashBlock(
         h0Hashes: [[UInt8]],
         h1Hashes: [[UInt8]],
-        h2Hashes: [[UInt8]],
-        titleKey: [UInt8]
+        h2Hashes: [[UInt8]]
     ) -> [UInt8] {
-        // Build hash block (0x400 bytes)
-        var hashBlock = [UInt8](repeating: 0, count: hashBlockSize)
-
+        var block = [UInt8](repeating: 0, count: hashBlockSize)
         // H0 table @ 0x000: 31 entries of 20 bytes
         for i in 0..<min(h0Hashes.count, h0PerCluster) {
-            for j in 0..<20 { hashBlock[h0Offset + i * 20 + j] = h0Hashes[i][j] }
+            for j in 0..<20 { block[h0Offset + i * 20 + j] = h0Hashes[i][j] }
         }
         // H1 table @ 0x280: 8 entries of 20 bytes
         for i in 0..<min(h1Hashes.count, clustersPerSubgroup) {
-            for j in 0..<20 { hashBlock[h1Offset + i * 20 + j] = h1Hashes[i][j] }
+            for j in 0..<20 { block[h1Offset + i * 20 + j] = h1Hashes[i][j] }
         }
         // H2 table @ 0x340: 8 entries of 20 bytes
         for i in 0..<min(h2Hashes.count, subgroupsPerGroup) {
-            for j in 0..<20 { hashBlock[h2Offset + i * 20 + j] = h2Hashes[i][j] }
+            for j in 0..<20 { block[h2Offset + i * 20 + j] = h2Hashes[i][j] }
         }
+        return block
+    }
 
+    /// Encrypt one 0x8000-byte cluster from an already-built hash block.
+    public static func encryptCluster(
+        userBytes: [UInt8],
+        hashBlock block: [UInt8],
+        titleKey: [UInt8]
+    ) -> [UInt8] {
         let zeroIV = [UInt8](repeating: 0, count: 16)
         // Encrypt hash block with IV = all zeros.
-        let encryptedHash = AES128CBC.encrypt(bytes: hashBlock, key: titleKey, iv: zeroIV)
+        let encryptedHash = AES128CBC.encrypt(bytes: block, key: titleKey, iv: zeroIV)
 
         // IV for user data is bytes 0x3D0-0x3DF of the ENCRYPTED (ciphertext) hash block.
         let dataIV = Array(encryptedHash[userIVOffset..<(userIVOffset + 16)])
@@ -167,31 +176,84 @@ public struct WiiCrypto {
         return encryptedHash + encryptedUser
     }
 
-    /// Encrypt an entire partition's decrypted user data, building the full H0/H1/H2/H3 hash tree.
-    /// - Parameters:
-    ///   - decryptedUserData: the concatenated plaintext user data (any length; zero-padded up to a whole number of 64-cluster groups)
-    ///   - titleKey: 16-byte decrypted title key
-    /// - Returns: the concatenated encrypted clusters and a freshly-built H3 table (0x18000 bytes).
-    public static func encryptPartitionData(
-        decryptedUserData: [UInt8],
+    /// Build and encrypt one 0x8000-byte cluster from its user data and hash tables.
+    private static func buildEncryptedCluster(
+        userBytes: [UInt8],
+        h0Hashes: [[UInt8]],
+        h1Hashes: [[UInt8]],
+        h2Hashes: [[UInt8]],
         titleKey: [UInt8]
-    ) -> (encrypted: [UInt8], h3Table: [UInt8]) {
-        let groupUserSize = clustersPerGroup * userDataPerCluster
+    ) -> [UInt8] {
+        encryptCluster(
+            userBytes: userBytes,
+            hashBlock: hashBlock(h0Hashes: h0Hashes, h1Hashes: h1Hashes, h2Hashes: h2Hashes),
+            titleKey: titleKey
+        )
+    }
 
-        // Pad up to a whole number of 64-cluster groups.
-        var user = decryptedUserData
-        let remainder = user.count % groupUserSize
-        if remainder != 0 || user.isEmpty {
-            let padTo = user.isEmpty ? groupUserSize : (user.count + (groupUserSize - remainder))
-            user.append(contentsOf: [UInt8](repeating: 0, count: padTo - user.count))
+    // MARK: - Group encryption
+
+    /// Encrypt one 64-cluster group, applying hash overrides before
+    /// encryption.
+    ///
+    /// H3 is deliberately not computed: on a real disc it lives in the
+    /// partition's *unencrypted* header region, which a container like
+    /// WIA/RVZ stores verbatim rather than stripping. Recomputing it here
+    /// would overwrite the disc's own value with one derived from hashes the
+    /// exceptions may have just changed.
+    ///
+    /// - Parameters:
+    ///   - decryptedUserData: `clustersPerGroup × userDataPerCluster` bytes
+    ///     (0x1F0000), zero-padded by the caller when the group is short.
+    ///   - hashOverrides: `(offset, 20-byte hash)` pairs. `offset / 0x400`
+    ///     selects the cluster and `offset % 0x400` the byte within its hash
+    ///     block, which is how WIA/RVZ addresses a group's hash region.
+    /// - Returns: `clustersPerGroup × clusterSize` bytes (0x200000).
+    public static func encryptGroup(
+        decryptedUserData: [UInt8],
+        titleKey: [UInt8],
+        hashOverrides: [(offset: Int, hash: [UInt8])] = []
+    ) -> [UInt8] {
+        encryptGroup(
+            userData: decryptedUserData,
+            hashes: groupHashes(forUserData: decryptedUserData),
+            titleKey: titleKey,
+            hashOverrides: hashOverrides
+        )
+    }
+
+    /// The hash tables for one group of decrypted user data.
+    ///
+    /// Split out because three callers need different parts of the same walk:
+    /// encrypting a group wants H0, H1 and H2, building a partition's H3 table
+    /// wants only H3, and `encryptPartitionData` wants all of it. One function
+    /// means they cannot disagree about how a hash is derived.
+    public struct GroupHashes {
+        /// 31 hashes per cluster, 64 clusters.
+        public var h0: [[[UInt8]]]
+        /// One per cluster: the hash of that cluster's H0 table.
+        public var h1: [[UInt8]]
+        /// One per subgroup of 8 clusters.
+        public var h2: [[UInt8]]
+        /// This group's H3 entry: the hash of its 8 H2.
+        public var h3: [UInt8]
+    }
+
+    /// - Parameter userData: exactly `clustersPerGroup × userDataPerCluster`
+    ///   bytes. A short final group is zero-padded by the caller, because the
+    ///   hashes of the absent clusters still appear in the hash blocks of the
+    ///   clusters that exist.
+    public static func groupHashes(forUserData userData: [UInt8]) -> GroupHashes {
+        var user = userData
+        let groupUserSize = clustersPerGroup * userDataPerCluster
+        if user.count < groupUserSize {
+            user.append(contentsOf: [UInt8](repeating: 0, count: groupUserSize - user.count))
+        } else if user.count > groupUserSize {
+            user = Array(user[0..<groupUserSize])
         }
 
-        let clusterCount = user.count / userDataPerCluster
-        let groupCount = clusterCount / clustersPerGroup
-
-        // 1) H0 per cluster (31 hashes each).
-        var h0: [[[UInt8]]] = Array(repeating: [], count: clusterCount)
-        for c in 0..<clusterCount {
+        var h0 = [[[UInt8]]](repeating: [], count: clustersPerGroup)
+        for c in 0..<clustersPerGroup {
             let base = c * userDataPerCluster
             var hashes = [[UInt8]]()
             hashes.reserveCapacity(h0PerCluster)
@@ -201,71 +263,144 @@ public struct WiiCrypto {
             }
             h0[c] = hashes
         }
-
-        // 2) H1 per cluster = SHA1(concat of its 31 H0).
-        var h1: [[UInt8]] = Array(repeating: [], count: clusterCount)
-        for c in 0..<clusterCount {
-            h1[c] = SHA1.hash(h0[c].flatMap { $0 })
-        }
-
-        // 3) H2 per subgroup = SHA1(concat of that subgroup's 8 H1).
-        let subgroupCount = clusterCount / clustersPerSubgroup
-        var h2: [[UInt8]] = Array(repeating: [], count: subgroupCount)
-        for sg in 0..<subgroupCount {
+        let h1 = (0..<clustersPerGroup).map { SHA1.hash(h0[$0].flatMap { $0 }) }
+        let h2 = (0..<subgroupsPerGroup).map { sg -> [UInt8] in
             var concat = [UInt8]()
             concat.reserveCapacity(clustersPerSubgroup * 20)
             for k in 0..<clustersPerSubgroup {
                 concat.append(contentsOf: h1[sg * clustersPerSubgroup + k])
             }
-            h2[sg] = SHA1.hash(concat)
+            return SHA1.hash(concat)
         }
-
-        // 4) H3 per group = SHA1(concat of that group's 8 H2).
-        var h3: [[UInt8]] = Array(repeating: [], count: groupCount)
-        for g in 0..<groupCount {
-            var concat = [UInt8]()
-            concat.reserveCapacity(subgroupsPerGroup * 20)
-            for k in 0..<subgroupsPerGroup {
-                concat.append(contentsOf: h2[g * subgroupsPerGroup + k])
-            }
-            h3[g] = SHA1.hash(concat)
-        }
-
-        // Build the H3 table (0x18000, zero-filled, H3[g] at g*20).
-        var h3Table = [UInt8](repeating: 0, count: h3TableSize)
-        for g in 0..<groupCount {
-            let off = g * 20
-            for j in 0..<20 { h3Table[off + j] = h3[g][j] }
-        }
-
-        // 5) Encrypt each cluster with its subgroup's 8 H1 and its group's 8 H2.
-        var encrypted = [UInt8]()
-        encrypted.reserveCapacity(clusterCount * clusterSize)
-        for c in 0..<clusterCount {
-            let subgroup = c / clustersPerSubgroup
-            let group = c / clustersPerGroup
-
-            let sgBase = (subgroup) * clustersPerSubgroup
-            let h1Table = (0..<clustersPerSubgroup).map { h1[sgBase + $0] }
-
-            let gSgBase = group * subgroupsPerGroup
-            let h2Table = (0..<subgroupsPerGroup).map { h2[gSgBase + $0] }
-
-            let base = c * userDataPerCluster
-            let userBytes = Array(user[base..<(base + userDataPerCluster)])
-
-            let clusterBytes = buildEncryptedCluster(
-                userBytes: userBytes,
-                h0Hashes: h0[c],
-                h1Hashes: h1Table,
-                h2Hashes: h2Table,
-                titleKey: titleKey
-            )
-            encrypted.append(contentsOf: clusterBytes)
-        }
-
-        return (encrypted: encrypted, h3Table: h3Table)
+        return GroupHashes(h0: h0, h1: h1, h2: h2, h3: SHA1.hash(h2.flatMap { $0 }))
     }
+
+    /// Groups a decrypted payload occupies once padded out.
+    ///
+    /// Empty data still occupies one group, matching what the whole-payload
+    /// encrypt has always produced.
+    public static func groupCount(forDecryptedLength length: Int) -> Int {
+        let groupUserSize = clustersPerGroup * userDataPerCluster
+        guard length > 0 else { return 1 }
+        return (length + groupUserSize - 1) / groupUserSize
+    }
+
+    /// Encrypted bytes a decrypted payload of `length` turns into.
+    public static func encryptedLength(forDecryptedLength length: Int) -> Int {
+        groupCount(forDecryptedLength: length) * clustersPerGroup * clusterSize
+    }
+
+    /// One group's worth of decrypted data, zero-padded if the source stops
+    /// partway through.
+    public static func decryptedGroup(_ index: Int, of data: GoDReadable) -> [UInt8] {
+        let groupUserSize = clustersPerGroup * userDataPerCluster
+        var window = [UInt8](repeating: 0, count: groupUserSize)
+        let start = index * groupUserSize
+        let available = min(groupUserSize, max(0, data.length - start))
+        if available > 0, let chunk = data.read(atAddress: start, length: available) {
+            window.replaceSubrange(0..<available, with: chunk.rawBytes)
+        }
+        return window
+    }
+
+    /// Build a partition's H3 table without encrypting anything.
+    ///
+    /// A separate pass because of where H3 lives: the partition's unencrypted
+    /// header, *before* the data it covers. A sequential writer therefore
+    /// needs the whole table before the first encrypted byte, which rules out
+    /// producing it as a side effect of encrypting. This walk is SHA only —
+    /// no AES — and lets the encryption itself stay lazy.
+    public static func h3Table(forDecryptedUserData data: GoDReadable) -> [UInt8] {
+        var table = [UInt8](repeating: 0, count: h3TableSize)
+        for group in 0..<groupCount(forDecryptedLength: data.length) {
+            let offset = group * 20
+            guard offset + 20 <= h3TableSize else { break }
+            let h3 = groupHashes(forUserData: decryptedGroup(group, of: data)).h3
+            for j in 0..<20 { table[offset + j] = h3[j] }
+        }
+        return table
+    }
+
+    /// Encrypt one group from hashes already computed for it.
+    ///
+    /// The overrides are applied across the group's 64 hash blocks as one
+    /// contiguous region, because that is how WIA/RVZ addresses them.
+    public static func encryptGroup(
+        userData: [UInt8],
+        hashes: GroupHashes,
+        titleKey: [UInt8],
+        hashOverrides: [(offset: Int, hash: [UInt8])] = []
+    ) -> [UInt8] {
+        var user = userData
+        let groupUserSize = clustersPerGroup * userDataPerCluster
+        if user.count < groupUserSize {
+            user.append(contentsOf: [UInt8](repeating: 0, count: groupUserSize - user.count))
+        } else if user.count > groupUserSize {
+            user = Array(user[0..<groupUserSize])
+        }
+
+        var blocks = [[UInt8]]()
+        blocks.reserveCapacity(clustersPerGroup)
+        for c in 0..<clustersPerGroup {
+            let subgroup = c / clustersPerSubgroup
+            let h1Table = (0..<clustersPerSubgroup).map { hashes.h1[subgroup * clustersPerSubgroup + $0] }
+            blocks.append(hashBlock(h0Hashes: hashes.h0[c], h1Hashes: h1Table, h2Hashes: hashes.h2))
+        }
+        for override in hashOverrides {
+            let cluster = override.offset / hashBlockSize
+            let byte = override.offset % hashBlockSize
+            guard cluster < clustersPerGroup, byte + 20 <= hashBlockSize else { continue }
+            for j in 0..<min(20, override.hash.count) {
+                blocks[cluster][byte + j] = override.hash[j]
+            }
+        }
+
+        var out = [UInt8]()
+        out.reserveCapacity(clustersPerGroup * clusterSize)
+        for c in 0..<clustersPerGroup {
+            let base = c * userDataPerCluster
+            out.append(contentsOf: encryptCluster(
+                userBytes: Array(user[base..<(base + userDataPerCluster)]),
+                hashBlock: blocks[c],
+                titleKey: titleKey
+            ))
+        }
+        return out
+    }
+
+    /// Encrypt an entire partition's decrypted user data, building the full
+    /// H0/H1/H2/H3 hash tree.
+    ///
+    /// Costs the size of the partition twice over, so the streaming path —
+    /// `h3Table` plus `WiiEncryptedPartitionDataView` — is what a real rebuild
+    /// uses. Kept for tests and small payloads, and still one hash pass: it
+    /// shares `groupHashes` with everything else.
+    ///
+    /// - Returns: the concatenated encrypted clusters and a freshly-built H3
+    ///   table (0x18000 bytes).
+    public static func encryptPartitionData(
+        decryptedUserData: [UInt8],
+        titleKey: [UInt8]
+    ) -> (encrypted: [UInt8], h3Table: [UInt8]) {
+        let source = GoDData(byteStream: decryptedUserData, byteOrder: .big)
+        let count = groupCount(forDecryptedLength: decryptedUserData.count)
+        var encrypted = [UInt8]()
+        encrypted.reserveCapacity(count * clustersPerGroup * clusterSize)
+        var table = [UInt8](repeating: 0, count: h3TableSize)
+        for group in 0..<count {
+            let window = decryptedGroup(group, of: source)
+            let hashes = groupHashes(forUserData: window)
+            encrypted.append(contentsOf: encryptGroup(
+                userData: window, hashes: hashes, titleKey: titleKey
+            ))
+            let offset = group * 20
+            if offset + 20 <= h3TableSize {
+                for j in 0..<20 { table[offset + j] = hashes.h3[j] }
+            }
+        }
+        return (encrypted: encrypted, h3Table: table)
+    }
+
 
     // MARK: - Hash Chain Calculation (standalone helpers)
 
