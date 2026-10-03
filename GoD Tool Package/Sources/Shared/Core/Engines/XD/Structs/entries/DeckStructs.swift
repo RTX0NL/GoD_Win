@@ -6,10 +6,20 @@ import GoDFoundation
 ///
 /// These are byte-faithful mirrors of the in-game records, with property
 /// names chosen so the combined `Trainer` struct in the Pokemon engine
-/// can absorb fields by direct name + type match. Bit-packed bytes
-/// (PID, combo flags, AI flag bytes, stat-stage ranges) stay as raw
-/// integers here — semantic breakouts live in the editor layer.
+/// can absorb fields by direct name + type match. The stat-stage ranges
+/// are split into their two nibbles; the AI flag bytes stay raw, because
+/// the bit positions in `DeckTrainer.md` are inferred rather than read
+/// off an accessor.
 public extension XDStructDefaults {
+
+    /// One stat's AI range. Both nibbles are a stage count biased by 6, so
+    /// 6 means "no change" and the pair spans -6…+9.
+    static func statStageRange(name: String, description: String? = nil) -> StructMap.Property {
+        .bits(name: name, description: description, fields: [
+            .number(name: "maxStages", bits: 0...3, description: "Highest stage the AI will drive the stat to; midpoint 6"),
+            .number(name: "minStages", bits: 4...7, description: "Lowest stage it will accept; midpoint 6"),
+        ])
+    }
 
     /// DTNR — single trainer entry. 0x38 bytes.
     static let deckTrainerStruct = StructMap(
@@ -81,20 +91,23 @@ public extension XDStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
+            // One bit per decision knob, with a dedicated accessor each.
+            // `Documentation/Assembly Analysis/Data Structures/
+            // DeckTrainer.md` lists the accessors but marks the positions
+            // "(inferred)", so the bytes stay whole until one is read off
+            // an `rlwinm`.
             .uint8(name: "pokemonSelectionFlags",
-                   description: "Bitfield for pokemon-send-out behavior. See DeckTables.swift for the bit meanings."),
+                   description: "Bitfield for pokemon-send-out behavior; see DeckTrainer.md for the accessors."),
             .uint8(name: "moveSelectionFlags",
                    description: "Bitfield for move-pick behavior."),
             .padding(length: 2),
-            .uint8(name: "atkStatStages",
-                   description: "0x04 — high nibble = max stages (midpoint 6), low nibble = min stages."),
-            .uint8(name: "defStatStages"),
-            .uint8(name: "spAtkStatStages"),
-            .uint8(name: "spDefStatStages"),
-            .uint8(name: "speedStatStages"),
-            .uint8(name: "accuracyStatStages",
-                   description: "Unused at runtime per legacy notes."),
-            .uint8(name: "evasionStatStages"),
+            XDStructDefaults.statStageRange(name: "atkStatStages", description: "0x04"),
+            XDStructDefaults.statStageRange(name: "defStatStages"),
+            XDStructDefaults.statStageRange(name: "spAtkStatStages"),
+            XDStructDefaults.statStageRange(name: "spDefStatStages"),
+            XDStructDefaults.statStageRange(name: "speedStatStages"),
+            XDStructDefaults.statStageRange(name: "accuracyStatStages", description: "Unused at runtime per legacy notes."),
+            XDStructDefaults.statStageRange(name: "evasionStatStages"),
             .padding(length: 1),
             .uint8(name: "maxTotalStatStages",
                    description: "Shifted-int with midpoint 42; range −42..+42."),

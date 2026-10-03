@@ -25,10 +25,15 @@ public extension ColosseumStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            // 0x00: Flags bitfield, same bit layout as XD where an accessor
-            // reads it: bits 7:5 talk sound-effect type (peopleInfoBiosGetTalkSe),
-            // bits 3:2 collision type (peopleInfoBiosGetColType).
-            .uint8(name: "flags"),
+            // 0x00: the packed flags byte. The two accessors sit where
+            // XD's do; the bit XD uses for its bound check is claimed by
+            // nothing here, so it stays unnamed.
+            .bits(name: "flags", description: "How the character sounds, and how it collides", fields: [
+                .number(name: "talk_sound_effect", bits: 0...2, description: "peopleInfoBiosGetTalkSe; 0-7"),
+                .flag(name: "unknown_3", bit: 3, description: "Unidentified (XD's bound-check bit)"),
+                .number(name: "collision_type", bits: 4...5, description: "peopleInfoBiosGetColType: 0 none, 1 cylinder, 2 sphere"),
+                .number(name: "unknown_6_7", bits: 6...7, description: "Unidentified"),
+            ]),
             .uint8(name: "unknown_1"),
             .uint8(name: "unknown_2"),
             .uint8(name: "unknown_3"),

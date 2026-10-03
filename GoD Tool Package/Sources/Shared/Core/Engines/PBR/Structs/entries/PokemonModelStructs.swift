@@ -22,15 +22,13 @@ public extension PBRStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            // 0x00: Packed parameters.
-            //   bits 7:4 — size / scale class. Values 0 and 2…12 occur on
-            //              the PAL disc; 1 does not, and bits 3, 1 and 0 are
-            //              never set. PBRHex writes 0x60 for a new row.
-            //   bit  2   — this row is the female-specific model (93 of 670
-            //              rows). Row lookup matches species + form and then
-            //              this bit, so a species with a female variant has
-            //              two rows.
-            .uint8(name: "parameters"),
+            // 0x00: Packed parameters. PBRHex writes 0x60 for a new row.
+            .bits(name: "parameters", description: "Scale class, and whether this is the female model", fields: [
+                .number(name: "size_class", bits: 0...3, description: "0xF0. Values 0 and 2…12 occur on the PAL disc; 1 does not"),
+                .flag(name: "unknown_4", bit: 4, description: "0x08; never set on the PAL disc"),
+                .flag(name: "is_female_model", bit: 5, description: "0x04. Row lookup matches species + form and then this bit, so a species with a female variant has two rows (93 of 670)"),
+                .number(name: "unknown_6_7", bits: 6...7, description: "0x03; never set on the PAL disc"),
+            ]),
 
             // 0x01: Alignment filler. The packer fills intra-entry gaps with
             // 0xD0 rather than zero — 14 of the 33 tables contain such runs —

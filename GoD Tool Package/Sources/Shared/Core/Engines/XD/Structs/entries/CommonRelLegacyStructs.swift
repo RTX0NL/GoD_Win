@@ -19,7 +19,15 @@ public extension XDStructDefaults {
             .abstraction(name: "gender", typeName: "Gender"),
             .abstraction(name: "species", typeName: "PokemonSpecies"),
             .abstraction(name: "move", typeName: "Moves", description: "Its only move"),
-            .uint16(name: "ev_bonus", description: "Bits 15-12 the EV stat (1-6, HP…Speed), bits 7-0 the amount; bits 11-8 ignored; 0 none"),
+            // `getPanelHoseiKind` is `(v >> 12) & 0xF` and
+            // `getPanelHoseiVal` is `v & 0xFF`, so the middle nibble is
+            // read by neither — one row carries 0x2246, which a split into
+            // two bytes reported as EV stat 0x22.
+            .bits(name: "ev_bonus", storage: .uint16, description: "An EV the panel awards; 0 for none", fields: [
+                .number(name: "ev_stat", bits: 0...3, description: "getPanelHoseiKind: 1-6, HP…Speed"),
+                .number(name: "unknown_4_7", bits: 4...7, description: "Read by nothing; set on one row"),
+                .number(name: "ev_amount", bits: 8...15, description: "getPanelHoseiVal"),
+            ]),
         ],
         description: "A Battle Bingo panel (0xA bytes)"
     )

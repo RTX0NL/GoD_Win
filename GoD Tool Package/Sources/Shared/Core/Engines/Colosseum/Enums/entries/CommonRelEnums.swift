@@ -55,27 +55,25 @@ public enum ColoCommonRelEnumDefaults {
         propertyType: .uint8
     )
 
-    /// A room's floor kind, stored in the top three bits of the `Rooms`
-    /// record's first byte — so the raw values are the kind × 32. The low
-    /// five bits are zero on every room of every disc and no routine reads
-    /// them, so the whole byte is the enum; a modded value with low bits set
-    /// still round-trips as `RoomKind_<n>`. The floor code branches on the
-    /// kind everywhere a room is entered (lifecycle path, shadow cutoff and
-    /// shadow-map size, fog, frame-rate mode), and the partition is the same
-    /// as XD's. Named from the rooms that carry each value on the US disc;
-    /// kinds 3 and 7 are handled by the code but no Colosseum room uses them.
+    /// A room's floor kind, the top three bits of the `Rooms` record's
+    /// first byte. The floor code branches on it everywhere a room is
+    /// entered (lifecycle path, shadow cutoff and shadow-map size, fog,
+    /// frame-rate mode), and the partition is the same as XD's — where the
+    /// kind is a whole byte, which is why both now number 0…7. Named from
+    /// the rooms that carry each value on the US disc; kinds 3 and 7 are
+    /// handled by the code but no Colosseum room uses them.
     public static let roomKind = Enum(
         name: "RoomKind",
         allowUnknownCases: true,
         values: [
-            .init(name: "None",       rawValue: 0x00),  // room 0, fight_demo, auto_demo
-            .init(name: "Field",      rawValue: 0x20),  // overworld maps the player walks in
-            .init(name: "Battle",     rawValue: 0x40),  // colosseums and the per-town battle arenas
-            .init(name: "Unused3",    rawValue: 0x60),
-            .init(name: "MoveViewer", rawValue: 0x80),  // room 999, waza_viewer
-            .init(name: "Scene",      rawValue: 0xA0),  // menus, logos, demos, the Snagem Hideout intro rooms
-            .init(name: "SystemMenu", rawValue: 0xC0),  // title, top menu, battle-mode menu
-            .init(name: "Unused7",    rawValue: 0xE0),
+            .init(name: "None",       rawValue: 0),  // room 0, fight_demo, auto_demo
+            .init(name: "Field",      rawValue: 1),  // overworld maps the player walks in
+            .init(name: "Battle",     rawValue: 2),  // colosseums and the per-town battle arenas
+            .init(name: "Unused3",    rawValue: 3),
+            .init(name: "MoveViewer", rawValue: 4),  // room 999, waza_viewer
+            .init(name: "Scene",      rawValue: 5),  // menus, logos, demos, the Snagem Hideout intro rooms
+            .init(name: "SystemMenu", rawValue: 6),  // title, top menu, battle-mode menu
+            .init(name: "Unused7",    rawValue: 7),
         ],
         propertyType: .uint8
     )

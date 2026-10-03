@@ -70,8 +70,21 @@ public extension XDStructDefaults {
             // Colosseum packs these same two bytes differently (see its
             // own `FloorCharacter`), which is what the legacy tool got
             // wrong by reading both with XD's layout.
-            .uint8(name: "flags", description: "Bit 7: visible (floorCharacterBiosGetVisibility). 6: placed when the floor loads, otherwise a script places it (GetLoadInit). 5: has collision (GetIsHit). 4: turns its head to follow the player (peopleMoveNeckTargetHero). 3: can be talked to through walls (GetTalkWallThrough). 2: animation blending (GSmodelEnableAnimBlend). Bits 1-0 are read by nothing"),
-            .uint8(name: "behavior", description: "Bits 7:5 move type (GetMoveType): 0 stands, 2 random walk, 3 random rotation; 1 and 4 start nothing when placed. Bits 4:3 talk start (GetTalkStartType): 0 doesn't react, 1 turns its head toward the player, 2 turns its whole body, 3 can't be talked to. Bits 2:1 talk end (GetTalkEndType): 0 keeps facing the player, 1 turns back to its original facing (with talk start 2; a head turn always relaxes). Bit 0 is read by nothing"),
+            .bits(name: "flags", description: "What the character is and how it reacts", fields: [
+                .flag(name: "visible", bit: 0, description: "floorCharacterBiosGetVisibility → peopleSetDisp"),
+                .flag(name: "placed_on_load", bit: 1, description: "Placed when the floor loads; otherwise a script places it (GetLoadInit)"),
+                .flag(name: "has_collision", bit: 2, description: "GetIsHit → peopleSetCollision"),
+                .flag(name: "head_follows_player", bit: 3, description: "peopleMoveNeckTargetHero"),
+                .flag(name: "talk_through_walls", bit: 4, description: "GetTalkWallThrough"),
+                .flag(name: "animation_blending", bit: 5, description: "GSmodelEnableAnimBlend"),
+                .number(name: "unknown_6_7", bits: 6...7, description: "Read by nothing"),
+            ]),
+            .bits(name: "behavior", description: "How the character moves, and how it reacts to being talked to", fields: [
+                .number(name: "move_type", bits: 0...2, description: "GetMoveType: 0 stands, 2 random walk, 3 random rotation; 1 and 4 start nothing when placed"),
+                .number(name: "talk_start", bits: 3...4, description: "GetTalkStartType: 0 doesn't react, 1 turns its head toward the player, 2 turns its whole body, 3 can't be talked to"),
+                .number(name: "talk_end", bits: 5...6, description: "GetTalkEndType: 0 keeps facing the player, 1 turns back to its original facing. Only matters with talk start 2; a head turn always relaxes"),
+                .number(name: "unknown_7", bits: 7...7, description: "Read by nothing"),
+            ]),
             .uint8(name: "unknown_0x02", description: "Read by nothing; 0 on every XD character"),
             .uint8(name: "animation_id", description: "Starting animation (setAnimIndex in peopleSetInfo); 3 on most characters, and any other value also marks the character as animated"),
             .int16(name: "angle", description: "Facing in degrees (GetRot)"),

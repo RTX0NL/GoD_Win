@@ -190,7 +190,11 @@ public extension ColosseumStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "flags", description: "Bit 6 (0x40) terminates the chain; bit 7 (0x80) unknown"),
+            .bits(name: "flags", fields: [
+                .flag(name: "unknown_0", bit: 0, description: "0x80; unidentified"),
+                .flag(name: "terminates_chain", bit: 1, description: "0x40; last sprite of this screen"),
+                .number(name: "unknown_2_7", bits: 2...7, description: "Read by nothing"),
+            ]),
             .uint8(name: "alpha"),
             .int16(name: "x_position"),
             .int16(name: "y_position"),

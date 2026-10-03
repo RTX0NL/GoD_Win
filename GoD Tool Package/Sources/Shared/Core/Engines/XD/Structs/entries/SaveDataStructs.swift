@@ -72,7 +72,16 @@ public extension XDStructDefaults {
             .uint8(name: "conditionTurnNow"),       // +0x19
             .uint8(name: "flagAmari"),              // +0x1A
             .array(name: "unknown1", count: 2, of: .uint8),  // +0x1B..0x1D undocumented
-            .uint8(name: "packedFlags"),            // +0x1D fusei(0x20)/tamago-egg(0x80)/…
+            // +0x1D. Masks from the `rlwinm`s in `pokemonBiosGetTamagoFlag`
+            // and `…GetFuseiFlag`; the rest are probably single-bit flags
+            // too (`pokemonBiosGetTokuseiFlag` delegates elsewhere), but no
+            // accessor pins one, so they stay unnamed.
+            .bits(name: "packedFlags", fields: [
+                .flag(name: "isEgg", bit: 0, description: "tamagoFlag, 0x80"),
+                .flag(name: "unknownBit1", bit: 1, description: "0x40"),
+                .flag(name: "isInvalid", bit: 2, description: "fuseiFlag, 0x20 — fails the save's validation"),
+                .number(name: "unknownBits3_7", bits: 3...7, description: "0x1F"),
+            ]),
             .array(name: "unknown2", count: 2, of: .uint8),  // +0x1E..0x20 undocumented (non-zero leftover)
             .uint32(name: "exp"),                   // +0x20
             .uint32(name: "catchTrainerRnd"),       // +0x24
@@ -272,8 +281,8 @@ public extension XDStructDefaults {
     /// This is the XD-unique record: Shadow status, purification
     /// bookkeeping (poolExp / heart-gauge), Snatch metadata, and
     /// Reverse ("Hyper") Mode state. Bytes 0x00/0x01 are dense
-    /// bitfields (kept as raw `u8` — the sub-bit accessors don't
-    /// decompose into byte fields); undocumented gaps are `unknown<n>`
+    /// bitfields, split into their named bits below;
+    /// undocumented gaps are `unknown<n>`
     /// byte arrays — the gaps carry non-zero leftover, not zero
     /// alignment, so they can't be dropped or `.cStyle`-auto-aligned.
     static let saveShadowPokemonStruct = StructMap(
@@ -281,8 +290,26 @@ public extension XDStructDefaults {
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "statusFlags"),        // +0x00 packed: status(3b)/snatchFromWho(2b)/where
-            .uint8(name: "packedFlags"),        // +0x01 reverseMode(0x20)/isUpdate(0x10)/isInformation(0x80)/isWazaNew
+            // +0x00 and +0x01. Bit positions are the `rlwinm`/`rlwimi`
+            // masks in the individual `DarkPokemon::` getters and setters —
+            // see `Documentation/Assembly Analysis/Data Structures/
+            // DarkPokemon.md`.
+            .bits(name: "statusFlags", description: "Shadow status, and who it was snatched from", fields: [
+                .flag(name: "unknownBit0", bit: 0, description: "0x80"),
+                .number(name: "snatchFromWho", bits: 1...2, description: "0x60; whose trainer it was taken from"),
+                .number(name: "status", bits: 3...5, description: "0x1C; the 3-bit darkPokemonStatus (getStatus/setStatus/addStatus)"),
+                .number(name: "unknownBits6_7", bits: 6...7, description: "0x03"),
+            ]),
+            .bits(name: "packedFlags", description: "Reverse Mode and bookkeeping", fields: [
+                .flag(name: "isInformation", bit: 0, description: "0x80"),
+                .flag(name: "unknownBit1", bit: 1, description: "0x40"),
+                .flag(name: "isReverseMode", bit: 2, description: "0x20; Reverse (\"Hyper\") Mode"),
+                .flag(name: "isUpdate", bit: 3, description: "0x10; changed since the last save"),
+                .flag(name: "unknownBit4", bit: 4, description: "0x08; the fourth move's isWazaNew would sit here, but no accessor reads it"),
+                .flag(name: "isMoveNew3", bit: 5, description: "0x04; isWazaNew for move slot 3"),
+                .flag(name: "isMoveNew2", bit: 6, description: "0x02; move slot 2"),
+                .flag(name: "isMoveNew1", bit: 7, description: "0x01; move slot 1"),
+            ]),
             .array(name: "unknown1", count: 2, of: .uint8),  // +0x02..0x04 undocumented (non-zero leftover)
             .uint32(name: "poolExp"),           // +0x04 pooled EXP awaiting purification
             .array(name: "unknown2", count: 3, of: .uint8),  // +0x08..0x0B undocumented

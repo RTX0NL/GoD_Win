@@ -31,8 +31,19 @@ public extension ColosseumStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "flags", description: "Bit 7: visible. 6: has collision. 5: turns its head to follow the player. 4: can be talked to through walls. 3: unidentified (set on one character). Bits 2:0 move type: 0 stands, 2 random walk, 3 random rotation"),
-            .uint8(name: "behavior", description: "Bits 7:6 talk start: 0 doesn't react, 1 turns its head toward the player, 2 turns its whole body, 3 can't be talked to. Bits 5:4 talk end: 0 keeps facing the player, 1 turns back to its original facing. Bits 3:0 are read by nothing (0 on disc)"),
+            .bits(name: "flags", description: "What the character is, how it reacts, and how it moves", fields: [
+                .flag(name: "visible", bit: 0),
+                .flag(name: "has_collision", bit: 1),
+                .flag(name: "head_follows_player", bit: 2),
+                .flag(name: "talk_through_walls", bit: 3),
+                .flag(name: "unknown_4", bit: 4, description: "Unidentified; set on one character"),
+                .number(name: "move_type", bits: 5...7, description: "0 stands, 2 random walk, 3 random rotation"),
+            ]),
+            .bits(name: "behavior", description: "How the character reacts to being talked to", fields: [
+                .number(name: "talk_start", bits: 0...1, description: "0 doesn't react, 1 turns its head toward the player, 2 turns its whole body, 3 can't be talked to"),
+                .number(name: "talk_end", bits: 2...3, description: "0 keeps facing the player, 1 turns back to its original facing"),
+                .number(name: "unknown_4_7", bits: 4...7, description: "Read by nothing; 0 on disc"),
+            ]),
             .uint8(name: "unknown_0x02", description: "0-4 on a handful of characters; no reader found"),
             .uint8(name: "unknown_0x03", description: "0 on every Colosseum character"),
             .int16(name: "angle", description: "Facing in degrees"),

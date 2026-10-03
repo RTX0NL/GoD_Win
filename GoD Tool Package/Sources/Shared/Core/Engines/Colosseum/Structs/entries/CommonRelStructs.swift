@@ -510,7 +510,10 @@ public extension ColosseumStructDefaults {
             // MoveViewer rooms 80 units with a 640×480 map, and the other
             // kinds leave the previous value in place
             // (GSmodelSetShadowCutoffDist stores the square).
-            .abstraction(name: "kind", typeName: "RoomKind", description: "Floor kind in bits 7:5 (low bits unused); selects the shadow cutoff distance and shadow-map size among other things"),
+            .bits(name: "kind", description: "The floor kind, in the top three bits of the record's first byte", fields: [
+                .abstraction(name: "floor_kind", bits: 0...2, typeName: "RoomKind", description: "Selects the shadow cutoff distance and shadow-map size among other things"),
+                .number(name: "unknown_3_7", bits: 3...7, description: "Zero on every room of every disc"),
+            ]),
             .abstraction(name: "area", typeName: "Area", description: "Compared for equality only: a change of area clears flag level 2"),
         ]
     }

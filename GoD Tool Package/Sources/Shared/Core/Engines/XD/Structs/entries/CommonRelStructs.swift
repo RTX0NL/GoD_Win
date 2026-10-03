@@ -698,13 +698,12 @@ public extension XDStructDefaults {
         wordSize: 1,
         alignmentStyle: .none,
         properties: [
-            // +0x0 packs two fields: bits 6-7 are the bank (1-3; 0 means the
-            // flag has no storage, which nothing uses) and bits 0-5 the bit
-            // length (1-32). `GSflagGet` masks it one way for the bank,
-            // `_flagGet` the other for the width. `StructData` has no sub-byte
-            // fields, so it stays one byte here; the save-side flag CSV is
-            // where the two halves are split out.
-            .uint8(name: "bankAndBitLength", description: "bits 6-7 bank, bits 0-5 bit length"),
+            // +0x0 packs two fields. `GSflagGet` masks it one way for the
+            // bank, `_flagGet` the other for the width.
+            .bits(name: "bankAndBitLength", description: "Which bank the flag lives in, and how wide it is", fields: [
+                .number(name: "bank", bits: 0...1, description: "1-3; 0 would mean the flag has no storage, which nothing uses"),
+                .number(name: "bitLength", bits: 2...7, description: "1-32; 149 of the 2324 flags are wider than one bit"),
+            ]),
             .uint8(name: "reserved", description: "0 in all 2324 entries"),
             // +0x2 is scratch on disc: `GSflagInitBitPos` fills it at boot
             // with the bank's running bit total over all lower-numbered

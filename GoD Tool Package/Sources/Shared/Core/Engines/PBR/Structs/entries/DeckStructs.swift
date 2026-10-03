@@ -140,15 +140,18 @@ public extension PBRStructDefaults {
             // stores gender 0, and rows carrying a real value never set the
             // matching bit.
             //
-            //   bit 11 (0x0800) — use the species' second ability slot
-            //   bit  6 (0x0040) — random IVs
-            //   bit  5 (0x0020) — random form
-            //   bit  4 (0x0010) — random nature
-            //   bit  3 (0x0008) — random gender
-            //
-            // The rest are unidentified; bits 2, 4, 6 and 5 are set on nearly
-            // every row, bit 7 on eight rows, bit 15 on none.
-            .uint16(name: "flags"),
+            .bits(name: "flags", storage: .uint16, description: "Which of the fields below the AI randomizes", fields: [
+                .number(name: "unknown_0_3", bits: 0...3, description: "0xF000"),
+                .flag(name: "use_second_ability", bit: 4, description: "0x0800; the species' second ability slot"),
+                .number(name: "unknown_5_7", bits: 5...7, description: "0x0700"),
+                .flag(name: "unknown_8", bit: 8, description: "0x0080; set on eight rows"),
+                .flag(name: "random_ivs", bit: 9, description: "0x0040"),
+                .flag(name: "random_form", bit: 10, description: "0x0020"),
+                .flag(name: "random_nature", bit: 11, description: "0x0010"),
+                .flag(name: "random_gender", bit: 12, description: "0x0008"),
+                .flag(name: "unknown_13", bit: 13, description: "0x0004; set on nearly every row"),
+                .number(name: "unknown_14_15", bits: 14...15, description: "0x0003"),
+            ]),
             .uint16(name: "minimum_level"),
             .abstraction(name: "species", typeName: "PokemonSpecies"),
             // 0x08: The species' own typing, copied here for the AI's team

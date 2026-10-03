@@ -13,13 +13,15 @@ public extension XDStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            // Offset 0x00: Flags bitfield
-            // Bits 7:5 = talk sound effect type (3 bits, 0-7)
-            // Bit 4    = bound check enabled (boolean)
-            // Bits 3:2 = collision type (2 bits, 0-3)
-            // Bit 1    = unknown flag
-            // Bit 0    = unknown flag
-            .uint8(name: "flags"),
+            // Offset 0x00: the packed flags byte. Colosseum's record has
+            // the same two accessors at the same positions but claims
+            // nothing for the bit between them.
+            .bits(name: "flags", description: "How the character sounds, and how it collides", fields: [
+                .number(name: "talk_sound_effect", bits: 0...2, description: "peopleInfoBiosGetTalkSe; 0-7"),
+                .flag(name: "bound_check", bit: 3, description: "Bound checking enabled"),
+                .number(name: "collision_type", bits: 4...5, description: "peopleInfoBiosGetColType: 0 none, 1 cylinder, 2 sphere"),
+                .number(name: "unknown_6_7", bits: 6...7, description: "Unidentified"),
+            ]),
 
             // Offset 0x01: Index of the neck bone in the model's skeleton.
             // Used for head-tracking (looking toward player/objects).

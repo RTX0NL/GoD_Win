@@ -11,6 +11,15 @@ import GoDFoundation
 /// per-trainer, storyDeckSpeciesIndex equals `species`) is omitted.
 public extension PokemonStructDefaults {
 
+    /// One stat's AI range. Both nibbles are a stage count biased by 6, so
+    /// 6 means "no change" and the pair spans -6…+9.
+    static func statStageRange(name: String, description: String? = nil) -> StructMap.Property {
+        .bits(name: name, description: description, fields: [
+            .number(name: "maxStages", bits: 0...3, description: "Highest stage the AI will drive the stat to; midpoint 6"),
+            .number(name: "minStages", bits: 4...7, description: "Lowest stage it will accept; midpoint 6"),
+        ])
+    }
+
     /// Top-level combined Trainer record. One JSON file per row in the
     /// deck's DTNR section.
     static let trainerStruct = StructMap(
@@ -100,13 +109,13 @@ public extension PokemonStructDefaults {
         properties: [
             .uint8(name: "pokemonSelectionFlags"),
             .uint8(name: "moveSelectionFlags"),
-            .uint8(name: "atkStatStages"),
-            .uint8(name: "defStatStages"),
-            .uint8(name: "spAtkStatStages"),
-            .uint8(name: "spDefStatStages"),
-            .uint8(name: "speedStatStages"),
-            .uint8(name: "accuracyStatStages"),
-            .uint8(name: "evasionStatStages"),
+            PokemonStructDefaults.statStageRange(name: "atkStatStages"),
+            PokemonStructDefaults.statStageRange(name: "defStatStages"),
+            PokemonStructDefaults.statStageRange(name: "spAtkStatStages"),
+            PokemonStructDefaults.statStageRange(name: "spDefStatStages"),
+            PokemonStructDefaults.statStageRange(name: "speedStatStages"),
+            PokemonStructDefaults.statStageRange(name: "accuracyStatStages"),
+            PokemonStructDefaults.statStageRange(name: "evasionStatStages"),
             .uint8(name: "maxTotalStatStages"),
             .uint8(name: "minTotalStatStages"),
             .uint8(name: "switchRate"),

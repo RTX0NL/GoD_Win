@@ -101,9 +101,11 @@ public extension PBRStructDefaults {
             .uint16(name: "name_message_id"),
             .uint16(name: "description_message_id"),
             .uint16(name: "unknown_id"),
-            // 0x0A: Bit 7 (the most significant) marks the reward as a
-            // Pokémon rather than an item.
-            .uint8(name: "flags"),
+            // 0x0A: what `pokemon_or_item_id` above means.
+            .bits(name: "flags", fields: [
+                .flag(name: "is_pokemon", bit: 0, description: "0x80; the reward is a Pokémon rather than an item"),
+                .number(name: "unknown_1_7", bits: 1...7, description: "Unidentified"),
+            ]),
             .padding(length: 1),
         ],
         description: "One purchasable Poké Coupon reward: price, what it grants, and its menu strings."
