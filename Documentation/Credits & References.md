@@ -15,6 +15,81 @@ This document lists the reference implementations, specifications, and documenta
 ### Documentation
 - **WiiBrew Wiki** — Wii disc format documentation including partition table layout, ticket/TMD structures, and encryption scheme.
 
+## WIA / RVZ disc images
+
+### Specifications
+- **Dolphin `docs/WiaAndRvz.md`** ([dolphin-emu/dolphin](https://github.com/dolphin-emu/dolphin/blob/master/docs/WiaAndRvz.md))
+  — the authoritative description of both formats, including the Lagged
+  Fibonacci junk generator and the RVZ packing scheme.
+- **Wiimms WIA documentation** (<https://wit.wiimm.de/info/wia.html>) — the
+  original WIA reference, for the pre-RVZ half of the format.
+
+### Reference Implementations
+- **Dolphin Emulator** — `Source/Core/DiscIO/WIABlob.cpp` and
+  `LaggedFibonacciGenerator.cpp` (GPLv2+). Consulted for the exact layering
+  of a group payload (compression, then exception lists, then RVZ packing),
+  for the rule that a group's junk generator is advanced by its offset
+  modulo 32 KiB, and for the observation that the format's odd `>> 18` byte
+  extraction can be folded into the generator's state at initialization.
+
+## NKit disc images (GameCube)
+
+### Specifications
+- **NKit wiki** (<https://wiki.gbatemp.net/wiki/NKit>) and the
+  [format page](https://wiki.gbatemp.net/wiki/NKit/NKitFormat) — the header
+  block at `0x200` and the general shape of the format.
+
+### Reference Implementations
+- **Nanook's NKit v1** ([Nanook/NKitv1](https://github.com/Nanook/NKitv1),
+  C#). The GameCube codec here is a direct port of its behaviour, read from
+  the source rather than inferred:
+  - `NKit/FilesAndStreams/JunkStream.cs` — the disc junk PRNG. Confirms the
+    generator carries no leading-zero behaviour of its own, which is what
+    located the rule in the gap layer instead.
+  - `NKit/Conversion/Gaps.cs` — the gap encoding, its four types and four
+    block kinds, and `blockCompare`'s allowance for leading nulls at the
+    start of a gap (the comment "larger than 0x1c + 3 padding which can be
+    nulls" is what named the constant).
+  - `NKit/Conversion/NkitFormat.cs` — `GetConvertFstFiles` (files paired
+    with the gap that follows, each file occupying its length rounded up to
+    4 bytes) and `ProcessGap` (the `nulls` derivation).
+  - `NKit/Conversion/Readers/NkitReaderGc.cs` — the restore walk, including
+    `nullsPos = dstPos + 0x1c` after each file and the
+    `size >= 0x40000 && !firstOrLastFile` rule that drops the allowance to
+    zero for a large interior gap.
+  - `NKit/Conversion/Writers/NkitWriterGc.cs` — the write order, the
+    `0x800` tail padding and the CRC-force call.
+- **Nayuki's "Forcing a file's CRC to any value"**
+  (<https://www.nayuki.io/res/forcing-a-files-crc-to-any-value>) — the
+  algorithm behind `CRCForce`, reached via NKit's `Checksums/CrcForce.cs`.
+
+### Verification
+- Pokemon XD US (`GXXE01`) `.nkit.iso` restored against the Redump ISO it
+  was made from, with NKit's own recorded CRC-32 as the gate. The junk
+  start rule was cross-checked independently against six retail GameCube
+  discs before the source was consulted.
+
+## Zstandard
+
+### Specifications
+- **RFC 8878** — Zstandard Compression and the `application/zstd` Media Type.
+  The decoder in `GoDFoundation/Data/Compression/Zstd/` is written from this.
+- **facebook/zstd `doc/zstd_compression_format.md`** — the same format with
+  worked examples; used for the Huffman weight-to-code assignment and the
+  repeat-offset rules.
+
+### Reference Implementations
+- **facebook/zstd** ([facebook/zstd](https://github.com/facebook/zstd), BSD/GPLv2)
+  — `lib/decompress/zstd_decompress_block.c`'s precomputed default FSE
+  tables are transcribed into `ZstdPredefinedTableTests` as the reference
+  the built tables are checked against. The `zstd` CLI produced every
+  compressed fixture, so the decoder is validated against an independent
+  encoder rather than against itself.
+
+### Documentation
+- **Cyan4973/xxHash `doc/xxhash_spec.md`** — XXH64, which a Zstandard frame
+  uses for its optional content checksum.
+
 ## Yaz0 / Yay0 compression
 
 ### Documentation

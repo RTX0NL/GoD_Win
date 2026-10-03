@@ -62,21 +62,34 @@ public struct NKitHeader: Equatable {
     /// Parse the NKit header out of a `.nkit.iso`'s first sector.
     /// Expects `binary` to contain at least `0x200 + fieldsSize`
     /// bytes of the file.
-    public init(binary: GoDData, platform: Platform) throws {
-        binary.setByteOrder(.big)
-        guard binary.length >= NKitHeader.blockOffset + NKitHeader.fieldsSize else {
+    ///
+    /// Takes a `GoDReadable` so a 1 GB image can be identified without
+    /// being loaded, and decodes its fields big-endian explicitly
+    /// rather than through the source's declared byte order — a
+    /// readable handed back by `FileSystem.readFile` carries the
+    /// *host's* order, and this block is big-endian whatever that is.
+    public init(binary: GoDReadable, platform: Platform) throws {
+        guard binary.length >= NKitHeader.blockOffset + NKitHeader.fieldsSize,
+              let block = binary.read(
+                  atAddress: NKitHeader.blockOffset, length: NKitHeader.fieldsSize
+              )?.rawBytes,
+              block.count == NKitHeader.fieldsSize else {
             throw FileFormatErrors.invalid(format: "nkit")
         }
 
         // Magic + version: "NKIT v01"
-        guard let magicBytes = binary.read(atAddress: NKitHeader.blockOffset, length: 8)?.rawBytes,
-              magicBytes == NKitHeader.magic else {
+        guard Array(block[0 ..< 8]) == NKitHeader.magic else {
             throw FileFormatErrors.invalid(format: "nkit")
         }
 
-        let originalCRC: UInt32 = binary.readSafely(atAddress: NKitHeader.blockOffset + 0x08)
-        let crcForce: UInt32 = binary.readSafely(atAddress: NKitHeader.blockOffset + 0x0C)
-        let rawSize: UInt32 = binary.readSafely(atAddress: NKitHeader.blockOffset + 0x10)
+        func word(_ offset: Int) -> UInt32 {
+            (UInt32(block[offset]) << 24) | (UInt32(block[offset + 1]) << 16)
+                | (UInt32(block[offset + 2]) << 8) | UInt32(block[offset + 3])
+        }
+
+        let originalCRC = word(0x08)
+        let crcForce = word(0x0C)
+        let rawSize = word(0x10)
         let originalImageSize: UInt64
         switch platform {
         case .gamecube: originalImageSize = UInt64(rawSize)
@@ -84,16 +97,17 @@ public struct NKitHeader: Equatable {
         }
 
         var junkOverride: String? = nil
-        if platform == .gamecube,
-           let bytes = binary.read(atAddress: NKitHeader.blockOffset + 0x14, length: 4)?.rawBytes,
-           bytes.contains(where: { $0 != 0 }),
-           let ascii = String(bytes: bytes, encoding: .ascii) {
-            junkOverride = ascii
+        if platform == .gamecube {
+            let bytes = Array(block[0x14 ..< 0x18])
+            if bytes.contains(where: { $0 != 0 }),
+               let ascii = String(bytes: bytes, encoding: .ascii) {
+                junkOverride = ascii
+            }
         }
 
         var updateCRC: UInt32? = nil
         if platform == .wii {
-            let raw: UInt32 = binary.readSafely(atAddress: NKitHeader.blockOffset + 0x18)
+            let raw = word(0x18)
             if raw != 0 { updateCRC = raw }
         }
 

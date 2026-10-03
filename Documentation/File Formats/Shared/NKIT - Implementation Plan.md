@@ -11,6 +11,65 @@ Paired with the format reference at
 This doc focuses on module layout, data types, algorithms, and the
 phased rollout.
 
+## Status (2026-09-25)
+
+**GameCube is done, and verified against NKit v1's own output.** Our
+`.nkit.iso` for Pokemon XD US is byte-identical to the one NKit v1
+produced — 1,093,384,192 bytes, zero differences — and restoring either
+one reproduces the Redump ISO exactly.
+
+| Phase | State |
+|---|---|
+| 1 — Junk PRNG | Done. `JunkStream` + tests, confirmed on real discs. |
+| 2 — Gap RLE codec | Done and wired. `NKitGapEncoding` encodes and decodes real NKit gaps. |
+| 3 — CRC32 + CRC-force | Done and confirmed against NKit's output: CRC-32 of a real `.nkit.iso` equals the CRC stored at `0x208`. Open question 4 answered. |
+| 4 — GameCube NKit dump | Done. Real image → byte-identical Redump ISO. |
+| 5 — GameCube NKit build | Done. Real ISO → byte-identical to NKit v1's own `.nkit.iso`. |
+| 6-8 — Wii | Not started. Both operations refuse a Wii image. |
+| 9 — Integration | Partly. `ProjectSetup` auto-detects `.nkit.iso`; the operations are hand-authored only, like the CISO pair. |
+
+### The format, as measured
+
+The system area — disc header, `bi2.bin`, apploader, `main.dol`, FST —
+is kept verbatim at its original offsets. After it the files are packed
+end to end, each run of junk between them replaced by a gap encoding,
+and **the FST is rewritten to the packed offsets**. The image is padded
+to a `0x800` boundary.
+
+Two rules carry the layout and neither is readable off a file:
+
+- **A file occupies its length rounded up to 4 bytes**, packed and
+  original alike, so a gap is measured from `align4(end)`.
+- **A junk run may begin with zeros, and how many is derived.** The
+  allowance is `nullsPos - position` with `nullsPos = align4(end of the
+  last file) + 0x1C`, dropping to zero for a gap of `0x40000` or more
+  that isn't first or last in the list. Measured on six retail discs
+  before the source was consulted: junk begins at `align4(gapStart) +
+  28` in 49 of 50 sampled gaps, and at `gapStart` in the big interior
+  ones.
+
+### What a structural check cannot see
+
+An earlier version implemented a different shape and detected the real
+one by asking whether every FST file fits inside the image. For a
+packed image it always does — the FST *is* the packed layout — so a
+real XD image restored to 1.4 GB that was 99.24 % wrong, and the run
+reported success. The gate is the CRC comparison at the end of the
+restore, which is step 8 of the algorithm below and had never been
+implemented. Do not replace it with a structural check.
+
+### Still open
+
+- **Wii** (Phases 6-8) — needs partition re-hashing and re-encryption,
+  and a Wii `.nkit.iso` to validate against.
+- **The `junkFile` gap form** — a file whose whole content is junk,
+  dropped and regenerated on restore. The decoder handles it; the
+  encoder doesn't emit it, so such files are written out instead. Valid,
+  slightly larger, and it did not cost byte-identity on XD US.
+- **Corpus size** — one disc. More `.nkit.iso` samples would widen it.
+- **Memory** — both directions hold whole images, so a build peaks at
+  about twice the ISO.
+
 ## Goals
 
 - **Byte-identical roundtrip** on every test ISO, matching the bar we
@@ -340,14 +399,14 @@ preservation trackers.
 3. **Gap alignment** — the NKit source requires gap length `% 4 == 0`.
    Are there games where files land on non-aligned offsets and
    NKit silently pads? Look for any pad-byte writing in the encoder.
-4. **CRC-force slot** — confirm it's exactly offset `0x20C` every time
-   (vs NKit picking a different slot per image). Phase 3 reference-
-   vector test will nail this.
+4. **CRC-force slot** — ~~confirm it's exactly offset `0x20C`~~
+   **Answered.** CRC-32 of the whole real `XD (US).nkit.iso` equals the
+   CRC stored at `0x208`, so the slot is `0x20C` and the convention is
+   the one `CRCForce` implements.
 
-## Starting work
+## Next move
 
-Natural first move: **Phase 1 (Junk PRNG)**. It's self-contained, pure
-math, testable against any Redump GC ISO we already have, and unblocks
-everything after it. Phase 2 can start in parallel since the gap codec
-doesn't depend on the PRNG at the type level (it just takes one as a
-parameter at expand time).
+GameCube is closed out. The remaining work is **Wii** (Phases 6-8),
+which needs a Wii `.nkit.iso` sample and the partition re-hashing and
+re-encryption that `WiiCrypto` already has the primitives for. Until
+then both operations refuse a Wii image by name.
