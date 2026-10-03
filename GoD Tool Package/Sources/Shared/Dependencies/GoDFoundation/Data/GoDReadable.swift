@@ -163,9 +163,17 @@ public extension GoDReadable {
             switch format {
             case .gsColo, .gsXD:
                 guard let charID: UInt8 = readValue(atAddress: address + 2) else { return nil }
+                // Taken from the games' own dispatch tables rather than
+                // inferred: `msgctrlcode` in XD's `main.dol` (`lbl_80363778` in
+                // Colosseum's) is 8 bytes per code — a flag byte and a handler
+                // pointer — and each handler advances the message cursor past
+                // whatever it reads. `msgctrlWait` (0x09) reads one byte and
+                // rewinds by 3 while it counts down, which is what fixes the
+                // `FFFF` + code width at 3. The two games' tables are
+                // *identical* on every code, so one table serves both.
                 let paramsLength: Int
                 switch charID {
-                case 0x07, 0x09, 0x38, 0x52, 0x53, 0x5B, 0x5C: paramsLength = 1
+                case 0x07, 0x09, 0x38, 0x52, 0x53, 0x54, 0x5B, 0x5C: paramsLength = 1
                 case 0x8: paramsLength = 4
                 default: paramsLength = 0
                 }
