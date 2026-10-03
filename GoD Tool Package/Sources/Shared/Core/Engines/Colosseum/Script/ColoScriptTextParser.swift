@@ -46,6 +46,14 @@ public struct ColoScriptTextParser {
         case unknownEnum(String, line: Int)
         /// `Name.case` where the enum is known and the case is not.
         case unknownEnumCase(enumName: String, caseName: String, line: Int)
+        /// A Python keyword argument whose label isn't the name the builtin's
+        /// signature gives that position. Rejected rather than ignored: the
+        /// label is there to say which parameter is being set, so one that
+        /// disagrees means either a typo or arguments that have drifted out of
+        /// step with their labels, and both are worth stopping for. Note that
+        /// labels are positional documentation — reordering them the way
+        /// Python allows is not supported.
+        case argumentLabelMismatch(expected: String, got: String, line: Int)
         public var description: String {
             switch self {
             case .unexpected(let what, let line):
@@ -54,12 +62,17 @@ public struct ColoScriptTextParser {
                 return "parse error at line \(line): no engine declares an enum named '\(name)'"
             case .unknownEnumCase(let enumName, let caseName, let line):
                 return "parse error at line \(line): enum '\(enumName)' has no case '\(caseName)'"
+            case .argumentLabelMismatch(let expected, let got, let line):
+                return "parse error at line \(line): argument label '\(got)' should be '\(expected)'"
             }
         }
     }
 
     /// Built-in name → function ID (reverse of the engine's definition table)
     private let builtinIDs: [String: Int]
+    /// The definitions themselves, for checking Python keyword-argument
+    /// labels against the parameter names a signature declares.
+    private let builtinDefs: [Int: ScriptFunctionDef]
     /// Engine enums by name, resolving the `Name.case` constants the emitter
     /// writes for a parameter whose signature declares an `.enumRef`. Empty
     /// means no qualified constant can be resolved — and one in the source is
@@ -82,6 +95,7 @@ public struct ColoScriptTextParser {
         var ids = [String: Int]()
         for (id, def) in builtInFunctions { ids[def.name] = id }
         self.builtinIDs = ids
+        self.builtinDefs = builtInFunctions
         self.enums = enums
     }
 
@@ -191,7 +205,6 @@ public struct ColoScriptTextParser {
                 tokens.append(Token(kind: .identifier(text), line: line))
                 continue
             }
-            // symbols
             var matched = false
             for sym in Self.multiCharSymbols {
                 if source[i...].hasPrefix(sym) {
@@ -744,11 +757,19 @@ public struct ColoScriptTextParser {
                 return .call(index, returnCount: returns ? 1 : 0, args)
             }
             if name.hasPrefix("builtin_"), let id = Int(name.dropFirst(8)) {
-                let args = try parseCallArgs(&stream, localArgBase: localArgBase)
+                // A builtin the engine doesn't name; it may still declare the
+                // signature, so labels are checked where it does.
+                let args = try parseCallArgs(
+                    &stream, localArgBase: localArgBase,
+                    paramDefs: builtinDefs[id]?.parameters ?? []
+                )
                 return .callBuiltIn(.constant(.integer(Int32(id))), args)
             }
             if let id = builtinIDs[name] {
-                let args = try parseCallArgs(&stream, localArgBase: localArgBase)
+                let args = try parseCallArgs(
+                    &stream, localArgBase: localArgBase,
+                    paramDefs: builtinDefs[id]?.parameters ?? []
+                )
                 return .callBuiltIn(.constant(.integer(Int32(id))), args)
             }
             throw ParseError.unexpected("unknown identifier \(name)", line: line)
@@ -783,10 +804,33 @@ public struct ColoScriptTextParser {
         return Int32(truncatingIfNeeded: value.rawValue)
     }
 
-    private mutating func parseCallArgs(_ stream: inout Stream, localArgBase: Int) throws -> [ColoExpr] {
+    private mutating func parseCallArgs(
+        _ stream: inout Stream,
+        localArgBase: Int,
+        paramDefs: [ScriptFunctionDef.ParameterDef] = []
+    ) throws -> [ColoExpr] {
         try stream.expectSymbol("(")
         var args = [ColoExpr]()
         while !stream.matchSymbol(")") {
+            // An optional `name=` label. The Python dialect writes one for
+            // every argument whose parameter the signature names; the Swift
+            // dialect writes none, and a `dup` run is bare in both — so a
+            // label is read where it appears and never required.
+            let line = stream.line
+            var label: String?
+            if case .identifier(let name)? = stream.current?.kind,
+               case .symbol("=")? = stream.peekKind(1) {
+                label = name
+                _ = stream.advance()
+                _ = stream.advance()
+            }
+            if let label, args.count < paramDefs.count {
+                let expected = paramDefs[args.count].name
+                guard label == expected else {
+                    throw ParseError.argumentLabelMismatch(expected: expected, got: label, line: line)
+                }
+            }
+
             // dup(expr, n): one pushMultiVar read filling n argument slots
             if case .identifier("dup")? = stream.current?.kind, case .symbol("(")? = stream.peekKind(1) {
                 _ = stream.advance()

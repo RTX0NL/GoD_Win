@@ -108,13 +108,11 @@ public struct ColoExpressionBuilder {
 
     public init() {}
 
-    /// Build a flat expression list for a single function (Pass 1)
     public func buildExpressions(instructions: [ColoScriptInstruction]) -> (expressions: [ColoExpr], argCount: Int) {
         var stack = [ColoExpr]()
         var expressions = [ColoExpr]()
         var argCount = 0
 
-        // Collect jump targets for location markers
         var jumpTargets = Set<Int>()
         for inst in instructions {
             if let target = inst.jumpTarget {
@@ -123,7 +121,6 @@ public struct ColoExpressionBuilder {
         }
 
         for inst in instructions {
-            // Insert location marker at jump targets
             if jumpTargets.contains(inst.offset) {
                 expressions.append(.location(inst.offset))
             }
@@ -298,7 +295,6 @@ public struct ColoExpressionBuilder {
             }
         }
 
-        // Flush remaining stack into expressions
         flushStatements(&stack, into: &expressions)
 
         return (expressions, argCount)
@@ -367,7 +363,6 @@ public struct ColoExpressionCompound {
         var i = 0
         while i < exprs.count {
             if case .jumpFalse(let condition, let target) = exprs[i] {
-                // Collect body until we find the matching location
                 var body = [ColoExpr]()
                 i += 1
                 while i < exprs.count {
@@ -377,7 +372,6 @@ public struct ColoExpressionCompound {
                     body.append(exprs[i])
                     i += 1
                 }
-                // Recursively compound the body
                 let compoundedBody = compoundIfStatements(body)
                 result.append(.ifStatement([(condition, compoundedBody)]))
                 // Keep the end marker: `i` currently points at it (or past the
@@ -444,7 +438,6 @@ public struct ColoExpressionCompound {
                         j += 1
                     }
                     if foundEnd && !elseBody.isEmpty {
-                        // Remove the jump from the then-body
                         var thenBody = Array(lastBranch.1.dropLast())
                         thenBody = compoundElseStatements(thenBody)
                         elseBody = compoundElseStatements(elseBody)
@@ -458,7 +451,6 @@ public struct ColoExpressionCompound {
                         continue
                     }
                 }
-                // Recursively compound sub-bodies
                 let compounded = branches.map { (cond, body) in
                     (cond, compoundElseStatements(body))
                 }
@@ -806,13 +798,28 @@ public struct ColoExprFormatter {
                     repeats += 1
                 }
                 if repeats > 1 {
+                    // One read filling several parameter slots, so there is no
+                    // single parameter to name it after — a `dup` run stays
+                    // bare in both dialects, and the parser accepts a bare
+                    // argument anywhere for exactly this reason.
                     parts.append("dup(\(formatExpr(args[i])), \(repeats))")
                     i += repeats
                     continue
                 }
             }
             let paramType = i < paramDefs.count ? paramDefs[i].type : nil
-            parts.append(formatArgWithType(args[i], type: paramType))
+            let value = formatArgWithType(args[i], type: paramType)
+            // Python spells each argument as a keyword argument — the
+            // signatures carry real names (`sampleID`, `msgID`, `groupID`) and
+            // a bare `getDNASampleSpecies(1)` says nothing about what the 1
+            // is. Only where the signature names that position: past its
+            // declared parameters there is no name to use, and an invented
+            // one would be worse than none.
+            if flavor == .python, i < paramDefs.count {
+                parts.append("\(paramDefs[i].name)=\(value)")
+            } else {
+                parts.append(value)
+            }
             i += 1
         }
         return parts.joined(separator: ", ")

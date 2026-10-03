@@ -184,16 +184,44 @@ public extension ColosseumEngine.Data {
         // declaring an enum here costs nothing at the byte level and is
         // reversible if a mapping turns out to be wrong.
         //
-        // Only params whose meaning is established get one. `groupID` /
-        // `resourceID` are typed on the named `character*` builtins, whose
-        // enums were authored for exactly those slots (`protagonists`, `wes`,
-        // `rui`) — but deliberately NOT on `cameraPresetFromFile`, where
-        // `groupID` is followed by a `fileID` and so is very likely an archive
-        // group in a different number space. The `characterUnknownN` builtins
-        // keep `argN` names and plain integers: naming the slot would be a
-        // guess, and a guess here puts a confident wrong name in every script
-        // that calls it. The remaining semantic ID types (messages, flags, …)
-        // have no enum yet and stay integers.
+        // Only params whose meaning is established get one. 27 do, and the
+        // whole table has been audited against the 42 enums the Colosseum
+        // engine reaches, so what is *not* typed is a decision rather than an
+        // omission:
+        //
+        //   * `groupID` / `resourceID` / `targetGID` / `targetRID` / `argGID` /
+        //     `argRID` on all 21 named `character*` builtins, whose enums were
+        //     authored for exactly those slots (`protagonists`, `wes`, `rui`).
+        //     Every parameter in that number space is now typed; `argGID` /
+        //     `argRID` on 165 and 181 were missed first time round purely
+        //     because they aren't spelled `target*`.
+        //   * `transitionID` (28), `itemID` (119), `pokemon` (218) — one
+        //     builtin each, named by the legacy tool and unambiguous.
+        //
+        // Not typed, with the reason:
+        //   * `cameraPresetFromFile`'s `groupID` (42) is followed by a
+        //     `fileID`, so it is very likely an FSYS archive group — a
+        //     different number space from a character group, and reachable
+        //     through `FsysGroupIDs` in the GeniusSonority engine if it ever
+        //     is one. What would settle it is the range of values the corpus
+        //     passes; typing it on the name alone would put archive filenames
+        //     on character groups.
+        //   * The `*UnknownN` builtins keep `argN` names and plain integers.
+        //     Naming the slot would be a guess, and a guess here puts a
+        //     confident wrong name in every script that calls it.
+        //   * `msgID`, `flag`, `roomID`, `battleID`, `martID`, `animID`,
+        //     `fileID`, `entryPointID`, `warpPointIndex`, `scriptID`,
+        //     `giftPokemonID`, `sample1..3` and the rest are real ID spaces
+        //     with no enum declared anywhere. They become typeable when
+        //     someone writes the enum, not before. (`giftPokemonID` in
+        //     particular is an index into the gift table, *not* a species.)
+        //
+        // Return types are left primitive on purpose: the formatter abstracts
+        // arguments only, so an `.enumRef` return would be inert — it would
+        // read as live typing and change nothing. `getDNASampleSpecies` (205)
+        // returning a species and `playerGetCouponsLastArea` (239) returning
+        // an `Area` are the two that would benefit if return abstraction is
+        // ever added.
         return [
             "1": f("taskUnknown1", [("arg0", .integer), ("arg1", .integer), ("arg2", .integer)]),
             "2": f("randomNumberMod", [("max", .integer)], ret: .integer),
@@ -359,7 +387,7 @@ public extension ColosseumEngine.Data {
             "162": f("mapUnknown162"),
             "163": f("useCologne", [("arg0", .integer), ("arg1", .integer)]),
             "164": f("characterUnknown164", [("arg0", .integer), ("arg1", .integer), ("arg2", .float), ("arg3", .float), ("arg4", .float), ("arg5", .float)]),
-            "165": f("characterFaceCharacter", [("targetGID", .enumRef("GroupID")), ("targetRID", .enumRef("ResourceID")), ("argGID", .integer), ("argRID", .integer), ("speed", .float)]),
+            "165": f("characterFaceCharacter", [("targetGID", .enumRef("GroupID")), ("targetRID", .enumRef("ResourceID")), ("argGID", .enumRef("GroupID")), ("argRID", .enumRef("ResourceID")), ("speed", .float)]),
             "166": f("systemUnknown166", [("arg0", .integer), ("arg1", .integer), ("arg2", .integer)]),
             "167": f("systemUnknown167", [("arg0", .integer)]),
             "168": f("characterUnknown168", [("arg0", .bool), ("arg1", .integer)]),
@@ -375,7 +403,7 @@ public extension ColosseumEngine.Data {
             "178": f("characterUnknown178", [("arg0", .integer), ("arg1", .integer), ("arg2", .float)]),
             "179": f("cameraUnknown179", [("arg0", .float), ("arg1", .bool)]),
             "180": f("getCurrentFloorID", ret: .integer),
-            "181": f("characterTurnHeadTowards", [("argGID", .integer), ("argRID", .integer), ("targetGID", .enumRef("GroupID")), ("targetRID", .enumRef("ResourceID"))]),
+            "181": f("characterTurnHeadTowards", [("argGID", .enumRef("GroupID")), ("argRID", .enumRef("ResourceID")), ("targetGID", .enumRef("GroupID")), ("targetRID", .enumRef("ResourceID"))]),
             "182": f("menuUnknown182", [("arg0", .integer)]),
             "183": f("systemUnknown183", [("arg0", .integer)]),
             "184": f("systemUnknown184"),
