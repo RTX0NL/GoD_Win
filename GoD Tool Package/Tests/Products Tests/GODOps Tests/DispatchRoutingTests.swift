@@ -1337,4 +1337,98 @@ final class DispatchRoutingTests: XCTestCase {
         { "runExecutable": { "config": { "arguments": ["--help"] } } }
         """))
     }
+
+    // MARK: - Binary patches
+
+    func testCreatePatchRouting() throws {
+        let spy = try route("""
+        { "createPatch": { "config": {
+            "sourceFile": "/project/Original/XD.iso",
+            "targetFile": "/project/Build/ISO/XD.iso",
+            "patchFile": "/project/Build/XD-hack.ups",
+            "format": "ups",
+            "overwrite": false
+        } } }
+        """)
+        guard case let .createPatch(config) = try singleOperation(spy) else {
+            return XCTFail("Expected createPatch")
+        }
+        XCTAssertEqual(config.sourceFile, File("/project/Original/XD.iso"))
+        XCTAssertEqual(config.targetFile, File("/project/Build/ISO/XD.iso"))
+        XCTAssertEqual(config.patchFile, File("/project/Build/XD-hack.ups"))
+        XCTAssertEqual(config.format, .ups)
+        XCTAssertEqual(config.overwrite, false)
+    }
+
+    func testCreatePatchRoutingRequiresAFormat() {
+        XCTAssertThrowsError(try route("""
+        { "createPatch": { "config": {
+            "sourceFile": "/project/a.bin", "targetFile": "/project/b.bin", "patchFile": "/project/p.ups"
+        } } }
+        """))
+    }
+
+    func testCreatePatchRoutingRejectsAnUnknownFormat() {
+        // `aps` is a real patch format and not one of the four implemented, so
+        // naming it has to fail at decode rather than pick something.
+        XCTAssertThrowsError(try route("""
+        { "createPatch": { "config": {
+            "sourceFile": "/project/a.bin", "targetFile": "/project/b.bin",
+            "patchFile": "/project/p.aps", "format": "aps"
+        } } }
+        """))
+    }
+
+    func testApplyPatchRouting() throws {
+        let spy = try route("""
+        { "applyPatch": { "config": {
+            "inputFile": "/project/Original/XD.iso",
+            "patchFile": "/project/Patches/XD-hack.ups",
+            "outputFile": "/project/Build/ISO/XD.iso",
+            "format": "ups",
+            "direction": "reverse",
+            "ignoreChecksums": true,
+            "overwrite": true
+        } } }
+        """)
+        guard case let .applyPatch(config) = try singleOperation(spy) else {
+            return XCTFail("Expected applyPatch")
+        }
+        XCTAssertEqual(config.inputFile, File("/project/Original/XD.iso"))
+        XCTAssertEqual(config.patchFile, File("/project/Patches/XD-hack.ups"))
+        XCTAssertEqual(config.outputFile, File("/project/Build/ISO/XD.iso"))
+        XCTAssertEqual(config.format, .ups)
+        XCTAssertEqual(config.direction, .reverse)
+        XCTAssertEqual(config.ignoreChecksums, true)
+        XCTAssertEqual(config.overwrite, true)
+    }
+
+    /// Everything but the three paths is optional, and an absent field stays
+    /// absent: the format comes from the patch's magic and the direction from
+    /// its checksums, neither of which has a default to decode into.
+    func testApplyPatchRoutingWithOnlyThePaths() throws {
+        let spy = try route("""
+        { "applyPatch": { "config": {
+            "inputFile": "/project/in.iso",
+            "patchFile": "/project/p.ups",
+            "outputFile": "/project/out.iso"
+        } } }
+        """)
+        guard case let .applyPatch(config) = try singleOperation(spy) else {
+            return XCTFail("Expected applyPatch")
+        }
+        XCTAssertNil(config.format)
+        XCTAssertNil(config.direction)
+        XCTAssertNil(config.ignoreChecksums)
+        XCTAssertNil(config.overwrite)
+    }
+
+    func testApplyPatchRoutingRejectsAnUnknownDirection() {
+        XCTAssertThrowsError(try route("""
+        { "applyPatch": { "config": {
+            "inputFile": "/project/in.iso", "patchFile": "/project/p.ups",
+            "outputFile": "/project/out.iso", "direction": "sideways"
+        } } }
+        """))
+    }
 }

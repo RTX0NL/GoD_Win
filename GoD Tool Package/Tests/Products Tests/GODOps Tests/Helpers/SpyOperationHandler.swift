@@ -204,6 +204,14 @@ final class SpyOperationHandler: OperationHandler {
     func runExecutable(config: RunExecutable.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try record(.runExecutable(config: config), settings)
     }
+
+    func createPatch(config: CreatePatch.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.createPatch(config: config), settings)
+    }
+
+    func applyPatch(config: ApplyPatch.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.applyPatch(config: config), settings)
+    }
 }
 
 /// Logger that swallows everything — keeps test output clean.

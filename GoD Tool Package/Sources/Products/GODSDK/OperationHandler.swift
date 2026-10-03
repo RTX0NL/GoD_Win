@@ -58,6 +58,8 @@ protocol OperationHandler {
     func compressFiles(config: Compress.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func decompressFiles(config: Decompress.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func runExecutable(config: RunExecutable.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func createPatch(config: CreatePatch.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func applyPatch(config: ApplyPatch.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
 }
 
 /// Production handler: forwards each operation to its engine wrapper.
@@ -236,5 +238,13 @@ struct EngineOperationHandler: OperationHandler {
 
     func runExecutable(config: RunExecutable.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
         try RunExecutable.run(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func createPatch(config: CreatePatch.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try CreatePatch.run(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    }
+
+    func applyPatch(config: ApplyPatch.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try ApplyPatch.run(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
     }
 }

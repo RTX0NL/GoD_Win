@@ -9,6 +9,7 @@ These formats are used by both Colosseum and XD with the same or very similar st
 ### Archives & Compression
 - [FSYS - Archive Container](Shared/FSYS%20-%20Archive%20Container.md) — Main game archive with LZSS compression (type `0x90`). The 16-byte `LZSS` header + stream a compressed entry holds is also a standalone format (`LZSSHeaderedCompressor`, `CompressionFormat.lzss`), reachable through the `compress` / `decompress` operations as `lzss`; the bare stream is `lzss-raw`
 - [Yaz0/Yay0 - Nintendo LZ77 Compression](Shared/Yaz0%20Yay0%20-%20Nintendo%20LZ77%20Compression.md) — Nintendo's own codec. Not used by Colosseum/XD/PBR; support exists for general GameCube/Wii titles and as a prerequisite for RARC and U8. Exposed by the `compress` / `decompress` operations
+- [Binary Patches - UPS, IPS, BPS, xdelta](Shared/Binary%20Patches%20-%20UPS%20IPS%20BPS%20xdelta.md) — the four patch formats, created and applied by the `createPatch` / `applyPatch` operations. Not game formats: they describe the difference between any two files
 - [U8/NARC - Nintendo Archives](Shared/U8%20NARC%20-%20Nintendo%20Archives.md) — Nintendo's own containers, big and little endian, discriminated by the direction their magic is spelled. PBR ships both (`.arc`/`.narc`)
 
 ### Disc Images

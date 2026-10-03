@@ -278,6 +278,10 @@ public enum GODOps {
             try handler.decompressFiles(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
         case .runExecutable(let cfg):
             try handler.runExecutable(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .createPatch(let cfg):
+            try handler.createPatch(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .applyPatch(let cfg):
+            try handler.applyPatch(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
         }
     }
 

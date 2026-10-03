@@ -59,6 +59,8 @@ public enum OperationName: String, CaseIterable, Codable {
     case compressFiles
     case decompressFiles
     case runExecutable
+    case createPatch
+    case applyPatch
 }
 
 extension GoddessConfig.Operations {
@@ -109,6 +111,8 @@ extension GoddessConfig.Operations {
         case .compressFiles: return .compressFiles
         case .decompressFiles: return .decompressFiles
         case .runExecutable: return .runExecutable
+        case .createPatch: return .createPatch
+        case .applyPatch: return .applyPatch
         }
     }
 }

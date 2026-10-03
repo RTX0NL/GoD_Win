@@ -53,6 +53,8 @@ struct GoddessConfig: Codable {
         case compressFiles(config: Compress.BatchConfig)
         case decompressFiles(config: Decompress.BatchConfig)
         case runExecutable(config: RunExecutable.Config)
+        case createPatch(config: CreatePatch.Config)
+        case applyPatch(config: ApplyPatch.Config)
     }
     
     let name: String
