@@ -1,0 +1,11 @@
+{
+  "creationDate" : "2004-01-09",
+  "interleaveSize" : 32768,
+  "loop" : {
+    "enabled" : true,
+    "endSeconds" : 0.447875,
+    "startSeconds" : 0.014125
+  },
+  "streamEndSeconds" : 0.447625,
+  "wavPath" : "isf_loop_sample.wav"
+}

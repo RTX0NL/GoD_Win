@@ -21,6 +21,7 @@ import TestSupport
 final class ISFGoldenTests: XCTestCase {
 
     private static let fixtureName = "isf_sample"
+    private static let loopFixtureName = "isf_loop_sample"
 
     /// DECODE: golden `.ish` + `.isd` → golden JSON + WAV (RMS-tolerant).
     func testISF_decode_producesGoldenArtifacts() throws {
@@ -47,6 +48,37 @@ final class ISFGoldenTests: XCTestCase {
         let expected = try Fixtures.artifacts([
             "\(Self.fixtureName).ish",
             "\(Self.fixtureName).isd",
+        ])
+        try assertEncodes(ISFFile.self, from: artifacts, producesBinaries: expected)
+    }
+
+    /// The same pair for a *looping* stream. `isf_sample` carries the
+    /// non-looping defaults, so on its own it cannot catch a regression in
+    /// the three control words — which is how the writer came to zero the
+    /// stream end at 0x28.
+    func testISFLoop_decode_producesGoldenArtifacts() throws {
+        let binaries = try Fixtures.artifacts([
+            "\(Self.loopFixtureName).ish",
+            "\(Self.loopFixtureName).isd",
+        ])
+        let expected = try Fixtures.artifacts([
+            "\(Self.loopFixtureName).isf.json",
+            "\(Self.loopFixtureName).wav",
+        ])
+        try assertDecodes(
+            ISFFile.self, from: binaries, producesArtifacts: expected,
+            tolerances: ["wav": wavPCMTolerance(maxRMS: 200)]
+        )
+    }
+
+    func testISFLoop_encode_producesGoldenBinaries() throws {
+        let artifacts = try Fixtures.artifacts([
+            "\(Self.loopFixtureName).isf.json",
+            "\(Self.loopFixtureName).wav",
+        ])
+        let expected = try Fixtures.artifacts([
+            "\(Self.loopFixtureName).ish",
+            "\(Self.loopFixtureName).isd",
         ])
         try assertEncodes(ISFFile.self, from: artifacts, producesBinaries: expected)
     }

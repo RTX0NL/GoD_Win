@@ -46,6 +46,7 @@ public enum FixtureCatalog {
         files += try GSWFixtures.files()
         files += try GSFontFixtures.files()
         files += try ISFFixtures.files()
+        files += try ISFLoopFixtures.files()
         files += try ATXFixtures.files()
         files += try FSYSFixtures.files()
         files += try FsysTOCFixtures.files()

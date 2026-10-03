@@ -192,6 +192,28 @@ public enum ISFFixtures {
     }
 }
 
+/// A looping stream, so the golden pair actually carries the three control
+/// words. `isf_sample` has the non-looping defaults — loop flag clear,
+/// loop start at nibble 2 — which is why it could not catch the writer
+/// zeroing the stream end at 0x28.
+public enum ISFLoopFixtures {
+    public static let name = "isf_loop_sample"
+
+    public static func model() -> ISFFile {
+        var isf = ISFFixtures.model()
+        isf.name = name
+        // Deliberately mid-frame and all three distinct, mirroring the
+        // shape of a real BGM: a short intro, then the loop body.
+        isf.loop = ISFFile.Loop(enabled: true, startNibble: 131, endNibble: 4095)
+        isf.streamEndNibble = 4093
+        return isf
+    }
+
+    public static func files() throws -> [FixtureFile] {
+        try fixtureFiles(for: model(), in: FixtureDir.colosseum)
+    }
+}
+
 // MARK: - THP
 
 public enum THPFixtures {
