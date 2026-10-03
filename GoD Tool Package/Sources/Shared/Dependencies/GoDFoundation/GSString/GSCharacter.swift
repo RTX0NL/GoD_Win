@@ -54,10 +54,115 @@ extension GSCharacter {
         case (.gsColo, .special([0x38, 3])), (.gsXD, .special([0x38, 3])): return "{Blue}"
         case (.gsColo, .special([0x38, 4])), (.gsXD, .special([0x38, 4])): return "{Yellow 2}"
         case (.gsColo, .special([0x38, 5])), (.gsXD, .special([0x38, 5])): return "{Black}"
-        case (.gsColo, .special([0x50])), (.gsXD, .special([0x50])): return "{Var Species Cry}"
+        // The value in `$<amount>` and `<N> pts` on the PDA menu — the game's
+        // own `msgctrlMenuMoney`. It was named "{Var Species Cry}" from the
+        // legacy tool; both discs use it only in `pda_menu.msg`, beside a
+        // currency sign.
+        case (.gsColo, .special([0x50])), (.gsXD, .special([0x50])): return "{Money}"
         case (.gsColo, .special([0x59])), (.gsXD, .special([0x59])): return "{Speaker}"
-        case (.gsColo, .special([0x6A])), (.gsXD, .special([0x6A])): return "{Set Speaker}"
-        case (.gsColo, .special([0x6D])), (.gsXD, .special([0x6D])): return "{Await Input 2}"
+        case (.gsXD, .special([0x6A])): return "{Set Speaker}"
+        case (.gsXD, .special([0x6D])): return "{Await Input 2}"
+
+        // Names taken from the games' own `msgctrlcode` dispatch table and the
+        // handler symbols it points at (`msgctrl.o` in XD's map). Codes above
+        // 0x5E exist only in XD — Colosseum's table ends there — so they are
+        // matched for `.gsXD` alone and show as hex on a Colosseum string.
+        case (.gsColo, .special([0x01])), (.gsXD, .special([0x01])): return "{CR}"
+        case (.gsColo, .special([0x0D])), (.gsXD, .special([0x0D])): return "{Var String 0}"
+        case (.gsColo, .special([0x0E])), (.gsXD, .special([0x0E])): return "{Var String 1}"
+        case (.gsColo, .special([0x0F])), (.gsXD, .special([0x0F])): return "{Attacking Pokemon}"
+        case (.gsColo, .special([0x10])), (.gsXD, .special([0x10])): return "{Defending Pokemon}"
+        case (.gsColo, .special([0x11])), (.gsXD, .special([0x11])): return "{Selected Pokemon}"
+        case (.gsColo, .special([0x12])), (.gsXD, .special([0x12])): return "{Target Pokemon}"
+        case (.gsColo, .special([0x16])), (.gsXD, .special([0x16])): return "{Foe Pokemon 1}"
+        case (.gsColo, .special([0x17])), (.gsXD, .special([0x17])): return "{Foe Pokemon 2}"
+        case (.gsColo, .special([0x18])), (.gsXD, .special([0x18])): return "{Multi Foe Pokemon 1}"
+        case (.gsColo, .special([0x19])), (.gsXD, .special([0x19])): return "{Multi Foe Pokemon 2}"
+        case (.gsColo, .special([0x1A])), (.gsXD, .special([0x1A])): return "{Attacker Ability}"
+        case (.gsColo, .special([0x1B])), (.gsXD, .special([0x1B])): return "{Defender Ability}"
+        case (.gsColo, .special([0x1C])), (.gsXD, .special([0x1C])): return "{Selected Ability}"
+        case (.gsColo, .special([0x1D])), (.gsXD, .special([0x1D])): return "{Target Ability}"
+        case (.gsColo, .special([0x1E])), (.gsXD, .special([0x1E])): return "{Acting Pokemon}"
+        case (.gsColo, .special([0x1F])), (.gsXD, .special([0x1F])): return "{Attacker Subject}"
+        case (.gsColo, .special([0x20])), (.gsXD, .special([0x20])): return "{Attacker Object}"
+        case (.gsColo, .special([0x21])), (.gsXD, .special([0x21])): return "{Attacker Possessive}"
+        case (.gsColo, .special([0x24])), (.gsXD, .special([0x24])): return "{Trainer Lose Text}"
+        case (.gsColo, .special([0x25])), (.gsXD, .special([0x25])): return "{Foe Trainer 1}"
+        case (.gsColo, .special([0x26])), (.gsXD, .special([0x26])): return "{Foe Trainer 2}"
+        case (.gsColo, .special([0x27])), (.gsXD, .special([0x27])): return "{Acting Trainer}"
+        case (.gsColo, .special([0x28])), (.gsXD, .special([0x28])): return "{Active Move}"
+        case (.gsColo, .special([0x29])), (.gsXD, .special([0x29])): return "{Active Item}"
+        case (.gsColo, .special([0x2D])), (.gsXD, .special([0x2D])): return "{Item}"
+        case (.gsColo, .special([0x2E])), (.gsXD, .special([0x2E])): return "{Item 2}"
+        case (.gsColo, .special([0x2F])), (.gsXD, .special([0x2F])): return "{Number}"
+        case (.gsColo, .special([0x30])), (.gsXD, .special([0x30])): return "{Number 2}"
+        case (.gsColo, .special([0x31])), (.gsXD, .special([0x31])): return "{Message}"
+        case (.gsColo, .special([0x32])), (.gsXD, .special([0x32])): return "{Active Pokemon}"
+        case (.gsColo, .special([0x33])), (.gsXD, .special([0x33])): return "{Active Pokemon 2}"
+        case (.gsColo, .special([0x34])), (.gsXD, .special([0x34])): return "{Menu Number}"
+        case (.gsColo, .special([0x35])), (.gsXD, .special([0x35])): return "{Menu Number 2}"
+        case (.gsColo, .special([0x36])), (.gsXD, .special([0x36])): return "{Menu Pokemon}"
+        case (.gsColo, .special([0x37])), (.gsXD, .special([0x37])): return "{Menu Text}"
+        case (.gsColo, .special([0x39])), (.gsXD, .special([0x39])): return "{Move}"
+        case (.gsColo, .special([0x3D])), (.gsXD, .special([0x3D])): return "{Sound Effect Off}"
+        case (.gsColo, .special([0x3E])), (.gsXD, .special([0x3E])): return "{Sound Effect On}"
+        case (.gsColo, .special([0x41])), (.gsXD, .special([0x41])): return "{Var String 2}"
+        case (.gsColo, .special([0x42])), (.gsXD, .special([0x42])): return "{Defender Subject}"
+        case (.gsColo, .special([0x43])), (.gsXD, .special([0x43])): return "{Defender Object}"
+        case (.gsColo, .special([0x44])), (.gsXD, .special([0x44])): return "{Defender Possessive}"
+        case (.gsColo, .special([0x45])), (.gsXD, .special([0x45])): return "{Menu Number Unsigned}"
+        case (.gsColo, .special([0x46])), (.gsXD, .special([0x46])): return "{Menu Number Unsigned 2}"
+        case (.gsColo, .special([0x47])), (.gsXD, .special([0x47])): return "{Menu Number Hex}"
+        case (.gsColo, .special([0x48])), (.gsXD, .special([0x48])): return "{Menu Number Hex 2}"
+        case (.gsColo, .special([0x49])), (.gsXD, .special([0x49])): return "{Menu Number Padded}"
+        case (.gsColo, .special([0x4A])), (.gsXD, .special([0x4A])): return "{Menu Number Padded 2}"
+        case (.gsColo, .special([0x4B])), (.gsXD, .special([0x4B])): return "{Money Value}"
+        case (.gsColo, .special([0x4C])), (.gsXD, .special([0x4C])): return "{Time}"
+        case (.gsColo, .special([0x4D])), (.gsXD, .special([0x4D])): return "{Text}"
+        case (.gsColo, .special([0x4E])), (.gsXD, .special([0x4E])): return "{Pokemon}"
+        case (.gsColo, .special([0x4F])), (.gsXD, .special([0x4F])): return "{Menu Number Full Width}"
+        case (.gsColo, .special([0x51])), (.gsXD, .special([0x51])): return "{Menu Text 2}"
+        case (.gsColo, .special(let bytes)) where bytes.count == 2 && bytes[0] == 0x52:
+            fallthrough
+        case (.gsXD, .special(let bytes)) where bytes.count == 2 && bytes[0] == 0x52:
+            return "{Text Shadow: \(bytes[1])}"
+        case (.gsColo, .special(let bytes)) where bytes.count == 2 && bytes[0] == 0x53:
+            fallthrough
+        case (.gsXD, .special(let bytes)) where bytes.count == 2 && bytes[0] == 0x53:
+            return "{Text Align: \(bytes[1])}"
+        case (.gsColo, .special(let bytes)) where bytes.count == 2 && bytes[0] == 0x54:
+            fallthrough
+        case (.gsXD, .special(let bytes)) where bytes.count == 2 && bytes[0] == 0x54:
+            return "{Talk Sound: \(bytes[1])}"
+        case (.gsColo, .special([0x55])), (.gsXD, .special([0x55])): return "{Menu Message}"
+        case (.gsColo, .special([0x56])), (.gsXD, .special([0x56])): return "{Menu Message 2}"
+        case (.gsColo, .special([0x57])), (.gsXD, .special([0x57])): return "{Text 2}"
+        case (.gsColo, .special([0x58])), (.gsXD, .special([0x58])): return "{Trainer Class 2}"
+        case (.gsColo, .special([0x5A])), (.gsXD, .special([0x5A])): return "{Indent Off}"
+        case (.gsColo, .special(let bytes)) where bytes.count == 2 && bytes[0] == 0x5B:
+            fallthrough
+        case (.gsXD, .special(let bytes)) where bytes.count == 2 && bytes[0] == 0x5B:
+            return "{Line Height: \(bytes[1])}"
+        case (.gsColo, .special(let bytes)) where bytes.count == 2 && bytes[0] == 0x5C:
+            fallthrough
+        case (.gsXD, .special(let bytes)) where bytes.count == 2 && bytes[0] == 0x5C:
+            return "{Baseline Shift: \(Int8(bitPattern: bytes[1]))}"
+        case (.gsColo, .special([0x5D])), (.gsXD, .special([0x5D])): return "{Play Sound}"
+        case (.gsColo, .special([0x5E])), (.gsXD, .special([0x5E])): return "{Wait For Sound}"
+        case (.gsXD, .special([0x5F])): return "{Menu Number Half}"
+        case (.gsXD, .special([0x60])): return "{Menu Number Half 2}"
+        case (.gsXD, .special([0x61])): return "{Menu Number Unsigned Half}"
+        case (.gsXD, .special([0x62])): return "{Menu Number Unsigned Half 2}"
+        case (.gsXD, .special([0x63])): return "{Money Value Half}"
+        case (.gsXD, .special([0x64])): return "{Time Half}"
+        case (.gsXD, .special([0x65])): return "{Menu Number Hex Half}"
+        case (.gsXD, .special([0x66])): return "{Menu Number Hex Half 2}"
+        case (.gsXD, .special([0x67])): return "{Menu Number Padded Half}"
+        case (.gsXD, .special([0x68])): return "{Menu Number Padded Half 2}"
+        case (.gsXD, .special([0x69])): return "{Menu Money Half}"
+        case (.gsXD, .special([0x6B])): return "{Number Half}"
+        case (.gsXD, .special([0x6C])): return "{Number Half 2}"
+        case (.gsXD, .special([0x6E])): return "{Await Check}"
             
         case (.gsPBR, .special(let bytes)) where bytes.count > 4 && bytes[0...1] == [0,1]:
             // Kana reading first, then the kanji it annotates, each counted by
@@ -186,10 +291,101 @@ extension GSCharacter {
             if string == "{Blue}" { self = .special([0x38, 0x03]); return }
             if string == "{Yellow 2}" { self = .special([0x38, 0x04]); return }
             if string == "{Black}" { self = .special([0x38, 0x05]); return }
-            if string == "{Var Species Cry}" { self = .special([0x50]); return }
+            if string == "{Money}" { self = .special([0x50]); return }
             if string == "{Speaker}" { self = .special([0x59]); return }
             if string == "{Set Speaker}" { self = .special([0x6A]); return }
             if string == "{Await Input 2}" { self = .special([0x6D]); return }
+            if string == "{CR}" { self = .special([0x01]); return }
+            if string == "{Var String 0}" { self = .special([0x0D]); return }
+            if string == "{Var String 1}" { self = .special([0x0E]); return }
+            if string == "{Attacking Pokemon}" { self = .special([0x0F]); return }
+            if string == "{Defending Pokemon}" { self = .special([0x10]); return }
+            if string == "{Selected Pokemon}" { self = .special([0x11]); return }
+            if string == "{Target Pokemon}" { self = .special([0x12]); return }
+            if string == "{Foe Pokemon 1}" { self = .special([0x16]); return }
+            if string == "{Foe Pokemon 2}" { self = .special([0x17]); return }
+            if string == "{Multi Foe Pokemon 1}" { self = .special([0x18]); return }
+            if string == "{Multi Foe Pokemon 2}" { self = .special([0x19]); return }
+            if string == "{Attacker Ability}" { self = .special([0x1A]); return }
+            if string == "{Defender Ability}" { self = .special([0x1B]); return }
+            if string == "{Selected Ability}" { self = .special([0x1C]); return }
+            if string == "{Target Ability}" { self = .special([0x1D]); return }
+            if string == "{Acting Pokemon}" { self = .special([0x1E]); return }
+            if string == "{Attacker Subject}" { self = .special([0x1F]); return }
+            if string == "{Attacker Object}" { self = .special([0x20]); return }
+            if string == "{Attacker Possessive}" { self = .special([0x21]); return }
+            if string == "{Trainer Lose Text}" { self = .special([0x24]); return }
+            if string == "{Foe Trainer 1}" { self = .special([0x25]); return }
+            if string == "{Foe Trainer 2}" { self = .special([0x26]); return }
+            if string == "{Acting Trainer}" { self = .special([0x27]); return }
+            if string == "{Active Move}" { self = .special([0x28]); return }
+            if string == "{Active Item}" { self = .special([0x29]); return }
+            if string == "{Item}" { self = .special([0x2D]); return }
+            if string == "{Item 2}" { self = .special([0x2E]); return }
+            if string == "{Number}" { self = .special([0x2F]); return }
+            if string == "{Number 2}" { self = .special([0x30]); return }
+            if string == "{Message}" { self = .special([0x31]); return }
+            if string == "{Active Pokemon}" { self = .special([0x32]); return }
+            if string == "{Active Pokemon 2}" { self = .special([0x33]); return }
+            if string == "{Menu Number}" { self = .special([0x34]); return }
+            if string == "{Menu Number 2}" { self = .special([0x35]); return }
+            if string == "{Menu Pokemon}" { self = .special([0x36]); return }
+            if string == "{Menu Text}" { self = .special([0x37]); return }
+            if string == "{Move}" { self = .special([0x39]); return }
+            if string == "{Sound Effect Off}" { self = .special([0x3D]); return }
+            if string == "{Sound Effect On}" { self = .special([0x3E]); return }
+            if string == "{Var String 2}" { self = .special([0x41]); return }
+            if string == "{Defender Subject}" { self = .special([0x42]); return }
+            if string == "{Defender Object}" { self = .special([0x43]); return }
+            if string == "{Defender Possessive}" { self = .special([0x44]); return }
+            if string == "{Menu Number Unsigned}" { self = .special([0x45]); return }
+            if string == "{Menu Number Unsigned 2}" { self = .special([0x46]); return }
+            if string == "{Menu Number Hex}" { self = .special([0x47]); return }
+            if string == "{Menu Number Hex 2}" { self = .special([0x48]); return }
+            if string == "{Menu Number Padded}" { self = .special([0x49]); return }
+            if string == "{Menu Number Padded 2}" { self = .special([0x4A]); return }
+            if string == "{Money Value}" { self = .special([0x4B]); return }
+            if string == "{Time}" { self = .special([0x4C]); return }
+            if string == "{Text}" { self = .special([0x4D]); return }
+            if string == "{Pokemon}" { self = .special([0x4E]); return }
+            if string == "{Menu Number Full Width}" { self = .special([0x4F]); return }
+            if string == "{Menu Text 2}" { self = .special([0x51]); return }
+            if let value = Self.parameter(of: string, named: "Text Shadow") {
+                self = .special([0x52, UInt8(truncatingIfNeeded: value)]); return
+            }
+            if let value = Self.parameter(of: string, named: "Text Align") {
+                self = .special([0x53, UInt8(truncatingIfNeeded: value)]); return
+            }
+            if let value = Self.parameter(of: string, named: "Talk Sound") {
+                self = .special([0x54, UInt8(truncatingIfNeeded: value)]); return
+            }
+            if string == "{Menu Message}" { self = .special([0x55]); return }
+            if string == "{Menu Message 2}" { self = .special([0x56]); return }
+            if string == "{Text 2}" { self = .special([0x57]); return }
+            if string == "{Trainer Class 2}" { self = .special([0x58]); return }
+            if string == "{Indent Off}" { self = .special([0x5A]); return }
+            if let value = Self.parameter(of: string, named: "Line Height") {
+                self = .special([0x5B, UInt8(truncatingIfNeeded: value)]); return
+            }
+            if let value = Self.parameter(of: string, named: "Baseline Shift") {
+                self = .special([0x5C, UInt8(truncatingIfNeeded: value)]); return
+            }
+            if string == "{Play Sound}" { self = .special([0x5D]); return }
+            if string == "{Wait For Sound}" { self = .special([0x5E]); return }
+            if string == "{Menu Number Half}" { self = .special([0x5F]); return }
+            if string == "{Menu Number Half 2}" { self = .special([0x60]); return }
+            if string == "{Menu Number Unsigned Half}" { self = .special([0x61]); return }
+            if string == "{Menu Number Unsigned Half 2}" { self = .special([0x62]); return }
+            if string == "{Money Value Half}" { self = .special([0x63]); return }
+            if string == "{Time Half}" { self = .special([0x64]); return }
+            if string == "{Menu Number Hex Half}" { self = .special([0x65]); return }
+            if string == "{Menu Number Hex Half 2}" { self = .special([0x66]); return }
+            if string == "{Menu Number Padded Half}" { self = .special([0x67]); return }
+            if string == "{Menu Number Padded Half 2}" { self = .special([0x68]); return }
+            if string == "{Menu Money Half}" { self = .special([0x69]); return }
+            if string == "{Number Half}" { self = .special([0x6B]); return }
+            if string == "{Number Half 2}" { self = .special([0x6C]); return }
+            if string == "{Await Check}" { self = .special([0x6E]); return }
             
         case .gsPBR:
             if string == "\n" { self = .special([0xFF, 0xFE]); return }
