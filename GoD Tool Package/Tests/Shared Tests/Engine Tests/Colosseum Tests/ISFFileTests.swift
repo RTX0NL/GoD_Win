@@ -229,7 +229,6 @@ final class ISFFileTests: XCTestCase {
         )
         let parsed = try ISFFile(ish: ish, isd: isd)
 
-        // Pearson correlation across interleaved samples.
         let correlation = pearsonCorrelation(pcm, parsed.samples)
         XCTAssertGreaterThan(correlation, 0.99,
                              "sine decode correlation too low (\(correlation))")

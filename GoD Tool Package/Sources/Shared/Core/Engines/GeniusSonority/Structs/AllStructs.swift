@@ -25,7 +25,6 @@ public extension GeniusSonorityEngine {
 }
 
 internal extension GeniusSonorityEngine {
-    // struct definition accessors
     var fsysHeaderStruct: StructDefinition { definitions.first(where: { $0.name == "FSYSHeader" })! }
     var fsysFooterStruct: StructDefinition { definitions.first(where: { $0.name == "FSYSFooter" })! }
     var fsysFileMetaDataStruct: StructDefinition { definitions.first(where: { $0.name == "FSYSFileMetaData" })! }

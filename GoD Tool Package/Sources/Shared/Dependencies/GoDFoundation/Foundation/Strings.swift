@@ -104,7 +104,7 @@ extension String {
         
         let digits = self.replacingOccurrences(of: "0x", with: "").replacingOccurrences(of: "-", with: "")
         let isNegative = self.first == "-"
-        let magnitude = Int(strtoul(digits, nil, 16)) // converts hex string to uint and then cast as Int
+        let magnitude = Int(strtoul(digits, nil, 16))
         return isNegative ? -magnitude : magnitude
     }
     

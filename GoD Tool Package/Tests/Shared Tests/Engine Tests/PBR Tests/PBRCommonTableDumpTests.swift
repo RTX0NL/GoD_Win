@@ -41,7 +41,6 @@ final class PBRCommonTableDumpTests: XCTestCase {
             let typed = try XCTUnwrap(try pbr.typeCommonTable(table, binary: binary, structs: pbr), table.name)
             typedCount += 1
 
-            // Row count matches the header.
             let count: Int = try XCTUnwrap(typed.header.get("entry_count"))
             XCTAssertEqual(typed.entries.count, count, "\(table.name): row count")
 

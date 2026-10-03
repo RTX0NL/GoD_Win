@@ -6,7 +6,6 @@ import Structs
 public struct DataSectionManifest: Codable, Equatable {
     /// Section name (e.g. "data0")
     public let section: String
-    /// Ordered list of data chunks
     public var chunks: [Chunk]
 
     public init(section: String, chunks: [Chunk] = []) {
@@ -15,9 +14,7 @@ public struct DataSectionManifest: Codable, Equatable {
     }
 
     public struct Chunk: Codable, Equatable {
-        /// Label at the start of this chunk
         public let label: String
-        /// What kind of data this chunk contains
         public let type: ChunkType
         /// File containing the chunk data. Relative to the section folder in
         /// a DOL section's `manifest.json`; relative to the module folder in

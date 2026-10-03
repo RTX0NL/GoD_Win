@@ -139,7 +139,6 @@ final class GenericEngineCombiningTests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// Copies a written engine folder's files to a new name.
     private func moveEngine(from source: Folder, to destination: Folder, in fst: FileSystemTree) throws {
         guard let contents = fst.inspectFolder(at: source) else {
             return XCTFail("no engine written at \(source.path)")

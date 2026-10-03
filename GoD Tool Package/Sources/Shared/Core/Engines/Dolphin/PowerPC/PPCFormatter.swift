@@ -15,7 +15,6 @@ public struct PPCFormatter {
             return ".4byte 0x\(hex(instruction.raw))"
         }
 
-        // Check for relocation annotation
         if let reloc = relocations[instruction.address], let symbolName = reloc.symbolName {
             return formatRelocated(decoded, reloc: reloc, symbolName: symbolName, labels: labels)
         }
@@ -93,7 +92,6 @@ public struct PPCFormatter {
 
     // MARK: - Branch target collection
 
-    /// Collect all branch target addresses from a set of instructions
     public func collectBranchTargets(_ instructions: [PPCInstruction]) -> Set<UInt32> {
         var targets = Set<UInt32>()
         for inst in instructions {
@@ -132,7 +130,6 @@ public struct PPCFormatter {
             }
         }
 
-        // Also add labels for relocation targets
         for (_, reloc) in relocations {
             if labels[reloc.targetAddress] == nil, let name = reloc.symbolName {
                 labels[reloc.targetAddress] = name
@@ -204,7 +201,6 @@ public struct PPCFormatter {
             labels[addr] = name
         }
 
-        // Build instruction lookup by address
         let instructionsByAddress = Dictionary(uniqueKeysWithValues: instructions.map { ($0.address, $0) })
 
         var results = [(name: String, text: String)]()
@@ -240,7 +236,6 @@ public struct PPCFormatter {
                 endAddr = instructions.last.map { $0.address + 4 } ?? startAddr
             }
 
-            // Collect instructions in this function's range
             var funcInstructions = [PPCInstruction]()
             var addr = startAddr
             while addr < endAddr {

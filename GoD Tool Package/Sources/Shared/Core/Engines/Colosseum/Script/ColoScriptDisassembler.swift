@@ -5,7 +5,6 @@ public struct ColoScriptDisassembler {
 
     public init() {}
 
-    /// Disassemble a parsed script into a text listing
     public func disassemble(_ script: ColoScript, commonFunctionNames: [Int: String]? = nil) -> String {
         var lines = [String]()
 
@@ -17,7 +16,6 @@ public struct ColoScriptDisassembler {
         for (funcIndex, instructions) in script.functions.enumerated() {
             guard !instructions.isEmpty else { continue }
 
-            // Collect jump targets for label generation
             var jumpTargets = Set<Int>()
             for inst in instructions {
                 if let target = inst.jumpTarget {
@@ -25,17 +23,13 @@ public struct ColoScriptDisassembler {
                 }
             }
 
-            // Infer argument count from local variable usage
             let argCount = inferArgumentCount(instructions)
 
-            // Function header
             let argList = (0..<argCount).map { "arg\($0)" }.joined(separator: ", ")
             lines.append("; Function \(funcIndex) (offset 0x\(String(instructions[0].offset, radix: 16, uppercase: true)))")
             lines.append("function_\(funcIndex)(\(argList)):")
 
-            // Instructions
             for inst in instructions {
-                // Label at jump targets
                 if jumpTargets.contains(inst.offset) {
                     lines.append(".L_\(String(format: "%04X", inst.offset)):")
                 }

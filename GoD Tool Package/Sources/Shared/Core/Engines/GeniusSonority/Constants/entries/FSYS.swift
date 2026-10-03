@@ -9,9 +9,7 @@ extension GeniusSonorityEngine.Data {
         public struct MetaDataFill: Codable, Equatable {
             /// Offset of the run within the entry-metadata block.
             public var offset: Int
-            /// Number of bytes in the run.
             public var length: Int
-            /// The repeated byte value.
             public var byte: Int
 
             public init(offset: Int, length: Int, byte: Int) {
@@ -206,10 +204,8 @@ extension GeniusSonorityEngine.Data {
         /// Where a `sceneFsysNames` archive's own folder is created.
         public internal(set) var sceneArchivesBaseFolder: Folder = "/Assets/Scenes"
 
-        /// Folder for battlefield models
         public internal(set) var battlefieldModelsFolder: Folder = "/Assets/Models/Battlefields"
 
-        /// Folder for battlefield scripts
         public internal(set) var battlefieldScriptsFolder: Folder = "/Assets/Scripts/Battlefields"
 
         /// MSG files from map FSYS archives

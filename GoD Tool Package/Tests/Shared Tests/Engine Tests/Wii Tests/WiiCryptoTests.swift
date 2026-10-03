@@ -145,7 +145,6 @@ final class WiiCryptoTests: XCTestCase {
 
     func testFakesignTicketProducesValidSignature() {
         let ticket = GoDData(length: 0x2A4, byteOrder: .big)
-        // Fill with some data
         for i in 0..<0x2A4 {
             ticket.write(UInt8(i & 0xFF), atAddress: i)
         }

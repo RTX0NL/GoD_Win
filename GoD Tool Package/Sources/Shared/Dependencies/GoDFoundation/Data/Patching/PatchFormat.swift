@@ -60,7 +60,6 @@ public enum PatchFormat: String, CaseIterable, Codable {
         }
     }
 
-    /// A codec for this format.
     public func makeCodec() -> PatchCodec {
         switch self {
         case .ups: return UPSPatchCodec()

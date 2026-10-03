@@ -87,7 +87,6 @@ final class FSTPipelineArchiveTests: XCTestCase {
         XCTAssertEqual(entry(fst, discPath: "hb/HomeButton2/homeBtn.arc")?.type, .nintendoArchive)
         XCTAssertEqual(entry(fst, discPath: "arcDat/seq.narc")?.type, .nintendoArchive)
 
-        // The manifest and the extracted contents both landed.
         let manifest = try XCTUnwrap(entry(fst, discPath: "hb/HomeButton2/homeBtn.arc")?.file)
         XCTAssertNotNil(output.readFile(at: manifest))
         let contents: NintendoArchiveRegistry = try output.decodeJSON(from: manifest)

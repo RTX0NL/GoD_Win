@@ -6,13 +6,11 @@ public struct PPCDecoder {
 
     public init() {}
 
-    /// Decode a single 32-bit instruction word at the given RAM address
     public func decode(_ raw: UInt32, at address: UInt32) -> PPCInstruction {
         let decoded = decodeInstruction(raw, at: address)
         return PPCInstruction(address: address, raw: raw, decoded: decoded)
     }
 
-    /// Decode all instructions in a data buffer starting at baseAddress
     public func decodeAll(_ data: [UInt8], baseAddress: UInt32) -> [PPCInstruction] {
         var instructions = [PPCInstruction]()
         instructions.reserveCapacity(data.count / 4)
@@ -245,7 +243,6 @@ private extension PPCDecoder {
         let isAbsolute = Self.aa(raw)
         let target = isAbsolute ? UInt32(bitPattern: bd) : UInt32(bitPattern: Int32(bitPattern: pc) &+ bd)
 
-        // Try simplified mnemonics
         if let simplified = simplifiedBranch(bo: bo, bi: bi, target: target, link: isLink) {
             return simplified
         }

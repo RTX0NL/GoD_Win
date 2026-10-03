@@ -2,34 +2,23 @@ import GoDFoundation
 
 /// High-level structured AST nodes produced from CFG pattern matching
 public indirect enum ASTNode: Equatable {
-    /// A sequence of statements
     case block([ASTNode])
-    /// Variable assignment
     case assign(target: IRVariable, value: ScriptExpr)
-    /// Memory copy
     case copyMemory(dest: IRVariable, source: IRVariable, length: Int)
     /// Expression statement (function call for side effects)
     case expression(ScriptExpr)
-    /// If-then
     case ifThen(condition: ScriptExpr, body: ASTNode)
-    /// If-then-else
     case ifThenElse(condition: ScriptExpr, thenBody: ASTNode, elseBody: ASTNode)
-    /// While loop
     case whileLoop(condition: ScriptExpr, body: ASTNode)
-    /// Return void
     case returnVoid
-    /// Return with value
     case returnValue(ScriptExpr)
-    /// Yield
     case yield(frames: Int)
     /// Labeled goto (fallback for irreducible control flow)
     case label(String)
     case goto_(String)
-    /// No-op
     case nop
 }
 
-/// A structured function definition
 public struct ASTFunction {
     public let index: Int
     public let name: String
@@ -49,7 +38,6 @@ public struct CFGStructurer {
 
     public init() {}
 
-    /// Structure a CFG into an AST
     public func structure(_ cfg: ControlFlowGraph) -> ASTNode {
         guard !cfg.blocks.isEmpty else { return .block([]) }
 
@@ -75,7 +63,6 @@ public struct CFGStructurer {
         visited.insert(blockID)
         let block = cfg.blocks[blockID]
 
-        // Convert block statements to AST nodes
         var nodes = block.statements.compactMap { stmtToAST($0) }
 
         switch block.terminator {
@@ -132,7 +119,6 @@ public struct CFGStructurer {
         // Check for while loop: if the false branch jumps back to before the condition
         // Pattern: condition block has a back-edge from the end of the true branch
         if let lastTrueBlock = findBlockEndingWithJumpTo(currentBlockID, startingFrom: trueID, cfg: cfg) {
-            // while loop detected
             var whileVisited = Set<Int>()
             let body = structureFrom(blockID: trueID, cfg: cfg, visited: &whileVisited, exitBlockID: falseID)
             visited.formUnion(whileVisited)
@@ -140,7 +126,6 @@ public struct CFGStructurer {
             var nodes = [ASTNode]()
             nodes.append(.whileLoop(condition: condition, body: body))
 
-            // Continue after the loop
             let rest = structureFrom(blockID: falseID, cfg: cfg, visited: &visited, exitBlockID: exitBlockID)
             nodes.append(rest)
 
@@ -152,7 +137,6 @@ public struct CFGStructurer {
         if falseID > trueID {
             // Check if the true branch ends with a jump past the false branch → if-else
             if let trueEndBlock = findBlockEndingWithJumpPast(falseID, startingFrom: trueID, cfg: cfg) {
-                // if-then-else
                 let mergeID = jumpTargetOf(cfg.blocks[trueEndBlock])
 
                 var thenVisited = Set<Int>()
@@ -166,7 +150,6 @@ public struct CFGStructurer {
                 var nodes = [ASTNode]()
                 nodes.append(.ifThenElse(condition: condition, thenBody: thenBody, elseBody: elseBody))
 
-                // Continue after merge point
                 if let merge = mergeID {
                     let rest = structureFrom(blockID: merge, cfg: cfg, visited: &visited, exitBlockID: exitBlockID)
                     nodes.append(rest)
@@ -237,7 +220,6 @@ public struct CFGStructurer {
             case .fallthrough_(let next):
                 current = next
             case .conditional(_, let trueID, _):
-                // Check true branch
                 if let found = findBlockEndingWithJumpTo(targetID, startingFrom: trueID, cfg: cfg) {
                     return found
                 }

@@ -9,9 +9,7 @@ import Foundation
 
 protocol ProcessIO: GoDReadWritable {
 
-	// Queried to check if the process is still running
 	var isRunning: Bool { get }
-	// Kill the process
 	func terminate()
 
 	// Main IO interface. Convenience methods are implemented in an extension of this protocol;

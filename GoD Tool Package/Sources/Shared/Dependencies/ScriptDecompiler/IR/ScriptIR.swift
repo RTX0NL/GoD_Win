@@ -8,7 +8,6 @@ import GoDFoundation
 public struct IRInstruction {
     /// Byte offset in the original bytecode (used for jump target resolution)
     public let offset: Int
-    /// The IR operation
     public let op: IROp
 
     public init(offset: Int, op: IROp) {
@@ -69,7 +68,6 @@ public enum IROp: Equatable {
         }
     }
 
-    /// Whether this is a conditional jump
     public var isConditionalJump: Bool {
         switch self {
         case .jumpIfFalse, .jumpIfTrue: return true
@@ -78,7 +76,6 @@ public enum IROp: Equatable {
     }
 }
 
-/// IR constant values
 public enum IRConstant: Equatable {
     case integer(Int32)
     case float(Float)
@@ -87,7 +84,6 @@ public enum IRConstant: Equatable {
     case unknown(type: Int, rawValue: UInt32)
 }
 
-/// IR variable reference
 public struct IRVariable: Equatable {
     public enum Storage: Equatable {
         case global(index: Int)
@@ -105,7 +101,6 @@ public struct IRVariable: Equatable {
     }
 }
 
-/// IR value types
 public enum IRValueType: Equatable {
     case void
     case integer
@@ -113,7 +108,6 @@ public enum IRValueType: Equatable {
     case unknown(id: Int)
 }
 
-/// Binary operators
 public enum IRBinaryOperator: String, Equatable {
     case add = "+"
     case subtract = "-"
@@ -132,7 +126,6 @@ public enum IRBinaryOperator: String, Equatable {
     case greaterThanEqual = ">="
 }
 
-/// Unary operators
 public enum IRUnaryOperator: String, Equatable {
     case not = "!"
     case negate = "-"
@@ -140,11 +133,9 @@ public enum IRUnaryOperator: String, Equatable {
 
 /// A decoded script function in IR form
 public struct IRFunction {
-    /// Function index in the script
     public let index: Int
     /// Number of arguments (inferred or declared)
     public let argCount: Int
-    /// The IR instructions for this function
     public let instructions: [IRInstruction]
     /// Optional function name (from external metadata)
     public let name: String?

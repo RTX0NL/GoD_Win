@@ -659,7 +659,6 @@ public struct RVZImage {
                     dataOffset: offsetInSegment
                 )
 
-                // Copy the part of the chunk that lands in this group.
                 let copyStart = max(absoluteOffset, dataStart)
                 let copyEnd = min(absoluteOffset + length, dataEnd)
                 if copyEnd > copyStart {

@@ -17,7 +17,6 @@ import Structs
 
 public extension PokemonEnumDefaults {
 
-    /// Abilities as numbered by Pokemon Colosseum and XD.
     static let coloXdAbilitiesEnum = Enum(
         name: "Abilities",
         allowUnknownCases: true,
@@ -103,7 +102,6 @@ public extension PokemonEnumDefaults {
         propertyType: .uint8
     )
 
-    /// Abilities as numbered by Pokemon Battle Revolution.
     static let pbrAbilitiesEnum = Enum(
         name: "Abilities",
         allowUnknownCases: true,

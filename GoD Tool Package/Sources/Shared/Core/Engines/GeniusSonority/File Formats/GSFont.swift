@@ -119,7 +119,6 @@ public struct GSFont {
         data.setByteOrder(.big)
         guard blockOffset + 0x18 <= data.length else { throw FileFormatErrors.invalid(format: Self.formatName) }
 
-        // Block header
         let fontId: UInt16 = data.readSafely(atAddress: blockOffset + 0x00)
         let gw: UInt8 = data.readSafely(atAddress: blockOffset + 0x02)
         let gh: UInt8 = data.readSafely(atAddress: blockOffset + 0x03)
@@ -212,7 +211,6 @@ public struct GSFont {
             self.blockPadding = []
         }
 
-        // Recursively parse the next block, if any.
         if nextOffset != 0, nextBlockAbsolute < data.length {
             let next = try GSFont(data: data, blockOffset: nextBlockAbsolute)
             self.nextFontBox = NextFontBox(next)
@@ -290,16 +288,13 @@ public struct GSFont {
         }
         out.append(charTable)
 
-        // Bitmap data
         _ = bitmapBaseOffset  // for symmetry; bitmap base addr in out is blockStart + 0x18 + count*8
         out.append(bitmapData)
 
-        // Block padding
         if !blockPadding.isEmpty {
             out.append(GoDData(byteStream: blockPadding, byteOrder: .big))
         }
 
-        // Recurse into next block
         if let next = nextFont {
             try next.appendBlock(to: out, parentBlockStart: blockStart)
         }

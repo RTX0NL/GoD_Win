@@ -34,9 +34,11 @@
 //
 //  Typing policy for a chunk the type map names:
 //    - a table is written as CSV only if every pointer inside it lands on a
-//      field the struct declares as a label, and the CSV decodes back to the
-//      same bytes; otherwise it is written as assembly, with a warning, so
-//      no relocation is lost.
+//      field the struct declares as a label; otherwise it is written as
+//      assembly, with a warning, so no relocation is lost. There is no
+//      round-trip check on the CSV's bytes: a struct that describes the table
+//      badly shows up as a module that doesn't rebuild byte-identically,
+//      where demoting the chunk hid it behind a warning nobody reads.
 //    - an embedded file is dumped through the registry only if no pointer
 //      lands inside it, for the same reason.
 //

@@ -15,8 +15,8 @@ extension Project {
     ///
     ///   /Build/Save/<original>.gci
     ///   /Build/Save/Unpacked/   — gci-manifest.json + region bins
-    ///                             (banner.bin, header0.bin, header1.bin,
-    ///                              slot-a.bin, slot-b.bin)
+    ///                             (XD: slot-a.bin, slot-b.bin;
+    ///                              Colosseum: slot-1.bin … slot-3.bin)
     ///   /Engines/               — Dolphin + GameCube + GS + game-specific
     ///   /Engines/Version.txt    — the tool version that wrote the project
     ///   /Settings/Settings.json

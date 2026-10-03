@@ -27,7 +27,6 @@ public enum CRC32 {
         return t
     }()
 
-    /// Compute CRC-32 of the entire byte sequence.
     public static func compute(_ bytes: [UInt8]) -> UInt32 {
         return update(0xFFFF_FFFF, bytes: bytes) ^ 0xFFFF_FFFF
     }

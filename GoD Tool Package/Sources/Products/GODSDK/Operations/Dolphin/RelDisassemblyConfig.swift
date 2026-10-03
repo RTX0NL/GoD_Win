@@ -2,11 +2,8 @@ import GoDFoundation
 
 enum RelDisassembly {
     struct Config: Codable {
-        /// Path to the .rel file
         let relPath: File
-        /// Where to write disassembled output
         let outputFolder: Folder
-        /// Dolphin engine folder
         let dolphinEngine: Folder
         /// Optional symbol index JSON (maps relocation pointer indices to names)
         let symbolIndexPath: File?

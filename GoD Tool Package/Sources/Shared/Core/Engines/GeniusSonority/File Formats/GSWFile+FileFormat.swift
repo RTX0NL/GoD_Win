@@ -16,7 +16,6 @@ import GoDFoundation
 import GTX
 
 extension GSWFile {
-    /// Filename for the PNG that backs a given texture ref.
     public func pngFilename(for ref: GSWTextureRef) -> File {
         File("\(name)_texture_\(String(format: "%03d", ref.id)).png")
     }

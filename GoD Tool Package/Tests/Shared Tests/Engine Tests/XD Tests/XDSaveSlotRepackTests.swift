@@ -91,7 +91,6 @@ final class XDSaveSlotRepackTests: XCTestCase {
             bytes[oo + 2] = UInt8((hi >> 8) & 0xFF)
             bytes[oo + 3] = UInt8(hi & 0xFF)
 
-            // Fill the section payload.
             for i in 0..<entry.len { bytes[entry.off + i] = entry.fill }
         }
 

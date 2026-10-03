@@ -208,7 +208,6 @@ public struct GeniusSonorityEngine: Engine {
 
     // MARK: - Folder Resolution
 
-    /// Result of folder resolution, including optional language subfolder
     public struct FolderResolution {
         public let folder: Folder
         public let languageSubfolder: String?

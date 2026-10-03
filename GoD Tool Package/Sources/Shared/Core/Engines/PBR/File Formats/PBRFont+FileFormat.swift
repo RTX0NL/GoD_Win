@@ -37,7 +37,6 @@ extension PBRFont: FileFormat {
         )
         // The manifest names its atlas, so a build only has to be handed the
         // bundle — it doesn't need the image identified separately.
-        // The manifest names its atlas, so the bundle is self-describing.
         // The extension fallback accepts either spelling, which is what makes
         // projects dumped before the switch to PNG keep working.
         guard let atlas = outputs.first(where: {

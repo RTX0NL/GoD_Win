@@ -6,7 +6,6 @@ public struct ColoScriptIRTranslator {
 
     public init() {}
 
-    /// Translate a complete ColoScript to IR
     public func translate(_ script: ColoScript) -> IRScript {
         let functions = script.functions.enumerated().map { (index, instructions) in
             translateFunction(index: index, instructions: instructions)
@@ -14,7 +13,6 @@ public struct ColoScriptIRTranslator {
         return IRScript(functions: functions)
     }
 
-    /// Translate a single function's instructions to IR
     public func translateFunction(index: Int, instructions: [ColoScriptInstruction]) -> IRFunction {
         let irInstructions = instructions.flatMap { translateInstruction($0) }
         let argCount = inferArgCount(instructions)
@@ -78,7 +76,6 @@ public struct ColoScriptIRTranslator {
             return [IRInstruction(offset: offset, op: .pushVariable(translateVar(v)))]
 
         case .pushMultiVar(let v, let count):
-            // Push the same variable N times
             return (0..<Int(count)).map { _ in
                 IRInstruction(offset: offset, op: .pushVariable(translateVar(v)))
             }

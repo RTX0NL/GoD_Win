@@ -227,10 +227,8 @@ public struct ATXFile: FileFormat {
                 )
             }
 
-            // 1. Pack frame pixels into a fresh sheet.
             let packed = try ATXFile.packFrames(framePixels)
 
-            // 2. Compute per-frame (xOffset, yOffset) using defaults + overrides.
             var xyOffsets: [(Int16, Int16)] = []
             xyOffsets.reserveCapacity(framePixels.count)
             for i in 0..<framePixels.count {
@@ -242,14 +240,11 @@ public struct ATXFile: FileFormat {
                 }
             }
 
-            // 3. Build the frame-table bytes.
             let frameTableBytes = ATXFile.buildFrameTable(
                 rects: packed.rects,
                 xyOffsets: xyOffsets
             )
 
-            // 4. Translate animations → ATXAnimation wire form. Resolve
-            //    each step's `frame` filename back to the frame index.
             let filenameToIndex: [File: Int] = Dictionary(
                 uniqueKeysWithValues: (0..<framePixels.count).map {
                     (framePNGName(index: $0), $0)
@@ -298,7 +293,6 @@ public struct ATXFile: FileFormat {
             let frameTableOffset = cursor
             let innerTextureOffset = frameTableOffset + frameTableBytes.count
 
-            // 5. Build the inner GTX texture from the packed sheet.
             let gxMetadata = GXTextureMetadata(
                 width: packed.image.width,
                 height: packed.image.height,

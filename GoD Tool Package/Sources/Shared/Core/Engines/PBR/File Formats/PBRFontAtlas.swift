@@ -40,7 +40,6 @@ public enum PBRFontAtlas {
     public struct Metadata: Codable, Equatable {
         /// Atlas filename, relative to the manifest's own folder.
         public let atlasPath: String
-        /// Glyphs per row in the sheet.
         public let columns: Int
         public let blocks: [Block]
 

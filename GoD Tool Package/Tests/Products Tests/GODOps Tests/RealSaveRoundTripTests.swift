@@ -88,7 +88,6 @@ final class RealSaveRoundTripTests: XCTestCase {
         let slotB = try XDSaveSlot(raw: plainB)
         let latestIsA = slotA.header.counter >= slotB.header.counter
 
-        // Project + unpacked slots.
         let fst = InMemoryFST()
         let engineFolder = installEngine(try XDEngine.defaults(), under: Folder("/project/Engines"), in: fst)
         let unpacked = Folder("/project/Unpacked")

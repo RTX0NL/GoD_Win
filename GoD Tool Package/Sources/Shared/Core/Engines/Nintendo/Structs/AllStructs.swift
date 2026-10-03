@@ -20,5 +20,4 @@ public extension NintendoEngine {
 }
 
 public extension NintendoEngine {
-    // struct definition accessors
 }

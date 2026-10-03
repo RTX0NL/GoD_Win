@@ -57,10 +57,8 @@ public enum OperationCatalog {
 
     // MARK: - Slicing the reference
 
-    /// The `## Operation reference` chapter.
     static var operationReference: String { chapter(titled: "## Operation reference") }
 
-    /// The `## JSON conventions` chapter.
     static var jsonConventions: String { chapter(titled: "## JSON conventions") }
 
     /// The `### ` section of the operation reference that carries `name`'s

@@ -158,7 +158,6 @@ public struct GSWHeader: Codable, Equatable {
     }
 }
 
-/// One tag record in the tag stream.
 public struct GSWTag: Codable, Equatable {
     /// FlashMenu::ParseTag dispatches on this code (range 0x00..0x2F).
     public var code: UInt32

@@ -330,7 +330,6 @@ public extension XDSaveSlot {
             let oldOffset = triple.offset
             let oldSize = triple.size
 
-            // Choose the source bytes for this section.
             let payloadBytes: [UInt8]
             let newSize: Int
             if let override = sectionOverrides[index] {

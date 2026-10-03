@@ -162,7 +162,6 @@ public final class WiiISO: FileSystemTree {
     // MARK: - Decrypt from ISO
 
     /// Parse a Wii ISO from encrypted binary data.
-    /// Reads an encrypted disc image.
     ///
     /// `data` is a `GoDReadable` so a 4.7 GB image never has to be resident:
     /// the header, region settings and partition table are small windows, and
@@ -205,7 +204,6 @@ public final class WiiISO: FileSystemTree {
         }
         self.regionSettings = regionData
 
-        // Verify Wii magic word
         let wiiMagicOffset = wiiEngine.data.disc.wiiMagicWordOffset
         let wiiMagic: UInt32 = data.readSafely(atAddress: wiiMagicOffset)
         guard wiiMagic == wiiEngine.data.disc.wiiMagicWord else {
@@ -271,7 +269,6 @@ public final class WiiISO: FileSystemTree {
 
     // MARK: - Rebuild to encrypted ISO
 
-    /// Rebuild the full Wii ISO from partition contents.
     /// Rebuild the whole disc as a readable, encrypting lazily.
     ///
     /// Returns a composition rather than a buffer: the unencrypted regions and
@@ -395,7 +392,6 @@ public final class WiiISO: FileSystemTree {
         setupTopLevelFST()
     }
 
-    /// Access a specific partition by name.
     public func partition(named name: String) -> WiiPartition? {
         partitions.first(where: { $0.name == name })?.partition
     }

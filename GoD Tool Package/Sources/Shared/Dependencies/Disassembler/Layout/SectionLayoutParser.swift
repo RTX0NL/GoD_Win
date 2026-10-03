@@ -34,7 +34,6 @@ public struct SectionLayoutParser {
                 continue
             }
 
-            // Skip other comments
             if s.hasPrefix("#") { continue }
 
             // text0: 0x80003100 (9472 bytes)

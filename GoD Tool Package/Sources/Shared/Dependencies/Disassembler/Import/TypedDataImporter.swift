@@ -51,7 +51,6 @@ public struct TypedDataImporter {
             case .padding:
                 break
             default:
-                // Copy raw data for non-label fields
                 if let fieldData: GoDData = structData.get(property.name) {
                     output.set(property.name, to: fieldData)
                 }

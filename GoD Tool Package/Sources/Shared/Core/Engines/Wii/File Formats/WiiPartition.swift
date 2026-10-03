@@ -77,7 +77,6 @@ public final class WiiPartition: FileSystemTree {
         }
         self.ticket = ticketData
 
-        // Decrypt title key
         guard let titleKey = WiiCrypto.decryptTitleKey(ticketData: ticketData, commonKey: commonKey) else {
             logger?.log(.error("Failed to decrypt title key for \(partTypeName) partition (truncated ticket)"))
             throw FileFormatErrors.invalid(format: Self.formatName)
@@ -102,14 +101,12 @@ public final class WiiPartition: FileSystemTree {
 
         logger?.log(.info("  Partition header: TMD=0x\(String(tmdSize, radix: 16)) @ 0x\(String(tmdOffset, radix: 16)), cert=0x\(String(certSize, radix: 16)) @ 0x\(String(certOffset, radix: 16)), H3 @ 0x\(String(h3Offset, radix: 16)), data=0x\(String(dataSize, radix: 16)) @ 0x\(String(dataOffset, radix: 16))"))
 
-        // Read TMD
         guard let tmdData = data.read(atAddress: partitionOffset + tmdOffset, length: tmdSize) else {
             logger?.log(.error("Failed to read TMD for \(partTypeName) partition"))
             throw FileFormatErrors.invalid(format: Self.formatName)
         }
         self.tmd = tmdData
 
-        // Read cert chain
         guard let certData = data.read(atAddress: partitionOffset + certOffset, length: certSize) else {
             logger?.log(.error("Failed to read cert chain for \(partTypeName) partition"))
             throw FileFormatErrors.invalid(format: Self.formatName)
@@ -142,10 +139,8 @@ public final class WiiPartition: FileSystemTree {
         logger?.log(.info("  Encrypted data: \(groupCount) groups (\(dataSize) bytes) starting at 0x\(String(absoluteDataStart, radix: 16, uppercase: true))"))
         logger?.log(.info("  Decrypted view length: \(decryptedView.length) bytes"))
 
-        // Create folder structure
         try fst.createFolder(at: partFiles.systemFolder, overwrite: true)
 
-        // Write partition metadata as files
         try fst.writeFile(ticketData, at: partFiles.ticketFile, overwrite: true)
         try fst.writeFile(tmdData, at: partFiles.tmdFile, overwrite: true)
         try fst.writeFile(certData, at: partFiles.certFile, overwrite: true)
@@ -159,7 +154,6 @@ public final class WiiPartition: FileSystemTree {
 
             try fst.createFolder(at: partFiles.filesFolder, overwrite: true)
 
-            // Parse boot.bin
             let bootDataStruct = dolphinEngine.bootDataStruct
             guard let bootData = decryptedView.read(struct: bootDataStruct, atAddress: 0) else {
                 logger?.log(.error("Failed to parse boot.bin from decrypted \(partTypeName) partition"))
@@ -169,7 +163,6 @@ public final class WiiPartition: FileSystemTree {
             try fst.writeFile(bootData.data, at: partFiles.bootFile, overwrite: true)
             logger?.log(.info("  Parsed boot.bin (\(bootData.length) bytes)"))
 
-            // Parse bi2.bin
             let bi2Struct = dolphinEngine.bi2Struct
             let bi2Offset = dolphinEngine.data.systemFiles.bi2DataOffset
             guard let bi2Data = decryptedView.read(struct: bi2Struct, atAddress: bi2Offset) else {
@@ -180,7 +173,6 @@ public final class WiiPartition: FileSystemTree {
             try fst.writeFile(bi2Data.data, at: partFiles.bi2File, overwrite: true)
             logger?.log(.info("  Parsed bi2.bin (\(bi2Data.length) bytes)"))
 
-            // Parse apploader
             let apploaderStruct = dolphinEngine.apploaderHeaderStruct
             let apploaderOffset = dolphinEngine.data.systemFiles.apploaderOffset
             guard let apploaderHeader = decryptedView.read(struct: apploaderStruct, atAddress: apploaderOffset) else {
@@ -199,7 +191,6 @@ public final class WiiPartition: FileSystemTree {
             try fst.writeFile(apploaderData, at: partFiles.apploaderFile, overwrite: true)
             logger?.log(.info("  Parsed apploader (\(totalApploaderSize) bytes)"))
 
-            // Parse main.dol
             // Wii partition offsets in boot.bin are stored >> 2 (divided by fstOffsetMultiplier)
             let offsetMultiplier = wiiEngine.data.disc.fstOffsetMultiplier
             let dolOffset: Int = try bootData.main_executable_offset * offsetMultiplier
@@ -413,7 +404,6 @@ public final class WiiPartition: FileSystemTree {
             decryptedData = blob
         }
 
-        // Read ticket for title key
         guard let ticketData = readFile(at: partFiles.ticketFile)?.allData else {
             logger?.log(.taskStatus(taskName: taskName, status: .completed(false)))
             throw FileFormatErrors.failedToEncode(format: Self.formatName, target: "Wii partition")

@@ -13,7 +13,6 @@ enum CreatePatch {
         let sourceFile: File
         /// The modified file — what they should end up with.
         let targetFile: File
-        /// Where to write the patch.
         let patchFile: File
         /// Which patch format to write. Named rather than derived: the
         /// output doesn't exist yet, so nothing can say what it should be.
@@ -41,9 +40,7 @@ enum CreatePatch {
 enum ApplyPatch {
 
     struct Config: Codable {
-        /// The file to patch.
         let inputFile: File
-        /// The patch to apply.
         let patchFile: File
         /// Where to write the result. The same path as `inputFile` is
         /// refused: the patched bytes are verified by reading back what was

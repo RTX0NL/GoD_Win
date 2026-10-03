@@ -14,7 +14,6 @@ public enum SectionKind: String, Codable, Equatable {
 public struct DisassemblySection {
     /// Section name (e.g. "text0", "data0")
     public let name: String
-    /// Whether this is code, data, or BSS
     public let kind: SectionKind
     /// RAM address where this section is loaded
     public let baseAddress: UInt32

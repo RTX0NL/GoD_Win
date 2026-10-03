@@ -20,5 +20,4 @@ public extension WiiEngine {
 }
 
 public extension WiiEngine {
-    // struct definition accessors
 }

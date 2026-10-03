@@ -431,13 +431,11 @@ public struct MSGFile: FileFormat, Equatable {
                 cursor += item.bytes.count + 2
             }
 
-            // Write entry table
             for (index, entry) in entries.enumerated() {
                 out.append(entry.id)
                 out.append(UInt32(offsets[index]))
             }
 
-            // Write string pool, then whatever followed it
             for byte in pool { out.append(byte) }
             for byte in trailingBytes { out.append(byte) }
 

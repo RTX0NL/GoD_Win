@@ -448,7 +448,6 @@ public struct GXTextureDecoder {
         return GoDData(byteStream: bytes, byteOrder: .big)
     }
 
-    /// Decode a single GTX frame to a GoDImage
     /// How many bytes the texture at `headerOffset` occupies, read off its
     /// own header.
     ///
@@ -498,7 +497,6 @@ public struct GXTextureDecoder {
         }
         guard texLen > 0 && texStart >= 0 && texStart + texLen <= data.length else { return nil }
 
-        // Read palette
         var palette = [(UInt8, UInt8, UInt8, UInt8)]()
         if fmt.isIndexed && palOff > 0 {
             let palStart = headerOffset + Int(palOff)
@@ -511,7 +509,6 @@ public struct GXTextureDecoder {
             }
         }
 
-        // Decode pixels in block order
         let blockPixels: [(UInt8, UInt8, UInt8, UInt8)]
         switch fmt {
         case .RGBA32: blockPixels = decodeRGBA32(data, texStart, texLen)
@@ -519,7 +516,6 @@ public struct GXTextureDecoder {
         default:      blockPixels = decodeFlat(data, texStart, texLen, fmt, palette)
         }
 
-        // Reorder block order → scanline order
         let bw = fmt.blockWidth, bh = fmt.blockHeight
         let ppb = bw * bh, bpr = pw / bw
         var rgba = [UInt8](repeating: 0, count: w * h * 4)
@@ -681,7 +677,6 @@ public struct GXTextureDecoder {
             }
         }
 
-        // Encode pixels to bytes
         var texBytes: [UInt8]
         switch fmt {
         case .RGBA32: texBytes = encodeRGBA32(blockPixels, ppb: ppb)
@@ -689,14 +684,12 @@ public struct GXTextureDecoder {
         default:      texBytes = encodeFlat(blockPixels, fmt)
         }
 
-        // Build palette for indexed formats
         var palBytes = [UInt8]()
         if fmt.isIndexed {
             let palFmt = metadata.paletteFormat ?? .RGB5A3
             var palette = [(UInt8, UInt8, UInt8, UInt8)]()
             var indexMap = [UInt32: Int]()
 
-            // Build palette and remap indices
             var indices = [Int]()
             for p in blockPixels {
                 let key = UInt32(p.r) << 24 | UInt32(p.g) << 16 | UInt32(p.b) << 8 | UInt32(p.a)
@@ -712,7 +705,6 @@ public struct GXTextureDecoder {
                 }
             }
 
-            // Encode palette
             while palette.count < fmt.paletteEntryCount {
                 palette.append((0, 0, 0, 0))
             }
@@ -722,7 +714,6 @@ public struct GXTextureDecoder {
                 palBytes.append(UInt8(raw & 0xFF))
             }
 
-            // Encode indices
             texBytes = encodeIndices(indices, fmt)
         }
 
@@ -732,7 +723,6 @@ public struct GXTextureDecoder {
         let palOff = fmt.isIndexed ? headerSize + texLen : 0
         var output = [UInt8](repeating: 0, count: headerSize + texLen + palBytes.count)
 
-        // Header
         output[0] = UInt8(w >> 8); output[1] = UInt8(w & 0xFF)
         output[2] = UInt8(h >> 8); output[3] = UInt8(h & 0xFF)
         output[4] = UInt8(fmt.bitsPerPixel)
@@ -920,7 +910,6 @@ public struct GXTextureDecoder {
                 }
             }
 
-            // Encode each 4x4 sub-block as DXT1
             for (sub, visible) in zip(subBlocks, subVisible) {
                 bytes.append(contentsOf: encodeDXT1SubBlock(sub, visible: visible))
             }

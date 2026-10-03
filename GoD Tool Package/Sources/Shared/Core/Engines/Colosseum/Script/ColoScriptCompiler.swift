@@ -27,14 +27,12 @@ public struct ColoScriptCompiler {
     public func compile(_ parsed: ColoScriptTextParser.ParsedScript) throws -> GoDData {
         let functionCount = (parsed.functions.map(\.index).max() ?? -1) + 1
 
-        // Validate every table slot is declared
         var byIndex = [Int: ColoScriptTextParser.ParsedFunction]()
         for function in parsed.functions { byIndex[function.index] = function }
         for index in 0..<functionCount where byIndex[index] == nil {
             throw CompileError.missingFunction(index: index)
         }
 
-        // Layout constants
         let relocSiteCount = parsed.functions.reduce(0) { $0 + stringSiteCount(in: $1.body) }
         let relocTableOffset = ColoScript.headerSize + 4 * functionCount
         let globalsOffset = relocTableOffset + 4 * relocSiteCount
@@ -91,7 +89,6 @@ public struct ColoScriptCompiler {
             }
         }
 
-        // Emit
         var bytes = [UInt8]()
         appendU16(&bytes, parsed.scriptTypeID)
         appendU16(&bytes, parsed.headerField2)

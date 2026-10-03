@@ -63,7 +63,6 @@ public struct DolDisassembler {
         let decoder = PPCDecoder()
         let formatter = PPCFormatter()
 
-        // Load symbol map if available
         var allSymbols = [PPCSymbol]()
         var symbolLookup = [UInt32: String]()
         if let symbolMapPath = symbolMapPath,
@@ -172,7 +171,6 @@ public struct DolDisassembler {
                         uniquingKeysWith: { first, _ in first }
                     )
 
-                    // Track file paths for manifest
                     var manifestFiles = [String]()
 
                     for function in functions {
@@ -215,7 +213,6 @@ public struct DolDisassembler {
             }
         }
 
-        // Run data pointer scanning across all data sections
         let dataPointerScanner = DataPointerScanner()
         let dataSectionInputs = dataSections.map { (_, section) in
             (baseAddress: section.RAMAddress, data: section.data.rawBytes)
@@ -252,7 +249,6 @@ public struct DolDisassembler {
             logger?.log(.info("Skipped \(skippedMisalignedTargets.count) misaligned data-pointer targets (likely blob false positives)"))
         }
 
-        // Load type map if provided
         var typeMap: TypeMap?
         var resolvedStructs = [String: StructDefinition]()
         if let typeMapPath = typeMapPath,
@@ -323,7 +319,6 @@ public struct DolDisassembler {
                 logger?.log(.warning("\(sectionName): \(misalignedLabels.count) misaligned labels kept out of chunk boundaries (not shiftable): \(preview)\(misalignedLabels.count > 5 ? ", …" : "")"))
             }
 
-            // Get pointer results for this section
             let sectionPointers = sectionIndex < dataPointerResults.count
                 ? dataPointerResults[sectionIndex].reduce(into: [Int: UInt32]()) { result, pair in
                     result[Int(pair.key)] = pair.value
@@ -628,12 +623,11 @@ public struct DolDisassembler {
                     emitUntypedChunk(from: labelOffset, to: nextOffset, label: labelName)
                 }
             }
-            dataManifestFolders.append(sectionFolder)
 
-            // Write manifest
             if let manifestJSON: GoDData = try? JSONEncoder.prettyPrinted.encode(manifest) {
                 try output.writeFile(manifestJSON, at: sectionFolder.file("manifest.json"), overwrite: true)
             }
+            dataManifestFolders.append(sectionFolder)
 
             sectionsProcessed += 1
             if logger != nil {

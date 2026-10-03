@@ -27,7 +27,6 @@ import GTX
 import Nintendo
 
 public extension GeniusSonorityEngine {
-    /// Result of processing a single FSYS archive
     struct FsysResult {
         let registry: FSYSRegistry
         let registryFile: File
@@ -188,7 +187,6 @@ public extension GeniusSonorityEngine {
                     ))
                     extractedFiles.append((file: thpFile, data: thp.combined))
                 } catch {
-                    // Fall back to extracting the THH raw if pairing failed.
                     noteFallback(entry, "failed to pair with its THD half (\(error))")
                     let targetFile = targetFolder.file(projectName)
                     entries.append(.init(metadata: entry.metadata, file: targetFile))
@@ -344,7 +342,6 @@ public extension GeniusSonorityEngine {
             return routed.folder(directory)
         }
 
-        /// Where an archive's unpacked artifacts go.
         func archiveFolder(forDiscPath discPath: String) -> Folder {
             outputFolder(forDiscPath: discPath, routedTo: fsysConfig.archivesFolder)
         }
@@ -904,7 +901,6 @@ public extension GeniusSonorityEngine {
             }
         }
 
-        // Write packed archives to output
         for (i, result) in fsysResults.enumerated() {
             guard let result else { continue }
             let name = fsysEntries[i].rebuildPath

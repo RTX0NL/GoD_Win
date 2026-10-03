@@ -89,7 +89,6 @@ public enum PokemonColosseum {
         return bundledResource(named: "general_flags_\(suffix == "eu" ? "us" : suffix).csv")
     }
 
-    /// Returns the symbol map data for the given game ID, if available as a bundled resource.
     public static func symbolMapData(for gameID: String) -> GoDData? {
         guard gameIDs.contains(gameID) else { return nil }
         return bundledResource(named: gameID + ".map")

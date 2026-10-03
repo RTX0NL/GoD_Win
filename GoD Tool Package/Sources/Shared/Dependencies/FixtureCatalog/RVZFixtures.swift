@@ -143,7 +143,6 @@ public enum RVZFixtures {
             }
         }
 
-        // Raw-data entries.
         var rawEntries: [WIARawData] = []
         for region in image.rawRegions {
             let skipped = Int(region.discOffset) % clusterSize
@@ -165,7 +164,6 @@ public enum RVZFixtures {
             ))
         }
 
-        // Partitions.
         var partitionEntries: [WIAPartition] = []
         for partition in image.partitions {
             var segments: [WIAPartitionSegment] = []

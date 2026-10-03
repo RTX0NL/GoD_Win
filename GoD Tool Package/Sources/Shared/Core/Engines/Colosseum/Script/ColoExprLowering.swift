@@ -41,7 +41,6 @@ public struct ColoExprLowering {
             lowerStatement(expression, into: &opcodes)
         }
 
-        // Layout: assign byte offsets
         var instructions = [ColoScriptInstruction]()
         var byteOffsets = [Int]()
         var offset = startOffset

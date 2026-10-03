@@ -2,7 +2,6 @@ import GoDFoundation
 import GoDEngine
 import Structs
 
-/// Namespace for Pokémon engine enum defaults.
 public enum PokemonEnumDefaults {}
 
 public extension PokemonEngine {

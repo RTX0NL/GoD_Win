@@ -47,7 +47,6 @@ final class WiiDecryptedPartitionViewTests: XCTestCase {
             titleKey: titleKey
         )
 
-        // Read first 16 bytes from group 0
         guard let result = view.read(atAddress: 0, length: 16) else {
             XCTFail("Read should succeed"); return
         }

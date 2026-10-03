@@ -13,8 +13,6 @@ import Foundation
 
 enum ReferenceIPS {
 
-    /// Apply an IPS patch to `input`.
-    ///
     /// Records are `offset(3) size(2) data`, a size of zero meaning
     /// `length(2) byte(1)` repeated, terminated by "EOF" where a record would
     /// start, optionally followed by a three-byte length to cut the file to.

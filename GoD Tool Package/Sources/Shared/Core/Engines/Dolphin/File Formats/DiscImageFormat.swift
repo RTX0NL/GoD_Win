@@ -31,7 +31,6 @@ public enum DiscImageFormat: Equatable {
     case nkitWii
     case unknown
 
-    /// Inspect the first 0x400 bytes and return the detected format.
     /// Returns `.unknown` if no signature matches.
     /// Identifies a disc image from its first 0x400 bytes.
     ///

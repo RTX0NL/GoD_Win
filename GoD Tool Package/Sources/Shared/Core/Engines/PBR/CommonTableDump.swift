@@ -17,7 +17,6 @@ public extension PBREngine {
         public let table: Data.CommonTable
         /// The 0x30 container header, for round-tripping the geometry.
         public let header: StructData
-        /// One decoded row per entry.
         public let entries: [StructData]
         public let entryDefinition: StructDefinition
         /// Bytes between the header and the entry array (string pool + its

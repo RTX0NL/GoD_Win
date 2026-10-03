@@ -129,7 +129,6 @@ public struct PBRStringCatalog: Codable, Equatable {
         }
     }
 
-    /// One string: its global id and its text.
     public struct Entry: Codable, Equatable {
         public let id: Int
         public let text: Text

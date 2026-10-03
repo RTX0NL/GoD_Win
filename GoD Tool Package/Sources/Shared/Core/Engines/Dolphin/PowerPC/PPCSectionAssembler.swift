@@ -33,7 +33,6 @@ public struct PPCSectionAssembler {
     ///   - files: Array of (filename, content) pairs
     ///   - baseAddress: The RAM address where this section starts
     ///   - externalSymbols: Labels from other sections for cross-section references
-    /// - Returns: The assembled binary bytes
     public func assemble(
         files: [(name: String, content: String)],
         baseAddress: UInt32,
@@ -63,7 +62,6 @@ public struct PPCSectionAssembler {
         baseAddress: UInt32,
         externalSymbols: [String: UInt32] = [:]
     ) throws -> AssembledSection {
-        // Parse all files
         let parsedFiles = files.map { (name: $0.name, lines: parser.parse($0.content)) }
 
         // Pass 1: Collect labels and compute addresses
@@ -269,7 +267,6 @@ public struct PPCSectionAssembler {
         let hi = addr >> 16
         let lo = addr & 0xFFFF
         let adjusted = lo >= 0x8000 ? hi &+ 1 : hi
-        // Return as signed 16-bit value
         return Int32(Int16(bitPattern: UInt16(adjusted & 0xFFFF)))
     }
 

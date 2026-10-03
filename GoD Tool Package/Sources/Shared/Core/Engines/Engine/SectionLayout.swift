@@ -52,7 +52,6 @@ public struct SectionLayout: Codable, Equatable {
     public enum Chunk: Equatable {
         /// Bit banks decoded through a flag descriptor table.
         case flags(Flags)
-        /// A single struct instance.
         case structInstance(StructChunk)
         /// A run of same-typed structs.
         case table(TableChunk)

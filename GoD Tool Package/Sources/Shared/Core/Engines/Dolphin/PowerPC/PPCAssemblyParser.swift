@@ -45,24 +45,20 @@ public struct PPCAssemblyParser {
 
     public init() {}
 
-    /// Parse a complete .s file into parsed lines
     public func parse(_ text: String) -> [PPCParsedLine] {
         text.split(separator: "\n", omittingEmptySubsequences: false).map(parseLine)
     }
 
-    /// Parse a single line of assembly
     public func parseLine(_ line: some StringProtocol) -> PPCParsedLine {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
 
         // Empty or comment
         if trimmed.isEmpty || trimmed.hasPrefix("#") { return .empty }
 
-        // Section directive
         if trimmed.hasPrefix(".section ") {
             return .section(String(trimmed.dropFirst(9)))
         }
 
-        // Global directive
         if trimmed.hasPrefix(".global ") {
             return .global(String(trimmed.dropFirst(8)))
         }
@@ -89,19 +85,16 @@ public struct PPCAssemblyParser {
             return .empty
         }
 
-        // Label
         if trimmed.hasSuffix(":") && !trimmed.contains(" ") {
             return .label(String(trimmed.dropLast()))
         }
 
-        // Instruction
         return parseInstruction(trimmed)
     }
 
     // MARK: - Instruction parsing
 
     func parseInstruction(_ text: String) -> PPCParsedLine {
-        // Split mnemonic from operands
         let parts = text.split(separator: " ", maxSplits: 1)
         guard let mnemonic = parts.first else { return .empty }
 
@@ -138,9 +131,7 @@ public struct PPCAssemblyParser {
 
         // mfspr: rD, SPR  /  mtspr: SPR, rS — numeric SPR values
         if (base == "mfspr" && index == 1) || (base == "mtspr" && index == 0) {
-            // First try known name
             if let spr = parseSPR(text) { return .spr(spr) }
-            // Then try numeric
             if let val = UInt32(text) { return .spr(val) }
             if text.hasPrefix("0x"), let val = UInt32(text.dropFirst(2), radix: 16) { return .spr(val) }
         }
@@ -222,17 +213,14 @@ public struct PPCAssemblyParser {
         let s = text.trimmingCharacters(in: .whitespaces)
         if s.isEmpty { return nil }
 
-        // GPR: r0-r31
         if s.hasPrefix("r"), let num = UInt8(s.dropFirst()), num <= 31 {
             return .gpr(num)
         }
 
-        // FPR: f0-f31
         if s.hasPrefix("f"), let num = UInt8(s.dropFirst()), num <= 31 {
             return .fpr(num)
         }
 
-        // CR field: cr0-cr7
         if s.hasPrefix("cr") && s.count == 3, let num = UInt8(s.dropFirst(2)), num <= 7 {
             return .crField(num)
         }
@@ -242,7 +230,6 @@ public struct PPCAssemblyParser {
             return .crBit(crBit)
         }
 
-        // SPR names
         if let spr = parseSPR(s) {
             return .spr(spr)
         }
@@ -292,7 +279,6 @@ public struct PPCAssemblyParser {
             }
         }
 
-        // Decimal immediate
         if let val = Int32(s) {
             return .simm(val)
         }
@@ -404,7 +390,6 @@ public struct PPCAssemblyParser {
         if branchMnemonics.contains(mnemonic) {
             return .label("0x\(String(val, radix: 16, uppercase: true))")
         }
-        // Default: signed
         return .simm(Int32(bitPattern: val))
     }
 }

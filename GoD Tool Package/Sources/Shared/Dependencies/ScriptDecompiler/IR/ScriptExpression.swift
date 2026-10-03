@@ -58,11 +58,9 @@ public indirect enum ScriptExpr: Equatable {
 public enum ScriptStatement: Equatable {
     /// Variable assignment: target = expression
     case assign(target: IRVariable, value: ScriptExpr)
-    /// Memory copy
     case copyMemory(dest: IRVariable, source: IRVariable, length: Int)
     /// Expression evaluated for side effects (typically a function call)
     case expression(ScriptExpr)
-    /// Return with no value
     case returnVoid
     /// Return with a value on the stack
     case returnValue(ScriptExpr)

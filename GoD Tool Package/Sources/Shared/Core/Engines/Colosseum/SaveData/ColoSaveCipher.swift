@@ -45,7 +45,6 @@ public enum ColoSaveCipher {
     /// bytes (NOT the 0x28000 that XD uses).
     public static let slotSize: Int = 0x1E000
 
-    /// SHA-1 digest size in bytes.
     public static let digestSize: Int = 20
 
     /// First byte of the encrypted region. Matches PKHeX's
@@ -104,9 +103,7 @@ public enum ColoSaveCipher {
         while i + digestSize <= hashStart {
             switch direction {
             case .encrypt:
-                // XOR plaintext with digest → ciphertext.
                 for j in 0..<digestSize { bytes[i + j] ^= digest[j] }
-                // Hash the ciphertext for next loop's digest.
                 let chunk = Array(bytes[i..<(i + digestSize)])
                 digest = SHA1.hash(chunk)
             case .decrypt:
@@ -132,7 +129,6 @@ public enum ColoSaveCipher {
     ///   2. write the SHA-1 of slot[0..-40] into slot[-20:]
     ///   3. compute and write the new header checksum into slot[0x0C].
     public static func setChecksums(_ bytes: inout [UInt8]) {
-        // Clear header checksum field.
         for off in headerChecksumOffset..<(headerChecksumOffset + 4) {
             bytes[off] = 0
         }
@@ -142,13 +138,11 @@ public enum ColoSaveCipher {
         let payloadEnd = bytes.count - (2 * digestSize)
         let payloadHash = SHA1.hash(Array(bytes[0..<payloadEnd]))
 
-        // Write the payload hash into the trailing 20-byte hash slot.
         let hashStart = bytes.count - digestSize
         for j in 0..<digestSize {
             bytes[hashStart + j] = payloadHash[j]
         }
 
-        // Compute and write the header checksum.
         let header = Array(bytes[0..<0x20])
         let newHC = computeHeaderChecksum(header: header, hash: payloadHash)
         writeI32BE(newHC, into: &bytes, at: headerChecksumOffset)

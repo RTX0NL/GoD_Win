@@ -36,7 +36,6 @@ public enum ExternalProcess {
             self.standardError = standardError
         }
 
-        /// Exited normally with status 0.
         public var succeeded: Bool { terminatingSignal == nil && exitCode == 0 }
     }
 

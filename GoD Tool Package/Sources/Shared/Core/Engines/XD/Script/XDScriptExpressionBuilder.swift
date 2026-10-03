@@ -98,7 +98,6 @@ public struct XDExpressionBuilder {
         var expressions = [XDExpr]()
         var argCount = 0
 
-        // Collect jump targets
         var jumpTargets = Set<Int>()
         for inst in instructions {
             if let target = inst.jumpTarget {

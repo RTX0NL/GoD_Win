@@ -6,17 +6,14 @@ import GoDFoundation
 /// TCOD, FTBL (function table), HEAD, CODE, GVAR, STRG, VECT, GIRI, ARRY
 public final class XDScript {
 
-    /// Section header size (0x20 bytes)
     public static let sectionHeaderSize = 0x20
 
-    /// Parsed function table entries
     public struct FunctionEntry {
         public let codeOffset: Int   // word offset into CODE section
         public let nameOffset: Int   // byte offset into STRG section
         public let name: String?
     }
 
-    /// Global variable entry
     public struct GlobalVar {
         public let type: Int         // constant type ID
         public let value: UInt32
@@ -28,7 +25,6 @@ public final class XDScript {
         public let resourceID: Int
     }
 
-    // Parsed sections
     public let functions: [FunctionEntry]
     public let code: [UInt32]           // raw CODE words
     public let globalVars: [GlobalVar]
@@ -45,7 +41,6 @@ public final class XDScript {
         data.setByteOrder(.big)
         rawData = data.copy
 
-        // Parse section offsets
         // TCOD is at 0x0 (hidden section, 0x10 bytes)
         // Then sections follow sequentially, each with a 0x20 header
         var offset = 0
@@ -53,42 +48,35 @@ public final class XDScript {
         // TCOD section (0x10 bytes)
         offset = 0x10
 
-        // FTBL section
         let ftblOffset = offset
         let ftblSize: UInt32 = data.readSafely(atAddress: ftblOffset + 4)
         let ftblCount: UInt32 = data.readSafely(atAddress: ftblOffset + 0x10)
         offset = ftblOffset + Int(ftblSize)
 
-        // HEAD section
         let headOffset = offset
         let headSize: UInt32 = data.readSafely(atAddress: headOffset + 4)
         offset = headOffset + Int(headSize)
 
-        // CODE section
         let codeOffset = offset
         let codeSize: UInt32 = data.readSafely(atAddress: codeOffset + 4)
         let codeDataStart = codeOffset + Self.sectionHeaderSize
         let codeWordCount = (Int(codeSize) - Self.sectionHeaderSize) / 4
         offset = codeOffset + Int(codeSize)
 
-        // GVAR section
         let gvarOffset = offset
         let gvarSize: UInt32 = data.readSafely(atAddress: gvarOffset + 4)
         let gvarCount: UInt32 = data.readSafely(atAddress: gvarOffset + 0x10)
         offset = gvarOffset + Int(gvarSize)
 
-        // STRG section
         let strgOffset = offset
         let strgSize: UInt32 = data.readSafely(atAddress: strgOffset + 4)
         offset = strgOffset + Int(strgSize)
 
-        // VECT section
         let vectOffset = offset
         let vectSize: UInt32 = data.readSafely(atAddress: vectOffset + 4)
         let vectCount: UInt32 = data.readSafely(atAddress: vectOffset + 0x10)
         offset = vectOffset + Int(vectSize)
 
-        // GIRI section
         let giriOffset = offset
         let giriSize: UInt32 = data.readSafely(atAddress: giriOffset + 4)
         let giriCount: UInt32 = data.readSafely(atAddress: giriOffset + 0x10)
@@ -96,7 +84,6 @@ public final class XDScript {
 
         // ARRY section (variable length, last section)
 
-        // Parse function table
         var parsedFunctions = [FunctionEntry]()
         let ftblDataStart = ftblOffset + Self.sectionHeaderSize
         for i in 0..<Int(ftblCount) {
@@ -125,7 +112,6 @@ public final class XDScript {
         }
         code = codeWords
 
-        // Parse GVAR section
         var gvars = [GlobalVar]()
         let gvarDataStart = gvarOffset + Self.sectionHeaderSize
         for i in 0..<Int(gvarCount) {
@@ -151,7 +137,6 @@ public final class XDScript {
         }
         strings = strs
 
-        // Parse VECT section
         var vects = [(Float, Float, Float)]()
         let vectDataStart = vectOffset + Self.sectionHeaderSize
         for i in 0..<Int(vectCount) {
@@ -163,7 +148,6 @@ public final class XDScript {
         }
         vectors = vects
 
-        // Parse GIRI section
         var giris = [CharacterRef]()
         let giriDataStart = giriOffset + Self.sectionHeaderSize
         for i in 0..<Int(giriCount) {
@@ -174,7 +158,6 @@ public final class XDScript {
         }
         characterRefs = giris
 
-        // Decode instructions per function
         let sortedFuncs = parsedFunctions.enumerated().sorted { $0.element.codeOffset < $1.element.codeOffset }
         var funcInstructions = [[XDScriptInstruction]](repeating: [], count: parsedFunctions.count)
 
@@ -204,10 +187,8 @@ public final class XDScript {
         functionInstructions = funcInstructions
     }
 
-    /// Total number of functions
     public var functionCount: Int { functions.count }
 
-    /// Total decoded instructions
     public var totalInstructionCount: Int {
         functionInstructions.reduce(0) { $0 + $1.count }
     }

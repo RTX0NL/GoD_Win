@@ -241,7 +241,6 @@ final class PBROperationTests: XCTestCase {
         ])
         try PBROps.dump(config: dumpConfig, settings: .default, fileSystem: fst, logger: SilentLogger())
 
-        // Reload the rewritten registry and find the typed member.
         let registryFile = unpacked.folder("Archives").file("common.fsys.json")
         let registry: FSYSRegistry = try fst.decodeJSON(from: registryFile)
         let typedEntry = try XCTUnwrap(

@@ -49,8 +49,6 @@ if first == "--version" || first == "-v" || first == "version" {
     print(Version.versionLine)
     exit(EXIT_SUCCESS)
 } else if first == "mcp" {
-    // Start the Model Context Protocol server on stdio and block until the
-    // client disconnects.
     await runMCPServer()
 } else {
     var failed = false

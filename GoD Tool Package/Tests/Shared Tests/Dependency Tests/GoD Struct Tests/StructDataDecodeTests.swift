@@ -105,7 +105,6 @@ final class StructDataDecodeTests: XCTestCase {
         try assertRoundTrip(definition: def, bytes: bytes)
     }
 
-    // Nested sub-struct.
     func testSubStructRoundTrip() throws {
         let inner = StructDefinition(
             name: "Inner",
@@ -162,7 +161,6 @@ final class StructDataDecodeTests: XCTestCase {
                        "label's on-disk 4 bytes stay zero (matches encoder asymmetry)")
     }
 
-    // Invalid JSON — wrong "type" name should throw.
     func testWrongTypeNameThrows() throws {
         let def = StructDefinition(
             name: "Real",

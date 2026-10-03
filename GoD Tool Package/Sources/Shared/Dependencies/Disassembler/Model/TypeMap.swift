@@ -11,7 +11,6 @@ import Structs
 /// where its engine lives on disk.
 public struct TypeMap: Codable, Equatable {
 
-    /// Ordered list of typed data chunks
     public let chunks: [Chunk]
 
     public init(chunks: [Chunk] = []) {

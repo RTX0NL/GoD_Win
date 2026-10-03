@@ -63,7 +63,6 @@ public struct DataPointerScanner {
         var confirmed = initialConfirmedTargets
         var results = [[UInt32: UInt32]](repeating: [:], count: dataSections.count)
 
-        // Iterate until stable
         var changed = true
         while changed {
             changed = false

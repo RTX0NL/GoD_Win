@@ -44,9 +44,6 @@ struct ZstdBitReader {
     private var container: UInt64
     private var bitsConsumed: Int
 
-    /// - Parameters:
-    ///   - bytes: the buffer the stream lives in.
-    ///   - range: the stream's bounds within `bytes`.
     /// - Throws: `ZstdError.corrupted` when the stream is empty or its last
     ///   byte is zero (there is then no end marker to start from).
     init(bytes: [UInt8], range: Range<Int>) throws {

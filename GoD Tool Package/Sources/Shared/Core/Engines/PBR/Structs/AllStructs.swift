@@ -2,7 +2,6 @@ import GoDFoundation
 import GoDEngine
 import Structs
 
-/// Namespace for PBR engine struct defaults.
 public enum PBRStructDefaults {}
 
 public extension PBREngine {

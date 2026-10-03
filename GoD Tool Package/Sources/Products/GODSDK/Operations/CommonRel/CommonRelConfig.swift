@@ -12,9 +12,7 @@ enum CommonRelDump {
         /// Path to the extracted `common.rel`. The default project
         /// setup routes this to `Unpacked/Assets/Data/Common/common.rel`.
         let relPath: File
-        /// Where the disassembled output is written.
         let outputFolder: Folder
-        /// Overwrite existing files in `outputFolder`.
         let overwrite: Bool
         /// Folder of the project's Dolphin engine (used for cross-module
         /// symbol resolution against the DOL).
@@ -55,9 +53,7 @@ enum CommonRelBuild {
         /// Stem used to locate `<relName>.rel.json` inside `inputFolder`.
         /// Defaults to `"common"` when omitted via the convenience init.
         let relName: String
-        /// Where the rebuilt `common.rel` bytes are written.
         let outputPath: File
-        /// Overwrite an existing file at `outputPath`.
         let overwrite: Bool
         /// Engine folders whose structs resolve the disassembly's typed
         /// table chunks, game definitions first — the same list the dump

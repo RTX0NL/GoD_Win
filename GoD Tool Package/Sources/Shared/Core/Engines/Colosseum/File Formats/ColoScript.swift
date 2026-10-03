@@ -123,7 +123,6 @@ public final class ColoScript {
         globalsOffset = data.readSafely(atAddress: 0x10)
         runtimeNextPointer = data.readSafely(atAddress: 0x14)
 
-        // Parse function table
         let funcCount = Int(numberOfFunctions)
         var offsets = [UInt32]()
         let ftblStart = Self.headerSize
@@ -180,14 +179,12 @@ public final class ColoScript {
         globalsArena = data.read(atAddress: UInt(globalsOffset), length: UInt(max(0, firstRunStart - Int(globalsOffset))))
             ?? GoDData(length: 0, byteOrder: ByteOrder.big)
 
-        // Map runs back to function indexes
         functions = offsets.map { off in
             guard off != 0, let runIndex = runByStart[Int(off)] else { return [] }
             return runs[runIndex].instructions
         }
     }
 
-    /// Total number of decoded instructions across all code runs
     public var totalInstructionCount: Int {
         codeRuns.reduce(0) { $0 + $1.instructions.count }
     }

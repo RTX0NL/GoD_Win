@@ -51,11 +51,10 @@ extension ColoSaveOps {
         let header: ColosseumSaveSlot.Header
         /// 0-based physical slot index these artifacts came from.
         let physicalSlotIndex: Int
-        /// Base64 of `slot[0x00..bodyBaseOffset]` (magic + counter) —
-        /// the header bytes before the first section. Everything from
-        /// bodyBaseOffset on is reconstructed from the sections.
-        /// File holding the pre-section header verbatim — real save
-        /// data, dumped as a file of its own.
+        /// File holding `slot[0x00..bodyBaseOffset]` (magic + counter) —
+        /// the header bytes before the first section — verbatim: real save
+        /// data, dumped as a file of its own. Everything from bodyBaseOffset
+        /// on is reconstructed from the sections.
         var headerRegionFile: String
         let decrypted: Bool
         let headerChecksumValid: Bool?

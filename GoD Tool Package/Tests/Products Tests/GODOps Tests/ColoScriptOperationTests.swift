@@ -32,7 +32,6 @@ final class ColoScriptOperationTests: XCTestCase {
         bytes += [0x00, 0x00, 0x00, 0x00]        // runtime next pointer
         bytes += [0x00, 0x00, 0x00, 0x1C]        // function 0 → 0x1C
         bytes += [0x05, 0x01]                    // returnOp, exit
-        // pad to 32-byte boundary
         while bytes.count % 32 != 0 { bytes.append(0) }
         return bytes
     }

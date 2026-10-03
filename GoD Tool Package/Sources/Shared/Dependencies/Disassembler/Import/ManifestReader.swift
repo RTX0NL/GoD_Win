@@ -5,7 +5,6 @@ public struct ManifestReader {
 
     public init() {}
 
-    /// Read a data section manifest from a folder.
     public func readDataManifest(
         from folder: Folder,
         fileSystem: FileSystemTree
@@ -15,7 +14,6 @@ public struct ManifestReader {
         return try? JSONDecoder().decode(DataSectionManifest.self, from: data)
     }
 
-    /// Read a text section manifest from a folder.
     public func readTextManifest(
         from folder: Folder,
         fileSystem: FileSystemTree
@@ -34,7 +32,6 @@ public struct ManifestReader {
     ) -> [(name: String, content: String)] {
         let sectionFolder = codeFolder.folder(sectionName)
 
-        // Try manifest first
         if let manifest = readTextManifest(from: sectionFolder, fileSystem: fileSystem) {
             var files = [(name: String, content: String)]()
             for filePath in manifest.files {

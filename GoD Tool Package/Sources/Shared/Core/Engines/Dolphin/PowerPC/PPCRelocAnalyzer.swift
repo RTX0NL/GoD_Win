@@ -37,7 +37,6 @@ public struct PPCRelocAnalyzer {
         for inst in instructions {
             guard let decoded = inst.decoded else { continue }
 
-            // Check if this is a lis instruction
             if decoded.mnemonic == "lis", decoded.operands.count == 2,
                case .gpr(let rd) = decoded.operands[0],
                case .simm(let imm) = decoded.operands[1] {
@@ -122,8 +121,6 @@ private extension PPCRelocAnalyzer {
         "psq_l", "psq_lu", "psq_st", "psq_stu",
     ]
 
-    /// Check if an instruction consumes a pending lis register.
-    /// Returns (lis register, consumer info) if found.
     func findLisConsumer(
         _ decoded: PPCInstruction.Decoded,
         pendingLis: [UInt8: (address: UInt32, upperImm: Int32)]

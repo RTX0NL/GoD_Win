@@ -6,7 +6,6 @@ import Structs
 public struct LabeledData {
     /// The symbol/label at this entry's address (nil if unlabeled)
     public let label: String?
-    /// The struct data for this entry
     public let data: StructData
 
     public init(label: String?, data: StructData) {

@@ -11,9 +11,7 @@ public struct TypedDataExporter {
     /// Export a single struct instance from binary data.
     ///
     /// - Parameters:
-    ///   - data: Raw bytes for this struct
     ///   - definition: The struct definition (may contain label fields)
-    ///   - byteOrder: Byte order for reading
     ///   - addressToLabel: Reverse lookup for resolving pointer addresses to label names
     ///   - pointerLabels: Relocation-driven pointer names, keyed by byte
     ///     offset within `data`. Pass this for a REL: the word stored at a
@@ -51,7 +49,6 @@ public struct TypedDataExporter {
                         labelStruct.labelValues[property.name] = "lbl_\(String(format: "%08X", UInt32(rawValue)))"
                     }
                 } else if let rawValue: Int = rawStruct.get(property.name) {
-                    // Read the raw uint32 address from the original data
                     let address = UInt32(rawValue)
                     if let labelName = addressToLabel[address] {
                         labelStruct.labelValues[property.name] = labelName
@@ -74,13 +71,9 @@ public struct TypedDataExporter {
     /// Export a table of struct entries from binary data.
     ///
     /// - Parameters:
-    ///   - data: Raw bytes for the entire table
     ///   - definition: The struct definition for each entry
-    ///   - count: Number of entries
     ///   - entryLabels: Ordered list of (offset, labelName) for entries that have labels
-    ///   - byteOrder: Byte order for reading
     ///   - addressToLabel: Reverse lookup for resolving pointer addresses to label names
-    /// - Returns: Array of LabeledData for each entry
     public func exportTable(
         data: GoDData,
         definition: StructDefinition,
@@ -92,7 +85,6 @@ public struct TypedDataExporter {
         let entrySize = definition.length
         var entries = [LabeledData]()
 
-        // Build offset → label lookup
         let labelLookup = Dictionary(entryLabels.map { ($0.offset, $0.name) }, uniquingKeysWith: { first, _ in first })
 
         for i in 0..<count {

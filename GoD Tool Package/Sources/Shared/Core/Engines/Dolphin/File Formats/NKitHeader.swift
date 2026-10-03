@@ -126,7 +126,6 @@ public struct NKitHeader: Equatable {
     /// long; the function patches the block in place.
     public func write(into binary: GoDData) {
         binary.setByteOrder(.big)
-        // Magic.
         for (i, b) in NKitHeader.magic.enumerated() {
             _ = binary.write(b, atAddress: NKitHeader.blockOffset + i)
         }

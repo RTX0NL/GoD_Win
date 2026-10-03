@@ -14,7 +14,6 @@ public struct GoDImage {
         self.pixels = pixels
     }
 
-    /// Encode this image to PNG format
     public func pngData() -> GoDData? {
         let rgba = pixels.rawBytes
         guard rgba.count == width * height * 4 else { return nil }
@@ -40,7 +39,6 @@ public struct GoDImage {
         return GoDData(byteStream: stream.bytes, byteOrder: .big)
     }
 
-    /// Decode a PNG file into an image
     public static func fromPNG(_ data: GoDData) -> GoDImage? {
         var stream = PNGReadStream(data: data.rawBytes)
 

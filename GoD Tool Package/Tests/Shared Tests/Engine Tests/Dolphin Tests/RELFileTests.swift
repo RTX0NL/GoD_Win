@@ -130,7 +130,6 @@ final class RELFileTests: XCTestCase {
         rel.bssAlign = 1
         let bytes = try rel.binaryData.rawBytes
 
-        // Header
         XCTAssertEqual(Array(bytes[0..<4]), [0x00, 0x00, 0x00, 0x2A], "moduleID")
         XCTAssertEqual(Array(bytes[0x0C..<0x10]), [0x00, 0x00, 0x00, 0x02], "section count = 2")
         XCTAssertEqual(Array(bytes[0x10..<0x14]), [0x00, 0x00, 0x00, 0x4C], "section table offset")
@@ -174,7 +173,6 @@ final class RELFileTests: XCTestCase {
     /// Construct a JSON artifact representing a trivial REL and confirm
     /// `init(outputs:)` rebuilds the declared semantic structure.
     func testREL_initOutputs_roundTripsJSON() throws {
-        // Build a minimal REL, encode to JSON via `outputs`, decode back.
         let rel = RELFile(
             moduleID: 123,
             version: 3,

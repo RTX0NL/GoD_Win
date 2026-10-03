@@ -23,7 +23,6 @@ public struct SHA1 {
             message.append(UInt8(truncatingIfNeeded: originalLength >> i))
         }
 
-        // Initialize hash values
         var h0: UInt32 = 0x67452301
         var h1: UInt32 = 0xEFCDAB89
         var h2: UInt32 = 0x98BADCFE

@@ -10,7 +10,6 @@ final class GamecubeISOTests: XCTestCase {
         (try DolphinEngine.defaults(), try GamecubeEngine.defaults())
     }
 
-    /// Build a minimal valid GameCube ISO for testing.
     private func buildMinimalISO() throws -> GoDData {
         let (dolphinEngine, _) = try defaultEngines()
 
@@ -20,7 +19,6 @@ final class GamecubeISOTests: XCTestCase {
         let bootStruct = dolphinEngine.bootDataStruct
         let boot = StructData(definition: bootStruct, byteOrder: .big)
 
-        // Game ID
         let gameID = "TEST".data(format: .utf8)
         isoData.write(gameID, atAddress: 0)
 
@@ -83,11 +81,9 @@ final class GamecubeISOTests: XCTestCase {
 
         // User data section
         let userOffset = 0x8000
-        // Write test file data
         let testFileData = GoDData(byteStream: (0..<64).map { UInt8($0) }, byteOrder: .big)
         isoData.write(testFileData, atAddress: userOffset)
 
-        // Update boot.bin
         boot.main_executable_offset = dolOffset
         boot.fst_offset = fstOffset
         boot.fst_size = fstSize
@@ -107,14 +103,12 @@ final class GamecubeISOTests: XCTestCase {
 
         let iso = try GamecubeISO(data: isoData, dolphinEngine: dolphinEngine, gamecubeEngine: gamecubeEngine)
 
-        // System files should exist
         XCTAssertNotNil(iso.readFile(at: File("/sys/boot.bin"))?.allData)
         XCTAssertNotNil(iso.readFile(at: File("/sys/bi2.bin"))?.allData)
         XCTAssertNotNil(iso.readFile(at: File("/sys/apploader.img"))?.allData)
         XCTAssertNotNil(iso.readFile(at: File("/sys/main.dol"))?.allData)
         XCTAssertNotNil(iso.readFile(at: File("/sys/fst.bin"))?.allData)
 
-        // User file should exist
         let testFile = iso.readFile(at: File("/files/test.bin"))?.allData
         XCTAssertNotNil(testFile)
         XCTAssertEqual(testFile?.length, 64)
@@ -168,10 +162,8 @@ final class GamecubeISOTests: XCTestCase {
         let (dolphinEngine, gamecubeEngine) = try defaultEngines()
         let isoData = try buildMinimalISO()
 
-        // Parse
         let iso = try GamecubeISO(data: isoData, dolphinEngine: dolphinEngine, gamecubeEngine: gamecubeEngine)
 
-        // Rebuild from FST
         let rebuilt = try GamecubeISO(
             fst: iso,
             rootFolder: Folder("/"),
@@ -179,7 +171,6 @@ final class GamecubeISOTests: XCTestCase {
             gamecubeEngine: gamecubeEngine
         )
 
-        // Verify rebuilt ISO has the same files
         XCTAssertNotNil(rebuilt.readFile(at: File("/sys/boot.bin"))?.allData)
         XCTAssertNotNil(rebuilt.readFile(at: File("/files/test.bin"))?.allData)
 

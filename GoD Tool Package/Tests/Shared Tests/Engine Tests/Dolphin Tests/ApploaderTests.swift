@@ -27,14 +27,12 @@ final class ApploaderTests: XCTestCase {
         rawData.append(appCode)
         rawData.append(trailerCode)
 
-        // Parse
         let apploader = try Apploader(data: rawData, engine: engine)
         XCTAssertEqual(apploader.entryPoint, 0x81200000)
         XCTAssertEqual(apploader.appCode.length, 1024)
         XCTAssertEqual(apploader.trailerCode.length, 256)
         XCTAssertTrue(apploader.date.contains("2024"))
 
-        // Re-serialize
         let reserialized = try apploader.data
         XCTAssertEqual(reserialized.rawBytes, rawData.rawBytes, "Apploader round-trip should be byte-identical")
     }

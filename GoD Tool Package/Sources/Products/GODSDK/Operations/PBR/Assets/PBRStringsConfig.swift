@@ -29,7 +29,6 @@ enum PBRStringsDump {
         let messagesFolder: Folder
         /// The `common.fsys` member holding the string directory.
         let directoryFile: File
-        /// The document to write.
         let outputFile: File
         let overwrite: Bool
 

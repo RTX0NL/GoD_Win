@@ -45,28 +45,23 @@ final class ColoDecompilerTests: XCTestCase {
         let data = GoDData(byteStream: bytes, byteOrder: .big)
         let script = try ColoScript(data: data)
 
-        // Translate to IR
         let translator = ColoScriptIRTranslator()
         let irScript = translator.translate(script)
 
         XCTAssertEqual(irScript.functions.count, 1)
         XCTAssertFalse(irScript.functions[0].instructions.isEmpty)
 
-        // Stack decompile
         let stackDecompiler = StackDecompiler()
         let statements = stackDecompiler.decompile(irScript.functions[0])
         XCTAssertFalse(statements.isEmpty)
 
-        // Build CFG
         let cfgBuilder = CFGBuilder()
         let cfg = cfgBuilder.build(from: statements)
         XCTAssertFalse(cfg.blocks.isEmpty)
 
-        // Structure AST
         let structurer = CFGStructurer()
         let ast = structurer.structure(cfg)
 
-        // Format as Swift
         let swiftFormatter = ASTFormatter(syntax: SwiftScriptSyntax())
         let function = ASTFunction(index: 0, name: "test_function", argCount: 0, body: ast)
         let swiftOutput = swiftFormatter.format(function: function)
@@ -75,7 +70,6 @@ final class ColoDecompilerTests: XCTestCase {
         print(swiftOutput)
         XCTAssertTrue(swiftOutput.contains("func test_function"))
 
-        // Format as Python
         let pythonFormatter = ASTFormatter(syntax: PythonScriptSyntax())
         let pythonFunction = ASTFunction(index: 0, name: "test_function", argCount: 0, body: ast)
         let pythonOutput = pythonFormatter.format(function: pythonFunction)
@@ -126,7 +120,6 @@ final class ColoDecompilerTests: XCTestCase {
 
         XCTAssertFalse(output.isEmpty)
         XCTAssertTrue(output.contains("func function_"))
-        // Verify variable wrapping is working
         XCTAssertTrue(output.contains("gvar") || output.contains("arg"), "Should have variable references")
     }
 }

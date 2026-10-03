@@ -34,7 +34,6 @@ public extension PathRepresentable {
         return path.substring(from: nameIndex, to: path.endIndex).substring(from: 1)
     }
     
-    /// The folder containing this item
     var parentFolder: Folder? {
         if path == "/" {
             return nil

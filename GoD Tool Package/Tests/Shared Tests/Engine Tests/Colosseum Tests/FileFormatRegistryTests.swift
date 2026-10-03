@@ -49,7 +49,6 @@ final class FileFormatRegistryTests: XCTestCase {
         let folder = Folder("/in")
         try fs.createFolder(at: folder, overwrite: true)
 
-        // Seed the folder with a known-good MSG artifact.
         let json = """
         {
           "entries": [{ "id": 3, "text": "Yo" }],

@@ -6,7 +6,6 @@ public struct PPCEncoder {
 
     public init() {}
 
-    /// Encode a mnemonic + operands into a 32-bit instruction word.
     /// For branch instructions, `currentAddress` is needed to compute PC-relative offsets.
     public func encode(
         mnemonic: String,
@@ -819,7 +818,6 @@ private extension PPCEncoder {
         default: return nil
         }
 
-        // Check for crField operand
         var crField: UInt32 = 0
         var targetIdx = 0
         if let crf = self.crField(ops, 0) {

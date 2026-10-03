@@ -7,7 +7,6 @@ public enum ColoScriptLanguage: String, Codable, CaseIterable, Sendable {
     case swift
     case python
 
-    /// Output file extension for decompiled scripts in this language
     public var fileExtension: String {
         switch self {
         case .swift: return "swift"

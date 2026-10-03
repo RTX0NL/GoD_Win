@@ -2,7 +2,6 @@ import GoDFoundation
 import GoDEngine
 import Structs
 
-/// Namespace for XD struct defaults
 public enum XDStructDefaults {}
 
 public extension XDEngine {

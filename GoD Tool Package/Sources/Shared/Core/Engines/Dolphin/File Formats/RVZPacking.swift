@@ -153,7 +153,6 @@ public enum RVZPacking {
 
     // MARK: - Decode
 
-    /// Parse `bytes` as a packed stream and return its segments.
     public static func decode(_ bytes: [UInt8]) throws -> [Segment] {
         var out = [Segment]()
         var cursor = 0
@@ -266,7 +265,6 @@ public enum RVZPacking {
 
     // MARK: - Encode
 
-    /// Serialize a segment list to its on-wire byte representation.
     public static func encode(_ segments: [Segment]) -> [UInt8] {
         var out = [UInt8]()
         for s in segments {

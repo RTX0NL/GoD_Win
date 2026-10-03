@@ -84,7 +84,6 @@ public struct SymbolMapParser {
         return result
     }
 
-    /// Build a lookup table from address → symbol name
     public func buildLookup(_ symbols: [PPCSymbol]) -> [UInt32: String] {
         var lookup = [UInt32: String]()
         for symbol in symbols {
@@ -173,7 +172,6 @@ private extension SymbolMapParser {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty || trimmed.hasPrefix("#") || trimmed.hasPrefix("//") { continue }
 
-            // Split on "="
             let mainParts = trimmed.split(separator: "=", maxSplits: 1)
             guard mainParts.count == 2 else { continue }
 
@@ -182,11 +180,9 @@ private extension SymbolMapParser {
             // Parse "section:0xADDRESS; // metadata"
             let valuePart = String(mainParts[1]).trimmingCharacters(in: .whitespaces)
 
-            // Split off comment
             let commentSplit = valuePart.split(separator: ";", maxSplits: 1)
             guard let addressPart = commentSplit.first else { continue }
 
-            // Parse section:0xADDRESS
             let addrStr = String(addressPart).trimmingCharacters(in: .whitespaces)
             let colonParts = addrStr.split(separator: ":", maxSplits: 1)
 
@@ -200,14 +196,12 @@ private extension SymbolMapParser {
                 addressHex = String(colonParts[0])
             }
 
-            // Remove "0x" prefix
             if addressHex.hasPrefix("0x") || addressHex.hasPrefix("0X") {
                 addressHex = String(addressHex.dropFirst(2))
             }
 
             guard let address = UInt32(addressHex, radix: 16) else { continue }
 
-            // Parse metadata from comment
             var size: UInt32 = 0
             if commentSplit.count > 1 {
                 let metadata = String(commentSplit[1])

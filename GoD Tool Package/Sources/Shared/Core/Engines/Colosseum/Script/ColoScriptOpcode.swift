@@ -79,7 +79,6 @@ public enum ColoScriptOpcode: Equatable {
         }
     }
 
-    /// Byte length of this instruction
     public var length: Int {
         switch self {
         case .nop, .exit, .pushMinus1, .returnOp: return 1
@@ -153,7 +152,6 @@ public enum ColoScriptOpcode: Equatable {
         }
     }
 
-    /// Encode this instruction to bytes
     public func encode() -> [UInt8] {
         var bytes = [UInt8]()
         bytes.append(opcodeID)

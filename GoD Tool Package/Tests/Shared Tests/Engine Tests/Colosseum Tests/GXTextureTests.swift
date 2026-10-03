@@ -216,7 +216,6 @@ final class GXTextureTests: XCTestCase {
         return samples.map { (format: $0.format, path: SampleCorpus.xdGameFile($0.path)) }
     }()
 
-    /// Load a sample file, decode it, and return the decoded image plus metadata.
     private func loadAndDecode(_ path: String, expect format: GXTextureFormat) throws -> (GoDImage, GXTextureMetadata) {
         guard FileManager.default.fileExists(atPath: path),
               let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {

@@ -14,7 +14,6 @@ public struct PPCInstruction {
         public let operands: [Operand]
     }
 
-    /// Whether this instruction was successfully decoded
     public var isValid: Bool { decoded != nil }
 
     /// Primary opcode (bits 0-5 in PPC big-endian notation)
@@ -31,9 +30,7 @@ public extension PPCInstruction {
         case fpr(UInt8)
         /// Paired-singles register (same as FPR but context-specific)
         case ps(UInt8)
-        /// Signed immediate value
         case simm(Int32)
-        /// Unsigned immediate value
         case uimm(UInt32)
         /// Branch target (absolute RAM address, resolved from PC-relative or absolute)
         case branchTarget(UInt32)
@@ -41,15 +38,11 @@ public extension PPCInstruction {
         case memory(offset: Int16, base: UInt8)
         /// Condition register field (cr0-cr7)
         case crField(UInt8)
-        /// Condition register bit
         case crBit(UInt8)
         /// Special-purpose register number
         case spr(UInt32)
-        /// Shift amount
         case shift(UInt8)
-        /// Mask begin
         case maskBegin(UInt8)
-        /// Mask end
         case maskEnd(UInt8)
         /// Number of registers (for lmw/stmw)
         case count(UInt8)

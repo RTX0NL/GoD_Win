@@ -51,7 +51,6 @@ extension XDSaveOps {
         return slotHeaderFilename
     }
 
-    /// The slot header region, decoded from its artifact.
     static func readHeaderRegion<E: Engine>(
         slotMeta: SlotMetadata,
         slotFolder: Folder,

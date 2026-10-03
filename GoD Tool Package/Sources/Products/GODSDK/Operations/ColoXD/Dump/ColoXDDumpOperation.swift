@@ -57,7 +57,6 @@ extension ColoXD {
 
                 logger?.log(.info("Unpacking FSYS archive: \(fsysFile.fileName) (\(archive.entries.count) entries)"))
 
-                // Build registry and extract files
                 var registryEntries = [FSYSRegistry.Entry]()
                 for entry in archive.entries {
                     let targetFolder = gsEngine.resolveFolder(

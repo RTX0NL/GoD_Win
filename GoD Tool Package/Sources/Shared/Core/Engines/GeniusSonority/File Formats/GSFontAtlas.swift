@@ -233,7 +233,6 @@ public struct GSFontAtlas {
         return (imageData: imageData, metadata: metadata)
     }
 
-    /// Import a font (chain of blocks) from atlas image + metadata JSON.
     /// Preconditions the atlas should meet, checked rather than assumed.
     ///
     /// A PGM could only ever be 8-bit greyscale; a PNG can come back as RGB,
@@ -279,7 +278,6 @@ public struct GSFontAtlas {
         let pixels = image.pixels
         let warnings = verify(image)
 
-        // Reconstruct each block, then chain via nextFont.
         var blocks = [GSFont]()
         for block in metadata.blocks {
             let cell = block.cell

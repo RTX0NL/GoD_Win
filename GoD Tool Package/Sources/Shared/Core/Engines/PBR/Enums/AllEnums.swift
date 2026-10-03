@@ -3,7 +3,6 @@ import GoDEngine
 import Structs
 import Pokemon
 
-/// Namespace for PBR engine enum defaults.
 public enum PBREnumDefaults {}
 
 public extension PBREngine {

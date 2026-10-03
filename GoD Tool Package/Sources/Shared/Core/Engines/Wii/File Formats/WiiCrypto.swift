@@ -16,13 +16,9 @@ public struct WiiCrypto {
     public static let userDataPerCluster = 0x7C00
     /// Number of 0x400-byte H0 chunks per cluster (0x7C00 / 0x400 = 31).
     public static let h0PerCluster = 31
-    /// Clusters per subgroup.
     public static let clustersPerSubgroup = 8
-    /// Subgroups per group.
     public static let subgroupsPerGroup = 8
-    /// Clusters per group.
     public static let clustersPerGroup = 64
-    /// Size of the H3 table.
     public static let h3TableSize = 0x18000
 
     // Hash-block sub-table offsets (per Wiibrew "Wii disc").
@@ -103,7 +99,6 @@ public struct WiiCrypto {
         groupIndex: Int,
         titleKey: [UInt8]
     ) -> GoDData {
-        // Compute this cluster's 31 H0 hashes from its user data.
         let userBytes = userData.rawBytes
         var h0 = [[UInt8]]()
         h0.reserveCapacity(h0PerCluster)
@@ -285,7 +280,6 @@ public struct WiiCrypto {
         return (length + groupUserSize - 1) / groupUserSize
     }
 
-    /// Encrypted bytes a decrypted payload of `length` turns into.
     public static func encryptedLength(forDecryptedLength length: Int) -> Int {
         groupCount(forDecryptedLength: length) * clustersPerGroup * clusterSize
     }
@@ -442,8 +436,6 @@ public struct WiiCrypto {
     /// Fakesign a ticket by brute-forcing a padding byte to make
     /// the SHA-1 hash of the ticket data start with 0x00.
     /// This is needed because the RSA signature won't be valid after modification.
-    /// - Parameter ticketData: Mutable ticket data
-    /// - Returns: Fakesigned ticket data
     public static func fakesignTicket(_ ticketData: GoDData) -> GoDData {
         let result = GoDData(byteStream: ticketData.rawBytes, byteOrder: ticketData.byteOrder)
         // Zero out the RSA signature (offset 0x04, length 0x100)

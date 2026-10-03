@@ -100,7 +100,6 @@ final class StructuredASTTests: XCTestCase {
         XCTAssertTrue(rendered.contains("thenFn()"), rendered)
         XCTAssertTrue(rendered.contains("} else {"), rendered)
         XCTAssertTrue(rendered.contains("elseFn()"), rendered)
-        // Verify it really produced an if-then-else node at the root.
         if case .ifThenElse = ast {} else {
             XCTFail("expected root ifThenElse, got \(ast)")
         }

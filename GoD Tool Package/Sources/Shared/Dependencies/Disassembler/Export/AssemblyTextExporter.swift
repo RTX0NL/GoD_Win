@@ -9,13 +9,11 @@ public struct AssemblyTextExporter {
     /// Format a data chunk as assembly text.
     ///
     /// - Parameters:
-    ///   - data: Raw bytes
     ///   - baseAddress: RAM address of the start of this chunk
     ///   - labels: Byte offset → label name for symbols within this chunk
     ///   - pointers: Byte offset → target address for confirmed pointer values
     ///   - addressToLabel: Reverse lookup from address to label name (for pointer values)
     ///   - sectionName: Assembly section directive (e.g. ".data0")
-    /// - Returns: Assembly text string
     public func format(
         data: [UInt8],
         baseAddress: UInt32,
@@ -30,7 +28,6 @@ public struct AssemblyTextExporter {
 
         var offset = 0
         while offset + 3 < data.count {
-            // Insert label if one exists at this offset
             if let label = labels[offset] {
                 lines.append("")
                 lines.append(".global \(label)")

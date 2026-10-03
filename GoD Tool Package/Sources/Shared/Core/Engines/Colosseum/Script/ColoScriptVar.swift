@@ -1,6 +1,5 @@
 import GoDFoundation
 
-/// Colosseum script value types
 public enum ColoValueType: Equatable, Codable {
     case void
     case integer

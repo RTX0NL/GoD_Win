@@ -250,7 +250,6 @@ public enum NKitGapEncoding {
                     }
                     let count = w & 0x3FFF_FFFF
                     blocks.append(.repeatPrevious(count: count))
-                    // Each repeat replays the previous NonJunk payload.
                     emitted &+= UInt64(count) * lastNonJunkSize
                 }
                 // A block that makes no forward progress (e.g. a

@@ -8,7 +8,6 @@ public struct BasicBlock {
     public let startOffset: Int?
     /// Statements in this block (excluding the terminating jump)
     public var statements: [ScriptStatement]
-    /// How this block exits
     public var terminator: BlockTerminator
 
     public init(id: Int, startOffset: Int?, statements: [ScriptStatement], terminator: BlockTerminator) {
@@ -21,16 +20,12 @@ public struct BasicBlock {
 
 /// How a basic block exits
 public enum BlockTerminator: Equatable {
-    /// Falls through to the next block
     case fallthrough_(nextBlockID: Int)
     /// Conditional branch: if condition is false, jump to falseBlock; otherwise fall through to trueBlock
     case conditional(condition: ScriptExpr, trueBlockID: Int, falseBlockID: Int)
-    /// Unconditional jump to another block
     case jump(targetBlockID: Int)
-    /// Return from function
     case returnVoid
     case returnValue(ScriptExpr)
-    /// Script exit
     case exit
 }
 
@@ -69,7 +64,6 @@ public struct CFGBuilder {
         var currentStartOffset: Int? = nil
         var blockID = 0
 
-        // Map from label offset → block ID
         var offsetToBlockID = [Int: Int]()
         // Track jump targets per block for resolution in step 3
         var pendingJumpTargets = [(blockID: Int, targetOffset: Int, isConditional: Bool)]()
@@ -77,7 +71,6 @@ public struct CFGBuilder {
         for stmt in statements {
             switch stmt {
             case .label(let offset):
-                // Close current block if it has statements
                 if !currentStatements.isEmpty {
                     let block = BasicBlock(
                         id: blockID,
@@ -180,7 +173,6 @@ public struct CFGBuilder {
             }
         }
 
-        // Close any remaining block
         if !currentStatements.isEmpty {
             blocks.append(BasicBlock(
                 id: blockID,

@@ -11,7 +11,6 @@ public struct BSSEntryList: Codable, Equatable {
     }
 
     public struct Entry: Codable, Equatable {
-        /// Label name for this BSS variable
         public let label: String
         /// Size in bytes to reserve
         public let size: UInt32
@@ -28,7 +27,6 @@ public struct BSSEntryList: Codable, Equatable {
         var current = baseAddress
         var result = [(label: String, address: UInt32, size: UInt32)]()
         for entry in entries {
-            // Align to 4 bytes
             let alignmentOffset = current % 4
             if alignmentOffset > 0 {
                 current += 4 - alignmentOffset
@@ -44,7 +42,6 @@ public struct BSSEntryList: Codable, Equatable {
         let assigned = assignAddresses(baseAddress: baseAddress)
         guard let last = assigned.last else { return 0 }
         let end = last.address + last.size
-        // Align total size to 4 bytes
         let alignmentOffset = end % 4
         let alignedEnd = alignmentOffset > 0 ? end + (4 - alignmentOffset) : end
         return alignedEnd - baseAddress

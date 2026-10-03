@@ -2,21 +2,15 @@ import GoDFoundation
 
 /// Protocol for language-specific formatting of AST nodes
 public protocol ScriptSyntax {
-    /// Format a function declaration header
     func functionHeader(name: String, args: [String]) -> String
     /// Format a block opening (e.g., "{" or ":")
     func blockOpen() -> String
     /// Format a block closing (e.g., "}")
     func blockClose() -> String?
-    /// Format an if keyword + condition
     func ifHeader(condition: String) -> String
-    /// Format an else keyword
     func elseHeader() -> String
-    /// Format an else-if keyword + condition
     func elseIfHeader(condition: String) -> String
-    /// Format a while keyword + condition
     func whileHeader(condition: String) -> String
-    /// Format a return statement
     func returnStatement(value: String?) -> String
     /// Uses braces (true) or indentation (false) for blocks
     var usesBraces: Bool { get }
@@ -35,7 +29,6 @@ public struct ASTFormatter {
         self.indent = indent
     }
 
-    /// Format a complete function
     public func format(function: ASTFunction) -> String {
         var lines = [String]()
         let args = (0..<function.argCount).map { "arg\($0)" }
@@ -47,7 +40,6 @@ public struct ASTFormatter {
         return lines.joined(separator: "\n")
     }
 
-    /// Format a complete script (all functions)
     public func format(functions: [ASTFunction]) -> String {
         functions.map { format(function: $0) }.joined(separator: "\n\n")
     }

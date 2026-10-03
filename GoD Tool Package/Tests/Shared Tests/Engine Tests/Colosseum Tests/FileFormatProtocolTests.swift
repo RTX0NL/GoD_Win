@@ -94,7 +94,6 @@ final class FileFormatProtocolTests: XCTestCase {
         )
         let bytes = try msg.binaryData.rawBytes
 
-        // Header
         XCTAssertEqual(bytes[0x04], 0x00); XCTAssertEqual(bytes[0x05], 0x01)  // count = 1
         XCTAssertEqual(Array(bytes[0x06..<0x08]), [0x55, 0x53])               // region
         // Entry table at 0x10: id (4) + offset (4)

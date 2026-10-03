@@ -68,7 +68,6 @@ internal func bigEndianUInt32(_ bytes: [UInt8], at offset: Int) -> UInt32 {
         | UInt32(bytes[offset + 3])
 }
 
-/// Appends `value` as a big-endian 32-bit word.
 internal func appendBigEndianUInt32(_ value: UInt32, to bytes: inout [UInt8]) {
     bytes.append(UInt8(truncatingIfNeeded: value >> 24))
     bytes.append(UInt8(truncatingIfNeeded: value >> 16))

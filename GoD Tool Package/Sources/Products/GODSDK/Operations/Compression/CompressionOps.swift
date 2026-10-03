@@ -344,7 +344,6 @@ enum CompressionOps {
         return clean
     }
 
-    /// A file beside `file` with the given name.
     static func sibling(of file: File, named name: String) -> File {
         (file.parentFolder ?? Folder("/")).file(name)
     }

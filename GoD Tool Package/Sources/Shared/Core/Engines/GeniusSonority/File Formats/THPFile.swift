@@ -82,7 +82,6 @@ public struct THPFile: FileFormat {
             throw THPFile.invalidFileError
         }
 
-        // Build the combined byte stream.
         let combined = GoDData(byteOrder: .big)
         for b in thh.rawBytes { combined.append(b) }
         for b in thd.rawBytes { combined.append(b) }

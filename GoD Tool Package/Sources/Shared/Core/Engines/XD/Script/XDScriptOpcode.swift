@@ -28,9 +28,7 @@ public enum XDScriptOpcodeID: UInt8, Equatable {
     case loadNonCopyableVariable = 17  // same as loadVariable but by reference
 }
 
-/// A decoded XD script instruction
 public struct XDScriptInstruction: Equatable {
-    /// The opcode
     public let opcodeID: XDScriptOpcodeID
     /// Full 8-bit sub-opcode
     public let subOpCode: Int
@@ -65,7 +63,6 @@ public struct XDScriptInstruction: Equatable {
         self.codeOffset = codeOffset
     }
 
-    /// Decode an instruction from a word (and optionally the next word)
     public static func decode(word1: UInt32, word2: UInt32?, codeOffset: Int) -> XDScriptInstruction {
         let opByte = UInt8((word1 >> 24) & 0xFF)
         let subOp = Int((word1 >> 16) & 0xFF)
@@ -92,7 +89,6 @@ public struct XDScriptInstruction: Equatable {
         )
     }
 
-    /// Encode this instruction back to 1 or 2 UInt32 words
     public func encode() -> [UInt32] {
         var word1: UInt32 = 0
         word1 |= UInt32(opcodeID.rawValue) << 24
@@ -106,10 +102,8 @@ public struct XDScriptInstruction: Equatable {
         return words
     }
 
-    /// Whether this is a 2-word instruction
     public var isTwoWord: Bool { opcodeID == .loadImmediate }
 
-    /// Whether this instruction is a jump
     public var isJump: Bool {
         switch opcodeID {
         case .jump, .jumpIfTrue, .jumpIfFalse: return true

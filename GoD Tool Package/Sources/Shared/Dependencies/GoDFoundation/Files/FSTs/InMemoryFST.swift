@@ -20,11 +20,9 @@ public class InMemoryFST: FileSystemTree {
 
     private func registerChild(path: String) {
         guard path != "/" else { return }
-        // Walk up from the path and register each segment as a child of its parent
         var current = path
         while let slashIndex = current.lastIndex(of: "/") {
             if slashIndex == current.startIndex {
-                // Parent is root "/"
                 children["/", default: []].insert(current)
                 break
             }
@@ -127,7 +125,6 @@ public class InMemoryFST: FileSystemTree {
             }
         }
 
-        // Also compute deep size for files in subfolders
         func deepSize(_ folderPath: String) -> Int {
             guard let kids = children[folderPath] else { return 0 }
             var size = 0
@@ -173,12 +170,10 @@ public class InMemoryFST: FileSystemTree {
             newPrefix + String(old.dropFirst(oldPrefix.count))
         }
 
-        // Detach the moved folder from its old parent.
         if let parent = parentPath(of: oldPrefix) {
             children[parent]?.remove(oldPrefix)
         }
 
-        // Move the folder node itself.
         fst[newPrefix] = node
         fst[oldPrefix] = nil
 
@@ -200,7 +195,6 @@ public class InMemoryFST: FileSystemTree {
             children[key] = nil
         }
 
-        // Re-register the moved folder under its new parent.
         registerChild(path: newPrefix)
     }
 
@@ -218,7 +212,6 @@ public class InMemoryFST: FileSystemTree {
 
     /// Deleting a folder that isn't there is a no-op, not an error.
     public func deleteFolder(at path: Folder) throws {
-        // Remove all descendants
         func removeRecursive(_ folderPath: String) {
             if let kids = children[folderPath] {
                 for kid in kids {

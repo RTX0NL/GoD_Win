@@ -75,11 +75,9 @@ public struct FileData {
         self.data = data
     }
 
-    /// Convenience: accept a bare filename and wrap it as a `File`.
     public init(fileName: String, data: GoDData) {
         self.init(file: File(fileName), data: data)
     }
 
-    /// Path-level filename of the backing `File`.
     public var fileName: String { file.fileName }
 }

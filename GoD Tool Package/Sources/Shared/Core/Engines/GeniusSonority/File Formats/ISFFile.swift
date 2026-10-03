@@ -224,14 +224,12 @@ public struct ISFFile: FileFormat {
             coefficients.append(channelCoefs)
         }
 
-        // Deinterleave ISD into per-channel ADPCM byte streams.
         let perChannelStreams = ISFFile.deinterleave(
             isd: isdData,
             channelCount: Int(channelCount),
             interleaveSize: Int(interleaveSize)
         )
 
-        // Decode each channel's ADPCM to PCM.
         var perChannelPCM: [[Int16]] = []
         perChannelPCM.reserveCapacity(Int(channelCount))
         for ch in 0..<Int(channelCount) {
@@ -243,7 +241,6 @@ public struct ISFFile: FileFormat {
             perChannelPCM.append(pcm)
         }
 
-        // Interleave channels back into a single PCM stream for WAV.
         let interleaved = ISFFile.interleavePCM(perChannel: perChannelPCM)
 
         self.init(
@@ -294,7 +291,6 @@ public struct ISFFile: FileFormat {
             )
         }
 
-        // Split interleaved PCM into per-channel streams.
         let perChannelPCM = ISFFile.deinterleavePCM(
             interleaved: samples,
             channelCount: Int(channelCount)
@@ -310,7 +306,6 @@ public struct ISFFile: FileFormat {
             perChannelCoefs.append(ISFDSPADPCM.generateCoefficients(pcm: perChannelPCM[ch]))
         }
 
-        // Encode each channel to ADPCM bytes.
         var perChannelADPCM: [[UInt8]] = []
         for ch in 0..<Int(channelCount) {
             let bytes = ISFDSPADPCM.encode(
@@ -320,7 +315,6 @@ public struct ISFFile: FileFormat {
             perChannelADPCM.append(bytes)
         }
 
-        // Interleave ISD bytes in `interleaveSize` blocks per channel.
         let isd = ISFFile.interleaveADPCM(
             perChannel: perChannelADPCM,
             interleaveSize: Int(interleaveSize),
@@ -334,7 +328,6 @@ public struct ISFFile: FileFormat {
         // mid-frame where we emit whole frames.
         let contentSize = UInt32(perChannelADPCM.reduce(0) { $0 + $1.count })
 
-        // Build ISH.
         let ish = GoDData(byteOrder: .big)
         // 0x00 magic
         ish.append(UInt8(0x49)); ish.append(UInt8(0x5F))

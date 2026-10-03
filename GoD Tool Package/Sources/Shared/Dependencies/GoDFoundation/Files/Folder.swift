@@ -29,7 +29,6 @@ public struct Folder: PathRepresentable, Hashable, Equatable {
         return name.isEmpty ? "/" : name
     }
 
-    /// Get a file by appending a relative path string to this folder
     public func file(_ relativePath: String) -> File {
         var first = self.path
         if first.last == "/" {

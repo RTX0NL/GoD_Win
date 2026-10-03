@@ -58,7 +58,6 @@ public struct RelSymbolIndex: Codable, Equatable {
         }
     }
 
-    /// Look up a symbol name by its integer index
     public func name(for index: Int) -> String? {
         symbols[String(index)]?.symbolName
     }

@@ -20,10 +20,8 @@ final class PPCAssemblyRoundTripTests: XCTestCase {
             return
         }
 
-        // Format to assembly text
         let text = formatter.format(inst)
 
-        // Parse back
         let parsed = parser.parseLine(text)
         guard case .instruction(let mnemonic, let operands) = parsed else {
             XCTFail("Parse failed for '\(text)' (from 0x\(String(raw, radix: 16)))", file: file, line: line)
@@ -88,7 +86,6 @@ final class PPCAssemblyRoundTripTests: XCTestCase {
     // MARK: - Full assembler round-trip with .s file
 
     func testAssemblerRoundTrip() throws {
-        // Create a small synthetic assembly
         let asmText = """
         .section .text0
 
@@ -114,7 +111,6 @@ final class PPCAssemblyRoundTripTests: XCTestCase {
         let result = try assembler.assemble(files: [("test.s", asmText)], baseAddress: baseAddress)
         let bytes = result.rawBytes
 
-        // Verify each instruction
         func word(at offset: Int) -> UInt32 {
             UInt32(bytes[offset]) << 24 | UInt32(bytes[offset+1]) << 16 |
             UInt32(bytes[offset+2]) << 8 | UInt32(bytes[offset+3])

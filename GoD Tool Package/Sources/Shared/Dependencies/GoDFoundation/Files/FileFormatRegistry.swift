@@ -52,7 +52,6 @@ public struct FileFormatRegistry {
         }
     }
 
-    /// True if a handler is registered for the given extension.
     public func isRegistered(_ ext: String) -> Bool {
         handlers[ext.lowercased()] != nil
     }
@@ -130,7 +129,6 @@ public struct FileFormatRegistry {
         return try handler.build(outputs)
     }
 
-    /// Single-binary convenience for the common case.
     public func buildSingle(
         extension ext: String,
         from folder: Folder,
@@ -145,7 +143,6 @@ public struct FileFormatRegistry {
 
     // MARK: - Internals
 
-    /// Resolves an artifact's relative path against a target folder.
     private func resolve(_ relative: File, in folder: Folder) -> File {
         var path = relative.path
         if path.hasPrefix("/") { path.removeFirst() }

@@ -9,7 +9,6 @@ public class LabelTable {
 
     public init() {}
 
-    /// Number of labels in the table
     public var count: Int { labels.count }
 
     /// Add a label with its address. Does not overwrite existing entries.
@@ -30,7 +29,6 @@ public class LabelTable {
         if let address = labels[name] {
             return address
         }
-        // Try to extract address from lbl_XXXXXXXX pattern
         if name.hasPrefix("lbl_"), name.count == 12 {
             let hex = String(name.dropFirst(4))
             return UInt32(hex, radix: 16)
@@ -52,15 +50,12 @@ public class LabelTable {
         }
     }
 
-    /// Get all labels as a dictionary
     public var allLabels: [String: UInt32] { labels }
 
-    /// Get the label name for an address, if any
     public func labelFor(address: UInt32) -> String? {
         labels.first(where: { $0.value == address })?.key
     }
 
-    /// Build a reverse lookup: address → label name
     public func buildAddressLookup() -> [UInt32: String] {
         Dictionary(labels.map { ($0.value, $0.key) }, uniquingKeysWith: { first, _ in first })
     }

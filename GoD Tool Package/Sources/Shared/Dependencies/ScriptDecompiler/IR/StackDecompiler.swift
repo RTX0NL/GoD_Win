@@ -6,7 +6,6 @@ public struct StackDecompiler {
 
     public init() {}
 
-    /// Decompile a function's IR instructions into statements
     public func decompile(_ function: IRFunction) -> [ScriptStatement] {
         var stack = [ScriptExpr]()
         var statements = [ScriptStatement]()
@@ -20,7 +19,6 @@ public struct StackDecompiler {
         }
 
         for inst in function.instructions {
-            // Insert label if this offset is a jump target
             if jumpTargets.contains(inst.offset) {
                 statements.append(.label(offset: inst.offset))
             }

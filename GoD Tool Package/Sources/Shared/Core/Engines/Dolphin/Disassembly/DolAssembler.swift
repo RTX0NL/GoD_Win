@@ -45,7 +45,6 @@ public struct DolAssembler {
         logger?.log(.info("Assembling DOL from \(codeFolder.path)"))
         logger?.log(.taskStatus(taskName: "Assemble DOL", status: .started))
 
-        // Read sections.txt for layout info
         let sectionsFile = codeFolder.file("sections.txt")
         guard let sectionsData = fileSystem.readFile(at: sectionsFile)?.allData else {
             throw DolAssemblyErrors.sectionsFileNotFound(file: sectionsFile, .init())
@@ -175,7 +174,6 @@ public struct DolAssembler {
             }
         }
 
-        // Load BSS entry list and assign addresses
         if let bssPath = bssEntryListPath,
            let bssData = fileSystem.readFile(at: bssPath)?.allData {
             if let bssList = try? JSONDecoder().decode(BSSEntryList.self, from: bssData) {
@@ -202,7 +200,6 @@ public struct DolAssembler {
         let totalSections = layout.textSections.count + layout.dataSections.count
         var sectionsProcessed = 0
 
-        // Assemble text sections
         for section in layout.textSections {
             let files = manifestReader.loadTextSectionFiles(
                 sectionName: section.name,
@@ -286,7 +283,6 @@ public struct DolAssembler {
             }
         }
 
-        // Section overlap detection
         var assembledRanges = [(name: String, start: UInt32, end: UInt32)]()
         for (i, section) in textSections.enumerated() where section.assembly.length > 0 {
             let name = layout.textSections[i].name
@@ -339,7 +335,6 @@ public struct DolAssembler {
             }
         }
 
-        // Build DOL
         let dol = Dol(
             dolphinEngine: dolphinEngine,
             textSections: textSections,

@@ -37,7 +37,6 @@ public struct RELFile: FileFormat {
 
     // MARK: - Header scalars
 
-    /// Module ID — unique identifier for this REL.
     public var moduleID: UInt32
     /// Format version (1, 2, or 3). XD/Colo files are version 3.
     public var version: UInt32
@@ -391,7 +390,6 @@ public struct RELFile: FileFormat {
         }
 
         // ---- Build semantic section bodies ----
-        // Index edges by source section for fast lookup.
         var edgesBySection: [UInt8: [RELFileParseEdge]] = [:]
         for e in edges {
             edgesBySection[e.sourceSection, default: []].append(e)
@@ -452,7 +450,6 @@ public struct RELFile: FileFormat {
     private static func decodeText(bytes: [UInt8], edges: [RELFileParseEdge]) -> [TextInstruction] {
         var ins: [TextInstruction] = []
         ins.reserveCapacity(bytes.count / 4)
-        // Group edges by instruction index for O(1) lookup.
         var edgesByInst: [Int: RELFileParseEdge] = [:]
         for e in edges {
             let instIdx = Int(e.sourceOffset) / 4
@@ -560,7 +557,6 @@ public struct RELFile: FileFormat {
             let importTableOff = cursor
             cursor += importTableSize
 
-            // Derive edges from SymbolRefs and group by target module.
             let allEdges = try collectEdges()
             var edgesByModule: [UInt32: [RELFileParseEdge]] = [:]
             for e in allEdges {
@@ -739,7 +735,6 @@ public struct RELFile: FileFormat {
             out.append((UInt16(delta), e.command, e.targetSection, e.addend))
             curOffset = e.sourceOffset
         }
-        // END terminator
         out.append((0, RelocCmd.R_DOLPHIN_END, 0, 0))
         return out
     }

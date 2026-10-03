@@ -44,7 +44,6 @@ public final class BPSPatchedView: GoDReadable {
         return output.read(atAddress: address, length: readLength)
     }
 
-    /// Run the action stream.
     @discardableResult
     public func build() throws -> GoDData {
         if let built { return built }

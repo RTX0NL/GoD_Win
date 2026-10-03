@@ -226,7 +226,6 @@ final class FSYSRealCorpusFidelityTests: XCTestCase {
         try XCTSkipIf(checked == 0, "no archive with repeated entry names found in the corpus")
     }
 
-    /// Finds a file by name anywhere under `root`.
     private func locate(_ name: String, in root: String) -> URL? {
         guard let e = FileManager.default.enumerator(
             at: URL(fileURLWithPath: root), includingPropertiesForKeys: nil

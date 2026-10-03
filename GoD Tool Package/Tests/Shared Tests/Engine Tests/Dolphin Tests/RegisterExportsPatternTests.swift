@@ -90,7 +90,6 @@ final class RegisterExportsPatternTests: XCTestCase {
                 guard let raw = try? Data(contentsOf: URL(fileURLWithPath: path)),
                       let rel = try? RELFile(binary: GoDData(byteStream: [UInt8](raw), byteOrder: .big),
                                              name: name) else { continue }
-                // Locate the prolog instructions inside its section.
                 guard rel.prologOffset % 4 == 0,
                       Int(rel.prologSection) < rel.sections.count,
                       case .text(let instructions) = rel.sections[Int(rel.prologSection)].body else {
