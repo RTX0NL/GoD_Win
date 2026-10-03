@@ -27,10 +27,6 @@ let package = Package(
             name: "Discord Plays Orre",
             targets: ["Discord Plays Orre"]
         ),
-        .executable(
-            name: "ColoScriptDecomp",
-            targets: ["ColoScriptDecomp"]
-        ),
         
         // MARK: - Base Library Products
         
@@ -91,22 +87,17 @@ let package = Package(
             ],
             path: "Sources/Products/Discord Plays Orre"
         ),
-        .executableTarget(
-            // Temporary decompiler-validation harness — remove when done.
-            name: "ColoScriptDecomp",
-            dependencies: [
-                "Colosseum",
-                "ScriptDecompiler",
-                "GoDFoundation"
-            ],
-            path: "Sources/Products/ColoScriptDecomp"
-        ),
+        
+        // MARK: - Tool Targets
+        
+        // Development tooling, not shipped: materializes the golden fixtures
+        // the test targets check against. See Sources/Tools/FixtureGen.
         .executableTarget(
             name: "FixtureGen",
             dependencies: [
                 "FixtureCatalog"
             ],
-            path: "Sources/Products/FixtureGen"
+            path: "Sources/Tools/FixtureGen"
         ),
         
         // MARK: - Base Library Targets
@@ -151,7 +142,9 @@ let package = Package(
                 "Structs",
                 "GameCube",
                 "Pokemon",
-                "ScriptDecompiler"
+                "ScriptDecompiler",
+                // `RelRouteTable`, to install the files its route table names.
+                "Disassembler"
             ],
             path: "Sources/Shared/Core/Engines/Colosseum",
             resources: [.process("Resources")]
@@ -251,7 +244,9 @@ let package = Package(
                 "Structs",
                 "GameCube",
                 "Pokemon",
-                "ScriptDecompiler"
+                "ScriptDecompiler",
+                // `RelRouteTable`, to install the files its route table names.
+                "Disassembler"
             ],
             path: "Sources/Shared/Core/Engines/XD",
             resources: [.copy("Resources")]
@@ -390,7 +385,7 @@ let package = Package(
             path: "Tests/Shared Tests/Engine Tests/PPC Tests"),
         .testTarget(
             name: "DolphinTests",
-            dependencies: ["Dolphin", "GoDFoundation", "Structs", "TestSupport"],
+            dependencies: ["Dolphin", "GoDFoundation", "Structs", "TestSupport", "FixtureCatalog"],
             path: "Tests/Shared Tests/Engine Tests/Dolphin Tests",
             exclude: ["Fixtures"]),
         .testTarget(

@@ -16,10 +16,10 @@
 import Foundation
 import FixtureCatalog
 
-// Package root: this file lives at Sources/Products/FixtureGen/main.swift.
+// Package root: this file lives at Sources/Tools/FixtureGen/main.swift.
 let packageRoot = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()   // FixtureGen/
-    .deletingLastPathComponent()   // Products/
+    .deletingLastPathComponent()   // Tools/
     .deletingLastPathComponent()   // Sources/
     .deletingLastPathComponent()   // package root
 
