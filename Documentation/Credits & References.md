@@ -61,6 +61,38 @@ variant — which announces itself by spelling its own magic `CRAN` — is not
 covered by the DS documentation and was characterized from those files. See
 `NintendoArchiveRealCorpusTests`.
 
+## ISH / ISD streamed audio (Colosseum, XD)
+
+### Reference Implementations
+- **vgmstream** (`src/meta/ish_isd.c`, `src/coding/ngc_dsp_decoder.c`) —
+  the ISH header field list and the Nintendo GameCube DSP ADPCM decoder.
+- **gc-dspadpcm-encode** (Jack Andersen, MIT) — the encoder and the
+  order-2 LPC coefficient analysis.
+- **VGAudio** (Ethan MacDonald, MIT) — a reference for both directions in
+  C#.
+
+### Verification
+The published field list describes `0x20` and `0x24` as byte offsets into
+the ISD and `0x28` onward as reserved. Measurement against 565 real ISH
+headers, and then the game's own stream setup, says otherwise on both
+counts, and the writers follow the game:
+
+- They are **nibble addresses** into one channel's ADPCM stream, not byte
+  offsets. The `-2` that `GSsndStreamPostFunc` applies to the loop start,
+  and the 14/16 multiply inside `_sndStreamNibble_HeaderON2OFF`, are what
+  identify the unit; the first sample lives at nibble 2, which is the value
+  477 of 477 non-looping real headers carry at `0x20`.
+- `0x28` is **live on 565/565 headers** and is the stream end. The roles of
+  `0x24` and `0x28` cannot be inferred from the stored values — the
+  inequality that holds on every looping header reads the wrong way round —
+  and were settled by `GSsndStreamPreFunc` returning `stream + 0x40` as the
+  ISH load buffer, which binds the header's words to the stream struct
+  fields `GSsndStreamPostFunc` consumes.
+
+Only `0x2C..0x3F` is reserved, and it is zero on all 565. See
+`ISFHeaderRealCorpusTests` and
+`Documentation/File Formats/Shared/ISH ISD - Streamed Audio.md`.
+
 ## PowerPC Disassembler/Assembler
 
 ### Specifications
