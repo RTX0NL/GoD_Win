@@ -702,14 +702,11 @@ public struct RelDisassembler {
             entryLabels: entryLabelList, addressToLabel: [:], pointerLabels: pointerLabels
         )
 
-        let csv: String
-        do {
-            csv = try StructTableCSV.encode(entries: entries.map(\.data), definition: definition)
-            try verifyTableRoundTrips(csv: csv, against: entries, definition: definition, label: label)
-        } catch {
-            logger?.log(.warning("Table '\(label)' doesn't round-trip as CSV: \(error). Emitting as assembly."))
-            return nil
-        }
+        // No round-trip check: a table whose struct describes it badly dumps
+        // as CSV anyway, and the module failing to rebuild byte-identically is
+        // what reports it. Falling back to assembly here turned a wrong struct
+        // definition into a warning and a module that still rebuilt.
+        let csv = try StructTableCSV.encode(entries: entries.map(\.data), definition: definition)
 
         let path = "\(sectionName)/\(label).csv"
         try fileSystem.writeFile(GoDData(string: csv, format: .utf8), at: folder.file(path), overwrite: true)

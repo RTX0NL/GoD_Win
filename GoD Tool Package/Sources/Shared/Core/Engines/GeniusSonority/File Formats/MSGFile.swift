@@ -245,9 +245,10 @@ public struct MSGFile: FileFormat, Equatable {
     ///
     /// `bound` is where the next string starts, when there is one. Inside
     /// it the character codec is authoritative; where re-encoding what it
-    /// read doesn't give the bytes back, the bytes win and are kept
-    /// verbatim — the same "verify before you trust it" rule the typed
-    /// table exporters follow, applied to one string instead of a chunk.
+    /// read doesn't give the bytes back, the string is written back as the
+    /// codec renders it and the file changes. Keeping the original bytes
+    /// instead made a codec that can't read a control code look like one that
+    /// can, so the two Colosseum JP strings that need it never got fixed.
     private static func entry(
         id: UInt32,
         at offset: Int,
@@ -262,10 +263,7 @@ public struct MSGFile: FileFormat, Equatable {
         region.setByteOrder(.big)
         let string = region.readGSStringSafely(atAddress: 0, format: format)
 
-        // The region is the string plus its terminating null word.
-        let body = Array(region.rawBytes.dropLast(2))
-        let reEncoded = string.rawData(byteOrder: .big).rawBytes
-        return Entry(id: id, string: string, rawBytes: reEncoded == body ? nil : body)
+        return Entry(id: id, string: string)
     }
 
     /// The parts of the pool the entry table doesn't claim.
@@ -503,21 +501,17 @@ public struct MSGFile: FileFormat, Equatable {
                 region: MSGFile.regionFromBytes(region),
                 reservedSuffix: MSGFile.hexFromBytes(reservedSuffix),
                 entries: entries.map { e in
-                    // The pretty form has to parse back to the same bytes.
-                    // Colosseum's control codes include sequences whose
-                    // tokens don't survive the trip, and a text field that
-                    // silently rewrites the string is worse than one that
-                    // isn't there: such an entry carries its bytes instead.
-                    let text = e.string.string(format: variant.stringFormat)
-                    let bytes = e.poolBytes
-                    let survives = e.rawBytes == nil
-                        && GSString(string: text, format: variant.stringFormat)
-                            .rawData(byteOrder: .big).rawBytes == bytes
-                    return DTO.EntryDTO(
+                    // Every entry gets its editable text, whether or not the
+                    // pretty form parses back to the same bytes. Emitting hex
+                    // instead for the ones that don't made the artifact honest
+                    // and the codec's gaps invisible; a string that changes on
+                    // the way back is a codec bug to fix, and it shows up as a
+                    // file that no longer repacks.
+                    DTO.EntryDTO(
                         id: e.id,
-                        text: survives ? text : nil,
+                        text: e.string.string(format: variant.stringFormat),
                         poolOrder: ranksAreEntryOrder ? nil : e.poolOrder,
-                        raw: survives ? nil : MSGFile.hexFromBytes(bytes)
+                        raw: nil
                     )
                 },
                 detachedStrings: detachedStrings.isEmpty ? nil : detachedStrings.map { d in
