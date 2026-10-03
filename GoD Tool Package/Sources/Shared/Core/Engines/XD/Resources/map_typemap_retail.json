@@ -1,0 +1,88 @@
+{
+  "chunks": [
+    {
+      "table": {
+        "name": "floorCharTbl",
+        "start": "floorCharTbl",
+        "entryType": "FloorCharacter"
+      }
+    },
+    {
+      "table": {
+        "name": "floor_pos_list",
+        "start": "floor_pos_list",
+        "entryType": "FloorPosition"
+      }
+    },
+    {
+      "table": {
+        "name": "floor_field_camera_list",
+        "start": "floor_field_camera_list",
+        "entryType": "FloorFieldCamera"
+      }
+    },
+    {
+      "table": {
+        "name": "floor_offscreen_data_list",
+        "start": "floor_offscreen_data_list",
+        "entryType": "FloorOffscreenData"
+      }
+    },
+    {
+      "table": {
+        "name": "kinomiData",
+        "start": "kinomiData",
+        "entryType": "FloorBerry"
+      }
+    },
+    {
+      "table": {
+        "name": "floor_resource_data",
+        "start": "floor_resource_data",
+        "entryType": "FloorRenderData"
+      }
+    },
+    {
+      "count": {
+        "label": "floorCharTbl_number",
+        "table": "floorCharTbl",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "floor_pos_list_number",
+        "table": "floor_pos_list",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "floor_field_camera_list_number",
+        "table": "floor_field_camera_list",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "floor_offscreen_data_list_number",
+        "table": "floor_offscreen_data_list",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "kinomiData_number",
+        "table": "kinomiData",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "floor_resource_data_number",
+        "table": "floor_resource_data",
+        "type": "uint32"
+      }
+    }
+  ]
+}

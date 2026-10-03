@@ -1,0 +1,12 @@
+{
+  "symbols": {
+    "0": "RenderData",
+    "1": "NumberOfRenderData",
+    "2": "Characters",
+    "3": "NumberOfCharacters",
+    "4": "CharacterList",
+    "5": "EntryPoints",
+    "6": "NumberOfEntryPoints",
+    "7": "EntryPointList"
+  }
+}

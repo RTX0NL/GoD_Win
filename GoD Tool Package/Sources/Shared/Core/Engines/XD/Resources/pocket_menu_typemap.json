@@ -1,0 +1,60 @@
+{
+  "chunks": [
+    {
+      "table": {
+        "name": "shopExchanger",
+        "start": "shopExchanger",
+        "entryType": "ShopCouponDialog"
+      }
+    },
+    {
+      "table": {
+        "name": "shopSalesman",
+        "start": "shopSalesman",
+        "entryType": "ShopGreetingDialog"
+      }
+    },
+    {
+      "table": {
+        "name": "shopData",
+        "start": "shopData",
+        "entryType": "Shop"
+      }
+    },
+    {
+      "table": {
+        "name": "shopGoods",
+        "start": "shopGoods",
+        "entryType": "ShopGoodsEntry"
+      }
+    },
+    {
+      "count": {
+        "label": "shopExchanger_number",
+        "table": "shopExchanger",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "shopSalesman_number",
+        "table": "shopSalesman",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "shopData_number",
+        "table": "shopData",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "shopGoods_number",
+        "table": "shopGoods",
+        "type": "uint32"
+      }
+    }
+  ]
+}

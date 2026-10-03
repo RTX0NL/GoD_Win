@@ -305,6 +305,335 @@
     "label": "Script",
     "extension": "scd"
    }
+  },
+  {
+   "table": {
+    "name": "TableResData",
+    "start": "TableResData",
+    "entryType": "TableResEntry"
+   }
+  },
+  {
+   "table": {
+    "name": "FlagItemData",
+    "start": "FlagItemData",
+    "entryType": "FlagItem"
+   }
+  },
+  {
+   "table": {
+    "name": "FlagValues",
+    "start": "FlagValues",
+    "entryType": "FlagValue"
+   }
+  },
+  {
+   "table": {
+    "name": "FlagPartyData",
+    "start": "FlagPartyData",
+    "entryType": "FlagParty"
+   }
+  },
+  {
+   "table": {
+    "name": "StoryProgressFlags",
+    "start": "StoryProgressFlags",
+    "entryType": "StoryCheckpoint"
+   }
+  },
+  {
+   "table": {
+    "name": "BattleSideData",
+    "start": "BattleSideData",
+    "entryType": "BattleSide"
+   }
+  },
+  {
+   "table": {
+    "name": "GeneralFlags",
+    "start": "GeneralFlags",
+    "entryType": "GeneralFlag"
+   }
+  },
+  {
+   "table": {
+    "name": "ShadowPokemonFilterData",
+    "start": "ShadowPokemonFilterData",
+    "entryType": "HeartGaugeChange",
+    "count": 6
+   }
+  },
+  {
+   "table": {
+    "name": "ContestData",
+    "start": "ContestData",
+    "entryType": "ContestEffect"
+   }
+  },
+  {
+   "file": {
+    "label": "sym_94",
+    "extension": "fnt"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfLegendaryPokemon",
+    "table": "LegendaryPokemon",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfRooms",
+    "table": "Rooms",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfTrainerAIData",
+    "table": "TrainerAIData",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfInteractionPoints",
+    "table": "InteractionPoints",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfKeyboard3Characters",
+    "table": "Keyboard3Characters",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfKeyboardCharacters",
+    "table": "KeyboardCharacters",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfMoves",
+    "table": "Moves",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfBattleStyles",
+    "table": "BattleStyles",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfNatures",
+    "table": "Natures",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfTrainers",
+    "table": "Trainers",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfPeopleIDs",
+    "table": "PeopleIDs",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfNatureMultipliers",
+    "table": "NatureMultipliers",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfTrainerPokemonData",
+    "table": "TrainerPokemonData",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfAIPokemonRoles",
+    "table": "AIPokemonRoles",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfBattles",
+    "table": "Battles",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfTrainerClasses",
+    "table": "TrainerClasses",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfCharacterModels",
+    "table": "CharacterModels",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfDoors",
+    "table": "Doors",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfKeyboard2Characters",
+    "table": "Keyboard2Characters",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfAIWeightEffects",
+    "table": "AIWeightEffects",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfSoundFiles",
+    "table": "SoundFiles",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfBattleFields",
+    "table": "BattleFields",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfPokefaceTextures",
+    "table": "PokefaceTextures",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfBattleTypes",
+    "table": "BattleTypes",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfTableResData",
+    "table": "TableResData",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfFlagItemData",
+    "table": "FlagItemData",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfFlagValues",
+    "table": "FlagValues",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfFlagPartyData",
+    "table": "FlagPartyData",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfStoryProgressFlags",
+    "table": "StoryProgressFlags",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfBattleSideData",
+    "table": "BattleSideData",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfGeneralFlags",
+    "table": "GeneralFlags",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfShadowPokemonFilterData",
+    "table": "ShadowPokemonFilterData",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfContestData",
+    "table": "ContestData",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfTreasureBoxes",
+    "table": "TreasureBoxData",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfPokemon",
+    "table": "PokemonStats",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfShadowPokemon",
+    "table": "ShadowData",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "NumberOfMetLocations",
+    "table": "PokemonMetLocations",
+    "type": "uint32"
+   }
   }
  ]
 }

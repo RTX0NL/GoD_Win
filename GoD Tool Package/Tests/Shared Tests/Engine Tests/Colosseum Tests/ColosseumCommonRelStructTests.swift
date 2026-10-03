@@ -66,7 +66,7 @@ final class ColosseumCommonRelStructTests: XCTestCase {
 
     func testRoomFieldOffsets() throws {
         try assertOffsets("Room", [
-            ("kind", 0x00), ("area_id", 0x01), ("fsys_id", 0x06), ("room_id", 0x0C),
+            ("kind", 0x00), ("area", 0x01), ("fsys_id", 0x06), ("room_id", 0x0C),
             ("render_data_pointer", 0x10), ("camera_data_pointer", 0x1C), ("name_id", 0x24),
             ("script_functions", 0x28), ("preprocess_function", 0x3C), ("unknown_data_pointer", 0x48),
         ])
@@ -84,8 +84,8 @@ final class ColosseumCommonRelStructTests: XCTestCase {
         ]
         try assertOffsets("Battle", head + [("players", 0x18)])
         try assertOffsets("BattleEU", head + [("colosseum_round_id_german", 0x18), ("players", 0x28)])
-        try assertOffsets("BattleField", [("name_id", 0x04), ("unknown_string_id", 0x08), ("unknown_6", 0x14)])
-        try assertOffsets("BattleFieldEU", [("name_id", 0x04), ("unknown_6", 0x10), ("unknown_string_id_us_uk", 0x14), ("unknown_string_id_spanish", 0x24)])
+        try assertOffsets("BattleField", [("terrain", 0x00), ("room_id", 0x02), ("name_id", 0x04), ("intro_wzx_id", 0x08), ("bgm_id", 0x0C), ("side_ids", 0x14)])
+        try assertOffsets("BattleFieldEU", [("name_id", 0x04), ("side_ids", 0x10), ("intro_wzx_id_english", 0x14), ("intro_wzx_id_spanish", 0x24)])
     }
 
     func testTrainerFieldOffsets() throws {

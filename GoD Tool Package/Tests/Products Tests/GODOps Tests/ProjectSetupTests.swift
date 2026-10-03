@@ -24,6 +24,7 @@ import GeniusSonority
 import XD
 import Colosseum
 import Wii
+import Disassembler
 @testable import GODOps
 
 final class ProjectSetupTests: XCTestCase {
@@ -181,45 +182,75 @@ final class ProjectSetupTests: XCTestCase {
         XCTAssertTrue(names.contains("dolDisassembly"), "got \(names)")
     }
 
-    /// Files that carry typed data sections beyond the DOL and common.rel
-    /// come from `GeniusSonorityEngine.Data.chunkTypeMapRoutes`, so covering
-    /// another one is a line of engine data. XD declares `tableres2.rel`;
-    /// Colosseum declares none, and must not gain a step it can't run.
-    func testTypedChunkFileStepsComeFromTheEngineRoutes() throws {
-        let (fst, project) = try runSetup(gameID: PokemonXD.gameIDUS)
-        let dump = try decodeConfig(project.folder("Config").file("Dump-Config.json"), in: fst)
+    /// Every REL but `common.rel` is dumped and rebuilt by one pair of ops
+    /// driven by the game engine's route table, and the table plus every
+    /// file its matchers name is installed into the engine folder.
+    func testRelStepsFollowTheEnginesRouteTable() throws {
+        for gameID in [PokemonXD.gameIDUS, PokemonColosseum.gameIDUS] {
+            let (fst, project) = try runSetup(gameID: gameID)
+            let dump = try decodeConfig(project.folder("Config").file("Dump-Config.json"), in: fst)
+            let build = try decodeConfig(project.folder("Config").file("Build-Config.json"), in: fst)
 
-        let routes = GeniusSonorityEngine.defaultEngine(for: .galeOfDarkness).data.chunkTypeMapRoutes
-        XCTAssertFalse(routes.isEmpty, "XD should declare at least tableres2.rel")
-
-        let steps = dump.operations.filter {
-            if case .relDisassembly = $0.operation { return true }
-            return false
-        }
-        XCTAssertEqual(steps.count, routes.count, "one step per declared route")
-
-        // The route that only US and PAL can run ships disabled, so a JP
-        // project's chain isn't broken by a file that isn't on the disc.
-        for (step, route) in zip(steps, routes) {
-            XCTAssertEqual(step.enabled == .yes, route.enabledByDefault,
-                           "\(route.file.path): enabled state should follow the route")
-            guard case .relDisassembly(let config) = step.operation else {
-                return XCTFail("expected a relDisassembly config")
+            let dumps = dump.operations.compactMap { step -> RelsDump.Config? in
+                if case .relsDump(let config) = step.operation { return config }
+                return nil
             }
-            XCTAssertTrue(config.relPath.path.hasSuffix(route.file.path),
-                          "\(config.relPath.path) should target \(route.file.path)")
-            XCTAssertEqual(config.typeMapPath?.path.hasSuffix(route.typeMap.path), true,
-                           "the step should point at the route's type map")
+            let builds = build.operations.compactMap { step -> RelsBuild.Config? in
+                if case .relsBuild(let config) = step.operation { return config }
+                return nil
+            }
+            XCTAssertEqual(dumps.count, 1, gameID)
+            XCTAssertEqual(builds.count, 1, gameID)
+            XCTAssertFalse(operationNames(dump).contains("relDisassembly"), gameID)
+
+            let dumpConfig = try XCTUnwrap(dumps.first)
+            XCTAssertEqual(builds.first?.routesPath, dumpConfig.routesPath)
+            XCTAssertEqual(builds.first?.inputFolder, dumpConfig.outputFolder,
+                           "the build reads what the dump writes")
+
+            let routesFile = project.file(String(dumpConfig.routesPath.path.dropFirst(2)))
+            let table: RelRouteTable = try fst.decodeJSON(from: routesFile)
+            XCTAssertNoThrow(try table.resolvedRoutes(), gameID)
+            let engineFolder = project.folder(String(dumpConfig.routesEngine.path.dropFirst(2)))
+            for file in table.matcherFiles {
+                XCTAssertNotNil(fst.inspectFile(at: engineFolder.file(file.path)),
+                                "\(gameID): matcher file \(file.path) should be installed")
+            }
         }
     }
 
-    func testColosseumDeclaresNoExtraTypedChunkFiles() throws {
-        XCTAssertTrue(
-            GeniusSonorityEngine.defaultEngine(for: .colosseum).data.chunkTypeMapRoutes.isEmpty
-        )
-        let (fst, project) = try runSetup(gameID: PokemonColosseum.gameIDUS)
-        let dump = try decodeConfig(project.folder("Config").file("Dump-Config.json"), in: fst)
-        XCTAssertFalse(operationNames(dump).contains("relDisassembly"))
+    /// The route table is per region: each names only what that disc ships,
+    /// and the same path can need a different matcher on another build.
+    func testEachRegionGetsItsOwnRouteTable() throws {
+        func routes(_ gameID: String) throws -> RelRouteTable {
+            let (fst, project) = try runSetup(gameID: gameID)
+            let file = project.folder("Engines").folder(XDEngine.defaultName).file("Resources/rel_routes.json")
+            return try fst.decodeJSON(from: file)
+        }
+        let us = try routes(PokemonXD.gameIDUS)
+        let eu = try routes(PokemonXD.gameIDEU)
+        let jp = try routes(PokemonXD.gameIDJP)
+
+        let tableres2 = "/Data/Relocatable Modules/tableres2.rel"
+        XCTAssertNotNil(us.routes[tableres2])
+        XCTAssertNil(jp.routes[tableres2], "the JP disc has no tableres2.rel")
+
+        // A module is named by the code that reads its tables, not by the
+        // symbol maps — US and PAL put `tutorialdata` on a table the code
+        // reads as trainer faces — so the same module is named the same way
+        // on every disc.
+        let toolbattle = "/Data/Relocatable Modules/toolbattle_menu.rel"
+        for table in [us, eu, jp] {
+            XCTAssertEqual(table.routes[toolbattle], "module_trainer_face_data")
+        }
+
+        // Each PAL language copy is routed on its own analysis.
+        for language in ["French", "German", "Italian", "Spanish"] {
+            XCTAssertEqual(eu.routes["/Data/Relocatable Modules/\(language)/pocket_menu.rel"], "module_shopData", language)
+        }
+        for table in [us, eu, jp] {
+            XCTAssertNoThrow(try table.resolvedRoutes())
+        }
     }
 
     func testXDBuildConfigEndsWithTheGamecubeBuild() throws {
@@ -292,14 +323,6 @@ final class ProjectSetupTests: XCTestCase {
             XCTAssertEqual(GameProfile.profile(forGameID: id)?.family, .colosseum, id)
         }
         XCTAssertNil(GameProfile.profile(forGameID: "GZZE"))
-    }
-
-    /// XD's map filters come from `XDEngine.Data.unusedColosseumMapPrefixes`;
-    /// the prefixes used to be repeated as a literal in the generated config.
-    func testXDMapPlansUseTheEnginesUnusedPrefixList() {
-        let expected = XDEngine.Data().unusedColosseumMapPrefixes
-        let filters = GameProfile.galeOfDarkness.mapPlans.map(\.filter)
-        XCTAssertEqual(filters, [.excludePrefixes(expected), .onlyPrefixes(expected)])
     }
 
     /// The Wii fill size is engine data, not a literal in the generator.

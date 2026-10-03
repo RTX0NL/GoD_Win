@@ -1,4 +1,5 @@
 import GoDFoundation
+import Structs
 
 /// A user-authored file that describes typed regions within data sections.
 /// Contains a single ordered list of chunks that the disassembler uses
@@ -18,7 +19,8 @@ public struct TypeMap: Codable, Equatable {
     }
 
     /// A typed data chunk — each variant carries its own associated data.
-    /// Encodes as `{"table": {...}}`, `{"single": {...}}`, or `{"file": {...}}`.
+    /// Encodes as `{"table": {...}}`, `{"single": {...}}`, `{"file": {...}}`
+    /// or `{"count": {...}}`.
     public enum Chunk: Equatable {
         /// A table of consecutive same-typed struct entries
         case table(Table)
@@ -26,6 +28,9 @@ public struct TypeMap: Codable, Equatable {
         case single(Single)
         /// An embedded file dumped with a custom extension
         case file(EmbeddedFile)
+        /// A word holding another table's entry count — derived on build,
+        /// never stored
+        case count(Count)
 
         public struct Table: Codable, Equatable {
             /// Display name for this table
@@ -96,6 +101,83 @@ public struct TypeMap: Codable, Equatable {
                 self.size = size
             }
         }
+
+        /// An integer that holds the number of entries in a table.
+        ///
+        /// The value is a fact about the table, so it isn't dumped as an
+        /// editable value: the assembler writes the table's entry count here,
+        /// big-endian, and the table is sized by its CSV rather than held to
+        /// the count it was dumped with. A separately editable count would let
+        /// a table gain a row the game never reads.
+        ///
+        /// Nothing about a module's layout is assumed — which integer counts
+        /// which table, and how wide it is, is declared here, per type map.
+        public struct Count: Codable, Equatable {
+            /// Label at the count
+            public let label: String
+            /// Start label of the table it counts — a `table` chunk in the
+            /// same type map
+            public let table: String
+            /// How the count is stored. Integers only, which the type
+            /// enforces: a float or a struct name fails to decode. Defaults
+            /// to `uint32`, the width of a REL's count words.
+            public let type: IntegerProperties
+
+            public init(label: String, table: String, type: IntegerProperties = .uint32) {
+                self.label = label
+                self.table = table
+                self.type = type
+            }
+
+            private enum CodingKeys: String, CodingKey { case label, table, type }
+
+            public init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                label = try container.decode(String.self, forKey: .label)
+                table = try container.decode(String.self, forKey: .table)
+                type = try container.decodeIfPresent(IntegerProperties.self, forKey: .type) ?? .uint32
+            }
+        }
+
+        public var label: String {
+            switch self {
+            case .table(let t): return t.start
+            case .single(let s): return s.label
+            case .file(let f): return f.label
+            case .count(let c): return c.label
+            }
+        }
+    }
+
+    /// Checks that every `count` chunk names a table this map declares.
+    ///
+    /// A count of a symbol the map doesn't list, or of one it lists as
+    /// something other than a table, has nothing to derive its value from,
+    /// so it is an error rather than a raw word left in place.
+    public func validate() throws {
+        var tableLabels = Set<String>()
+        var otherLabels = Set<String>()
+        for chunk in chunks {
+            if case .table(let t) = chunk { tableLabels.insert(t.start) } else { otherLabels.insert(chunk.label) }
+        }
+        for case .count(let count) in chunks where !tableLabels.contains(count.table) {
+            throw TypeMapError.countTargetNotATable(
+                count: count.label, table: count.table, declared: otherLabels.contains(count.table), .init()
+            )
+        }
+    }
+}
+
+public enum TypeMapError: Error, CustomStringConvertible {
+    case countTargetNotATable(count: String, table: String, declared: Bool, ErrorTrace)
+
+    public var description: String {
+        switch self {
+        case let .countTargetNotATable(count, table, declared, trace):
+            let problem = declared ? "which the type map declares as something other than a table"
+                                   : "which the type map doesn't declare"
+            return "Count '\(count)' counts '\(table)', \(problem)\n\(trace)"
+        }
     }
 }
 
@@ -103,7 +185,7 @@ public struct TypeMap: Codable, Equatable {
 
 extension TypeMap.Chunk: Codable {
     private enum CodingKeys: String, CodingKey {
-        case table, single, file
+        case table, single, file, count
     }
 
     public init(from decoder: Decoder) throws {
@@ -114,10 +196,12 @@ extension TypeMap.Chunk: Codable {
             self = .single(single)
         } else if let file = try container.decodeIfPresent(EmbeddedFile.self, forKey: .file) {
             self = .file(file)
+        } else if let count = try container.decodeIfPresent(Count.self, forKey: .count) {
+            self = .count(count)
         } else {
             throw DecodingError.dataCorrupted(.init(
                 codingPath: decoder.codingPath,
-                debugDescription: "TypeMap.Chunk must contain 'table', 'single', or 'file'"
+                debugDescription: "TypeMap.Chunk must contain 'table', 'single', 'file' or 'count'"
             ))
         }
     }
@@ -128,6 +212,7 @@ extension TypeMap.Chunk: Codable {
         case .table(let t): try container.encode(t, forKey: .table)
         case .single(let s): try container.encode(s, forKey: .single)
         case .file(let f): try container.encode(f, forKey: .file)
+        case .count(let c): try container.encode(c, forKey: .count)
         }
     }
 }

@@ -1,4 +1,0 @@
-{
-  "chunks": [],
-  "_source": "Colosseum 'Type 1' map REL layout \u2014 the standard format. Entry-point pointers at indices 1 (FirstWarpEntryLocation) and 2 (NumberOfWarpEntryLocations); character pointers at indices 3 (FirstCharacter) and 4 (NumberOfCharacters); group data at index 9. See legacy CMRelIndexes.swift:11-18. Chunks empty until Colosseum map structs (Warp, Character, GroupData) are ported."
-}

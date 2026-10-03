@@ -36,16 +36,18 @@ public extension ColosseumStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "effect_type"),
-            .uint8(name: "sub_index"),
-            .uint8(name: "unknown_1"),
-            .uint8(name: "unknown_2"),
-            .uint8(name: "number_of_turns", description: "0 for infinite"),
+            // Names from XD's accessors (joutaiDataBiosGet*); Colosseum's
+            // record and getters are the same.
+            .abstraction(name: "owner", typeName: "StatusEffectOwner", description: "GetStatusKind: the object the status lives on"),
+            .uint8(name: "slot", description: "GetUseBanme"),
+            .abstraction(name: "write_mode", typeName: "StatusWriteMode", description: "GetWriteMode"),
+            .uint8(name: "max_count", description: "GetMaxCount: the stack limit for Stack"),
+            .uint8(name: "turn_count_id", description: "GetKaisuuDataId: a row of the turn-count table, not a count"),
             .uint8(name: "unknown_flag_1"),
             .uint8(name: "unknown_flag_2"),
             .uint8(name: "unknown_flag_3"),
-            .uint16(name: "unknown_3"),
-            .uint16(name: "base_weather_id", description: "Non-permanent weather status effect"),
+            .uint16(name: "status_id", description: "GetStatus: the selector passed to the owner's status routine"),
+            .uint16(name: "same_status_id", description: "GetSameJoutai: a StatusEffects row treated as the same status (the weathers)"),
             .uint32(name: "padding", description: "Filled at runtime"),
             .uint32(name: "name_id"),
         ],
@@ -58,7 +60,7 @@ public extension ColosseumStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "is_hm"),
+            .boolean(name: "is_hm"),
             .padding(length: 5),
             .abstraction(name: "move_id", typeName: "Moves"),
         ],
@@ -73,11 +75,11 @@ public extension ColosseumStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "category", description: "A type's damage class — Gen III types are wholly physical or special"),
+            .abstraction(name: "category", typeName: "MoveCategory", description: "A type's damage class; Counter checks 1 and Mirror Coat 2"),
             .padding(length: 1),
             .uint16(name: "icon_id"),
             .uint32(name: "name_id"),
-            .array(name: "effectiveness", count: 18, of: .uint16,
+            .array(name: "effectiveness", count: 18, of: .enumeration(name: "TypeEffectiveness"),
                    description: "One entry per defending type, in type order; on disc 0x3F is neutral, 0x41 super effective, 0x42 not very effective, 0x43 no effect"),
         ],
         description: "Type matchup and properties (18 entries, 0x2C bytes)"
@@ -101,7 +103,7 @@ public extension ColosseumStructDefaults {
             .padding(length: 1),
             .uint16(name: "price"),
             .uint16(name: "coupon_price"),
-            .uint16(name: "hold_effect_id", description: "Effect while held in battle"),
+            .abstraction(name: "hold_effect", typeName: "HoldEffect", description: "Effect while held in battle"),
             .uint16(name: "battle_use_effect_id", description: "0 for every item on disc"),
             .padding(length: 2),
             .uint32(name: "name_id"),
@@ -182,9 +184,7 @@ public extension ColosseumStructDefaults {
     )
 
     /// 0x1C. A linked list rather than a flat table: `next_entry_index`
-    /// points at the next sprite of the same screen. The first byte is a
-    /// flag field — `StructData` has no sub-byte support, so it stays a
-    /// whole byte.
+    /// points at the next sprite of the same screen.
     static let textureRenderingStruct = StructMap(
         name: "TextureRenderingInfo",
         wordSize: 4,

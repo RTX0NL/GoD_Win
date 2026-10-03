@@ -15,22 +15,22 @@ public extension XDStructDefaults {
             .abstraction(name: "targets", typeName: "MoveTarget"),
             .uint8(name: "base_accuracy"),
             .uint8(name: "effect_accuracy"),
-            .uint8(name: "makes_contact"),
-            .uint8(name: "can_be_protected"),
-            .uint8(name: "can_be_reflected"),
-            .uint8(name: "can_be_stolen"),
-            .uint8(name: "can_be_copied_mirror_move"),
-            .uint8(name: "gains_flinch_kings_rock"),
-            .uint8(name: "callable_by_metronome"),
-            .uint8(name: "copyable_by_mimic"),
-            .uint8(name: "callable_by_assist"),
-            .uint8(name: "callable_by_sleep_talk"),
-            .uint8(name: "is_sound_based"),
-            .uint8(name: "has_unspecified_target"),
-            .uint8(name: "is_hm_move"),
+            .boolean(name: "makes_contact"),
+            .boolean(name: "can_be_protected"),
+            .boolean(name: "can_be_reflected"),
+            .boolean(name: "can_be_stolen"),
+            .boolean(name: "can_be_copied_mirror_move"),
+            .boolean(name: "gains_flinch_kings_rock"),
+            .boolean(name: "callable_by_metronome"),
+            .boolean(name: "copyable_by_mimic"),
+            .boolean(name: "callable_by_assist"),
+            .boolean(name: "callable_by_sleep_talk"),
+            .boolean(name: "is_sound_based"),
+            .boolean(name: "has_unspecified_target"),
+            .boolean(name: "is_hm_move"),
             .abstraction(name: "category", typeName: "MoveCategory"),
-            .uint8(name: "has_risk_flag"),
-            .uint8(name: "match_up_chart_type"),
+            .boolean(name: "has_risk_flag"),
+            .abstraction(name: "matchup_display", typeName: "MoveMatchupDisplay", description: "The status screen's matchup sprite (wazaDB_GetCompatible)"),
             .uint8(name: "contest_appeal_jam_index"),
             .abstraction(name: "contest_appeal_type", typeName: "ContestCategory"),
             .uint16(name: "base_power"),
@@ -112,31 +112,33 @@ public extension XDStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            // A *type's* damage class (Gen III types are wholly physical or
-            // special), not a move's category — different value set, and no
-            // corpus to check it against while Colo/XD type tables live in
-            // the gated common.rel path. Left as an integer deliberately.
-            .uint8(name: "category"),
+            // A type's damage class (Gen III types are wholly physical or
+            // special). The same value space as a move's category:
+            // `waza_GetZokuseiKindData` returns one or the other, and the AI's
+            // Counter and Mirror Coat handlers compare it with 1 and 2.
+            .abstraction(name: "category", typeName: "MoveCategory"),
             .padding(length: 1),
             .uint16(name: "icon_big_id"),
             .uint16(name: "icon_small_id"),
             .padding(length: 2),
             .uint32(name: "name_id"),
-            .array(name: "effectiveness", count: 18, of: .uint16, description: "One entry per defending type, in type order; on disc 0x3F is neutral, 0x41 super effective, 0x42 not very effective, 0x43 no effect"),
+            .array(name: "effectiveness", count: 18, of: .enumeration(name: "TypeEffectiveness"), description: "One entry per defending type, in type order; on disc 0x3F is neutral, 0x41 super effective, 0x42 not very effective, 0x43 no effect"),
         ],
         description: "Type matchup and properties (0x30 bytes per entry)"
     )
 
+    /// `fight_trainer_kind_data`, stride 0xC (`fightTrainerKindDataBiosGetPtr`).
     static let trainerClassStruct = StructMap(
         name: "TrainerClass",
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "payout_multiplier"),
-            .uint32(name: "name_id"),
-            .uint32(name: "unknown"),
+            .uint16(name: "payout_multiplier", description: "GetSyoukinBairitu"),
+            .padding(length: 2),
+            .uint32(name: "name_id", description: "GetPrefixName: the class name before a trainer's own"),
+            .uint32(name: "bgm_id", description: "GetBgmSndId"),
         ],
-        description: "Trainer class name and payout (0x0A bytes)"
+        description: "Trainer class name, payout and music (0x0C bytes)"
     )
 
     static let multiplierStruct = StructMap(
@@ -155,7 +157,7 @@ public extension XDStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "model_id"),
+            .abstraction(name: "kind", typeName: "TreasureKind", description: "_floorInitTresure reads bits 7:5"),
             .uint8(name: "quantity"),
             .int16(name: "angle"),
             .uint16(name: "room_id"),
@@ -169,54 +171,92 @@ public extension XDStructDefaults {
         description: "Treasure box location and contents (0x1C bytes per entry; NumberOfTreasureBoxes)"
     )
 
+    /// `floor_door_list`, stride 0x18 (`_floorInitDoor`,
+    /// `floorEventCtrlDoor`, `floorEventCtrlElevator*`). Bytes 0-8 are read
+    /// one at a time; only the door kind is understood so far.
     static let doorStruct = StructMap(
         name: "Door",
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "room_id"),
-            .uint8(name: "unknown_1"),
-            .uint8(name: "unknown_2"),
-            .uint32(name: "unknown_3"),
-            .uint32(name: "unknown_4"),
-            .int32(name: "x_position"),
-            .int32(name: "y_position"),
-            .int32(name: "z_position"),
-            .uint32(name: "unknown_5"),
+            .uint8(name: "unknown_0x00"),
+            .uint8(name: "unknown_0x01"),
+            .uint8(name: "unknown_0x02"),
+            .uint8(name: "unknown_0x03"),
+            .uint8(name: "unknown_0x04"),
+            .uint8(name: "unknown_0x05"),
+            .uint8(name: "unknown_0x06"),
+            .uint8(name: "door_kind", description: "Switched on by the door code: 0, 1, 2, up to 6"),
+            .uint8(name: "unknown_0x08"),
+            .padding(length: 1),
+            .int16(name: "unknown_0x0A"),
+            .uint16(name: "room_id", description: "Compared with the current floor"),
+            .uint16(name: "flag_id", description: "GSflagTest"),
+            .uint16(name: "unknown_0x10"),
+            .padding(length: 2),
+            .uint32(name: "unknown_0x14", description: "Tested for non-zero"),
         ],
-        description: "Door collision/animation data (0x20 bytes)"
+        description: "A door or elevator (floor_door_list, 0x18 bytes)"
     )
 
+    /// `floor_event_list`, stride 0x1C (`floorEventExecScript`).
     static let interactionPointStruct = StructMap(
         name: "InteractionPoint",
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "room_id"),
-            .uint8(name: "interaction_type"),
-            .uint8(name: "unknown_1"),
-            .int32(name: "x_position"),
-            .int32(name: "y_position"),
-            .int32(name: "z_position"),
+            .uint8(name: "event_kind", description: "Compared with the kind of event being run"),
+            .padding(length: 1),
+            .uint16(name: "room_id", description: "Compared with GSfloorGetCurrent"),
+            .uint32(name: "event_id", description: "The collision/event id; passed to scriptSetEventColID"),
+            .uint32(name: "script_function", description: "Run through floorExecScriptInteger; 0 skips the row"),
             .uint32(name: "parameter_1"),
             .uint32(name: "parameter_2"),
+            .uint32(name: "parameter_3"),
+            .uint32(name: "parameter_4"),
         ],
-        description: "Warp and object interaction point (0x18 bytes)"
+        description: "A map event: script run on touching or checking something (floor_event_list, 0x1C bytes)"
     )
 
+    /// `fight_floor_data`, stride 0x18 on US/JP (`fightFloorDataBiosGetPtr`).
     static let battleFieldStruct = StructMap(
         name: "BattleField",
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
+            .uint8(name: "terrain", description: "GetTikeiDataId"),
+            .padding(length: 1),
+            .uint16(name: "room_id", description: "GetFloorDataId"),
             .uint32(name: "name_id"),
-            .uint32(name: "unknown_1"),
-            .uint32(name: "unknown_2"),
-            .uint32(name: "unknown_3"),
-            .uint32(name: "unknown_4"),
-            .uint32(name: "unknown_5"),
+            .uint32(name: "intro_wzx_id", description: "GetSyoukaiWzxDataId"),
+            .uint32(name: "bgm_id"),
+            .uint32(name: "environment_sound_id"),
+            .array(name: "side_ids", count: 2, of: .uint16, description: "BattleSideData rows (GetFightSideDataId)"),
         ],
-        description: "Battlefield properties (0x18 bytes)"
+        description: "A battlefield (fight_floor_data, 0x18 bytes)"
+    )
+
+    /// PAL widens the record by four per-language intro WZX ids, in the same
+    /// language order as `BattleEU` (stride 0x28 in PAL's own accessor).
+    static let battleFieldEUStruct = StructMap(
+        name: "BattleFieldEU",
+        wordSize: 4,
+        alignmentStyle: .none,
+        properties: [
+            .uint8(name: "terrain"),
+            .padding(length: 1),
+            .uint16(name: "room_id"),
+            .uint32(name: "name_id"),
+            .uint32(name: "intro_wzx_id_english"),
+            .uint32(name: "intro_wzx_id_german"),
+            .uint32(name: "intro_wzx_id_french"),
+            .uint32(name: "intro_wzx_id_italian"),
+            .uint32(name: "intro_wzx_id_spanish"),
+            .uint32(name: "bgm_id"),
+            .uint32(name: "environment_sound_id"),
+            .array(name: "side_ids", count: 2, of: .uint16),
+        ],
+        description: "A battlefield, PAL layout (fight_floor_data, 0x28 bytes)"
     )
 
     static let battleLayoutStruct = StructMap(
@@ -233,15 +273,17 @@ public extension XDStructDefaults {
         description: "Battle participant layout (0x08 bytes)"
     )
 
+    /// `poke_face`, stride 8 (`_menuFaceBiosGetPtr`).
     static let pokefaceStruct = StructMap(
         name: "Pokeface",
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "crop_type"),
-            .uint32(name: "image_file_id"),
+            .uint8(name: "flags", description: "Bit 7 shiny (menuFaceBiosGetRareFlag); bit 6 set on nearly every row, no reader found"),
+            .padding(length: 3),
+            .uint32(name: "image_file_id", description: "menuFaceBiosGetTexID"),
         ],
-        description: "Pokemon portrait image reference (0x05 bytes)"
+        description: "Pokemon portrait image reference (8 bytes)"
     )
 
     static let aiWeightEffectStruct = StructMap(
@@ -258,26 +300,19 @@ public extension XDStructDefaults {
         description: "AI move weight effect (0x14 bytes)"
     )
 
+    /// `fight_trainer_pokemon_part_data`, stride 0x18
+    /// (`fightTrainerPokemonPartDataBiosGetPtr`).
     static let pokemonAIRoleStruct = StructMap(
         name: "PokemonAIRole",
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "physical_attacker_weight"),
-            .uint8(name: "special_attacker_weight"),
-            .uint8(name: "physical_defender_weight"),
-            .uint8(name: "special_defender_weight"),
-            .uint8(name: "speed_weight"),
-            .uint8(name: "hp_weight"),
-            .uint8(name: "status_weight"),
-            .uint8(name: "unknown_1"),
-            .uint8(name: "unknown_2"),
-            .uint8(name: "unknown_3"),
-            .uint8(name: "unknown_4"),
-            .uint8(name: "unknown_5"),
-            .uint8(name: "unknown_6"),
+            .uint32(name: "name_id", description: "fightTrainerPokemonPartDB_GetName"),
+            .uint32(name: "unknown_0x04", description: "No reader found"),
+            .array(name: "move_type_weights", count: 14, of: .uint8, description: "fightTrainerPokemonPartDB_GetWazaTypeRevise"),
+            .padding(length: 2),
         ],
-        description: "Pokemon AI role weights (0x0D bytes)"
+        description: "Pokemon AI role (0x18 bytes)"
     )
 
     static let tutorMoveStruct = StructMap(
@@ -328,15 +363,17 @@ public extension XDStructDefaults {
         description: "Sound metadata (0x0C bytes, actually 0x10 in legacy)"
     )
 
+    /// `char_name`, stride 8 (`charNameBiosGet*`).
     static let peopleIDStruct = StructMap(
         name: "PeopleID",
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "person_id"),
-            .uint32(name: "name_id"),
+            .uint16(name: "hear_flag_id", description: "charNameBiosGetHearFlag"),
+            .padding(length: 2),
+            .uint32(name: "name_id", description: "charNameBiosGetNameID; searched by charNameBiosSearchIndex"),
         ],
-        description: "Character ID to name mapping (6 bytes)"
+        description: "Character name (8 bytes)"
     )
 
     static let battleTypeStruct = StructMap(
@@ -369,15 +406,18 @@ public extension XDStructDefaults {
         description: "RGBA color value (4 bytes)"
     )
 
+    /// `pokemon_menu_animation`, stride 4
+    /// (`menuModelGetPokemonAnimationIndexByID`).
     static let pokemonMenuAnimationStruct = StructMap(
         name: "PokemonMenuAnimation",
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "animation_id"),
-            .abstraction(name: "species_id", typeName: "PokemonSpecies"),
+            .uint8(name: "animation_id", description: "Returned minus 1"),
+            .padding(length: 1),
+            .abstraction(name: "species_id", typeName: "PokemonSpecies", description: "The search key"),
         ],
-        description: "Pokemon summary screen animation override (3 bytes)"
+        description: "Pokemon summary screen animation override (4 bytes)"
     )
 
     // MARK: - Species data (PokemonStats)
@@ -432,7 +472,7 @@ public extension XDStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "pokedex_color"),
+            .abstraction(name: "pokedex_color", typeName: "PokedexColor"),
             .padding(length: 1),
             .uint16(name: "face_index", description: "Index into the PokefaceTextures table"),
             .uint32(name: "body_file_id", description: "File identifier of the animated body texture in poke_dance.fsys"),
@@ -601,7 +641,7 @@ public extension XDStructDefaults {
 
     private static var roomHeadProperties: [StructMap.Property] {
         [
-            .uint8(name: "area_id"),
+            .abstraction(name: "area", typeName: "Area", description: "Compared for equality only: a change of area clears flag level 2"),
             .abstraction(name: "kind", typeName: "RoomKind", description: "floorKind — which lifecycle, shadow, fog and control path the floor code takes"),
             .uint16(name: "room_id"),
         ]

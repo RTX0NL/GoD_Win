@@ -28,10 +28,8 @@ protocol OperationHandler {
     func relAssembly(config: RelAssembly.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func commonRelDump(config: CommonRelDump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func commonRelBuild(config: CommonRelBuild.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
-    func mapRelDump(config: MapRelDump.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
-    func mapRelBuild(config: MapRelBuild.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
-    func mapRelsDump(config: MapRelDump.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
-    func mapRelsBuild(config: MapRelBuild.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func relsDump(config: RelsDump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
+    func relsBuild(config: RelsBuild.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func cisoDump(config: CISODump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func cisoBuild(config: CISOBuild.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
     func gciDump(config: GCIOps.DumpConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws
@@ -120,20 +118,12 @@ struct EngineOperationHandler: OperationHandler {
         try CommonRelBuild.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
     }
 
-    func mapRelDump(config: MapRelDump.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
-        try MapRelDump.dump(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    func relsDump(config: RelsDump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try RelsDump.dump(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
     }
 
-    func mapRelBuild(config: MapRelBuild.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
-        try MapRelBuild.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
-    }
-
-    func mapRelsDump(config: MapRelDump.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
-        try MapRelDump.dump(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
-    }
-
-    func mapRelsBuild(config: MapRelBuild.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
-        try MapRelBuild.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
+    func relsBuild(config: RelsBuild.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try RelsBuild.build(config: config, settings: settings, fileSystem: fileSystem, logger: logger)
     }
 
     func cisoDump(config: CISODump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {

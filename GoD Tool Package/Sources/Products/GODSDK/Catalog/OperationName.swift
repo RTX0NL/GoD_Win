@@ -29,10 +29,8 @@ public enum OperationName: String, CaseIterable, Codable {
     case relAssembly
     case commonRelDump
     case commonRelBuild
-    case mapRelDump
-    case mapRelBuild
-    case mapRelsDump
-    case mapRelsBuild
+    case relsDump
+    case relsBuild
     case cisoDump
     case cisoBuild
     case gciDump
@@ -81,10 +79,8 @@ extension GoddessConfig.Operations {
         case .relAssembly: return .relAssembly
         case .commonRelDump: return .commonRelDump
         case .commonRelBuild: return .commonRelBuild
-        case .mapRelDump: return .mapRelDump
-        case .mapRelBuild: return .mapRelBuild
-        case .mapRelsDump: return .mapRelsDump
-        case .mapRelsBuild: return .mapRelsBuild
+        case .relsDump: return .relsDump
+        case .relsBuild: return .relsBuild
         case .cisoDump: return .cisoDump
         case .cisoBuild: return .cisoBuild
         case .gciDump: return .gciDump

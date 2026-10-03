@@ -303,6 +303,15 @@ public struct RELFile: FileFormat {
         let epilogOffset: UInt32 = binary.readSafely(atAddress: 0x38)
         let unresolvedOffset: UInt32 = binary.readSafely(atAddress: 0x3C)
 
+        // The header has no magic, so these are what stand between a
+        // non-REL and a "successful" parse. XD ships a particle file named
+        // `tractorbeam.rel`: its version word reads 16,778,244 and it
+        // declares no sections, and without this check it parsed into an
+        // empty module and rebuilt as 76 bytes of its 320 KB.
+        guard (1...3).contains(version), sectionCount > 0 else {
+            throw FileFormatErrors.invalid(format: RELFile.formatName)
+        }
+
         var sectionAlign: UInt32 = 0
         var bssAlign: UInt32 = 0
         var fixSize: UInt32 = 0

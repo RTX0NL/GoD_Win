@@ -86,6 +86,23 @@ final class RELFileTests: XCTestCase {
                        "first import is self-referencing (moduleID = own)")
     }
 
+    /// A REL header has no magic, so the version and section count are what
+    /// reject a file that isn't one. The first 0x20 bytes here are XD's
+    /// `tractorbeam.rel` — a particle file with a `.rel` name — which used to
+    /// parse into an empty module and rebuild as 76 bytes.
+    func testREL_initBinary_rejectsAFileThatIsntARel() {
+        var bytes: [UInt8] = [
+            0x01, 0xF0, 0x56, 0xDA, 0x00, 0x03, 0x00, 0x02, 0x00, 0x3F, 0x00, 0x13, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x02, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4C, 0xE0, 0x01, 0x00, 0x04, 0x04,
+        ]
+        bytes += [UInt8](repeating: 0, count: 0x60)
+        XCTAssertThrowsError(try RELFile(binary: GoDData(byteStream: bytes, byteOrder: .big), name: "tractorbeam"))
+
+        // The same header with a real version but no sections is rejected too.
+        bytes[0x1C...0x1F] = [0, 0, 0, 3]
+        XCTAssertThrowsError(try RELFile(binary: GoDData(byteStream: bytes, byteOrder: .big), name: "empty"))
+    }
+
     // MARK: - binaryData
 
     /// Builds a minimal v3 REL with a single 8-byte executable section

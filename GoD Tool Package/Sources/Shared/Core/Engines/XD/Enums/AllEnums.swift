@@ -39,6 +39,8 @@ public extension XDEngine {
                 // declared in the Pokemon module for the same reason.
                 PokemonEnumDefaults.expRatesEnum,
                 PokemonEnumDefaults.genderRatiosEnum,
+                PokemonEnumDefaults.eggGroupsEnum,
+                PokemonEnumDefaults.naturesEnum,
                 PokemonEnumDefaults.evolutionMethodsEnum,
                 // Battle table (fightEncountData) — XD's own value sets.
                 XDCommonRelEnumDefaults.battleKind,
@@ -46,6 +48,20 @@ public extension XDEngine {
                 XDCommonRelEnumDefaults.deck,
                 XDCommonRelEnumDefaults.battleController,
                 XDCommonRelEnumDefaults.roomKind,
+                XDCommonRelEnumDefaults.battleBingoMysteryPanelKind,
+                XDCommonRelEnumDefaults.shopKind,
+                XDCommonRelEnumDefaults.moveMatchupDisplay,
+                XDCommonRelEnumDefaults.follower,
+                XDCommonRelEnumDefaults.treasureKind,
+                XDCommonRelEnumDefaults.area,
+                XDCommonRelEnumDefaults.cameraAreaShape,
+                XDCommonRelEnumDefaults.offscreenSource,
+                PokemonEnumDefaults.typeEffectivenessEnum,
+                PokemonEnumDefaults.statusEffectOwnerEnum,
+                PokemonEnumDefaults.statusWriteModeEnum,
+                PokemonEnumDefaults.pokedexColorEnum,
+                PokemonEnumDefaults.reverseModeRateEnum,
+                PokemonEnumDefaults.deckPokemonKeyPlayerEnum,
             ]
         }
     }

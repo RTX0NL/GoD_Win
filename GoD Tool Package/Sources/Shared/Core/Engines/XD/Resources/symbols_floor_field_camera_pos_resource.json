@@ -1,0 +1,12 @@
+{
+  "symbols": {
+    "0": "floor_field_camera_list",
+    "1": "floor_field_camera_list_number",
+    "2": "floor_field_camera_list_top",
+    "3": "floor_pos_list",
+    "4": "floor_pos_list_number",
+    "5": "floor_pos_list_top",
+    "6": "floor_resource_data",
+    "7": "floor_resource_data_number"
+  }
+}

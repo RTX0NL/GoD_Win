@@ -84,20 +84,12 @@ final class SpyOperationHandler: OperationHandler {
         try record(.commonRelBuild(config: config), settings)
     }
 
-    func mapRelDump(config: MapRelDump.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
-        try record(.mapRelDump(config: config), settings)
+    func relsDump(config: RelsDump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.relsDump(config: config), settings)
     }
 
-    func mapRelBuild(config: MapRelBuild.SingleConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
-        try record(.mapRelBuild(config: config), settings)
-    }
-
-    func mapRelsDump(config: MapRelDump.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
-        try record(.mapRelsDump(config: config), settings)
-    }
-
-    func mapRelsBuild(config: MapRelBuild.BatchConfig, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
-        try record(.mapRelsBuild(config: config), settings)
+    func relsBuild(config: RelsBuild.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {
+        try record(.relsBuild(config: config), settings)
     }
 
     func cisoDump(config: CISODump.Config, settings: GoddessSettings, fileSystem: FileSystemTree, logger: Logger) throws {

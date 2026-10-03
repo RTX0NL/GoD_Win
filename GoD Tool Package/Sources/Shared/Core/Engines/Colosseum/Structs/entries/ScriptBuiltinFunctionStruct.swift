@@ -18,7 +18,7 @@ public extension ColosseumStructDefaults {
             // Offset 0x00: Native handler function pointer (0 = unimplemented ID)
             .label(name: "handler"),
             // Offset 0x04: Argument type bytes (0 = end, 2 = float, else int)
-            .array(name: "arg_types", count: 8, of: .uint8),
+            .array(name: "arg_types", count: 8, of: .enumeration(name: "ScriptArgType")),
         ]
     )
 }

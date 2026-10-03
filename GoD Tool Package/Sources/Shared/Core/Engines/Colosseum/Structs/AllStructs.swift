@@ -89,6 +89,26 @@ public extension ColosseumEngine {
                 ColosseumStructDefaults.saveBattleEntryStruct,
                 ColosseumStructDefaults.saveShadowMonitorStruct,
                 ColosseumStructDefaults.saveTailStruct,
+                // map REL floor tables
+                ColosseumStructDefaults.floorCharacterStruct,
+                ColosseumStructDefaults.floorEntryPointStruct,
+                ColosseumStructDefaults.floorRenderDataStruct,
+                ColosseumStructDefaults.floorFieldCameraStruct,
+                ColosseumStructDefaults.floorOffscreenDataStruct,
+                ColosseumStructDefaults.floorBerryStruct,
+                ColosseumStructDefaults.shopCouponDialogStruct,
+                ColosseumStructDefaults.shopGreetingDialogStruct,
+                ColosseumStructDefaults.shopStruct,
+                ColosseumStructDefaults.shopGoodsEntryStruct,
+                ColosseumStructDefaults.generalFlagStruct,
+                ColosseumStructDefaults.flagItemStruct,
+                ColosseumStructDefaults.flagPartyStruct,
+                ColosseumStructDefaults.flagValueStruct,
+                ColosseumStructDefaults.storyCheckpointStruct,
+                ColosseumStructDefaults.battleSideStruct,
+                ColosseumStructDefaults.heartGaugeChangeStruct,
+                ColosseumStructDefaults.contestEffectStruct,
+                ColosseumStructDefaults.tableResEntryStruct,
             ]
         }
     }

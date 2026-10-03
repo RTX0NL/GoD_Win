@@ -1,0 +1,88 @@
+{
+  "chunks": [
+    {
+      "table": {
+        "name": "Characters",
+        "start": "Characters",
+        "entryType": "FloorCharacter"
+      }
+    },
+    {
+      "table": {
+        "name": "EntryPoints",
+        "start": "EntryPoints",
+        "entryType": "FloorEntryPoint"
+      }
+    },
+    {
+      "table": {
+        "name": "RenderData",
+        "start": "RenderData",
+        "entryType": "FloorRenderData"
+      }
+    },
+    {
+      "table": {
+        "name": "FieldCameras",
+        "start": "FieldCameras",
+        "entryType": "FloorFieldCamera"
+      }
+    },
+    {
+      "table": {
+        "name": "OffscreenData",
+        "start": "OffscreenData",
+        "entryType": "FloorOffscreenData"
+      }
+    },
+    {
+      "table": {
+        "name": "BerryWeights",
+        "start": "BerryWeights",
+        "entryType": "FloorBerry"
+      }
+    },
+    {
+      "count": {
+        "label": "NumberOfCharacters",
+        "table": "Characters",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "NumberOfEntryPoints",
+        "table": "EntryPoints",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "NumberOfRenderData",
+        "table": "RenderData",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "NumberOfFieldCameras",
+        "table": "FieldCameras",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "NumberOfOffscreenData",
+        "table": "OffscreenData",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "NumberOfBerryWeights",
+        "table": "BerryWeights",
+        "type": "uint32"
+      }
+    }
+  ]
+}

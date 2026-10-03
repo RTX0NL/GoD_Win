@@ -47,6 +47,41 @@ symbol map, so a name is only trusted where its body was read.
 | `PokemonMetLocations` | `MetLocation` | `NumberOfMetLocations` | 505 | 8 | |
 | `InteractionPoints` | `InteractionPoint` | `NumberOfInteractionPoints` | 594 (JP 595) | 0x1C | |
 
+### Tables typed from their XD counterparts
+
+Nine more tables carry no name in the legacy symbol list and were named
+here because each has an XD counterpart with the same record size, the same
+count word and the same value pattern on all three discs. Their count words
+equal their row counts on every region, and each is linked as a derived
+count. Structs: `Structs/entries/CommonRelXDCounterpartStructs.swift`.
+
+| Index | Table | Struct | Rows | Stride | Evidence |
+|---:|---|---|---:|---:|---|
+| 8 | `TableResData` | `TableResEntry` | 8 (PAL 20, JP 3) | 4 | pointers to the embedded fonts, string tables and script — XD's `table_res` |
+| 10 | `FlagItemData` | `FlagItem` | 2 | 4 | read by Colosseum's debug set-flag routine through descriptor byte +2 |
+| 16 | `FlagValues` | `FlagValue` | 7 | 4 | descriptor byte +1 |
+| 18 | `FlagPartyData` | `FlagParty` | 4 | 2 | indexed by a story checkpoint's byte 0 |
+| 22 | `StoryProgressFlags` | `StoryCheckpoint` | 54 | 0x18 | descriptor byte +3. **Shorter than XD's 0x20**: party index, room, money (10000 on every row), then x/y/z at +8 and a debug-name message id at +0x14 — no story-progress or script word |
+| 26 | `BattleSideData` | `BattleSide` | 5 | 0x14 | XD's layout and row pattern exactly (null row, two player-side, two opponent-side) |
+| 54 | `GeneralFlags` | `GeneralFlag` | 3593 | 8 | the flag descriptor table. Its count word sits in an 8-byte chunk whose second word (2451) stays raw |
+| 66 | `ShadowPokemonFilterData` | `HeartGaugeChange` | 6 (explicit) | 1 | the same bytes as XD's, `ff ff fd fd ff ff` |
+| 88 | `ContestData` | `ContestEffect` | 51 | 8 | appeal and jam as XD; **+6 is a description message id** (sequential from row 1) where XD has zeros |
+
+`FlagsMetaData` (12, 4 × 8) and `FlagPokemonData` (20, 4 × 12) are named
+too but stay raw, as in XD: the first is filled at boot, the second is all
+zero. The flag-table roles come from the Colosseum routine that reads them
+(`zz_Script_function_0x52_get_flag`, really a debug "set a flag and its
+prerequisites" walk); see `Documentation/File Formats/XD/common.rel Tables.md`.
+
+`GeneralFlags` used to be described as untargeted and is still bundled as
+`general_flags_{us,jp}.csv` for the save pipeline, but the module's own
+pointer index bounds it exactly, so it now also dumps in place.
+
+Two embedded fonts are typed as `.fnt` file chunks besides the one already
+known: index 94 (US and PAL, the large 22×22/18×18 kanji font) and index 97
+(US). Their blocks carry 1 in the header word at +0x0A, which the font
+writer used to zero; `GSFont` now carries it (`unknown0A`).
+
 Colosseum keeps its trainers in `common.rel` (XD moved them to the deck
 files): a `Trainer` names the index of its first Pokémon in
 `TrainerPokemonData`, and its team is the six consecutive entries from
@@ -146,7 +181,8 @@ second animation id sits at `+0x32`, and the three effect-type bytes at
 `CommonRelTableCSVCorpusTests` runs the real dump over a real `common.rel`
 (`GODDESS_COLO_COMMON_REL_CORPUS` names the project folder) and checks that
 every table above came out as CSV with the row count its count word
-declares. All 28 do, on the US, PAL and JP discs.
+declares. All 28 do, on the US, PAL and JP discs; with the nine above the
+shipped maps type 37 tables and link 33 counts per region.
 
 ## Known gaps
 
@@ -158,3 +194,28 @@ declares. All 28 do, on the US, PAL and JP discs.
   `CharacterModel` are typed by shape only; their field meanings are still
   the legacy tool's guesses. Two trainers carry a fourth message id after
   their loss text (`Trainer.unknown_text_id`); what it is for is unknown.
+
+
+## Enums
+
+| Field | Enum | Evidence |
+|---|---|---|
+| `Battle.battle_style` | `BattleStyle` (**corrected**) | a row of `BattleStyles` (`fightTypeDataBiosGetPtr`): Single, Double, Multi, None, SingleThreeEntered, DoubleFourEntered, MultiTwoEntered. The old XD-style names printed Colosseum's 557 doubles as "Single" |
+| `InteractionPoint.interaction_method` | `InteractionMethod` | the event code logs "pass/touch/check/menu event" by value |
+| `InteractionPoint.script`, `RoomScriptFunction.script` | `ScriptKind` | the loaded scripts' header ids (map 0x100, menu 0x200, title 0x201, battle 0x300, common 0x596) |
+| `BattleField.terrain` | `BattleTerrain` | a row of the DOL terrain table (camouflage type, Secret Power, Nature Power) |
+| `MetLocation.sighting_state` | `ShadowSightingState` | the Shadow Pokémon screens switch on 0/1/2 (names read from the branches) |
+| `Type.effectiveness[]`, `Type.category` (DOL) | `TypeEffectiveness`, `MoveCategory` | as XD |
+| `Item.hold_effect` (DOL) | `HoldEffect` | Gen III order; evolution tests 38, friendship 27 |
+| `StatusEffect.owner`/`write_mode` (DOL) | `StatusEffectOwner`, `StatusWriteMode` | as XD |
+| `ScriptBuiltinFunction.arg_types[]` (DOL) | `ScriptArgType` | `callStandard` marshals by it |
+| `PokemonSprite.pokedex_color` | `PokedexColor` | data |
+| `Room.area` | `Area` | data; compared for equality only |
+
+Renamed on the same evidence: `Battle.wipe_id`, `TrainerClass.bgm_id`,
+`BattleField` `room_id`/`intro_wzx_id`/`bgm_id`/`environment_sound_id`/
+`side_ids`, `MetLocation` `required_flag_value`/`flag_id`/`text_id`, and
+`ShadowData.first_sighting_index`. Move flag bytes and `TM.is_hm` are
+`.boolean`. Not done: a 214-case `MoveEffect` (the numbering matches Gen III,
+but the battle code's dispatch on it hasn't been traced) and a
+`NatureMultiplierRate` (it would name rows of an editable table).

@@ -214,14 +214,10 @@ public enum GODOps {
             try handler.commonRelDump(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
         case .commonRelBuild(let cfg):
             try handler.commonRelBuild(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
-        case .mapRelDump(let cfg):
-            try handler.mapRelDump(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
-        case .mapRelBuild(let cfg):
-            try handler.mapRelBuild(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
-        case .mapRelsDump(let cfg):
-            try handler.mapRelsDump(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
-        case .mapRelsBuild(let cfg):
-            try handler.mapRelsBuild(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .relsDump(let cfg):
+            try handler.relsDump(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
+        case .relsBuild(let cfg):
+            try handler.relsBuild(config: cfg, settings: settings, fileSystem: fileSystem, logger: logger)
         case .cisoDump(let cisoConfig):
             try handler.cisoDump(config: cisoConfig, settings: settings, fileSystem: fileSystem, logger: logger)
         case .cisoBuild(let cisoConfig):

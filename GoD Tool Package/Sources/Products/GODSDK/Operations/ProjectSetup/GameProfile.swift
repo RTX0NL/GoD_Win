@@ -35,17 +35,6 @@ struct GameProfile {
         case galeOfDarkness
     }
 
-    /// One map-rel disassembly target: where its source lands under
-    /// `/Source/Code`, which typemap types it, and which `.rel`s it claims.
-    struct MapPlan {
-        let sourceFolderName: String
-        /// Path of the typemap within the game's engine folder. Every plan
-        /// has one — XD points both of its plans at the same map, Colosseum
-        /// has one per layout.
-        let typeMapResource: File
-        let filter: MapRelDump.Filter
-    }
-
     let gameIDs: [String]
     let gsGame: GSGame
     /// Folder name the game engine serializes to — read from the engine
@@ -54,7 +43,9 @@ struct GameProfile {
     /// `variant` string for the message dump/build ops.
     let msgVariant: String
     let family: FSYSFamily
-    let mapPlans: [MapPlan]
+    /// Path of the REL route table within the engine folder: which type
+    /// map and symbol index describe each REL the unpack produces.
+    let relRoutesResource: File
     /// Path of the DOL typemap within the engine folder, if the game ships
     /// one. Games without a typemap disassemble their DOL as raw hex.
     let dolTypeMapResource: File?
@@ -86,21 +77,7 @@ struct GameProfile {
             engineName: XDEngine.defaultName,
             msgVariant: "xd",
             family: .galeOfDarkness,
-            mapPlans: [
-                // The regular maps, minus the leftover Colosseum-format ones.
-                .init(
-                    sourceFolderName: "maps",
-                    typeMapResource: resources.mapRelTypeMap,
-                    filter: .excludePrefixes(data.unusedColosseumMapPrefixes)
-                ),
-                // …which go to their own folder, since they don't follow the
-                // XD layout the typemap describes.
-                .init(
-                    sourceFolderName: "maps_unused",
-                    typeMapResource: resources.mapRelTypeMap,
-                    filter: .onlyPrefixes(data.unusedColosseumMapPrefixes)
-                ),
-            ],
+            relRoutesResource: resources.relRoutes,
             dolTypeMapResource: resources.dolTypeMap,
             dolSymbolMapResource: resources.dolSymbolMap,
             regionalResources: { gameID in
@@ -118,6 +95,9 @@ struct GameProfile {
                 if let relTypes = PokemonXD.commonRelTypeMapData(for: gameID) {
                     result.append((resources.commonRelTypeMap, relTypes))
                 }
+                if let routes = PokemonXD.relRouteTableData(for: gameID) {
+                    result.append((resources.relRoutes, routes))
+                }
                 return result
             },
             makeEngine: { try XDEngine.defaults() }
@@ -133,21 +113,7 @@ struct GameProfile {
             engineName: ColosseumEngine.defaultName,
             msgVariant: "colo",
             family: .colosseum,
-            mapPlans: [
-                // Colosseum maps come in two layouts. The runtime classifier
-                // that tells them apart isn't ported yet, so both plans ship
-                // disabled and the user opts in once the prefixes are known.
-                .init(
-                    sourceFolderName: "maps_type1",
-                    typeMapResource: resources.mapRelTypeMapType1,
-                    filter: .coloType1
-                ),
-                .init(
-                    sourceFolderName: "maps_type2",
-                    typeMapResource: resources.mapRelTypeMapType2,
-                    filter: .coloType2
-                ),
-            ],
+            relRoutesResource: resources.relRoutes,
             dolTypeMapResource: resources.dolTypeMap,
             dolSymbolMapResource: resources.dolSymbolMap,
             regionalResources: { gameID in
@@ -172,6 +138,9 @@ struct GameProfile {
                 }
                 if let flags = PokemonColosseum.generalFlagsTableData(for: gameID) {
                     result.append((resources.generalFlagsTable, flags))
+                }
+                if let routes = PokemonColosseum.relRouteTableData(for: gameID) {
+                    result.append((resources.relRoutes, routes))
                 }
                 return result
             },

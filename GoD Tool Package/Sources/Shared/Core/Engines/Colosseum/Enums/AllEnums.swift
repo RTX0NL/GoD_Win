@@ -52,6 +52,18 @@ public extension ColosseumEngine {
                 ColoCommonRelEnumDefaults.battleKind,
                 ColoCommonRelEnumDefaults.battleStyle,
                 ColoCommonRelEnumDefaults.battleController,
+                ColoCommonRelEnumDefaults.shopKind,
+                ColoCommonRelEnumDefaults.interactionMethod,
+                ColoCommonRelEnumDefaults.battleTerrain,
+                ColoCommonRelEnumDefaults.shadowSightingState,
+                ColoCommonRelEnumDefaults.scriptArgType,
+                ColoCommonRelEnumDefaults.scriptKind,
+                ColoCommonRelEnumDefaults.area,
+                ColoCommonRelEnumDefaults.holdEffect,
+                PokemonEnumDefaults.typeEffectivenessEnum,
+                PokemonEnumDefaults.statusEffectOwnerEnum,
+                PokemonEnumDefaults.statusWriteModeEnum,
+                PokemonEnumDefaults.pokedexColorEnum,
                 ColoCommonRelEnumDefaults.roomKind,
             ]
         }

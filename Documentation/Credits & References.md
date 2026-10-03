@@ -276,3 +276,11 @@ the two generations disagree — which they do more than the names suggest:
   `.abstraction` backfill follows. `AbilitiesTable.swift` supplied the
   ability entry layout (`Name ID` / `Description ID` as `common.rel` message
   ids) that made the join above possible.
+
+## Colosseum / XD battle-data enums
+
+- **pret/pokeemerald** ([github.com/pret/pokeemerald](https://github.com/pret/pokeemerald))
+  — `include/constants/hold_effects.h`. Colosseum's `Item.hold_effect` values
+  follow Gen III's `HOLD_EFFECT_*` order exactly, so the `HoldEffect` case
+  names are taken from it. The Pokédex color and battle terrain orders were
+  checked against the same Gen III constants.

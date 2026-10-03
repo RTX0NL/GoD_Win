@@ -1,0 +1,12 @@
+{
+  "symbols": {
+    "0": "shopData",
+    "1": "shopData_number",
+    "2": "shopExchanger",
+    "3": "shopExchanger_number",
+    "4": "shopGoods",
+    "5": "shopGoods_number",
+    "6": "shopSalesman",
+    "7": "shopSalesman_number"
+  }
+}

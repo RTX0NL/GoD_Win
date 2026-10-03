@@ -1,0 +1,60 @@
+{
+  "chunks": [
+    {
+      "table": {
+        "name": "CouponCounterDialog",
+        "start": "CouponCounterDialog",
+        "entryType": "ShopCouponDialog"
+      }
+    },
+    {
+      "table": {
+        "name": "MartGreetings",
+        "start": "MartGreetings",
+        "entryType": "ShopGreetingDialog"
+      }
+    },
+    {
+      "table": {
+        "name": "MartStartIndexes",
+        "start": "MartStartIndexes",
+        "entryType": "Shop"
+      }
+    },
+    {
+      "table": {
+        "name": "MartItems",
+        "start": "MartItems",
+        "entryType": "ShopGoodsEntry"
+      }
+    },
+    {
+      "count": {
+        "label": "NumberOfCouponCounterDialog",
+        "table": "CouponCounterDialog",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "NumberOfMartGreetingSections",
+        "table": "MartGreetings",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "NumberOfMarts",
+        "table": "MartStartIndexes",
+        "type": "uint32"
+      }
+    },
+    {
+      "count": {
+        "label": "NumberOfMartItems",
+        "table": "MartItems",
+        "type": "uint32"
+      }
+    }
+  ]
+}

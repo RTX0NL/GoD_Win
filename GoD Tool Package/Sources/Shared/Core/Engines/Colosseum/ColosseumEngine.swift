@@ -2,6 +2,7 @@
 import GoDFoundation
 import Structs
 import ScriptDecompiler
+import Disassembler
 import Foundation
 
 public struct ColosseumEngine: Engine {
@@ -52,10 +53,13 @@ public struct ColosseumEngine: Engine {
         // the ROM's own region via `regionalResources`.
         add(data.resources.commonRelTypeMap, named: "common_rel_typemap_us.json")
         add(data.resources.dolTypeMap, named: "dol_typemap_us.json")
-        add(data.resources.mapRelSymbolMap, named: "map_rel_symbols.json")
-        add(data.resources.mapRelTypeMapType1, named: "map_rel_typemap_type1.json")
-        add(data.resources.mapRelTypeMapType2, named: "map_rel_typemap_type2.json")
-        add(data.resources.pocketMenuSymbolMap, named: "pocket_menu_symbols.json")
+        // The REL route table is per region; US is the default and
+        // `ProjectSetup` writes the ROM's own. Every file any region's
+        // matchers name is installed.
+        add(data.resources.relRoutes, named: "rel_routes_us.json")
+        for file in Set(PokemonColosseum.relRouteTables.flatMap(\.matcherFiles)) {
+            add(file, named: file.fileName)
+        }
         // US is the bundled default so the file is never empty; `ProjectSetup`
         // writes the JP table over it when the disc is Japanese.
         add(data.resources.generalFlagsTable, named: "general_flags_us.csv")
@@ -137,6 +141,21 @@ public enum PokemonColosseum {
     public static func commonRelTypeMapData(for gameID: String) -> GoDData? {
         guard let suffix = regionSuffix(for: gameID) else { return nil }
         return bundledResource(named: "common_rel_typemap_\(suffix).json")
+    }
+
+    /// The REL route table for a specific build (see
+    /// `scripts/analysis/gen_rel_routes.py`).
+    public static func relRouteTableData(for gameID: String) -> GoDData? {
+        guard let suffix = regionSuffix(for: gameID) else { return nil }
+        return bundledResource(named: "rel_routes_\(suffix).json")
+    }
+
+    public static var relRouteTables: [RelRouteTable] {
+        ["us", "eu", "jp"].compactMap { suffix in
+            bundledResource(named: "rel_routes_\(suffix).json").flatMap { data in
+                try? JSONDecoder().decode(RelRouteTable.self, from: data.data)
+            }
+        }
     }
 
     /// Returns the REL symbol index data for a given REL name (e.g. "common_rel", "pocket_menu", "map_rel")

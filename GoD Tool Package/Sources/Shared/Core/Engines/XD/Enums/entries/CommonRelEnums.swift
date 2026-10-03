@@ -109,4 +109,146 @@ public enum XDCommonRelEnumDefaults {
         ],
         propertyType: .uint32
     )
+
+    /// A Battle Bingo mystery panel's reward (`menuBingoSheetBtn`). Every
+    /// card carries exactly one of each of 1, 2 and 3.
+    public static let battleBingoMysteryPanelKind = Enum(
+        name: "BattleBingoMysteryPanelKind",
+        allowUnknownCases: true,
+        values: [
+            .init(name: "None",        rawValue: 0),
+            .init(name: "MasterBall",  rawValue: 1),
+            .init(name: "EnergyPlus1", rawValue: 2),
+            .init(name: "EnergyPlus2", rawValue: 3),
+        ],
+        propertyType: .uint8
+    )
+
+    /// A mart's kind (`menuShopMain`'s switch on the mart list's +0x01):
+    /// 0, 5 and 6 run the shop, 1 the vending machine, 2-4 the coupon
+    /// exchange in that mode. The title message is a DOL table indexed by it.
+    public static let shopKind = Enum(
+        name: "ShopKind",
+        allowUnknownCases: true,
+        values: [
+            .init(name: "Shop",              rawValue: 0),
+            .init(name: "VendingMachine",    rawValue: 1),
+            .init(name: "MemoryCardCoupons", rawValue: 2),
+            .init(name: "GBACoupons",        rawValue: 3),
+            .init(name: "PokeCoupons",       rawValue: 4),
+            .init(name: "BattleCDs",         rawValue: 5),
+            .init(name: "HerbShop",          rawValue: 6),
+        ],
+        propertyType: .uint8
+    )
+
+    /// Which matchup sprite the status screen draws for a move against the
+    /// target (`menuPokemonStatusDrawWaza`'s 16-way jump table on Move +0x15).
+    public static let moveMatchupDisplay = Enum(
+        name: "MoveMatchupDisplay",
+        allowUnknownCases: true,
+        values: [
+            .init(name: "None", rawValue: 0),
+            .init(name: "TypeChart", rawValue: 1),
+            .init(name: "Shadow", rawValue: 2),
+            .init(name: "NoTarget", rawValue: 3),
+            .init(name: "IneffectiveOnGhost", rawValue: 4),
+            .init(name: "IneffectiveOnGrass", rawValue: 5),
+            .init(name: "IneffectiveOnPoisonSteel", rawValue: 6),
+            .init(name: "IneffectiveOnGround", rawValue: 7),
+            .init(name: "IneffectiveOnFlying", rawValue: 8),
+            .init(name: "IneffectiveOnNormal", rawValue: 9),
+            .init(name: "Variable", rawValue: 10),
+            .init(name: "VariableHiddenPower", rawValue: 11),
+            .init(name: "IneffectiveOnDark", rawValue: 12),
+            .init(name: "IneffectiveOnFire", rawValue: 13),
+            .init(name: "VariableWeatherBall", rawValue: 14),
+            .init(name: "AlwaysNeutral", rawValue: 15),
+        ],
+        propertyType: .uint8
+    )
+
+    /// Who follows the player after a story-checkpoint warp
+    /// (`heroSetFollowerWithID`); `Girl` is the unnamed `girl_1000` model.
+    public static let follower = Enum(
+        name: "Follower",
+        allowUnknownCases: true,
+        values: [
+            .init(name: "None", rawValue: 0),
+            .init(name: "Jovi", rawValue: 1),
+            .init(name: "Girl", rawValue: 2),
+            .init(name: "Krane", rawValue: 3),
+        ],
+        propertyType: .uint8
+    )
+
+    /// What a treasure looks like. The game reads the top three bits
+    /// (`_floorInitTresure`: 1 chest, 2 sparkle, 3 book); the low five are 4
+    /// on every row and unread, so the whole byte is the enum, as with
+    /// Colosseum's `RoomKind`.
+    public static let treasureKind = Enum(
+        name: "TreasureKind",
+        allowUnknownCases: true,
+        values: [
+            .init(name: "None", rawValue: 0x00),
+            .init(name: "Chest", rawValue: 0x24),
+            .init(name: "Sparkle", rawValue: 0x44),
+            .init(name: "Book", rawValue: 0x64),
+        ],
+        propertyType: .uint8
+    )
+
+    /// A room's area. The game only compares areas for equality (moving to
+    /// a new area clears flag level 2); the names come from the rooms'
+    /// place-name messages.
+    public static let area = Enum(
+        name: "Area",
+        allowUnknownCases: true,
+        values: [
+            .init(name: "None", rawValue: 0),
+            .init(name: "OutskirtStand", rawValue: 1),
+            .init(name: "PhenacCity", rawValue: 2),
+            .init(name: "PyriteTown", rawValue: 3),
+            .init(name: "AgateVillage", rawValue: 4),
+            .init(name: "PokemonHQLab", rawValue: 5),
+            .init(name: "GateonPort", rawValue: 6),
+            .init(name: "CipherLab", rawValue: 7),
+            .init(name: "MtBattle", rawValue: 8),
+            .init(name: "SSLibra", rawValue: 9),
+            .init(name: "RealgamTower", rawValue: 10),
+            .init(name: "CipherKeyLair", rawValue: 11),
+            .init(name: "CitadarkIsle", rawValue: 12),
+            .init(name: "CitadarkIsleD7", rawValue: 13),
+            .init(name: "System", rawValue: 14),
+            .init(name: "SnagemHideout", rawValue: 15),
+            .init(name: "KaminkosHouse", rawValue: 16),
+            .init(name: "Pokespots", rawValue: 17),
+            .init(name: "Prototype", rawValue: 18),
+        ],
+        propertyType: .uint8
+    )
+
+    /// A field camera's area: the camera code tests for 0 and treats
+    /// anything else as a box.
+    public static let cameraAreaShape = Enum(
+        name: "CameraAreaShape",
+        allowUnknownCases: true,
+        values: [
+            .init(name: "Circle", rawValue: 0),
+            .init(name: "Box", rawValue: 1),
+        ],
+        propertyType: .uint8
+    )
+
+    /// What an offscreen texture renders: 0 opens a model, anything else
+    /// plays a movie (`floorSetOffscreenIndex`).
+    public static let offscreenSource = Enum(
+        name: "OffscreenSource",
+        allowUnknownCases: true,
+        values: [
+            .init(name: "Model", rawValue: 0),
+            .init(name: "Movie", rawValue: 1),
+        ],
+        propertyType: .uint8
+    )
 }

@@ -1,0 +1,15 @@
+{
+  "symbols": {
+    "0": "EntryPoints",
+    "1": "NumberOfEntryPoints",
+    "2": "EntryPointList",
+    "3": "Characters",
+    "4": "NumberOfCharacters",
+    "5": "CharacterList",
+    "6": "FieldCameras",
+    "7": "NumberOfFieldCameras",
+    "8": "FieldCameraList",
+    "9": "RenderData",
+    "10": "NumberOfRenderData"
+  }
+}

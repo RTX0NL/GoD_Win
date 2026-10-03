@@ -379,88 +379,352 @@ final class RelOperationTests: XCTestCase {
                        "the pointer added in the CSV became a relocation to the symbol's target")
     }
 
-    // MARK: - mapRels batch behaviour
+    // MARK: - Derived counts
 
-    func testMapRelsDumpBatchProcessesEveryRel() throws {
-        let fst = InMemoryFST()
-        let gameEngine = try installXDEngine(in: fst)
-        try writeSampleRel(at: File("/project/Rels/M1_1.rel"), in: fst)
-        try writeSampleRel(at: File("/project/Rels/M1_2.rel"), in: fst)
-        writeText("{\"chunks\": [], \"engines\": []}", at: File("/project/typemap.json"), in: fst)
+    /// A two-entry `Pokespot` table followed by its count word, both
+    /// relocation targets so each is its own symbol.
+    private func writeCountedRel(countWord: UInt32, typeMap: String, in fst: InMemoryFST) throws -> (engine: Folder, dolphin: Folder) {
+        let own: UInt32 = 0x2A
+        let text: [RELFile.TextInstruction] = [
+            .init(raw: 0x4E800020),
+            .init(raw: 0, ref: .init(moduleID: own, section: 2, offset: 0x00), fixup: .addr32),
+            .init(raw: 0, ref: .init(moduleID: own, section: 2, offset: 0x38), fixup: .addr32),
+        ]
+        func entry(_ first: UInt8) -> [UInt8] { (0 ..< 7).flatMap { [0, 0, 0, first + UInt8($0)] } }
+        let word = [UInt8(countWord >> 24), UInt8((countWord >> 16) & 0xFF), UInt8((countWord >> 8) & 0xFF), UInt8(countWord & 0xFF)]
+        var rel = RELFile(
+            moduleID: own, version: 3,
+            sections: [
+                .init(index: 0, body: .empty(fileOffset: 0)),
+                .init(index: 1, body: .text(text)),
+                .init(index: 2, body: .data([.binary(bytes: entry(1) + entry(0x11) + word)])),
+            ],
+            importedModules: [own]
+        )
+        rel.name = "spots"
+        rel.prologSection = 1
+        rel.sectionAlign = 4
+        rel.bssAlign = 8
+        try fst.writeFile(try rel.binaryData, at: File("/project/spots.rel"), overwrite: true)
+        writeText(#"{"symbols": {"0": "Pokespots", "1": "NumberOfPokespots"}}"#, at: File("/project/symbols.json"), in: fst)
+        writeText(typeMap, at: File("/project/typemap.json"), in: fst)
+        let engine = try installXDEngine(in: fst)
+        let dolphin = installEngine(try DolphinEngine.defaults(), under: Folder("/project/Engines"), in: fst)
+        return (engine, dolphin)
+    }
 
-        try MapRelDump.dump(
+    private let countedTypeMap = """
+    {"chunks": [
+      {"table": {"name": "Pokespots", "start": "Pokespots", "entryType": "Pokespot"}},
+      {"count": {"label": "NumberOfPokespots", "table": "Pokespots"}}
+    ]}
+    """
+
+    private func disassembleSpots(engine: Folder, dolphin: Folder, fst: InMemoryFST, logger: Logger = SilentLogger()) throws {
+        try RelDisassembly.disassemble(
             config: .init(
-                relsFolder: Folder("/project/Rels"),
-                outputFolder: Folder("/project/Out"),
-                overwrite: true,
-                typeMapPath: File("/project/typemap.json"),
-                dolphinEngine: installEngine(try DolphinEngine.defaults(), under: Folder("/project/Engines"), in: fst),
-                gameEngine: gameEngine,
-                filter: .all
+                relPath: File("/project/spots.rel"), outputFolder: Folder("/project/Out"), dolphinEngine: dolphin,
+                symbolIndexPath: File("/project/symbols.json"), typeMapPath: File("/project/typemap.json"),
+                engines: [engine]
+            ),
+            settings: .default, fileSystem: fst, logger: logger
+        )
+    }
+
+    private func assembleSpots(engine: Folder, fst: InMemoryFST) throws -> [UInt8] {
+        try RelAssembly.assemble(
+            config: .init(inputFolder: Folder("/project/Out"), relName: "spots",
+                          outputPath: File("/project/rebuilt.rel"), engines: [engine]),
+            settings: .default, fileSystem: fst, logger: SilentLogger()
+        )
+        let rebuilt = try RELFile(binary: try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.rel"))?.allData), name: "spots")
+        guard case .data(let chunks) = rebuilt.sections.first(where: { $0.index == 2 })?.body else {
+            XCTFail("no data section"); return []
+        }
+        return chunks.flatMap { chunk -> [UInt8] in
+            if case .binary(let b) = chunk { return b }
+            return [0, 0, 0, 0]
+        }
+    }
+
+    /// A count word is not dumped as a value: the manifest records which
+    /// table it counts, and the build writes that table's entry count.
+    func testCountIsDerivedFromItsTable() throws {
+        let fst = InMemoryFST()
+        let (engine, dolphin) = try writeCountedRel(countWord: 2, typeMap: countedTypeMap, in: fst)
+        let original = try XCTUnwrap(fst.readFile(at: File("/project/spots.rel"))?.allData?.rawBytes)
+        try disassembleSpots(engine: engine, dolphin: dolphin, fst: fst)
+
+        let manifest = try RelManifest(json: try XCTUnwrap(fst.readFile(at: File("/project/Out/spots.rel.json"))?.allData))
+        let count = try XCTUnwrap(manifest.sections.first { $0.index == 2 }?.chunks?.first { $0.label == "NumberOfPokespots" })
+        XCTAssertEqual(count.type, .count)
+        XCTAssertEqual(count.countOf, "Pokespots")
+        XCTAssertNil(fst.readFile(at: File("/project/Out/data2/NumberOfPokespots.bin")), "a derived value has no file")
+
+        _ = try assembleSpots(engine: engine, fst: fst)
+        XCTAssertEqual(fst.readFile(at: File("/project/rebuilt.rel"))?.allData?.rawBytes, original,
+                       "untouched, the derived count reproduces the module")
+
+        // A row added to the CSV is a row the count reports.
+        let csvFile = File("/project/Out/data2/Pokespots.csv")
+        var lines = try XCTUnwrap(fst.readFile(at: csvFile)?.allData).string(format: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        lines.append(try XCTUnwrap(lines.last))
+        writeText(lines.joined(separator: "\n") + "\n", at: csvFile, in: fst)
+
+        let bytes = try assembleSpots(engine: engine, fst: fst)
+        XCTAssertEqual(bytes.count, 3 * 0x1C + 4, "a counted table is sized by its CSV")
+        XCTAssertEqual(Array(bytes[(3 * 0x1C)...]), [0, 0, 0, 3], "the count follows it")
+    }
+
+    /// A count narrower than the space before the next symbol keeps the rest
+    /// as its own chunk, beside it in the same folder.
+    func testANarrowCountKeepsTheBytesAfterIt() throws {
+        let fst = InMemoryFST()
+        let typeMap = """
+        {"chunks": [
+          {"table": {"name": "Pokespots", "start": "Pokespots", "entryType": "Pokespot"}},
+          {"count": {"label": "NumberOfPokespots", "table": "Pokespots", "type": "uint16"}}
+        ]}
+        """
+        // The word 0x0002ABCD: a uint16 count of 2, then two bytes of padding.
+        let (engine, dolphin) = try writeCountedRel(countWord: 0x0002_ABCD, typeMap: typeMap, in: fst)
+        let original = try XCTUnwrap(fst.readFile(at: File("/project/spots.rel"))?.allData?.rawBytes)
+        try disassembleSpots(engine: engine, dolphin: dolphin, fst: fst)
+
+        let manifest = try RelManifest(json: try XCTUnwrap(fst.readFile(at: File("/project/Out/spots.rel.json"))?.allData))
+        let chunks = try XCTUnwrap(manifest.sections.first { $0.index == 2 }?.chunks)
+        XCTAssertEqual(chunks.first { $0.label == "NumberOfPokespots" }?.countType, .uint16)
+        let tail = try XCTUnwrap(chunks.first { $0.label == "NumberOfPokespots_tail" })
+        XCTAssertEqual(tail.file, "data2/NumberOfPokespots_tail.bin")
+        XCTAssertEqual(fst.readFile(at: File("/project/Out/data2/NumberOfPokespots_tail.bin"))?.allData?.rawBytes, [0xAB, 0xCD])
+
+        _ = try assembleSpots(engine: engine, fst: fst)
+        XCTAssertEqual(fst.readFile(at: File("/project/rebuilt.rel"))?.allData?.rawBytes, original)
+    }
+
+    /// Deriving is only safe where it reproduces the module, so a word that
+    /// doesn't hold its table's count keeps its bytes.
+    func testACountThatDisagreesWithItsTableStaysRaw() throws {
+        let fst = InMemoryFST()
+        let (engine, dolphin) = try writeCountedRel(countWord: 5, typeMap: countedTypeMap, in: fst)
+        let logger = RecordingLogger()
+        try disassembleSpots(engine: engine, dolphin: dolphin, fst: fst, logger: logger)
+
+        let manifest = try RelManifest(json: try XCTUnwrap(fst.readFile(at: File("/project/Out/spots.rel.json"))?.allData))
+        let chunk = try XCTUnwrap(manifest.sections.first { $0.index == 2 }?.chunks?.first { $0.label == "NumberOfPokespots" })
+        XCTAssertEqual(chunk.type, .binary)
+        XCTAssertTrue(logger.warnings.contains { $0.contains("holds 5") }, "\(logger.warnings)")
+    }
+
+    func testACountOfAnUndeclaredOrNonTableSymbolIsAnError() throws {
+        for (typeMap, declared) in [
+            (#"{"chunks": [{"count": {"label": "NumberOfPokespots", "table": "Pokespots"}}]}"#, false),
+            (#"{"chunks": [{"file": {"label": "Pokespots", "extension": "msg"}}, {"count": {"label": "NumberOfPokespots", "table": "Pokespots"}}]}"#, true),
+        ] {
+            let fst = InMemoryFST()
+            let (engine, dolphin) = try writeCountedRel(countWord: 2, typeMap: typeMap, in: fst)
+            XCTAssertThrowsError(try disassembleSpots(engine: engine, dolphin: dolphin, fst: fst)) { error in
+                guard case let TypeMapError.countTargetNotATable(_, table, wasDeclared, _) = error else {
+                    return XCTFail("expected countTargetNotATable, got \(error)")
+                }
+                XCTAssertEqual(table, "Pokespots")
+                XCTAssertEqual(wasDeclared, declared)
+            }
+        }
+    }
+
+    /// The build holds a hand-edited manifest to the same rule.
+    func testAManifestCountOfANonTableIsABuildError() throws {
+        let fst = InMemoryFST()
+        let (engine, dolphin) = try writeCountedRel(countWord: 2, typeMap: countedTypeMap, in: fst)
+        try disassembleSpots(engine: engine, dolphin: dolphin, fst: fst)
+        let file = File("/project/Out/spots.rel.json")
+        let json = try XCTUnwrap(fst.readFile(at: file)?.allData).string(format: .utf8)
+        writeText(json.replacingOccurrences(of: #""countOf" : "Pokespots""#, with: #""countOf" : "Nope""#), at: file, in: fst)
+        XCTAssertThrowsError(try assembleSpots(engine: engine, fst: fst))
+    }
+
+    // MARK: - relsDump / relsBuild
+
+    /// Two RELs sharing one matcher, one with its own, one routed file the
+    /// disc doesn't ship, two RELs sharing a stem in different folders, one
+    /// the table ignores, and one REL in another folder that no route names.
+    private func writeRoutedProject(in fst: InMemoryFST) throws -> (engine: Folder, dolphin: Folder) {
+        let engine = Folder("/project/Engines/Game")
+        let dolphin = installEngine(try DolphinEngine.defaults(), under: Folder("/project/Engines"), in: fst)
+        writeText("""
+        { "matchers": {
+            "map": { "typeMap": "Resources/map.json", "symbolIndex": "Resources/map_symbols.json" },
+            "module": {}
+          },
+          "routes": {
+            "/Rels/A.rel": "map",
+            "/Rels/B.rel": "map",
+            "/Rels/menu.rel": "module",
+            "/Rels/French/menu.rel": "module",
+            "/Rels/regional.rel": "map"
+          },
+          "ignored": ["/Common/common.rel"] }
+        """, at: engine.file("Resources/rel_routes.json"), in: fst)
+        writeText("{\"chunks\": []}", at: engine.file("Resources/map.json"), in: fst)
+        writeText("{\"symbols\": {}}", at: engine.file("Resources/map_symbols.json"), in: fst)
+        for path in ["Rels/A", "Rels/B", "Rels/menu", "Rels/French/menu", "Common/common", "Scenes/x/stray"] {
+            try writeSampleRel(at: File("/project/Unpacked/\(path).rel"), in: fst)
+        }
+        return (engine, dolphin)
+    }
+
+    private func dumpConfig(engine: Folder, dolphin: Folder, overwrite: Bool = true) -> RelsDump.Config {
+        .init(
+            routesPath: engine.file("Resources/rel_routes.json"),
+            routesEngine: engine,
+            inputFolder: Folder("/project/Unpacked"),
+            outputFolder: Folder("/project/Source"),
+            overwrite: overwrite,
+            dolphinEngine: dolphin
+        )
+    }
+
+    func testRelsDumpWritesOneSourceFolderPerRoutedRel() throws {
+        let fst = InMemoryFST()
+        let (engine, dolphin) = try writeRoutedProject(in: fst)
+        let logger = RecordingLogger()
+
+        try RelsDump.dump(config: dumpConfig(engine: engine, dolphin: dolphin),
+                          settings: .default, fileSystem: fst, logger: logger)
+
+        // Sources mirror the unpacked paths, so the two `menu.rel`s don't collide.
+        for path in ["Rels/A/A", "Rels/B/B", "Rels/menu/menu", "Rels/French/menu/menu"] {
+            XCTAssertNotNil(fst.readFile(at: File("/project/Source/\(path).rel.json")),
+                            "\(path) should be dumped")
+        }
+        XCTAssertNil(fst.inspectFolder(at: Folder("/project/Source/Rels/regional")),
+                     "a route to a file the disc doesn't ship is skipped")
+        XCTAssertTrue(logger.warnings.contains { $0.contains("/Rels/regional.rel") },
+                      "…with a warning, since a wrong path looks the same: \(logger.warnings)")
+        XCTAssertNil(fst.inspectFolder(at: Folder("/project/Source/Scenes")),
+                     "a REL no route names isn't dumped")
+        XCTAssertTrue(logger.warnings.contains { $0.contains("/Scenes/x/stray.rel") },
+                      "…but it is reported wherever it sits: \(logger.warnings)")
+        XCTAssertFalse(logger.warnings.contains { $0.contains("common.rel") },
+                       "an ignored REL is neither dumped nor reported")
+    }
+
+    func testRelsDumpLeavesAnExistingSourceAloneWithoutOverwrite() throws {
+        let fst = InMemoryFST()
+        let (engine, dolphin) = try writeRoutedProject(in: fst)
+        let manifest = File("/project/Source/Rels/A/A.rel.json")
+        writeText("edited", at: manifest, in: fst)
+
+        try RelsDump.dump(config: dumpConfig(engine: engine, dolphin: dolphin, overwrite: false),
+                          settings: .default, fileSystem: fst, logger: SilentLogger())
+
+        XCTAssertEqual(fst.readFile(at: manifest)?.allData?.string(format: .utf8), "edited")
+        XCTAssertNotNil(fst.readFile(at: File("/project/Source/Rels/B/B.rel.json")))
+    }
+
+    /// A matcher pointing at a file that isn't there fails the RELs routed
+    /// to it — dumping them untyped would look like success — and the rest
+    /// still dump.
+    func testRelsDumpFailsTheRoutesOfAMatcherWithAMissingFile() throws {
+        let fst = InMemoryFST()
+        let (engine, dolphin) = try writeRoutedProject(in: fst)
+        try fst.deleteFile(at: engine.file("Resources/map.json"))
+        let logger = RecordingLogger()
+
+        XCTAssertThrowsError(
+            try RelsDump.dump(config: dumpConfig(engine: engine, dolphin: dolphin),
+                              settings: .default, fileSystem: fst, logger: logger)
+        ) { error in
+            guard case let RelsBatchError.failures(_, names, _, _) = error else {
+                return XCTFail("expected a batch failure, got \(error)")
+            }
+            XCTAssertEqual(names, ["/Rels/A.rel", "/Rels/B.rel"])
+        }
+        XCTAssertNotNil(fst.readFile(at: File("/project/Source/Rels/menu/menu.rel.json")),
+                        "a REL on a healthy matcher still dumps")
+    }
+
+    func testRelsDumpRejectsARouteThatIsntARel() {
+        let fst = InMemoryFST()
+        let engine = Folder("/project/Engines/Game")
+        writeText(#"{ "matchers": { "m": {} }, "routes": { "/Rels/A": "m" } }"#,
+                  at: engine.file("Resources/rel_routes.json"), in: fst)
+        XCTAssertThrowsError(
+            try RelsDump.dump(config: dumpConfig(engine: engine, dolphin: Folder("/project/Engines/Dolphin")),
+                              settings: .default, fileSystem: fst, logger: SilentLogger())
+        ) { error in
+            guard case RelRouteTableError.notARel = error else {
+                return XCTFail("expected notARel, got \(error)")
+            }
+        }
+    }
+
+    func testRelsDumpRejectsARouteToAnUndefinedMatcher() {
+        let fst = InMemoryFST()
+        let engine = Folder("/project/Engines/Game")
+        writeText(#"{ "matchers": {}, "routes": { "/Rels/A.rel": "nope" } }"#,
+                  at: engine.file("Resources/rel_routes.json"), in: fst)
+        XCTAssertThrowsError(
+            try RelsDump.dump(config: dumpConfig(engine: engine, dolphin: Folder("/project/Engines/Dolphin")),
+                              settings: .default, fileSystem: fst, logger: SilentLogger())
+        ) { error in
+            guard case RelRouteTableError.unknownMatcher = error else {
+                return XCTFail("expected unknownMatcher, got \(error)")
+            }
+        }
+    }
+
+    func testRelsBuildRebuildsEachDumpedRelAtItsRoutedPath() throws {
+        let fst = InMemoryFST()
+        let (engine, dolphin) = try writeRoutedProject(in: fst)
+        try RelsDump.dump(config: dumpConfig(engine: engine, dolphin: dolphin),
+                          settings: .default, fileSystem: fst, logger: SilentLogger())
+
+        try RelsBuild.build(
+            config: .init(
+                routesPath: engine.file("Resources/rel_routes.json"),
+                inputFolder: Folder("/project/Source"),
+                outputFolder: Folder("/project/Rebuilt")
             ),
             settings: .default, fileSystem: fst, logger: SilentLogger()
         )
 
-        for name in ["M1_1", "M1_2"] {
-            XCTAssertNotNil(
-                fst.readFile(at: File("/project/Out/\(name)/\(name).rel.json")),
-                "batch dump should produce a manifest for \(name)"
-            )
+        let original = try RELFixtures.model().binaryData
+        for path in ["A", "B", "menu", "French/menu"] {
+            XCTAssertEqual(fst.readFile(at: File("/project/Rebuilt/Rels/\(path).rel"))?.allData?.data,
+                           original.data, "\(path) should rebuild byte-for-byte")
         }
+        XCTAssertNil(fst.readFile(at: File("/project/Rebuilt/Rels/regional.rel")),
+                     "nothing was dumped for it, so nothing is built")
     }
 
-    func testMapRelsDumpBatchMissingFolderReturnsWithoutThrowing() {
-        // Missing relsFolder: the op logs a warning and returns early.
-        let logger = RecordingLogger()
-        let config = MapRelDump.BatchConfig(
-            relsFolder: Folder("/project/MissingRels"),
-            outputFolder: Folder("/project/Out"),
-            overwrite: true,
-            typeMapPath: File("/project/typemap.json"),
-            dolphinEngine: Folder("/project/Engines/Dolphin"),
-            gameEngine: Folder("/project/Engines/XD"),
-            filter: .all
-        )
-        XCTAssertNoThrow(
-            try MapRelDump.dump(config: config, settings: .default, fileSystem: InMemoryFST(), logger: logger)
-        )
-        XCTAssertEqual(logger.warnings.count, 1)
-        XCTAssertTrue(logger.warnings[0].contains("folder not found"))
-    }
-
-    func testMapRelsBuildBatchKeepsGoingAfterAFailedSubfolder() {
-        // A subfolder with no manifest can't assemble; the batch op catches
-        // that, logs a warning naming the subfolder, and does not throw.
+    func testRelsBuildReportsEveryFailureAtTheEnd() throws {
         let fst = InMemoryFST()
-        try? fst.writeFile(
-            GoDData(byteStream: [0x00], byteOrder: .big),
-            at: File("/project/MapDisasm/B1_1/placeholder.bin"),
-            overwrite: true
-        )
+        let (engine, dolphin) = try writeRoutedProject(in: fst)
+        try RelsDump.dump(config: dumpConfig(engine: engine, dolphin: dolphin),
+                          settings: .default, fileSystem: fst, logger: SilentLogger())
+        writeText("not json", at: File("/project/Source/Rels/A/A.rel.json"), in: fst)
         let logger = RecordingLogger()
-        let config = MapRelBuild.BatchConfig(
-            inputFolder: Folder("/project/MapDisasm"),
-            outputFolder: Folder("/project/Rels")
-        )
-        XCTAssertNoThrow(
-            try MapRelBuild.build(config: config, settings: .default, fileSystem: fst, logger: logger)
-        )
-        XCTAssertFalse(logger.warnings.isEmpty, "per-subfolder failure must be logged as a warning")
-        XCTAssertTrue(logger.warnings.contains { $0.contains("B1_1") })
-        XCTAssertNil(fst.readFile(at: File("/project/Rels/B1_1.rel")))
+
+        XCTAssertThrowsError(
+            try RelsBuild.build(
+                config: .init(
+                    routesPath: engine.file("Resources/rel_routes.json"),
+                    inputFolder: Folder("/project/Source"),
+                    outputFolder: Folder("/project/Rebuilt")
+                ),
+                settings: .default, fileSystem: fst, logger: logger
+            )
+        ) { error in
+            guard case let RelsBatchError.failures(_, names, _, _) = error else {
+                return XCTFail("expected a batch failure, got \(error)")
+            }
+            XCTAssertEqual(names, ["/Rels/A.rel"])
+        }
+        XCTAssertNotNil(fst.readFile(at: File("/project/Rebuilt/Rels/B.rel")),
+                        "one bad source doesn't stop the rest")
     }
 
-    func testMapRelsBuildBatchMissingFolderReturnsWithoutThrowing() {
-        // Missing inputFolder: warning + early return (the source does log).
-        let logger = RecordingLogger()
-        let config = MapRelBuild.BatchConfig(
-            inputFolder: Folder("/project/MissingDisasm"),
-            outputFolder: Folder("/project/Rels")
-        )
-        XCTAssertNoThrow(
-            try MapRelBuild.build(config: config, settings: .default, fileSystem: InMemoryFST(), logger: logger)
-        )
-        XCTAssertEqual(logger.warnings.count, 1)
-        XCTAssertTrue(logger.warnings[0].contains("folder not found"))
-    }
 }

@@ -157,4 +157,26 @@ final class GSFontAtlasTests: XCTestCase {
         XCTAssertEqual(metadata.blocks.map(\.cellWidth), [22, 18])
         XCTAssertEqual(metadata.blocks.map(\.cellHeight), [21, 18])
     }
+
+    /// Header word +0x0A is 1 in every block of the kana+Latin fonts and
+    /// Colosseum's large `common.rel` font. The writer used to zero it, so
+    /// those fonts rebuilt one byte different per block.
+    func testTheHeaderWordAt0x0ASurvivesBinaryAndAtlas() throws {
+        let glyph = GSFont.Glyph(code: 0x41, advanceWidth: 4, height: 2, flags: 0, bitmap: [0x12, 0x34, 0x56, 0x78])
+        let second = GSFont(fontId: 1, glyphWidth: 4, glyphHeight: 2, glyphs: [glyph],
+                            nextFont: nil, blockPadding: [], unknown0A: 1)
+        let font = GSFont(fontId: 0, glyphWidth: 4, glyphHeight: 2, glyphs: [glyph],
+                          nextFont: second, blockPadding: [], unknown0A: 1)
+        let bytes = try font.data
+        bytes.setByteOrder(.big)
+        let word: UInt16 = bytes.readSafely(atAddress: 0x0A)
+        XCTAssertEqual(word, 1)
+
+        let parsed = try GSFont(data: bytes)
+        XCTAssertEqual(parsed.unknown0A, 1)
+        XCTAssertEqual(parsed.nextFont?.unknown0A, 1)
+
+        let rebuilt = try roundTrip(parsed)
+        XCTAssertEqual(try rebuilt.data.rawBytes, bytes.rawBytes)
+    }
 }

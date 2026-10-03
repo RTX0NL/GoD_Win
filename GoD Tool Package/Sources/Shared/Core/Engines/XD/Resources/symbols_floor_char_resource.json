@@ -1,0 +1,9 @@
+{
+  "symbols": {
+    "0": "floorCharTbl",
+    "1": "floorCharTbl_number",
+    "2": "floorCharTbl_top",
+    "3": "floor_resource_data",
+    "4": "floor_resource_data_number"
+  }
+}

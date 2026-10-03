@@ -40,6 +40,8 @@ public struct GSFontAtlas {
             /// header's glyph size.
             public let cellWidth: Int?
             public let cellHeight: Int?
+            /// The block header's `+0x0A` word; absent when zero.
+            public let unknown0A: Int?
 
             /// The cell to draw and read this block's glyphs in.
             public var cell: (width: Int, height: Int) {
@@ -176,7 +178,8 @@ public struct GSFontAtlas {
             glyphs: glyphInfos,
             blockPaddingHex: padHex,
             cellWidth: grid.cellWidth,
-            cellHeight: grid.cellHeight
+            cellHeight: grid.cellHeight,
+            unknown0A: block.unknown0A == 0 ? nil : Int(block.unknown0A)
         )
     }
 
@@ -316,7 +319,8 @@ public struct GSFontAtlas {
                 glyphHeight: block.glyphHeight,
                 glyphs: glyphs,
                 nextFont: nil,
-                blockPadding: padding
+                blockPadding: padding,
+                unknown0A: UInt16(block.unknown0A ?? 0)
             ))
         }
 
@@ -329,7 +333,8 @@ public struct GSFontAtlas {
                 glyphHeight: b.glyphHeight,
                 glyphs: b.glyphs,
                 nextFont: head,
-                blockPadding: b.blockPadding
+                blockPadding: b.blockPadding,
+                unknown0A: b.unknown0A
             )
         }
         guard let root = head else { throw GSFontError.atlasHasNoBlocks }
@@ -382,7 +387,8 @@ extension GSFont {
         glyphHeight: Int,
         glyphs: [Glyph],
         nextFont: GSFont?,
-        blockPadding: [UInt8]
+        blockPadding: [UInt8],
+        unknown0A: UInt16 = 0
     ) {
         self.fontId = fontId
         self.glyphWidth = glyphWidth
@@ -390,5 +396,6 @@ extension GSFont {
         self.glyphs = glyphs
         self.nextFontBox = nextFont.map { NextFontBox($0) }
         self.blockPadding = blockPadding
+        self.unknown0A = unknown0A
     }
 }

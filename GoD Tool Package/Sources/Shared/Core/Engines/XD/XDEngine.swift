@@ -1,6 +1,7 @@
 @_exported import GoDEngine
 import GoDFoundation
 import Structs
+import Disassembler
 import Foundation
 
 public struct XDEngine: Engine {
@@ -71,13 +72,16 @@ public struct XDEngine: Engine {
         // `ProjectSetup` overwrites both with the ROM's own region via
         // `regionalResources`. One path, one file — ops stay region-blind.
         add(data.resources.commonRelTypeMap, named: "common_rel_typemap_us.json")
-        add(data.resources.mapRelSymbolMap, named: "map_rel_symbols.json")
-        add(data.resources.mapRelTypeMap, named: "map_rel_typemap.json")
-        add(data.resources.pocketMenuSymbolMap, named: "pocket_menu_symbols.json")
         add(data.resources.dolTypeMap, named: "dol_typemap_us.json")
-        // tableres2.rel is identical on US and PAL and absent on JP, so its
-        // map isn't region-keyed.
-        add(data.resources.tableres2TypeMap, named: "tableres2_typemap.json")
+        // The REL route table is per region — each names only the files that
+        // disc ships, and a file's layout can differ between builds — so the
+        // US table is the default and `ProjectSetup` writes the ROM's own.
+        // Every type map and symbol index any region's matchers name is
+        // installed, since the region isn't known yet.
+        add(data.resources.relRoutes, named: "rel_routes_us.json")
+        for file in Set(PokemonXD.relRouteTables.flatMap(\.matcherFiles)) {
+            add(file, named: file.fileName)
+        }
         // The flag descriptor table is region-independent, so unlike the maps
         // above there is nothing for ProjectSetup to overwrite per region.
         add(data.resources.generalFlagsTable, named: "general_flags.csv")
@@ -100,6 +104,21 @@ public enum PokemonXD {
         gameIDUS,
         gameIDEU
     ]
+
+    /// The REL route table for a specific build: every REL that disc ships,
+    /// routed by its own analysis (`scripts/analysis/gen_rel_routes.py`).
+    public static func relRouteTableData(for gameID: String) -> GoDData? {
+        guard let suffix = regionSuffix(for: gameID) else { return nil }
+        return bundledResource(named: "rel_routes_\(suffix).json")
+    }
+
+    public static var relRouteTables: [RelRouteTable] {
+        ["us", "eu", "jp"].compactMap { suffix in
+            bundledResource(named: "rel_routes_\(suffix).json").flatMap { data in
+                try? JSONDecoder().decode(RelRouteTable.self, from: data.data)
+            }
+        }
+    }
 
     /// Returns the symbol map data for the given game ID, if available as a bundled resource.
     public static func symbolMapData(for gameID: String) -> GoDData? {

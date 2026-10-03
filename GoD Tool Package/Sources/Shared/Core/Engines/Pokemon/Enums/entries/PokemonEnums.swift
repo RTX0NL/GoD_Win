@@ -115,16 +115,4 @@ public extension PokemonEnumDefaults {
         ],
         propertyType: .uint8
     )
-
-    static let shadowAggressionEnum = Enum(
-        name: "ShadowAggression",
-        allowUnknownCases: true,
-        values: [
-            .init(name: "None", rawValue: 0),
-            .init(name: "Low",  rawValue: 1),
-            .init(name: "Med",  rawValue: 2),
-            .init(name: "High", rawValue: 3),
-        ],
-        propertyType: .uint8
-    )
 }

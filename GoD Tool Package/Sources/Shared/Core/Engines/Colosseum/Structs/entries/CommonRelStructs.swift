@@ -61,7 +61,7 @@ public extension ColosseumStructDefaults {
             .uint16(name: "payout_multiplier"),
             .padding(length: 2),
             .uint32(name: "name_id"),
-            .uint32(name: "unknown", description: "Usually 5, occasionally 8"),
+            .uint32(name: "bgm_id", description: "The same values as Battle.bgm_id; XD names the field GetBgmSndId"),
         ],
         description: "Trainer class name and payout (12 bytes per entry)"
     )
@@ -106,10 +106,10 @@ public extension ColosseumStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "unknown_1"),
-            .uint8(name: "unknown_2"),
-            .uint16(name: "unknown_3"),
-            .uint32(name: "name_id"),
+            .uint8(name: "required_flag_value", description: "The record applies once flag_id reads this"),
+            .abstraction(name: "sighting_state", typeName: "ShadowSightingState"),
+            .uint16(name: "flag_id"),
+            .uint32(name: "text_id"),
         ],
         description: "Met-location string for a Pokemon's summary (8 bytes per entry)"
     )
@@ -205,11 +205,11 @@ public extension ColosseumStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "interaction_method"),
+            .abstraction(name: "interaction_method", typeName: "InteractionMethod"),
             .padding(length: 1),
             .uint16(name: "room_id"),
             .uint32(name: "collision_region_index", description: "Region in the room's .ccd collision file"),
-            .uint16(name: "script_marker", description: "Whether the function is in the room's script or the common script"),
+            .abstraction(name: "script", typeName: "ScriptKind", description: "Which loaded script the function is in"),
             .uint16(name: "script_function_index"),
             .array(name: "parameters", count: 4, of: .uint32),
         ],
@@ -257,19 +257,18 @@ public extension ColosseumStructDefaults {
 
     private static var battleFieldHeadProperties: [StructMap.Property] {
         [
-            .uint8(name: "unknown_1"),
+            .abstraction(name: "terrain", typeName: "BattleTerrain", description: "A row of the DOL terrain table (XD: GetTikeiDataId)"),
             .padding(length: 1),
-            .uint16(name: "unknown_2"),
+            .uint16(name: "room_id", description: "XD: GetFloorDataId"),
             .uint32(name: "name_id"),
         ]
     }
 
     private static var battleFieldTailProperties: [StructMap.Property] {
         [
-            .uint32(name: "unknown_4"),
-            .uint32(name: "unknown_5"),
-            .uint16(name: "unknown_6"),
-            .uint16(name: "unknown_7"),
+            .uint32(name: "bgm_id"),
+            .uint32(name: "environment_sound_id"),
+            .array(name: "side_ids", count: 2, of: .uint16, description: "BattleSideData rows"),
         ]
     }
 
@@ -278,7 +277,7 @@ public extension ColosseumStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: battleFieldHeadProperties + [
-            .uint32(name: "unknown_string_id", description: "A message id: the PAL disc carries one per language"),
+            .uint32(name: "intro_wzx_id", description: "XD: GetSyoukaiWzxDataId; the PAL disc carries one per language"),
         ] + battleFieldTailProperties,
         description: "Battlefield properties, US and JP layout (0x18 bytes per entry)"
     )
@@ -288,11 +287,11 @@ public extension ColosseumStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: battleFieldHeadProperties + battleFieldTailProperties + [
-            .uint32(name: "unknown_string_id_us_uk"),
-            .uint32(name: "unknown_string_id_german"),
-            .uint32(name: "unknown_string_id_french"),
-            .uint32(name: "unknown_string_id_italian"),
-            .uint32(name: "unknown_string_id_spanish"),
+            .uint32(name: "intro_wzx_id_english"),
+            .uint32(name: "intro_wzx_id_german"),
+            .uint32(name: "intro_wzx_id_french"),
+            .uint32(name: "intro_wzx_id_italian"),
+            .uint32(name: "intro_wzx_id_spanish"),
         ],
         description: "Battlefield properties, PAL layout: the message id moves to the end, one per language (0x28 bytes per entry)"
     )
@@ -319,7 +318,7 @@ public extension ColosseumStructDefaults {
             .padding(length: 2),
             .uint32(name: "name_id"),
             .uint32(name: "bgm_id"),
-            .uint32(name: "unknown_1"),
+            .uint32(name: "wipe_id", description: "The screen transition into the battle"),
             .uint32(name: "colosseum_round_id", description: "Round announcement id, 0 outside colosseum challenges"),
         ]
     }
@@ -480,7 +479,7 @@ public extension ColosseumStructDefaults {
             .subStruct(name: "flag_ids", typeName: "ShadowPokemonFlags"),
             .uint32(name: "unknown_2"),
             .uint16(name: "unknown_3"),
-            .uint16(name: "unknown_4"),
+            .uint16(name: "first_sighting_index", description: "First PokemonMetLocations record of this Pokemon's sighting list"),
             .uint32(name: "debug_name_id"),
             .array(name: "unknown_5", count: 6, of: .uint16),
             .array(name: "unknown_6", count: 2, of: .uint32),
@@ -495,7 +494,7 @@ public extension ColosseumStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint16(name: "script", description: "Whether the function is in the room's script or the common script"),
+            .abstraction(name: "script", typeName: "ScriptKind", description: "Which loaded script the function is in"),
             .uint16(name: "function_index"),
         ],
         description: "A script function a room runs (4 bytes)"
@@ -503,9 +502,8 @@ public extension ColosseumStructDefaults {
 
     private static var roomHeadProperties: [StructMap.Property] {
         [
-            // The floor kind lives in bits 7:5 of this byte and the low five
-            // bits are zero on every room of every disc, so the whole byte is
-            // the `RoomKind` enum (raw values kind × 32). It is what the
+            // The floor kind is the top three bits of this byte; the low
+            // five are zero on every room of every disc. It is what the
             // engine reads to pick the shadow cutoff distance and shadow-map
             // size when a room loads: Field rooms use 70 units (0 — no cutoff
             // — for rooms 0x72–0x74) with a 384×384 shadow map, Battle and
@@ -513,7 +511,7 @@ public extension ColosseumStructDefaults {
             // kinds leave the previous value in place
             // (GSmodelSetShadowCutoffDist stores the square).
             .abstraction(name: "kind", typeName: "RoomKind", description: "Floor kind in bits 7:5 (low bits unused); selects the shadow cutoff distance and shadow-map size among other things"),
-            .uint8(name: "area_id"),
+            .abstraction(name: "area", typeName: "Area", description: "Compared for equality only: a change of area clears flag level 2"),
         ]
     }
 
@@ -581,20 +579,20 @@ public extension ColosseumStructDefaults {
             .abstraction(name: "targets", typeName: "MoveTarget"),
             .uint8(name: "base_accuracy"),
             .uint8(name: "effect_accuracy"),
-            .uint8(name: "makes_contact"),
-            .uint8(name: "can_be_protected"),
-            .uint8(name: "can_be_reflected"),
-            .uint8(name: "can_be_stolen"),
-            .uint8(name: "can_be_copied_mirror_move"),
-            .uint8(name: "gains_flinch_kings_rock"),
-            .uint8(name: "callable_by_metronome"),
-            .uint8(name: "copyable_by_mimic"),
-            .uint8(name: "callable_by_assist"),
-            .uint8(name: "callable_by_sleep_talk"),
-            .uint8(name: "is_sound_based"),
-            .uint8(name: "has_unspecified_target"),
-            .uint8(name: "is_hm_move"),
-            .uint8(name: "has_risk_flag"),
+            .boolean(name: "makes_contact"),
+            .boolean(name: "can_be_protected"),
+            .boolean(name: "can_be_reflected"),
+            .boolean(name: "can_be_stolen"),
+            .boolean(name: "can_be_copied_mirror_move"),
+            .boolean(name: "gains_flinch_kings_rock"),
+            .boolean(name: "callable_by_metronome"),
+            .boolean(name: "copyable_by_mimic"),
+            .boolean(name: "callable_by_assist"),
+            .boolean(name: "callable_by_sleep_talk"),
+            .boolean(name: "is_sound_based"),
+            .boolean(name: "has_unspecified_target"),
+            .boolean(name: "is_hm_move"),
+            .boolean(name: "has_risk_flag"),
             .uint8(name: "contest_appeal_jam_index"),
             .abstraction(name: "contest_appeal_type", typeName: "ContestCategory"),
             .uint16(name: "base_power"),
@@ -688,7 +686,7 @@ public extension ColosseumStructDefaults {
         wordSize: 4,
         alignmentStyle: .none,
         properties: [
-            .uint8(name: "pokedex_color"),
+            .abstraction(name: "pokedex_color", typeName: "PokedexColor"),
             .padding(length: 1),
             .uint16(name: "face_index", description: "Index into the PokefaceTextures table"),
             .uint32(name: "body_file_id", description: "File identifier of the animated body texture in poke_body.fsys"),

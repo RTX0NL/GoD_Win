@@ -1,4 +1,5 @@
 import GoDFoundation
+import Structs
 
 /// Manifest for a data section, listing chunks in order.
 /// The ordering in the chunks array IS the ordering in the section binary.
@@ -49,6 +50,12 @@ public struct DataSectionManifest: Codable, Equatable {
         /// because code points at them. The assembler re-emits each one at
         /// its offset inside the rebuilt file.
         public let interiorLabels: [String: String]?
+        /// For count chunks: the label of the table whose entry count the
+        /// assembler writes here. A count chunk has no file — its value is
+        /// derived, so there is nothing to edit.
+        public let countOf: String?
+        /// For count chunks: the integer type the count is stored as.
+        public let countType: IntegerProperties?
 
         public init(
             label: String,
@@ -59,7 +66,9 @@ public struct DataSectionManifest: Codable, Equatable {
             size: Int? = nil,
             fileExtension: String? = nil,
             entryLabels: [String: String]? = nil,
-            interiorLabels: [String: String]? = nil
+            interiorLabels: [String: String]? = nil,
+            countOf: String? = nil,
+            countType: IntegerProperties? = nil
         ) {
             self.label = label
             self.type = type
@@ -70,6 +79,8 @@ public struct DataSectionManifest: Codable, Equatable {
             self.fileExtension = fileExtension
             self.entryLabels = entryLabels
             self.interiorLabels = interiorLabels
+            self.countOf = countOf
+            self.countType = countType
         }
     }
 
@@ -84,6 +95,9 @@ public struct DataSectionManifest: Codable, Equatable {
         case binary
         /// An embedded file with a custom extension (e.g. .msg)
         case file
+        /// An integer of type `countType` holding the entry count of the table
+        /// `countOf` names, derived on build
+        case count
     }
 }
 

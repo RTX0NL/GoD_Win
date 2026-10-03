@@ -124,7 +124,8 @@ final class BundledTypeMapTests: XCTestCase {
     /// common.rel; the JP disc carries one. Losing those entries would mean
     /// the biggest string tables in the game dump as anonymous bytes.
     func testXDCommonRelTypeMapsCarryTheEmbeddedMessageTables() throws {
-        for (region, expected) in [("us", 6), ("eu", 6), ("jp", 0)] {
+        // JP carries one table (StringTable1); it rebuilds byte-identically.
+        for (region, expected) in [("us", 6), ("eu", 6), ("jp", 1)] {
             let map = try decode(
                 PokemonXD.bundledResource(named: "common_rel_typemap_\(region).json"),
                 "XD common_rel_typemap_\(region).json"

@@ -81,6 +81,11 @@ public struct DolAssembler {
         // names still resolve intrinsically), but sizes and label
         // placement are definition-driven and already final, which is
         // all this pass needs.
+        let counts = try Self.planCounts(
+            dataSections: layout.dataSections.map(\.name), codeFolder: codeFolder,
+            fileSystem: fileSystem, manifestReader: manifestReader, structs: resolvedStructs
+        )
+
         var globalSymbols = [String: UInt32]()
         let prescanLabelTable = LabelTable()
 
@@ -94,6 +99,7 @@ public struct DolAssembler {
                 structs: resolvedStructs,
                 labelTable: prescanLabelTable,
                 registry: registry,
+                counts: counts,
                 allowResizedChunks: allowResizedChunks,
                 logger: nil
             ).files
@@ -229,6 +235,7 @@ public struct DolAssembler {
                 structs: resolvedStructs,
                 labelTable: labelTable,
                 registry: registry,
+                counts: counts,
                 allowResizedChunks: allowResizedChunks,
                 logger: logger
             )
@@ -480,6 +487,7 @@ public struct DolAssembler {
         structs: [String: StructDefinition],
         labelTable: LabelTable,
         registry: FileFormatRegistry,
+        counts: CountPlan,
         allowResizedChunks: Bool,
         logger: Logger?
     ) throws -> DataSectionSource {
@@ -539,9 +547,27 @@ public struct DolAssembler {
                     } else {
                         logger?.log(.warning("File chunk '\(chunk.label)' dropped: no rebuildable artifacts for \(chunk.file) — section \(sectionName) will come out short"))
                     }
+                case .count:
+                    let entries = counts.tableCounts[chunk.countOf ?? ""] ?? 0
+                    let type = chunk.countType ?? .uint32
+                    guard let bytes = type.countBytes(entries) else {
+                        throw DolAssemblyErrors.countOverflow(
+                            section: sectionName, label: chunk.label, table: chunk.countOf ?? "",
+                            entries: entries, type: type.rawValue, .init()
+                        )
+                    }
+                    source.files.append((
+                        name: "\(chunk.label).synthesized.s",
+                        content: renderByteBlocksAsAssembly(
+                            sectionName: sectionName,
+                            chunkLabel: chunk.label,
+                            blocks: [(label: nil, bytes: GoDData(byteStream: bytes, byteOrder: .big))]
+                        )
+                    ))
                 case .struct, .table:
                     if let blocks = Self.typedChunkBlocks(
                         chunk: chunk,
+                        sizedByCSV: counts.countedTables.contains(chunk.label),
                         sectionFolder: sectionFolder,
                         fileSystem: fileSystem,
                         structs: structs,
@@ -591,6 +617,54 @@ public struct DolAssembler {
     /// text handed straight to the assembler, so its length only becomes
     /// known once the section is encoded; `assemblySizes` is what lets the
     /// caller check it afterwards.
+    /// Which tables a count derives from, and how many entries each will
+    /// be rebuilt with. Settled before any section renders, because a count
+    /// can sit ahead of its table or in another section.
+    struct CountPlan {
+        var countedTables = Set<String>()
+        var tableCounts = [String: Int]()
+    }
+
+    /// Reads every data section's manifest for `count` chunks. A counted
+    /// table's entry count is its CSV's row count; any other table keeps its
+    /// manifest count. A count naming anything but a table chunk is an
+    /// error, the same rule the type map is held to at dump time.
+    private static func planCounts(
+        dataSections: [String],
+        codeFolder: Folder,
+        fileSystem: FileSystemTree,
+        manifestReader: ManifestReader,
+        structs: [String: StructDefinition]
+    ) throws -> CountPlan {
+        var plan = CountPlan()
+        var tables = [String: (chunk: DataSectionManifest.Chunk, folder: Folder)]()
+        var countChunks = [(section: String, chunk: DataSectionManifest.Chunk)]()
+        for name in dataSections {
+            let folder = codeFolder.folder(name)
+            for chunk in manifestReader.readDataManifest(from: folder, fileSystem: fileSystem)?.chunks ?? [] {
+                if chunk.type == .table { tables[chunk.label] = (chunk, folder) }
+                if chunk.type == .count { countChunks.append((name, chunk)) }
+            }
+        }
+        for (section, chunk) in countChunks {
+            guard let table = chunk.countOf, tables[table] != nil else {
+                throw DolAssemblyErrors.countTargetNotATable(section: section, label: chunk.label, table: chunk.countOf, .init())
+            }
+            plan.countedTables.insert(table)
+        }
+        for (label, table) in tables {
+            var entries = table.chunk.count
+            if plan.countedTables.contains(label),
+               let type = table.chunk.structType, let definition = structs[type],
+               let csv = fileSystem.readFile(at: table.folder.file(table.chunk.file))?.allData,
+               let decoded = try? StructTableCSV.decode(csv.string(format: .utf8), definition: definition, byteOrder: .big) {
+                entries = decoded.entries.count
+            }
+            plan.tableCounts[label] = entries ?? 0
+        }
+        return plan
+    }
+
     struct DataSectionSource {
         var files: [(name: String, content: String)] = []
         var assemblySizes: [String: (label: String, recorded: Int)] = [:]
@@ -791,6 +865,7 @@ public struct DolAssembler {
     /// the chunk against its recorded size, and pad it, before rendering.
     private static func typedChunkBlocks(
         chunk: DataSectionManifest.Chunk,
+        sizedByCSV: Bool,
         sectionFolder: Folder,
         fileSystem: FileSystemTree,
         structs: [String: StructDefinition],
@@ -847,8 +922,11 @@ public struct DolAssembler {
 
             // Pad-or-truncate to the manifest's declared count so the
             // section layout stays stable even if the CSV was
-            // hand-edited to add/remove rows.
-            let count = chunk.count ?? decoded.entries.count
+            // hand-edited to add/remove rows — unless something counts the
+            // table, in which case the CSV is its length and the count
+            // follows. The chunk is still held to its recorded size after
+            // this, so a counted table that grows needs allowResizedChunks.
+            let count = sizedByCSV ? decoded.entries.count : (chunk.count ?? decoded.entries.count)
             if decoded.entries.count > count {
                 logger?.log(.warning("Table '\(chunk.label)': \(decoded.entries.count - count) surplus entries dropped (manifest count is \(count))"))
             } else if decoded.entries.count < count {
@@ -871,7 +949,7 @@ public struct DolAssembler {
             }
             return blocks
 
-        case .assembly, .binary, .file:
+        case .assembly, .binary, .file, .count:
             return nil
         }
     }
@@ -935,6 +1013,8 @@ public enum DolAssemblyErrors: Error, CustomStringConvertible {
     case sectionsFileNotFound(file: File, ErrorTrace)
     case chunkOverflow(section: String, label: String, recorded: Int, assembled: Int, ErrorTrace)
     case sectionOverflow(section: String, recorded: Int, assembled: Int, ErrorTrace)
+    case countTargetNotATable(section: String, label: String, table: String?, ErrorTrace)
+    case countOverflow(section: String, label: String, table: String, entries: Int, type: String, ErrorTrace)
 
     public var description: String {
         switch self {
@@ -955,6 +1035,10 @@ public enum DolAssemblyErrors: Error, CustomStringConvertible {
             "allowResizedChunks": true to accept the shift.
             \(trace)
             """
+        case let .countTargetNotATable(section, label, table, trace):
+            return "\(section) count '\(label)' counts '\(table ?? "(nothing)")', which isn't a table chunk in this DOL\n\(trace)"
+        case let .countOverflow(section, label, table, entries, type, trace):
+            return "\(section) count '\(label)' is a \(type), which can't hold the \(entries) entries '\(table)' now has\n\(trace)"
         }
     }
 }

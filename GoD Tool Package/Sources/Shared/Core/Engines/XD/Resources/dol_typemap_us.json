@@ -163,6 +163,27 @@
     "label": "lbl_804ED948",
     "extension": "scd"
    }
+  },
+  {
+   "count": {
+    "label": "lbl_804E83A0",
+    "table": "lbl_803FC3E0",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "lbl_804E83B8",
+    "table": "lbl_803FFC50",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "lbl_804E8430",
+    "table": "lbl_804053A0",
+    "type": "uint32"
+   }
   }
  ]
 }

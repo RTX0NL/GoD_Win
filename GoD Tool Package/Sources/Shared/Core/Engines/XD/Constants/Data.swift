@@ -201,28 +201,16 @@ public extension XDEngine {
         /// project and the tool picks up the changes.
         public var resources: Resources = Resources()
 
-        /// XD ships with a small number of leftover Colosseum-format map
-        /// REL files that don't match the final XD map layout (e.g.
-        /// names starting with `B1_`, `M1_cave_`). Maps whose filename
-        /// starts with any of these prefixes are routed to a dedicated
-        /// "unused" output folder and skipped by the typemap-driven
-        /// disassembly path. The list is intentionally short until we
-        /// audit a real XD ISO; extend as more are discovered.
-        public var unusedColosseumMapPrefixes: [String] = ["B1_", "M1_"]
-
         public struct Resources: Codable {
             /// Pointer index → symbol name for common.rel.
             public var commonRelSymbolMap: File = "Resources/common_rel_symbols.json"
             /// Pointer index → chunk type (table/function/etc.) for common.rel.
             public var commonRelTypeMap: File = "Resources/common_rel_typemap.json"
-            /// Pointer index → symbol name for map.rel.
-            public var mapRelSymbolMap: File = "Resources/map_rel_symbols.json"
-            /// Typed regions for map .rel files. Single map (one layout
-            /// across all XD maps; the unused-prefix maps don't follow
-            /// it and are routed elsewhere).
-            public var mapRelTypeMap: File = "Resources/map_rel_typemap.json"
-            /// Pointer index → symbol name for pocket_menu.rel.
-            public var pocketMenuSymbolMap: File = "Resources/pocket_menu_symbols.json"
+            /// Which type map and symbol index describe each REL the FSYS
+            /// unpack produces (`RelRouteTable`) — every map, menu module and
+            /// `tableres2.rel`. `common.rel` isn't in it: it has its own ops
+            /// and region-keyed maps above.
+            public var relRoutes: File = "Resources/rel_routes.json"
             /// Relative path of the DOL symbol map for this project. The
             /// engine bundles the US map as the default so the file is
             /// always populated; `ProjectSetup` overwrites it with the
@@ -232,12 +220,6 @@ public extension XDEngine {
             /// Typed regions within the main.dol data sections (struct tables
             /// and embedded MSG files). US addresses; regenerate per region.
             public var dolTypeMap: File = "Resources/dol_typemap.json"
-            /// Typed regions within `tableres2.rel` — the REL inside
-            /// `common_dvdeth.fsys`, which carries an embedded font (the only
-            /// one in either game with a 13x13 block) and seven language
-            /// message tables. US and PAL ship byte-identical copies, so one
-            /// map serves both; the JP disc has no `common_dvdeth.fsys`.
-            public var tableres2TypeMap: File = "Resources/tableres2_typemap.json"
             /// `common.rel`'s `GeneralFlags` descriptor table, as the CSV the
             /// REL dump produces — the schema half of the flag system. The
             /// save's flag banks are undelimited bits; this says how wide each
@@ -256,23 +238,17 @@ public extension XDEngine {
             public init(
                 commonRelSymbolMap: File = "Resources/common_rel_symbols.json",
                 commonRelTypeMap: File = "Resources/common_rel_typemap.json",
-                mapRelSymbolMap: File = "Resources/map_rel_symbols.json",
-                mapRelTypeMap: File = "Resources/map_rel_typemap.json",
-                pocketMenuSymbolMap: File = "Resources/pocket_menu_symbols.json",
+                relRoutes: File = "Resources/rel_routes.json",
                 dolSymbolMap: File = "Resources/dol.map",
                 dolTypeMap: File = "Resources/dol_typemap.json",
-                tableres2TypeMap: File = "Resources/tableres2_typemap.json",
                 generalFlagsTable: File = "Resources/general_flags.csv",
                 saveSectionLayout: File = "Resources/save_section_layout.json"
             ) {
                 self.commonRelSymbolMap = commonRelSymbolMap
                 self.commonRelTypeMap = commonRelTypeMap
-                self.mapRelSymbolMap = mapRelSymbolMap
-                self.mapRelTypeMap = mapRelTypeMap
-                self.pocketMenuSymbolMap = pocketMenuSymbolMap
+                self.relRoutes = relRoutes
                 self.dolSymbolMap = dolSymbolMap
                 self.dolTypeMap = dolTypeMap
-                self.tableres2TypeMap = tableres2TypeMap
                 self.generalFlagsTable = generalFlagsTable
                 self.saveSectionLayout = saveSectionLayout
             }
@@ -286,7 +262,6 @@ public extension XDEngine {
             deckTrainerAIIndexProperty: String = "aiIndex",
             deckTrainerShadowMaskProperty: String = "shadowMask",
             darkPokemonSaveSlotLimit: Int = 128,
-            unusedColosseumMapPrefixes: [String] = ["B1_", "M1_"],
             saveSections: [SaveSectionSpec]? = nil,
             sectionStructTypes: [Int: String]? = nil
         ) {
@@ -297,7 +272,6 @@ public extension XDEngine {
             self.deckTrainerAIIndexProperty = deckTrainerAIIndexProperty
             self.deckTrainerShadowMaskProperty = deckTrainerShadowMaskProperty
             self.darkPokemonSaveSlotLimit = darkPokemonSaveSlotLimit
-            self.unusedColosseumMapPrefixes = unusedColosseumMapPrefixes
             self.saveSections = saveSections ?? Self.defaultSaveSections
             self.sectionStructTypes = sectionStructTypes ?? Self.defaultSectionStructTypes
         }

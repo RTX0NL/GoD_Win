@@ -404,74 +404,47 @@ final class DispatchRoutingTests: XCTestCase {
         XCTAssertFalse(config.overwrite)
     }
 
-    func testMapRelDumpRouting() throws {
+    func testRelsDumpRouting() throws {
         let spy = try route("""
-        { "mapRelDump": { "config": {
-            "relPath": "/project/files/M1_out.rel",
-            "outputFolder": "/project/Source",
-            "overwrite": true,
-            "typeMapPath": "/project/maps/map-types.json",
+        { "relsDump": { "config": {
+            "routesPath": "/project/Engines/XD Engine/Resources/rel_routes.json",
+            "routesEngine": "/project/Engines/XD Engine",
+            "inputFolder": "/project/Build/Unpacked",
+            "outputFolder": "/project/Source/Code/Relocatable Modules",
+            "overwrite": false,
             "dolphinEngine": "/project/Engines/Dolphin Engine",
-            "gameEngine": "/project/Engines/Colosseum Engine"
+            "dolSymbolMapPath": "/project/Engines/XD Engine/Resources/dol.map"
         } } }
         """)
-        guard case let .mapRelDump(config) = try singleOperation(spy) else {
-            return XCTFail("Expected mapRelDump")
+        guard case let .relsDump(config) = try singleOperation(spy) else {
+            return XCTFail("Expected relsDump")
         }
-        XCTAssertEqual(config.relPath, File("/project/files/M1_out.rel"))
-        XCTAssertEqual(config.typeMapPath, File("/project/maps/map-types.json"))
-        XCTAssertEqual(config.gameEngine, Folder("/project/Engines/Colosseum Engine"))
+        XCTAssertEqual(config.routesPath, File("/project/Engines/XD Engine/Resources/rel_routes.json"))
+        XCTAssertEqual(config.routesEngine, Folder("/project/Engines/XD Engine"))
+        XCTAssertEqual(config.inputFolder, Folder("/project/Build/Unpacked"))
+        XCTAssertEqual(config.outputFolder, Folder("/project/Source/Code/Relocatable Modules"))
+        XCTAssertFalse(config.overwrite)
+        XCTAssertEqual(config.dolSymbolMapPath, File("/project/Engines/XD Engine/Resources/dol.map"))
+        XCTAssertNil(config.engines)
     }
 
-    func testMapRelBuildRouting() throws {
+    func testRelsBuildRouting() throws {
         let spy = try route("""
-        { "mapRelBuild": { "config": {
-            "inputFolder": "/project/Source/M1_out",
-            "relName": "M1_out",
-            "outputPath": "/project/Built/M1_out.rel",
-            "overwrite": true
-        } } }
-        """)
-        guard case let .mapRelBuild(config) = try singleOperation(spy) else {
-            return XCTFail("Expected mapRelBuild")
-        }
-        XCTAssertEqual(config.relName, "M1_out")
-        XCTAssertEqual(config.outputPath, File("/project/Built/M1_out.rel"))
-    }
-
-    func testMapRelsDumpRoutingWithFilter() throws {
-        let spy = try route("""
-        { "mapRelsDump": { "config": {
-            "relsFolder": "/project/files",
-            "outputFolder": "/project/Source",
+        { "relsBuild": { "config": {
+            "routesPath": "/project/Engines/XD Engine/Resources/rel_routes.json",
+            "inputFolder": "/project/Source/Code/Relocatable Modules",
+            "outputFolder": "/project/Build/Unpacked",
             "overwrite": true,
-            "typeMapPath": "/project/maps/map-types.json",
-            "dolphinEngine": "/project/Engines/Dolphin Engine",
-            "gameEngine": "/project/Engines/Colosseum Engine",
-            "filter": { "onlyPrefixes": { "_0": ["M1_", "B2_"] } }
+            "engines": ["/project/Engines/XD Engine"]
         } } }
         """)
-        guard case let .mapRelsDump(config) = try singleOperation(spy) else {
-            return XCTFail("Expected mapRelsDump")
+        guard case let .relsBuild(config) = try singleOperation(spy) else {
+            return XCTFail("Expected relsBuild")
         }
-        XCTAssertEqual(config.relsFolder, Folder("/project/files"))
-        XCTAssertEqual(config.filter, .onlyPrefixes(["M1_", "B2_"]))
-    }
-
-    func testMapRelsBuildRouting() throws {
-        let spy = try route("""
-        { "mapRelsBuild": { "config": {
-            "inputFolder": "/project/Source/maps",
-            "outputFolder": "/project/Built/maps",
-            "overwrite": true
-        } } }
-        """)
-        guard case let .mapRelsBuild(config) = try singleOperation(spy) else {
-            return XCTFail("Expected mapRelsBuild")
-        }
-        XCTAssertEqual(config.inputFolder, Folder("/project/Source/maps"))
-        XCTAssertEqual(config.outputFolder, Folder("/project/Built/maps"))
+        XCTAssertEqual(config.inputFolder, Folder("/project/Source/Code/Relocatable Modules"))
+        XCTAssertEqual(config.outputFolder, Folder("/project/Build/Unpacked"))
         XCTAssertTrue(config.overwrite)
+        XCTAssertEqual(config.engines, [Folder("/project/Engines/XD Engine")])
     }
 
     // MARK: - CISO

@@ -18,7 +18,8 @@ import Structs
 ///                                  0 = last block. Matches the asm:
 ///                                  `r31 += r0` in GSmsgFontOpen)
 /// +0x08  u16  count               (searchable char-table entries)
-/// +0x0A  u16  reserved (0)
+/// +0x0A  u16  unknown0A          (0 in most fonts, 1 in every block of
+///                                  the kana+Latin fonts; meaning unknown)
 /// +0x0C  u16  reserved (0)
 /// +0x0E  u16  lastEntryOffset     (offset of the FINAL char-table entry,
 ///                                  = bmpStart in our earlier parlance)
@@ -93,6 +94,11 @@ public struct GSFont {
     /// the next block (or end of file). Typically a handful of zero bytes for
     /// alignment; preserved verbatim for byte-identical round-trip.
     public let blockPadding: [UInt8]
+    /// Header word `+0x0A`. Long documented as reserved-zero, but every block
+    /// of the kana+Latin fonts (in `main.dol`, and Colosseum's large
+    /// `common.rel` font) carries 1. Nothing found reads it; it is carried so
+    /// a rebuilt font keeps it.
+    public let unknown0A: UInt16
 
     /// Bytes per glyph bitmap for the font's max dimensions.
     public var bytesPerGlyph: Int {
@@ -119,11 +125,13 @@ public struct GSFont {
         let gh: UInt8 = data.readSafely(atAddress: blockOffset + 0x03)
         let nextOffset: UInt32 = data.readSafely(atAddress: blockOffset + 0x04)
         let count: UInt16 = data.readSafely(atAddress: blockOffset + 0x08)
+        let unknown0A: UInt16 = data.readSafely(atAddress: blockOffset + 0x0A)
         let lastEntryOff: UInt16 = data.readSafely(atAddress: blockOffset + 0x0E)
 
         self.fontId = fontId
         self.glyphWidth = Int(gw)
         self.glyphHeight = Int(gh)
+        self.unknown0A = unknown0A
 
         let entryCount = Int(count)
         let lastEntryOffset = Int(lastEntryOff)
@@ -245,7 +253,7 @@ public struct GSFont {
         headerAndChainSlot.write(UInt8(glyphHeight), atAddress: 0x03)
         headerAndChainSlot.write(UInt32(0), atAddress: 0x04) // nextOffset — patched later if needed
         headerAndChainSlot.write(UInt16(count), atAddress: 0x08)
-        headerAndChainSlot.write(UInt16(0), atAddress: 0x0A)
+        headerAndChainSlot.write(unknown0A, atAddress: 0x0A)
         headerAndChainSlot.write(UInt16(0), atAddress: 0x0C)
         headerAndChainSlot.write(UInt16(count == 0 ? 0 : lastEntryOffset), atAddress: 0x0E)
         // 0x10..0x17: chain-ptr slot, remains zero

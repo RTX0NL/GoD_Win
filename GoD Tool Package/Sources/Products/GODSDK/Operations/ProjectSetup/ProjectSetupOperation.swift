@@ -131,11 +131,6 @@ enum Project {
 
         var engines: [any Engine] = [dolphinEngine]
 
-        // Files the Genius Sonority engine says carry typed data sections,
-        // beyond the DOL and common.rel (which have their own ops). Captured
-        // here because the engine is scoped to the disc-type branch below.
-        var chunkTypeMapRoutes: [GeniusSonorityEngine.Data.ChunkTypeMapRoute] = []
-
         if isWii {
             let wiiEngine = try WiiEngine.defaults()
             engines.append(wiiEngine)
@@ -151,7 +146,6 @@ enum Project {
 
             if isGeniusSonority, let game = gsGame {
                 var gsEngine = GeniusSonorityEngine.defaultEngine(for: game)
-                chunkTypeMapRoutes = gsEngine.data.chunkTypeMapRoutes
                 let gsfsysFile = gsEngine.data.fsys.GSfsysFile
 
                 let isoFileSystem = try? GamecubeISO(data: isoData, dolphinEngine: dolphinEngine, gamecubeEngine: gamecubeEngine)
@@ -535,13 +529,10 @@ enum Project {
             // Disassembled source for common.rel — sits alongside the
             // DOL disassembly output under /Source/Code.
             let commonRelSourceFolder = sourceFolder.folder("Code").folder("common_rel")
-            // Map .rel files all sit under the relocatable-modules folder.
-            // Map disassembly source lands under /Source/Code/maps/.
-            let relocatableModulesFolder = unpackedFolder.folder("Data").folder("Relocatable Modules")
-            // Each game splits its maps differently — Colosseum by Type 1 /
-            // Type 2 layout, XD by regular vs leftover-Colosseum — so the
-            // subfolder names come from the profile's map plans.
-            let mapsSourceRoot = sourceFolder.folder("Code")
+            // Every other REL — maps, menu modules, tableres2 — is routed by
+            // the game engine's REL route table. Its source lands under here
+            // at the REL's own unpacked path, so the two trees mirror.
+            let relsSourceFolder = sourceFolder.folder("Code").folder("RELs")
             // Where the game engine serialized to. Named by the engine type
             // itself rather than a literal, so the two can't drift apart.
             let gameEngineFolder = enginesFolder.folder(profile?.engineName ?? "")
@@ -626,24 +617,22 @@ enum Project {
                     )
                 )
 
-                // Each map plan rebuilds from its own source folder into the
-                // shared relocatable-modules folder, where the FSYS packer
-                // picks the `.rel`s up.
-                for plan in profile.mapPlans {
-                    buildOperations.append(
-                        OperationConfig(
-                            operation: .mapRelsBuild(
-                                config: MapRelBuild.BatchConfig(
-                                    inputFolder: mapsSourceRoot.folder(plan.sourceFolderName).prefixed("."),
-                                    outputFolder: relocatableModulesFolder.prefixed("."),
-                                    overwrite: true,
-                                    engines: typedDataEngines
-                                )
-                            ),
-                            enabled: .no
-                        )
+                // Every routed REL rebuilds back to the path its route names,
+                // where the FSYS packer picks it up.
+                buildOperations.append(
+                    OperationConfig(
+                        operation: .relsBuild(
+                            config: RelsBuild.Config(
+                                routesPath: gameEngineFolder.file(profile.relRoutesResource.path).prefixed("."),
+                                inputFolder: relsSourceFolder.prefixed("."),
+                                outputFolder: unpackedFolder.prefixed("."),
+                                overwrite: true,
+                                engines: typedDataEngines
+                            )
+                        ),
+                        enabled: .no
                     )
-                }
+                )
 
                 let fsysBuild: ColoXD.BuildConfig.Operations
                 switch profile.family {
@@ -759,30 +748,6 @@ enum Project {
             // `.conditionalAppend(...)` builder is too deep for Swift's
             // type-checker to handle inline alongside the surrounding
             // `GoddessConfig(...)` literal.
-            // One step per file the Genius Sonority engine says carries typed
-            // data sections. `common.rel` and the DOL have their own ops (they
-            // need a symbol index and cross-module resolution); everything else
-            // is a plain REL plus a type map, so covering another file is a
-            // line of engine data rather than another branch here.
-            //
-            // Built before the config literal because the type-checker can't
-            // handle it inline alongside the rest of the chain.
-            let typedChunkFileSteps: [OperationConfig<GoddessConfig.Operations>] = profile.map { profile in
-                chunkTypeMapRoutes.map { route in
-                    let config = RelDisassembly.Config(
-                        relPath: unpackedFolder.file(route.file.path).prefixed("."),
-                        outputFolder: sourceFolder.folder("Code").folder(route.sourceFolderName).prefixed("."),
-                        dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
-                        typeMapPath: enginesFolder.folder(profile.engineName).file(route.typeMap.path).prefixed("."),
-                        engines: typedDataEngines
-                    )
-                    return OperationConfig(
-                        operation: GoddessConfig.Operations.relDisassembly(config: config),
-                        enabled: route.enabledByDefault ? .yes : .no
-                    )
-                }
-            } ?? []
-
             let dumpOps: [OperationConfig<GoddessConfig.Operations>] = [
                     OperationConfig(
                         operation: .gamecubeDump(
@@ -860,33 +825,28 @@ enum Project {
                         )]
                     } ?? []
                 )
-                .conditionalAppend(!typedChunkFileSteps.isEmpty, contents: typedChunkFileSteps)
                 .conditionalAppend(
                     profile != nil,
-                    // One dump op per map plan. Colosseum's two layouts and
-                    // XD's regular/leftover split are the same shape, so the
-                    // plan supplies the output folder, typemap and filter.
-                    //
-                    // All of these ship disabled: Colosseum's runtime
-                    // Type 1 / Type 2 classifier isn't ported yet, and XD's
-                    // map disassembly is opt-in.
-                    contents: (profile?.mapPlans ?? []).map { plan in
-                        OperationConfig(
-                            operation: .mapRelsDump(
-                                config: MapRelDump.BatchConfig(
-                                    relsFolder: relocatableModulesFolder.prefixed("."),
-                                    outputFolder: mapsSourceRoot.folder(plan.sourceFolderName).prefixed("."),
+                    // Every REL the engine's route table names, each typed by
+                    // its route's matcher. Ships disabled: map disassembly is
+                    // opt-in, and most matchers carry no typed chunks yet.
+                    contents: profile.map { profile in
+                        [OperationConfig(
+                            operation: .relsDump(
+                                config: RelsDump.Config(
+                                    routesPath: gameEngineFolder.file(profile.relRoutesResource.path).prefixed("."),
+                                    routesEngine: gameEngineFolder.prefixed("."),
+                                    inputFolder: unpackedFolder.prefixed("."),
+                                    outputFolder: relsSourceFolder.prefixed("."),
                                     overwrite: false,
-                                    typeMapPath: gameEngineFolder.file(plan.typeMapResource.path).prefixed("."),
                                     dolphinEngine: enginesFolder.folder(dolphinEngine.name).prefixed("."),
-                                    gameEngine: gameEngineFolder.prefixed("."),
-                                    filter: plan.filter,
+                                    dolSymbolMapPath: gameEngineFolder.file(profile.dolSymbolMapResource.path).prefixed("."),
                                     engines: typedDataEngines
                                 )
                             ),
                             enabled: .no
-                        )
-                    }
+                        )]
+                    } ?? []
                 )
                 + [
                     OperationConfig(

@@ -19,11 +19,6 @@ public extension GeniusSonorityEngine {
         public internal(set) var lzss = LZSS()
         public internal(set) var toc = TOC()
 
-        /// Backing store for `chunkTypeMapRoutes` (see ChunkTypeMaps.swift).
-        /// Optional so an engine serialized before this property existed
-        /// still decodes; the computed accessor presents it as an array.
-        internal var storedChunkTypeMapRoutes: [ChunkTypeMapRoute]?
-
         /// How this game's memory-card save body divides into regions,
         /// and any checksum it keeps over its own metadata (see
         /// SaveCard.swift).
@@ -38,7 +33,6 @@ public extension GeniusSonorityEngine {
         enum CodingKeys: String, CodingKey {
             case fsys, lzss, toc, saveCard
             case storedGame = "game"
-            case storedChunkTypeMapRoutes = "chunkTypeMapRoutes"
         }
     }
 }

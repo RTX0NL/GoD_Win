@@ -721,6 +721,144 @@ final class DolOperationTests: XCTestCase {
         XCTAssertEqual(rebuilt.dataSections[0].data.rawBytes, expected)
     }
 
+    // MARK: - Derived counts
+
+    /// Two `TestEntry` rows, then a `uint16` count and two bytes of padding.
+    /// The second row points at the count, which gives it a label.
+    private static let countedTableBytes: [UInt8] = [
+        0x05, 0x01, 0x00, 0x64, 0x80, 0x00, 0x40, 0x00,
+        0x09, 0x00, 0x00, 0xC8, 0x80, 0x00, 0x40, 0x10,
+        0x00, 0x02, 0xAB, 0xCD,
+    ]
+
+    private func writeCountedTypeMap(in fst: InMemoryFST, countType: IntegerProperties = .uint16) throws -> File {
+        let typeMap = TypeMap(chunks: [
+            .table(.init(name: "TestTable", start: "lbl_80004000", entryType: "TestEntry", count: 2)),
+            .count(.init(label: "lbl_80004010", table: "lbl_80004000", type: countType)),
+        ])
+        let json: GoDData = try JSONEncoder().encode(typeMap)
+        let path = File("/project/counted-typemap.json")
+        try fst.writeFile(json, at: path, overwrite: true)
+        return path
+    }
+
+    private func dataManifest(_ fst: InMemoryFST) throws -> DataSectionManifest {
+        let data = try XCTUnwrap(fst.readFile(at: File("/project/Disassembly/main/data0/manifest.json"))?.allData)
+        return try JSONDecoder().decode(DataSectionManifest.self, from: data)
+    }
+
+    private func editRows(_ fst: InMemoryFST, _ edit: ([String]) -> [String]) throws {
+        let file = File("/project/Disassembly/main/data0/TestTable.csv")
+        let lines = try XCTUnwrap(fst.readFile(at: file)?.allData).string(format: .utf8)
+            .split(separator: "\n").map(String.init)
+        try fst.writeFile(GoDData(string: edit(lines).joined(separator: "\n") + "\n", format: .utf8), at: file, overwrite: true)
+    }
+
+    /// A DOL count is its declared width; the bytes after it up to the next
+    /// label stay a chunk of their own, and it rebuilds byte-exactly.
+    func testADolCountIsDerivedAtItsDeclaredWidth() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let engineFolder = try installTableEngine(in: fst)
+        try seedDol(in: fst, engine: engine, dataBytes: Self.countedTableBytes)
+        let typeMapPath = try writeCountedTypeMap(in: fst)
+
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+        let manifest = try dataManifest(fst)
+        let count = try XCTUnwrap(manifest.chunks.first { $0.label == "lbl_80004010" })
+        XCTAssertEqual(count.type, .count)
+        XCTAssertEqual(count.countOf, "lbl_80004000")
+        XCTAssertEqual(count.countType, .uint16)
+        XCTAssertEqual(count.size, 2)
+        XCTAssertTrue(manifest.chunks.contains { $0.label == "lbl_80004012" && $0.size == 2 },
+                      "the padding after a narrower count is kept: \(manifest.chunks.map(\.label))")
+
+        try assemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+        let rebuilt = try Dol(data: try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData), dolphinEngine: engine)
+        XCTAssertEqual(rebuilt.dataSections[0].data.rawBytes, Self.countedTableBytes)
+    }
+
+    /// Code reaches a count through a small-data offset, so nothing points at
+    /// it and it has no label. The type map's address is what places it.
+    func testADolCountNothingPointsAtStillBecomesAChunk() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let engineFolder = try installTableEngine(in: fst)
+        var bytes = Self.countedTableBytes
+        bytes.replaceSubrange(12..<16, with: [0, 0, 0, 0])
+        try seedDol(in: fst, engine: engine, dataBytes: bytes)
+        let typeMapPath = try writeCountedTypeMap(in: fst)
+
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+        let chunks = try dataManifest(fst).chunks
+        let count = try XCTUnwrap(chunks.first { $0.label == "lbl_80004010" },
+                                  "the count's address starts a chunk: \(chunks.map(\.label))")
+        XCTAssertEqual(count.type, .count)
+
+        try assemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+        XCTAssertEqual(try Dol(data: try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData), dolphinEngine: engine)
+            .dataSections[0].data.rawBytes, bytes)
+    }
+
+    /// A counted table is sized by its CSV. Removing a row changes the count;
+    /// the DOL still holds the table to its recorded size, so the space the
+    /// row took is zero-filled and nothing after it moves.
+    func testRemovingARowUpdatesADolCount() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let engineFolder = try installTableEngine(in: fst)
+        try seedDol(in: fst, engine: engine, dataBytes: Self.countedTableBytes)
+        let typeMapPath = try writeCountedTypeMap(in: fst)
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+
+        try editRows(fst) { Array($0.dropLast()) }
+        try assemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+
+        let bytes = try Dol(data: try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData), dolphinEngine: engine)
+            .dataSections[0].data.rawBytes
+        XCTAssertEqual(Array(bytes[0..<8]), Array(Self.countedTableBytes[0..<8]))
+        XCTAssertEqual(Array(bytes[8..<16]), [UInt8](repeating: 0, count: 8), "the dropped row's space is zero-filled")
+        XCTAssertEqual(Array(bytes[16...]), [0x00, 0x01, 0xAB, 0xCD], "the count follows the CSV")
+    }
+
+    /// Growing a counted table is a resize like any other on a DOL.
+    func testAddingARowToADolTableNeedsAllowResizedChunks() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let engineFolder = try installTableEngine(in: fst)
+        try seedDol(in: fst, engine: engine, dataBytes: Self.countedTableBytes)
+        let typeMapPath = try writeCountedTypeMap(in: fst)
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+
+        try editRows(fst) { $0 + [$0[1]] }
+        XCTAssertThrowsError(
+            try assemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+        ) { error in
+            guard case DolAssemblyErrors.chunkOverflow = error else { return XCTFail("expected chunkOverflow, got \(error)") }
+        }
+
+        try assemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder],
+                     allowResizedChunks: true)
+        let bytes = try Dol(data: try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData), dolphinEngine: engine)
+            .dataSections[0].data.rawBytes
+        XCTAssertEqual(Array(bytes[24..<26]), [0x00, 0x03], "with the resize allowed, the count reports three rows")
+    }
+
+    /// A value that disagrees with its table keeps its bytes.
+    func testADolCountThatDisagreesStaysRaw() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let engineFolder = try installTableEngine(in: fst)
+        var bytes = Self.countedTableBytes
+        bytes[17] = 0x07
+        try seedDol(in: fst, engine: engine, dataBytes: bytes)
+        let typeMapPath = try writeCountedTypeMap(in: fst)
+        let logger = RecordingLogger()
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder], logger: logger)
+
+        let chunk = try XCTUnwrap(try dataManifest(fst).chunks.first { $0.label == "lbl_80004010" })
+        XCTAssertEqual(chunk.type, .binary)
+        XCTAssertTrue(logger.warnings.contains { $0.contains("holds 7") }, "\(logger.warnings)")
+        try assemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+        XCTAssertEqual(try Dol(data: try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData), dolphinEngine: engine)
+            .dataSections[0].data.rawBytes, bytes)
+    }
+
     /// A struct with a label *array* must still dump as a table. The dump's
     /// self-check compares the pointer names it recorded against the ones the
     /// CSV gives back, and `TypedDataExporter` names only top-level `.label`

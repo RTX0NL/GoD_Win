@@ -71,16 +71,11 @@ public extension ColosseumEngine {
             /// `ProjectSetup` based on the ROM's game ID.
             public var commonRelSymbolMap: File = "Resources/common_rel_symbols.json"
             public var commonRelTypeMap: File = "Resources/common_rel_typemap.json"
-            public var mapRelSymbolMap: File = "Resources/map_rel_symbols.json"
-            /// Colosseum ships two map REL layouts. Type 1 = the standard
-            /// format (entry-point indices 1/2, character indices 3/4);
-            /// Type 2 = the alternate format (indices 0/1 and 5/6) that
-            /// the legacy parser detects via the angle-sentinel check at
-            /// `XGMapRel.swift:35-53`. Each gets its own typemap so the
-            /// disassembler can resolve labels independently.
-            public var mapRelTypeMapType1: File = "Resources/map_rel_typemap_type1.json"
-            public var mapRelTypeMapType2: File = "Resources/map_rel_typemap_type2.json"
-            public var pocketMenuSymbolMap: File = "Resources/pocket_menu_symbols.json"
+            /// Which type map and symbol index describe each REL the FSYS
+            /// unpack produces (`RelRouteTable`). Colosseum's maps don't share
+            /// one layout, so each map is routed to the layout it was found to
+            /// have. `common.rel` isn't in it: it has its own ops.
+            public var relRoutes: File = "Resources/rel_routes.json"
             /// The flag descriptor table — the schema half of Colosseum's flag
             /// system, 3593 × 8 bytes inside `common.rel`. Region-neutral path;
             /// US and PAL ship a byte-identical table and JP differs in exactly
@@ -106,10 +101,7 @@ public extension ColosseumEngine {
             public init(
                 commonRelSymbolMap: File = "Resources/common_rel_symbols.json",
                 commonRelTypeMap: File = "Resources/common_rel_typemap.json",
-                mapRelSymbolMap: File = "Resources/map_rel_symbols.json",
-                mapRelTypeMapType1: File = "Resources/map_rel_typemap_type1.json",
-                mapRelTypeMapType2: File = "Resources/map_rel_typemap_type2.json",
-                pocketMenuSymbolMap: File = "Resources/pocket_menu_symbols.json",
+                relRoutes: File = "Resources/rel_routes.json",
                 generalFlagsTable: File = "Resources/general_flags.csv",
                 saveSectionLayout: File = "Resources/save_section_layout.json",
                 dolSymbolMap: File = "Resources/dol.map",
@@ -117,10 +109,7 @@ public extension ColosseumEngine {
             ) {
                 self.commonRelSymbolMap = commonRelSymbolMap
                 self.commonRelTypeMap = commonRelTypeMap
-                self.mapRelSymbolMap = mapRelSymbolMap
-                self.mapRelTypeMapType1 = mapRelTypeMapType1
-                self.mapRelTypeMapType2 = mapRelTypeMapType2
-                self.pocketMenuSymbolMap = pocketMenuSymbolMap
+                self.relRoutes = relRoutes
                 self.generalFlagsTable = generalFlagsTable
                 self.saveSectionLayout = saveSectionLayout
                 self.dolSymbolMap = dolSymbolMap

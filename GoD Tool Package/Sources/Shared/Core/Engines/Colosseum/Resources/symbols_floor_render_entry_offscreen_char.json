@@ -1,0 +1,15 @@
+{
+  "symbols": {
+    "0": "RenderData",
+    "1": "NumberOfRenderData",
+    "2": "EntryPoints",
+    "3": "NumberOfEntryPoints",
+    "4": "EntryPointList",
+    "5": "OffscreenData",
+    "6": "NumberOfOffscreenData",
+    "7": "OffscreenDataList",
+    "8": "Characters",
+    "9": "NumberOfCharacters",
+    "10": "CharacterList"
+  }
+}

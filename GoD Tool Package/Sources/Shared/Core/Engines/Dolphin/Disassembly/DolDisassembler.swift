@@ -259,15 +259,20 @@ public struct DolDisassembler {
            let typeMapData = fileSystem.readFile(at: typeMapPath)?.allData {
             typeMap = try? JSONDecoder().decode(TypeMap.self, from: typeMapData)
             if let tm = typeMap {
+                try tm.validate()
                 logger?.log(.info("Loaded type map with \(tm.chunks.count) chunks"))
-                // Build a simple struct resolver from XD engine structs
-                // The type map references struct names which we look up
                 resolvedStructs = resolveStructTypes(from: tm, engineFolders: engineFolders, fileSystem: fileSystem, logger: logger)
             }
         }
 
         // Data sections — always shiftable with pointer labels
         let assemblyExporter = AssemblyTextExporter()
+
+        // Counts written as `count` chunks, checked against their tables once
+        // every section's manifest exists — a count in .sdata usually counts
+        // a table in .data.
+        var pendingCounts = [(folder: Folder, count: TypeMap.Chunk.Count, stored: [UInt8])]()
+        var dataManifestFolders = [Folder]()
 
         for (sectionIndex, (index, section)) in dataSections.enumerated() {
             let sectionName = "data\(index)"
@@ -292,6 +297,26 @@ public struct DolDisassembler {
                         misalignedLabels.append(name)
                     }
                 }
+            }
+            // A count is read through a small-data offset, not a pointer, so
+            // nothing mints a label for it, and the symbol map's names for
+            // these words can't be trusted (XD's are 0xE195E out). The type
+            // map's address is the only thing that places one, so a count
+            // becomes a chunk boundary there. Safe for a count and nothing
+            // else: the dump keeps it only if the stored value equals its
+            // table's entry count, so a wrong address falls back to raw bytes.
+            for case .count(let count) in typeMap?.chunks ?? [] {
+                guard let address = chunkAddress(.count(count), addressToLabel: addressToLabel),
+                      address >= baseAddress, address < sectionEnd else { continue }
+                let offset = Int(address - baseAddress)
+                guard sectionLabels[offset] == nil else { continue }
+                guard offset % 4 == 0 else {
+                    logger?.log(.warning(
+                        "Count '\(count.label)' is at a misaligned address, which can't start a chunk; leaving it raw."
+                    ))
+                    continue
+                }
+                sectionLabels[offset] = count.label
             }
             if !misalignedLabels.isEmpty {
                 let preview = misalignedLabels.sorted().prefix(5).joined(separator: ", ")
@@ -381,9 +406,30 @@ public struct DolDisassembler {
                 let chunkSize = nextOffset - labelOffset
                 guard chunkSize > 0 else { continue }
 
-                // Check if this label has a type map entry
                 if let typeChunk = typeChunkByLabel[labelName] {
                     switch typeChunk {
+                    case .count(let count):
+                        // The count occupies its declared width; whatever
+                        // follows before the next label is left to the gap
+                        // chunk below, like any typed chunk's remainder.
+                        let width = count.type.length
+                        let span = labelOffset ..< labelOffset + width
+                        guard nextOffset - labelOffset >= width,
+                              !sectionPointers.keys.contains(where: { span.contains($0) }) else {
+                            logger?.log(.warning(
+                                "Count '\(count.label)' isn't \(width) plain byte(s) here; keeping its bytes."
+                            ))
+                            emitUntypedChunk(from: labelOffset, to: nextOffset, label: labelName)
+                            consumedUpTo = nextOffset
+                            continue
+                        }
+                        manifest.chunks.append(.init(
+                            label: labelName, type: .count, file: "", size: width,
+                            countOf: count.table, countType: count.type
+                        ))
+                        pendingCounts.append((sectionFolder, count, Array(bytes[span])))
+                        consumedUpTo = labelOffset + width
+
                     case .table(let table):
                         guard let definition = resolvedStructs[table.entryType] else {
                             logger?.log(.warning("Unknown struct type '\(table.entryType)' for table '\(table.name)' — emitting as untyped chunk"))
@@ -582,6 +628,7 @@ public struct DolDisassembler {
                     emitUntypedChunk(from: labelOffset, to: nextOffset, label: labelName)
                 }
             }
+            dataManifestFolders.append(sectionFolder)
 
             // Write manifest
             if let manifestJSON: GoDData = try? JSONEncoder.prettyPrinted.encode(manifest) {
@@ -595,7 +642,10 @@ public struct DolDisassembler {
             }
         }
 
-        // Section layout summary
+        if !pendingCounts.isEmpty {
+            try verifyCounts(pendingCounts, manifestFolders: dataManifestFolders, in: output, logger: logger)
+        }
+
         let layoutWriter = SectionLayoutWriter()
         let layout = SectionLayout(
             entryPoint: dol.entryPoint,
@@ -612,6 +662,48 @@ public struct DolDisassembler {
         try output.writeFile(GoDData(string: summaryText, format: .utf8), at: outputFolder.file("sections.txt"), overwrite: true)
 
         return output
+    }
+
+    /// Keeps a `count` chunk only where the value on disc is exactly its
+    /// table's dumped entry count, so deriving it reproduces the DOL. Any
+    /// other — the table didn't dump as a table, or the value disagrees —
+    /// is turned back into a raw chunk holding its bytes, with a warning.
+    private func verifyCounts(
+        _ pending: [(folder: Folder, count: TypeMap.Chunk.Count, stored: [UInt8])],
+        manifestFolders: [Folder],
+        in output: FileSystemTree,
+        logger: Logger?
+    ) throws {
+        func manifest(in folder: Folder) -> DataSectionManifest? {
+            guard let data = output.readFile(at: folder.file("manifest.json"))?.allData else { return nil }
+            return try? JSONDecoder().decode(DataSectionManifest.self, from: data.data)
+        }
+        var tableCounts = [String: Int]()
+        for folder in manifestFolders {
+            for chunk in manifest(in: folder)?.chunks ?? [] where chunk.type == .table {
+                tableCounts[chunk.label] = chunk.count
+            }
+        }
+        for (folder, count, stored) in pending {
+            let problem: String
+            if let entries = tableCounts[count.table] {
+                let value = count.type.countValue(of: stored)
+                guard value != Int64(entries) else { continue }
+                problem = "holds \(value) but '\(count.table)' has \(entries) entries"
+            } else {
+                problem = "counts '\(count.table)', which didn't dump as a table"
+            }
+            logger?.log(.warning("Count '\(count.label)' \(problem); keeping its bytes."))
+            guard var sectionManifest = manifest(in: folder),
+                  let index = sectionManifest.chunks.firstIndex(where: { $0.label == count.label && $0.type == .count }) else {
+                continue
+            }
+            let fileName = "\(count.label).bin"
+            try output.writeFile(GoDData(byteStream: stored, byteOrder: .big), at: folder.file(fileName), overwrite: true)
+            sectionManifest.chunks[index] = .init(label: count.label, type: .binary, file: fileName, size: stored.count)
+            let json: GoDData = try JSONEncoder.prettyPrinted.encode(sectionManifest)
+            try output.writeFile(json, at: folder.file("manifest.json"), overwrite: true)
+        }
     }
 }
 
@@ -630,6 +722,7 @@ private func chunkAddress(_ chunk: TypeMap.Chunk, addressToLabel: [UInt32: Strin
     case .table(let t): label = t.start
     case .single(let s): label = s.label
     case .file(let f): label = f.label
+    case .count(let c): label = c.label
     }
     // Try exact lookup in reverse (label → address)
     if let entry = addressToLabel.first(where: { $0.value == label }) {
@@ -666,7 +759,7 @@ public func resolveStructTypes(
         switch chunk {
         case .table(let t): typeNames.insert(t.entryType)
         case .single(let s): typeNames.insert(s.type)
-        case .file: break
+        case .file, .count: break
         }
     }
     return resolveStructTypes(named: typeNames, engineFolders: engineFolders, fileSystem: fileSystem, logger: logger)

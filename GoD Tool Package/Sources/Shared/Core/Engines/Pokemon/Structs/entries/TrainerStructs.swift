@@ -51,9 +51,11 @@ public extension PokemonStructDefaults {
             .uint8(name: "happiness"),
             .uint16(name: "item"),
             .uint8(name: "aiRole"),
-            .uint8(name: "isKeyStrategicPokemon"),
+            .abstraction(name: "keyPlayer", typeName: "DeckPokemonKeyPlayer"),
             .array(name: "ivs", count: 6, of: .uint8),
             .array(name: "evs", count: 6, of: .uint8),
+            // Plain integers here: `Moves` is per game, and this cross-game
+            // engine has no game to resolve it against.
             .array(name: "moves", count: 4, of: .uint16),
             .uint8(name: "unusedByte"),
             .uint8(name: "comboPartnerFlags"),
@@ -83,7 +85,7 @@ public extension PokemonStructDefaults {
             .uint16(name: "heartGauge"),
             .uint16(name: "bonusExp"),
             .array(name: "shadowMoves", count: 4, of: .uint16),
-            .uint8(name: "aggression"),
+            .abstraction(name: "aggression", typeName: "ReverseModeRate"),
             .boolean(name: "alwaysFleeToMirorB"),
         ],
         description: "Single trainer team slot — DPKM fields plus optional DDPK extension when isShadow is true. `darkPokemonID` carries the shadow's DDPK row index for stable round-trip."
@@ -113,8 +115,8 @@ public extension PokemonStructDefaults {
             .uint8(name: "koRate"),
             .uint8(name: "lowHPRate"),
             .uint8(name: "lastPPRate"),
-            .uint8(name: "specialityPokemonType1"),
-            .uint8(name: "specialityPokemonType2"),
+            .abstraction(name: "specialityPokemonType1", typeName: "Type"),
+            .abstraction(name: "specialityPokemonType2", typeName: "Type"),
             .uint8(name: "specialityPokemonType1Rate"),
             .uint8(name: "specialityPokemonType2Rate"),
             .uint16(name: "specialityMoveType1"),

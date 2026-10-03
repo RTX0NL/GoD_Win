@@ -199,6 +199,27 @@
     "label": "lbl_80527F28",
     "extension": "scd"
    }
+  },
+  {
+   "count": {
+    "label": "lbl_80522980",
+    "table": "lbl_80436CC0",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "lbl_80522998",
+    "table": "lbl_8043A530",
+    "type": "uint32"
+   }
+  },
+  {
+   "count": {
+    "label": "lbl_80522A10",
+    "table": "lbl_8043FC80",
+    "type": "uint32"
+   }
   }
  ]
 }

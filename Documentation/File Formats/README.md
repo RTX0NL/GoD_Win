@@ -51,6 +51,9 @@ These formats are used by both Colosseum and XD with the same or very similar st
 ### Executable data
 - [main.dol Data Tables](Shared/main.dol%20Data%20Tables.md) — The tables both games keep in the executable rather than in `common.rel`: XD's 13 and Colosseum's 15, with the per-region addresses and how each was located
 - [Colosseum common.rel Tables](Colosseum/common.rel%20Tables.md) — Colosseum's 28 `common.rel` tables, their strides and where the PAL build widens a record
+- [XD common.rel Tables](XD/common.rel%20Tables.md) — The XD `common.rel` tables typed from their readers and the legacy tool's declarations: Battle Bingo, Battle CDs, Miror B's radar, story checkpoints, the world map, sound tables and the Colosseum flag-table leftovers
+- [pocket_menu.rel - Shop Tables](Shared/pocket_menu.rel%20-%20Shop%20Tables.md) — Both games' mart list, mart goods (item data ids, not Items rows) and shop dialogue tables
+- [Map REL - Floor Tables](Shared/Map%20REL%20-%20Floor%20Tables.md) — The per-map character, entry-point, render, camera, offscreen and berry tables, field by field
 
 ### Other
 - [BIN - Generic Binary Data](Shared/BIN%20-%20Generic%20Binary%20Data.md) — Context-dependent binary data (type `0x34`)

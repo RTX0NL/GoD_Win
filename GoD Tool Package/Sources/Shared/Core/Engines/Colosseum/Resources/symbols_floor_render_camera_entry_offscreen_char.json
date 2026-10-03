@@ -1,0 +1,18 @@
+{
+  "symbols": {
+    "0": "RenderData",
+    "1": "NumberOfRenderData",
+    "2": "FieldCameras",
+    "3": "NumberOfFieldCameras",
+    "4": "FieldCameraList",
+    "5": "EntryPoints",
+    "6": "NumberOfEntryPoints",
+    "7": "EntryPointList",
+    "8": "OffscreenData",
+    "9": "NumberOfOffscreenData",
+    "10": "OffscreenDataList",
+    "11": "Characters",
+    "12": "NumberOfCharacters",
+    "13": "CharacterList"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "symbols": {
+    "0": "floorCharTbl",
+    "1": "floorCharTbl_number",
+    "2": "floorCharTbl_top",
+    "3": "floor_offscreen_data_list",
+    "4": "floor_offscreen_data_list_number",
+    "5": "floor_offscreen_data_list_top",
+    "6": "floor_pos_list",
+    "7": "floor_pos_list_number",
+    "8": "floor_pos_list_top",
+    "9": "floor_resource_data",
+    "10": "floor_resource_data_number"
+  }
+}

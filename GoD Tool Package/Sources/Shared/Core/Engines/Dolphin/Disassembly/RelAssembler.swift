@@ -73,9 +73,35 @@ public struct RelAssembler {
             ? [:]
             : resolveStructTypes(named: structNames, engineFolders: engineFolders, fileSystem: fileSystem, logger: logger)
 
+        // ---- Counts ----
+
+        // A table something counts is sized by its CSV — its count word is
+        // derived from it, so a row added there is a row the game reads. One
+        // nothing counts stays at its dumped size, since growing it would
+        // leave whatever the game uses as its count stale.
+        var countedTables = Set<String>()
+        var tableLabels = Set<String>()
+        for section in manifest.sections {
+            for chunk in section.chunks ?? [] {
+                if chunk.type == .table { tableLabels.insert(chunk.label) }
+                if chunk.type == .count, let table = chunk.countOf { countedTables.insert(table) }
+            }
+        }
+        for section in manifest.sections {
+            for chunk in section.chunks ?? [] where chunk.type == .count {
+                guard let table = chunk.countOf, tableLabels.contains(table) else {
+                    throw RelAssemblerErrors.countTargetNotATable(count: chunk.label, table: chunk.countOf, .init())
+                }
+            }
+        }
+        var tableCounts = [String: Int]()
+
         // ---- Source for every section ----
 
         var sources: [Int: [(name: String, content: String)]] = [:]
+        // Count chunks, rendered once every table's final size is known:
+        // section → (position in its source list, chunk).
+        var pendingCounts: [Int: [(position: Int, chunk: DataSectionManifest.Chunk)]] = [:]
         for section in manifest.sections {
             switch section.kind {
             case .empty, .bss:
@@ -92,12 +118,35 @@ public struct RelAssembler {
             case .data:
                 var files = [(name: String, content: String)]()
                 for chunk in section.chunks ?? [] {
+                    if chunk.type == .count {
+                        pendingCounts[section.index, default: []].append((files.count, chunk))
+                        files.append((name: "", content: ""))
+                        continue
+                    }
                     files.append(try render(
                         chunk, sectionName: "data\(section.index)", folder: folder,
-                        structs: structs, fileSystem: fileSystem, logger: logger
+                        structs: structs, sizedByCSV: countedTables.contains(chunk.label),
+                        tableCounts: &tableCounts, fileSystem: fileSystem, logger: logger
                     ))
                 }
                 sources[section.index] = files
+            }
+        }
+        for (sectionIndex, pending) in pendingCounts {
+            for (position, chunk) in pending {
+                // Validated above: `countOf` names a table chunk, and every
+                // table chunk records its count when it renders.
+                let count = tableCounts[chunk.countOf ?? ""] ?? 0
+                let type = chunk.countType ?? .uint32
+                guard let bytes = type.countBytes(count) else {
+                    throw RelAssemblerErrors.countOverflow(count: chunk.label, table: chunk.countOf ?? "", entries: count, type: type.rawValue, .init())
+                }
+                sources[sectionIndex]?[position] = (
+                    name: "\(chunk.label).synthesized.s",
+                    content: Self.renderBlocks(sectionName: "data\(sectionIndex)", label: chunk.label, blocks: [
+                        .init(label: nil, bytes: bytes, pointers: [:])
+                    ])
+                )
             }
         }
 
@@ -289,12 +338,18 @@ public struct RelAssembler {
         sectionName: String,
         folder: Folder,
         structs: [String: StructDefinition],
+        sizedByCSV: Bool,
+        tableCounts: inout [String: Int],
         fileSystem: FileSystemTree,
         logger: Logger?
     ) throws -> (name: String, content: String) {
         let file = folder.file(chunk.file)
 
         switch chunk.type {
+        case .count:
+            // Rendered by the caller once every table's size is known.
+            throw RelAssemblerErrors.countTargetNotATable(count: chunk.label, table: chunk.countOf, .init())
+
         case .assembly:
             guard let data = fileSystem.readFile(at: file)?.allData else {
                 throw RelAssemblerErrors.missingChunk(label: chunk.label, file: file, .init())
@@ -376,9 +431,11 @@ public struct RelAssembler {
             for warning in decoded.warnings {
                 logger?.log(.warning("Table '\(chunk.label)': \(warning)"))
             }
-            // The manifest's count fixes the table's size, so a hand-edited
-            // CSV can't silently shift everything after it.
-            let count = chunk.count ?? decoded.entries.count
+            // The manifest's count fixes the size of a table nothing counts,
+            // so a hand-edited CSV can't silently shift everything after it.
+            // A counted table is sized by its CSV: its count word follows it.
+            let count = sizedByCSV ? decoded.entries.count : (chunk.count ?? decoded.entries.count)
+            tableCounts[chunk.label] = count
             if decoded.entries.count > count {
                 logger?.log(.warning("Table '\(chunk.label)': \(decoded.entries.count - count) surplus entries dropped (manifest count is \(count))"))
             } else if decoded.entries.count < count {
@@ -527,6 +584,8 @@ public enum RelAssemblerErrors: Error, CustomStringConvertible {
     case invalidRestWordKey(String, section: Int, ErrorTrace)
     case textNotWordAligned(section: Int, size: Int, ErrorTrace)
     case unsupportedDataRelocation(symbol: String, kind: String, section: Int, ErrorTrace)
+    case countTargetNotATable(count: String, table: String?, ErrorTrace)
+    case countOverflow(count: String, table: String, entries: Int, type: String, ErrorTrace)
 
     public var description: String {
         switch self {
@@ -554,6 +613,10 @@ public enum RelAssemblerErrors: Error, CustomStringConvertible {
             return "Text section \(section) assembled to \(size) bytes, which is not a multiple of 4\n\(trace)"
         case let .unsupportedDataRelocation(symbol, kind, section, trace):
             return "Data section \(section) relocates '\(symbol)' as \(kind); only .4byte pointers are representable in a data section\n\(trace)"
+        case let .countTargetNotATable(count, table, trace):
+            return "Count chunk '\(count)' counts '\(table ?? "(nothing)")', which isn't a table chunk in this module\n\(trace)"
+        case let .countOverflow(count, table, entries, type, trace):
+            return "Count '\(count)' is a \(type), which can't hold the \(entries) entries '\(table)' now has\n\(trace)"
         }
     }
 }

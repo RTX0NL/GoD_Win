@@ -91,9 +91,6 @@ public struct GeniusSonorityEngine: Engine {
             data.saveCard = Data.galeOfDarknessSaveCard
             data.fsys.fileMetaDataPadding = 0x40
             data.toc.unknown = 0x201
-            // XD is the only game that ships an extra typed REL
-            // (`tableres2.rel`, inside `common_dvdeth.fsys`).
-            data.chunkTypeMapRoutes = Data.defaultXDChunkTypeMapRoutes
             structsList.append(Structs.Defaults.fsysTOCEntryStructFull)
             enumList.append(Enums.Defaults.fileTypesColoXDEnum)
             enumList.append(fsysTOC?.enumeration ?? Enums.Defaults.fsysGroupIDsXDEnum)

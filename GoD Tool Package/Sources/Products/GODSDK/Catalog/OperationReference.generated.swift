@@ -28,7 +28,7 @@ Complete reference for the JSON config files consumed by the `GODDESS` executabl
   - [DOL: `dolDisassembly`, `dolAssembly`](#dol-executable)
   - [REL: `relDisassembly`, `relAssembly`](#rel-relocatable-modules)
   - [common.rel: `commonRelDump`, `commonRelBuild`](#commonrel)
-  - [Map RELs: `mapRelDump`, `mapRelsDump`, `mapRelBuild`, `mapRelsBuild`](#map-rels)
+  - [Routed RELs: `relsDump`, `relsBuild`](#routed-rels)
   - [CISO: `cisoDump`, `cisoBuild`](#ciso-disc-images)
   - [GCI saves: `gciDump`, `gciBuild`](#gci-save-envelope)
   - [XD saves: `xdSaveDump`, `xdSaveBuild`](#xd-saves)
@@ -86,8 +86,7 @@ Operations come in two structural shapes:
 
 - **Flat operations** hold a plain field object (`dolDisassembly`,
   `dolAssembly`, `relDisassembly`, `relAssembly`, `commonRelDump`,
-  `commonRelBuild`, `mapRelDump`, `mapRelsDump`, `mapRelBuild`,
-  `mapRelsBuild`, `cisoDump`, `cisoBuild`, `nintendoArchiveDump`,
+  `commonRelBuild`, `relsDump`, `relsBuild`, `cisoDump`, `cisoBuild`, `nintendoArchiveDump`,
   `nintendoArchivesDump`, `nintendoArchiveBuild`, `nintendoArchivesBuild`,
   `pbrFontDump`, `pbrFontsDump`, `pbrFontBuild`, `pbrFontsBuild`,
   `pbrStringsDump`, `pbrStringsBuild`, `compress`,
@@ -446,45 +445,74 @@ game engine's bundled type map and symbol resources.
 (`inputFolder`, `relName` — conventionally `"common"` — `outputPath`,
 `overwrite`).
 
-### Map RELs
+### Routed RELs
 
-**`mapRelDump`** *(flat)* — disassemble one map `.rel`
-(`relPath`, `outputFolder`, `overwrite`, `typeMapPath`, `dolphinEngine`,
-`gameEngine`).
+Every REL a project unpacks other than `common.rel` — the maps, the menu
+modules, `tableres2.rel` — is described by the game engine's **REL route
+table**, `Resources/rel_routes.json`. It has three parts: named `matchers`,
+each an optional type map and an optional pointer-index symbol index (paths
+relative to the engine folder); `routes`, which map each REL's full path in
+the unpacked tree to the matcher describing it; and `ignored`, RELs another
+operation owns. A game ships a few hundred RELs and a handful of layouts, so
+many routes share one matcher:
 
-**`mapRelsDump`** *(flat)* — batch-disassemble a folder of map `.rel` files,
-one subfolder per map.
+```json
+{
+  "matchers": {
+    "map_char_pos_resource": {
+      "symbolIndex": "Resources/map_symbols_char_pos_resource.json" },
+    "prototypeMap_resource": {
+      "symbolIndex": "Resources/map_symbols_resource.json" },
+    "untyped": {}
+  },
+  "routes": {
+    "/Data/Relocatable Modules/D1_labo_1F.rel":      "map_char_pos_resource",
+    "/Assets/Misc/TEST000/TEST000.rel":              "prototypeMap_resource",
+    "/Data/Relocatable Modules/French/pda_menu.rel": "untyped"
+  },
+  "ignored": ["/Assets/Data/Common/common.rel"]
+}
+```
+
+A matcher with neither file still disassembles its RELs, untyped and with
+positional `sym_N` names. Keys are full paths because a stem isn't unique
+(`pda_menu.rel` sits in every language folder) and because the unpack doesn't
+put every REL in one folder (a map archive's REL lands in that archive's own
+folder). Adding a REL, or moving one to another layout, is an edit to this
+file.
+
+**`relsDump`** *(flat)* — disassemble every REL the route table names into a
+source tree that mirrors the unpacked one.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `relsFolder` | path | Folder of `.rel` files. |
-| `outputFolder` | path | Output folder (per-map subfolders). |
-| `overwrite` | bool | Replace existing output. |
-| `typeMapPath` | path | Type map for the maps' data sections. |
+| `routesPath` | path | The route table. |
+| `routesEngine` | path | Engine folder the matchers' paths resolve against. |
+| `inputFolder` | path | Root the route keys are relative to (the unpacked tree). |
+| `outputFolder` | path | Source root: each REL lands at its route path minus `.rel`, e.g. `<outputFolder>/Data/Relocatable Modules/D2_out/`. |
+| `overwrite` | bool | Replace a REL's source if it already has a manifest; `false` leaves it alone. |
 | `dolphinEngine` | path | Dolphin engine folder. |
-| `gameEngine` | path | XD or Colosseum engine folder. |
-| `filter` | enum | Which maps to process — see below. |
+| `dolSymbolMapPath` | path *(optional)* | DOL symbol map for cross-module relocation targets. |
+| `engines` | paths *(optional)* | Engine folders whose structs resolve the type maps' chunk types. Absent = `routesEngine`. |
 
-`filter` values:
+A route naming a file the project doesn't have is skipped with a warning,
+since regions differ (JP ships no `tableres2.rel`) but a wrong path looks the
+same. A `.rel` anywhere in the unpacked tree that neither a route nor
+`ignored` names is warned about too. A matcher naming a type
+map or symbol index that doesn't exist fails the RELs routed to it rather
+than dumping them untyped. Every REL is attempted and failures are reported
+together at the end.
 
-```json
-{ "all": {} }
-{ "onlyPrefixes": { "_0": ["B1_", "M1_"] } }
-{ "excludePrefixes": { "_0": ["B1_", "M1_"] } }
-{ "coloType1": {} }
-{ "coloType2": {} }
-```
+**`relsBuild`** *(flat)* — reassemble every routed REL whose source folder
+exists back to the path its route names.
 
-`coloType1`/`coloType2` select the two Colosseum map layouts; the prefix
-filters match file-name prefixes (the XD project uses them to split battle
-and Mt. Battle maps from the rest).
-
-**`mapRelBuild`** *(flat)* — build one map `.rel`
-(`inputFolder`, `relName`, `outputPath`, `overwrite`).
-
-**`mapRelsBuild`** *(flat)* — build every per-map subfolder under
-`inputFolder` into `outputFolder/<name>.rel`
-(`inputFolder`, `outputFolder`, `overwrite`).
+| Field | Type | Meaning |
+|---|---|---|
+| `routesPath` | path | The route table. |
+| `inputFolder` | path | Source root `relsDump` wrote. |
+| `outputFolder` | path | Root the route keys are relative to (the unpacked tree). |
+| `overwrite` | bool | Replace existing `.rel` files. |
+| `engines` | paths *(optional)* | Engine folders resolving the sources' typed chunks. |
 
 ### CISO disc images
 

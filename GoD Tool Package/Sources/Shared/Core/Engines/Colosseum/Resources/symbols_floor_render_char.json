@@ -1,0 +1,9 @@
+{
+  "symbols": {
+    "0": "RenderData",
+    "1": "NumberOfRenderData",
+    "2": "Characters",
+    "3": "NumberOfCharacters",
+    "4": "CharacterList"
+  }
+}

@@ -133,13 +133,19 @@ public struct RelDisassembler {
         // ---- Type map, keyed by start symbol ----
 
         var typeChunkBySymbol: [String: TypeMap.Chunk] = [:]
+        var counters: [String: TypeMap.Chunk.Count] = [:]
         var unsupportedSingles = [String]()
         if let typeMap = inputs.typeMap {
+            try typeMap.validate()
             for chunk in typeMap.chunks {
                 switch chunk {
                 case .table(let t): typeChunkBySymbol[t.start] = chunk
                 case .file(let f): typeChunkBySymbol[f.label] = chunk
                 case .single(let s): unsupportedSingles.append(s.label)
+                // Rendered as a plain word first; `deriveCounts` converts it
+                // once every table's dumped count is known, since a count
+                // can sit before its table or in another section.
+                case .count(let c): counters[c.label] = c
                 }
             }
         }
@@ -223,6 +229,10 @@ public struct RelDisassembler {
             }
         }
 
+        if !counters.isEmpty {
+            try deriveCounts(counters, in: &manifest, folder: folder, fileSystem: fileSystem, logger: logger)
+        }
+
         // Every target the source does not define as a label.
         for (key, name) in names.byKey where !emittedLabels.contains(name) {
             manifest.symbols[name] = RelManifest.Symbol(
@@ -248,6 +258,89 @@ public struct RelDisassembler {
 
         logger?.log(.taskStatus(taskName: "Disassemble REL", status: .completed(true)))
         return manifest
+    }
+
+    // MARK: - Counts
+
+    /// Turns each declared count word into a `count` chunk, whose value the
+    /// assembler derives from its table.
+    ///
+    /// Only a count that already holds exactly its table's dumped entry
+    /// count is converted: deriving it is only safe if doing so reproduces
+    /// the module. Anything else — a count whose table didn't dump as a
+    /// table, a value that doesn't match, a chunk too short for the declared
+    /// type or holding a pointer — keeps its bytes, with a warning. Bytes
+    /// after a narrower count and before the next symbol become a
+    /// `<label>_tail` chunk. A count whose label this module doesn't define
+    /// is skipped in silence, like any other type-map chunk, so one map can
+    /// serve modules that carry different tables.
+    private func deriveCounts(
+        _ counters: [String: TypeMap.Chunk.Count],
+        in manifest: inout RelManifest,
+        folder: Folder,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws {
+        var tableCounts = [String: Int]()
+        for section in manifest.sections {
+            for chunk in section.chunks ?? [] where chunk.type == .table {
+                tableCounts[chunk.label] = chunk.count
+            }
+        }
+        for sectionIndex in manifest.sections.indices {
+            guard let original = manifest.sections[sectionIndex].chunks else { continue }
+            var chunks = [DataSectionManifest.Chunk]()
+            for chunk in original {
+                guard let counter = counters[chunk.label] else { chunks.append(chunk); continue }
+                let width = counter.type.length
+                guard chunk.type == .binary,
+                      let data = fileSystem.readFile(at: folder.file(chunk.file))?.allData,
+                      data.length >= width else {
+                    logger?.log(.warning(
+                        "Count '\(chunk.label)' isn't \(width) plain byte(s) in this module; keeping its bytes."
+                    ))
+                    chunks.append(chunk)
+                    continue
+                }
+                guard let tableCount = tableCounts[counter.table] else {
+                    logger?.log(.warning(
+                        "Count '\(chunk.label)' counts '\(counter.table)', which didn't dump as a table here; "
+                        + "keeping its bytes."
+                    ))
+                    chunks.append(chunk)
+                    continue
+                }
+                let bytes = data.rawBytes
+                let stored = counter.type.countValue(of: Array(bytes[..<width]))
+                guard stored == Int64(tableCount) else {
+                    logger?.log(.warning(
+                        "Count '\(chunk.label)' holds \(stored) but '\(counter.table)' has \(tableCount) entries; "
+                        + "keeping its bytes."
+                    ))
+                    chunks.append(chunk)
+                    continue
+                }
+                try fileSystem.deleteFile(at: folder.file(chunk.file))
+                chunks.append(.init(
+                    label: chunk.label, type: .count, file: "", size: width,
+                    countOf: counter.table, countType: counter.type
+                ))
+                if bytes.count > width {
+                    let tailLabel = "\(chunk.label)_tail"
+                    // `chunk.file` is relative to the module folder
+                    // ("data3/x.bin"), which `Folder` won't take, so the
+                    // tail's path is built beside it by string.
+                    let directory = chunk.file.split(separator: "/").dropLast().joined(separator: "/")
+                    let tailFile = (directory.isEmpty ? "" : directory + "/") + "\(tailLabel).bin"
+                    try fileSystem.writeFile(
+                        GoDData(byteStream: Array(bytes[width...]), byteOrder: .big),
+                        at: folder.file(tailFile), overwrite: true
+                    )
+                    chunks.append(.init(label: tailLabel, type: .binary, file: tailFile, size: bytes.count - width))
+                }
+            }
+            manifest.sections[sectionIndex].chunks = chunks
+        }
     }
 
     // MARK: - Text sections

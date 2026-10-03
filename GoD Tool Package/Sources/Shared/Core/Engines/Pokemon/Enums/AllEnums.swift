@@ -23,7 +23,12 @@ public extension PokemonEngine {
                 PokemonEnumDefaults.typesEnum,
                 PokemonEnumDefaults.eggGroupsEnum,
                 PokemonEnumDefaults.expRatesEnum,
-                PokemonEnumDefaults.shadowAggressionEnum,
+                PokemonEnumDefaults.reverseModeRateEnum,
+                PokemonEnumDefaults.deckPokemonKeyPlayerEnum,
+                PokemonEnumDefaults.typeEffectivenessEnum,
+                PokemonEnumDefaults.statusEffectOwnerEnum,
+                PokemonEnumDefaults.statusWriteModeEnum,
+                PokemonEnumDefaults.pokedexColorEnum,
                 PokemonEnumDefaults.genderRatiosEnum,
                 PokemonEnumDefaults.evolutionMethodsEnum,
             ]
