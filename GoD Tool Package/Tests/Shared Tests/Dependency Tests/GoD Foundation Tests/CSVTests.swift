@@ -101,4 +101,14 @@ final class CSVTests: XCTestCase {
         ]
         XCTAssertEqual(try CSV.parse(CSV.encode(rows: rows)), rows)
     }
+
+    /// A one-column table with an empty cell — a null pointer in a label
+    /// column — must not write that row as a blank line, which `parse`
+    /// drops. XD JP's `TableResData` lost five of its eight rows that way.
+    func testAnEmptySingleFieldRowSurvivesTheRoundTrip() throws {
+        let rows = [["resource"], [""], ["sym_135"], [""]]
+        let text = CSV.encode(rows: rows)
+        XCTAssertEqual(text, "resource\n\"\"\nsym_135\n\"\"\n")
+        XCTAssertEqual(try CSV.parse(text), rows)
+    }
 }

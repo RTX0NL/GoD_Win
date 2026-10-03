@@ -39,7 +39,9 @@ public enum CSV {
     public static func encode(rows: [[String]]) -> String {
         var out = ""
         for row in rows {
-            out += row.map(escape).joined(separator: ",")
+            // A one-field row holding nothing would be a blank line, which
+            // the reader drops; `""` is the same row spelled so it survives.
+            out += row == [""] ? "\"\"" : row.map(escape).joined(separator: ",")
             out += "\n"
         }
         return out
