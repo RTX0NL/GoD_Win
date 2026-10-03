@@ -81,7 +81,10 @@ public struct ISFFile: FileFormat {
 
     public var sampleRate: UInt32
     public var channelCount: UInt32
-    /// ISD interleave block size in bytes. GS files observed at 0x8000.
+    /// `0x18` — how many bytes of one channel sit together in the ISD
+    /// before the next channel's block. `0x8000` (32 KiB) on all 565 real
+    /// headers. Any non-zero value is valid: it is a transport granularity,
+    /// not an audio one, and need not land on a frame boundary.
     public var interleaveSize: UInt32
     /// `0x04` — the packer's build date, hex-coded as `0xYYYYMMDD`
     /// (`0x20040109` on all 565 real headers, the only value in existence
@@ -277,6 +280,17 @@ public struct ISFFile: FileFormat {
             throw FileFormatErrors.failedToEncode(
                 format: ISFFile.formatName,
                 target: "channelCount must be > 0"
+            )
+        }
+        // Zero is the only invalid block size: padding the ISD divides by
+        // it, and in Swift that traps rather than throwing. Any other value
+        // is fine — deinterleaving concatenates a channel's blocks back into
+        // one contiguous stream, so a boundary falling mid-frame reassembles
+        // either side of the other channel's block.
+        guard interleaveSize > 0 else {
+            throw FileFormatErrors.failedToEncode(
+                format: ISFFile.formatName,
+                target: "\(name): interleaveSize must be greater than 0"
             )
         }
 

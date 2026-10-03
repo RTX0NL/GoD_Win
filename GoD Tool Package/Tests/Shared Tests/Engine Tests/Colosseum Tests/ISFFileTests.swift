@@ -402,6 +402,41 @@ final class ISFFileTests: XCTestCase {
         }
     }
 
+    /// Only zero is invalid. Deinterleaving concatenates each channel's
+    /// blocks back into one contiguous stream, so a block boundary falling
+    /// mid-frame costs nothing — the frame is reassembled either side of the
+    /// other channel's block. Pinning that, because it is the reason the
+    /// field is a raw byte count rather than a frame count or an exponent.
+    func testAnyNonZeroInterleaveSizeRoundTripsThePCM() throws {
+        let pcm = interleave(
+            generateSine(frequency: 440, sampleRate: 32000, durationSeconds: 0.05),
+            generateSine(frequency: 660, sampleRate: 32000, durationSeconds: 0.05)
+        )
+        let reference = try ISFFile(sampleRate: 32000, channelCount: 2, samples: pcm)
+            .ishISDBytes()
+        let baseline = try ISFFile(ish: reference.ish, isd: reference.isd).samples
+
+        for size: UInt32 in [1, 3, 7, 8, 100, 0x800, 0x8000, 0x8001, 0xFFFF] {
+            var isf = ISFFile(sampleRate: 32000, channelCount: 2, samples: pcm)
+            isf.interleaveSize = size
+            let (ish, isd) = try isf.ishISDBytes()
+            let parsed = try ISFFile(ish: ish, isd: isd)
+            XCTAssertEqual(parsed.interleaveSize, size)
+            XCTAssertEqual(parsed.samples, baseline,
+                           "interleaveSize \(size) changed the decoded PCM")
+        }
+    }
+
+    /// Zero is the one value that must be refused: it divides by zero while
+    /// padding the ISD, which *traps* in Swift rather than throwing, so a
+    /// hand-edited manifest could crash the build outright.
+    func testZeroInterleaveSizeIsRefusedRatherThanCrashing() throws {
+        var isf = ISFFile(sampleRate: 32000, channelCount: 2,
+                          samples: [Int16](repeating: 0, count: 1400))
+        isf.interleaveSize = 0
+        XCTAssertThrowsError(try isf.ishISDBytes())
+    }
+
     // MARK: - Helpers
 
     /// Compute Pearson correlation coefficient between two signals of
