@@ -125,6 +125,83 @@ The 4-color palette is derived:
 - If color0 > color1: colors 2 and 3 are 1/3 and 2/3 interpolations
 - If color0 ≤ color1: color 2 is 1/2 interpolation, color 3 is transparent black
 
+### Re-encoding a CMPR texture
+
+A decoded DXT1 block cannot be *re-compressed* back into itself, and the
+reason is structural rather than a matter of search quality:
+
+- An endpoint reaches the decoded image only where some pixel actually
+  used index 0 or 1. 22 % of real blocks use neither.
+- The two interpolated entries are 1/3 and 2/3 points of the endpoint
+  pair, and those do not land back on the 5/6/5 grid. Quantizing one
+  loses the pair it came from.
+- 36 % of real blocks use a **single** index, so they decode to one flat
+  color. Their endpoints described the spread of the *original
+  uncompressed* block, which the decoded image no longer holds.
+
+So the encoder **inverts** a block before it compresses one: given the
+sixteen decoded pixels it solves for endpoints whose palette reproduces
+them exactly. The arithmetic is per channel and the grid is coarser than
+the truncation slack — `(2a + b) / 3 == s` pins `2a + b` to a three-wide
+window, and the channel step is 8 (4 for green) — so one known endpoint
+plus one interpolated color determines the other endpoint outright, and
+two interpolated colors determine both. Compression is reached only for
+an image that has actually been edited.
+
+Measured on all 1,437 CMPR textures in the Colosseum, XD and Battle
+Revolution dumps (3,354,460 sub-blocks):
+
+| | re-compress | invert |
+|---|---|---|
+| pixel-identical blocks | 55.5 % | **100 %** |
+| byte-identical blocks | 45.7 % | **71.6 %** |
+| worst channel delta | 41 | 0 |
+
+Per game, byte-identical: XD 54.7 % → **78.3 %**, Colosseum 45.6 % →
+**76.4 %**, Battle Revolution 29.4 % → **55.7 %**. PBR is lower because
+43 % of its blocks are flat against 26 % of the GameCube games', not
+because anything about it is handled worse — each figure is within a
+point of the ceiling its own flat-block share allows.
+
+The gap to 100 % byte-identical is the flat blocks above: nothing in the
+decoded image distinguishes the endpoint pairs that interpolate to the
+same color, so the encoder picks one that reproduces the pixels and the
+bytes differ. Two sub-shapes do have a convention, and it holds across
+all three games, so they are reproduced:
+
+- **One opaque color, at index 0.** The color, then a second endpoint one
+  step above it in red (`+0x0800`), which reads as three-color. Where red
+  is at its maximum the step moves to blue. 90–99 % per game of 178,010
+  blocks.
+- **White.** Neither step is available, so the color goes to index 1
+  above a zero endpoint 0. 99 % of 67,180 blocks.
+- **Wholly transparent.** Zero endpoints with every index 3 — 71 % of
+  61,524 blocks; the rest keep leftover source color in endpoints that
+  nothing displays.
+
+Two further details are load-bearing:
+
+- **A block that needs no interpolated entry is written three-color**,
+  with the lower endpoint first — 98 % of such real blocks, against the
+  four-color a compressor would reach for. Getting this backwards also
+  changes the *colors*, because four-color's 1/3 points replace
+  three-color's midpoint.
+- **A padded edge block only has to reproduce its visible pixels.** A
+  texture whose dimensions aren't multiples of 8 pads out to the block
+  grid, and nothing displays those pixels. The games pad with
+  transparency themselves on 69 % of such blocks, so the whole block is
+  tried first; only when that fails do the invisible positions become
+  free, which is what lets an edge block whose visible colors need the
+  opaque four-color palette still come back exactly.
+
+**CMPR is still not a declared 1:1 target** — a flat block's endpoints are
+not recoverable from anything the file holds, so the gap is a
+re-derivation that cannot be closed rather than a nameable divergence.
+What it *is* now is pixel-lossless, which is the property that matters:
+a round trip no longer degrades an image, and repeated ones no longer
+compound. Held by `GXTextureCMPRCorpusTests`
+(`GODDESS_CMPR_LIMIT=all` for a full sweep).
+
 ## Palette Formats
 
 Indexed textures (C4, C8, C14X2) require a color palette. Each entry is **2 bytes**. The palette format determines how those bytes are interpreted.

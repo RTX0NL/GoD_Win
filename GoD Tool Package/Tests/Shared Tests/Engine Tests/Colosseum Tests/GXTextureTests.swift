@@ -238,7 +238,7 @@ final class GXTextureTests: XCTestCase {
     }
 
     /// decode → encode → decode should produce pixel-identical output for every
-    /// non-lossy format. CMPR is DXT1-style and is only validated structurally.
+    /// format, CMPR included — see `testRoundTripCMPR`.
     private func assertPixelStableRoundTrip(_ format: GXTextureFormat) throws {
         guard let sample = Self.roundTripSamples.first(where: { $0.format == format }) else {
             throw XCTSkip("no sample registered for \(format)")
@@ -300,23 +300,11 @@ final class GXTextureTests: XCTestCase {
     func testRoundTripRGBA32() throws { try assertPixelStableRoundTrip(.RGBA32) }
     func testRoundTripRGB5A3() throws { try assertPixelStableRoundTrip(.RGB5A3) }
 
-    /// CMPR is lossy (DXT1-style quantization). Verify the encoder produces a
-    /// well-formed GTX that still re-decodes to the same dimensions — pixel
-    /// equality is not asserted since block color endpoints get re-quantized.
-    func testRoundTripCMPRStructural() throws {
-        guard let sample = Self.roundTripSamples.first(where: { $0.format == .CMPR }) else {
-            throw XCTSkip("no CMPR sample registered")
-        }
-        let (image, meta) = try loadAndDecode(sample.path, expect: .CMPR)
-        let decoder = GXTextureDecoder()
-        guard let reEncoded = decoder.encode(image: image, metadata: meta) else {
-            XCTFail("CMPR encode returned nil"); return
-        }
-        guard let reDecoded = decoder.decode(data: reEncoded) else {
-            XCTFail("CMPR re-decode returned nil"); return
-        }
-        XCTAssertEqual(reDecoded.width, image.width)
-        XCTAssertEqual(reDecoded.height, image.height)
-        XCTAssertEqual(reDecoded.pixels.rawBytes.count, image.pixels.rawBytes.count)
-    }
+    /// CMPR used to be the one format whose round trip was only checked
+    /// structurally, because re-compressing a decoded DXT1 block cannot
+    /// reproduce it. The encoder inverts a block before it compresses one now
+    /// (see `GXTexture.encodeDXT1SubBlock`), so a texture that came out of the
+    /// game survives decode → encode → decode with every pixel in place, and
+    /// this is held to the same assertion as the lossless formats.
+    func testRoundTripCMPR() throws { try assertPixelStableRoundTrip(.CMPR) }
 }
