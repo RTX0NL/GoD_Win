@@ -68,11 +68,24 @@ extension GoDReadable {
         while offset < length {
             let count = min(max(1, windowSize), length - offset)
             guard let window = read(atAddress: offset, length: count), window.length == count else {
-                throw GoDReadableError.readFailed(offset: offset, length: count, total: length)
+                throw PatchTestReadError.readFailed(offset: offset, length: count, total: length)
             }
             out.write(window, atAddress: UInt(offset))
             offset += count
         }
         return out
+    }
+}
+
+/// The tests' own, for the same reason `allBytes` is: an error type that lives
+/// elsewhere is an error type this file cannot be compiled without.
+enum PatchTestReadError: Error, CustomStringConvertible {
+    case readFailed(offset: Int, length: Int, total: Int)
+
+    var description: String {
+        switch self {
+        case let .readFailed(offset, length, total):
+            return "failed to read \(length) bytes at \(offset) of a \(total)-byte source"
+        }
     }
 }
