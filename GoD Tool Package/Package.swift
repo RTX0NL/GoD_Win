@@ -3,6 +3,15 @@
 
 import PackageDescription
 
+// The upstream MCP SDK doesn't compile on Windows (it mistakes Windows for an
+// Apple platform in one file), so Windows builds use a patched copy — see
+// Vendored/swift-sdk/README.md. Every other platform uses upstream.
+#if os(Windows)
+let mcpSDK: Package.Dependency = .package(path: "Vendored/swift-sdk")
+#else
+let mcpSDK: Package.Dependency = .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.11.0")
+#endif
+
 let package = Package(
     name: "GoD Tool Package",
     // The existing code predates Swift Concurrency's strict checking; keep the
@@ -40,7 +49,10 @@ let package = Package(
         // swift-png's own dependency, kept because its `LZ77` and `PNG`
         // targets are vendored under Sources/Shared/Dependencies/Third Party.
         .package(url: "https://github.com/rarestype/h", from: "1.0.1"),
-        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.11.0"),
+        mcpSDK,
+        // Already pulled in by swift-sdk; named directly because the Windows
+        // stdio transport has to spell `Logger` itself.
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
     ],
     targets: [
         // MARK: - Executable Targets
@@ -70,7 +82,8 @@ let package = Package(
             dependencies: [
                 "GODOps",
                 "GoDFoundation",
-                .product(name: "MCP", package: "swift-sdk")
+                .product(name: "MCP", package: "swift-sdk"),
+                .product(name: "Logging", package: "swift-log")
             ],
             path: "Sources/Products/GODDESS"
         ),
@@ -439,4 +452,14 @@ let package = Package(
     ],
     swiftLanguageModes: [.v5]
 )
+
+#if os(Windows)
+// SwiftUI doesn't exist on Windows, so the GUI app and the two libraries only
+// it uses can never build there. Leaving them in would make `swift build` and
+// `swift test` (which build every target) fail before reaching the CLI.
+let swiftUIOnlyTargets: Set<String> = ["GoD Tool UI", "BaseApp", "GoDGUI"]
+let swiftUIOnlyProducts: Set<String> = ["GoD Tool App", "BaseApp"]
+package.targets = package.targets.filter { !swiftUIOnlyTargets.contains($0.name) }
+package.products = package.products.filter { !swiftUIOnlyProducts.contains($0.name) }
+#endif
 

@@ -16,7 +16,12 @@
 //
 
 import Foundation
+#if os(Windows)
+import ucrt
+import WinSDK
+#else
 import System
+#endif
 import GoDFoundation
 import MCP
 import GODOps
@@ -283,9 +288,19 @@ func runMCPServer() async {
     // would corrupt the protocol stream. Hand the transport a dup of the real
     // stdout, then repoint fd 1 at stderr so every stray print lands on
     // stderr — visible as server logs, harmless to the protocol.
+    #if os(Windows)
+    // Same idea with the C runtime's descriptors. Windows also keeps a
+    // separate Win32 standard-output handle, which `FileHandle.standardOutput`
+    // and child processes use, so repoint that at stderr as well.
+    let transportStdout = _dup(1)
+    _ = _dup2(2, 1)
+    _ = SetStdHandle(STD_OUTPUT_HANDLE, GetStdHandle(STD_ERROR_HANDLE))
+    let transport = WindowsStdioTransport(outputDescriptor: transportStdout)
+    #else
     let transportStdout = dup(STDOUT_FILENO)
     _ = dup2(STDERR_FILENO, STDOUT_FILENO)
     let transport = StdioTransport(output: FileDescriptor(rawValue: transportStdout))
+    #endif
 
     let server = Server(
         name: "goddess",
