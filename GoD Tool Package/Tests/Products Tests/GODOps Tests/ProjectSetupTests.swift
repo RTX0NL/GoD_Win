@@ -428,14 +428,43 @@ final class ProjectSetupTests: XCTestCase {
             return XCTFail("Expected an enabled buildColoScripts")
         }
 
-        XCTAssertNotNil(fst.inspectFile(at: project.folder("Scripts").file("Dump-Scripts.sh")))
-        XCTAssertNotNil(fst.inspectFile(at: project.folder("Scripts").file("Build-Scripts.sh")))
+        XCTAssertNotNil(fst.inspectFile(at: project.folder("Scripts").file(launcherName("Dump-Scripts"))))
+        XCTAssertNotNil(fst.inspectFile(at: project.folder("Scripts").file(launcherName("Build-Scripts"))))
     }
 
     func testLauncherScriptsAreWrittenForBothConfigs() throws {
         let (fst, project) = try runSetup(gameID: PokemonXD.gameIDUS)
-        XCTAssertNotNil(fst.inspectFile(at: project.folder("Scripts").file("Dump.sh")))
-        XCTAssertNotNil(fst.inspectFile(at: project.folder("Scripts").file("Build.sh")))
+        XCTAssertNotNil(fst.inspectFile(at: project.folder("Scripts").file(launcherName("Dump"))))
+        XCTAssertNotNil(fst.inspectFile(at: project.folder("Scripts").file(launcherName("Build"))))
+    }
+
+    /// Setup writes `.cmd` launchers on Windows and `.sh` everywhere else.
+    private func launcherName(_ stem: String) -> String {
+        #if os(Windows)
+        return stem + ".cmd"
+        #else
+        return stem + ".sh"
+        #endif
+    }
+
+    /// `%` is the one character double quotes don't protect in a batch file.
+    func testBatchQuotingSurvivesMetacharacters() {
+        let nasty = #"C:\Games\Pokemon XD (USA) & 100%\GODDESS.exe"#
+        XCTAssertEqual(
+            LauncherScript.batchQuoted(nasty),
+            #""C:\Games\Pokemon XD (USA) & 100%%\GODDESS.exe""#
+        )
+    }
+
+    func testBatchLauncherRunsFromItsOwnDirectory() {
+        let body = LauncherScript.batchBody(
+            executablePath: #"C:\tools\GODDESS.exe"#,
+            configFile: File("/Config/Dump-Config.json")
+        )
+        XCTAssertTrue(body.hasPrefix("@echo off\r\n"), body)
+        XCTAssertTrue(body.contains("cd /d \"%~dp0\" || exit /b 1\r\n"), body)
+        XCTAssertTrue(body.contains("Dump-Config.json\"\r\n"), body)
+        XCTAssertFalse(body.replacingOccurrences(of: "\r\n", with: "").contains("\n"), "CRLF only")
     }
 
     /// A launcher has to survive the characters real ROM filenames carry.
@@ -461,7 +490,12 @@ final class ProjectSetupTests: XCTestCase {
             configFile: File("/Config/Dump-Config.json")
         )
         XCTAssertTrue(body.contains("cd \"$(dirname \"$0\")\""), body)
+        // The config path is written in the host's native spelling.
+        #if os(Windows)
+        XCTAssertTrue(body.contains(#"'..\Config\Dump-Config.json'"#), body)
+        #else
         XCTAssertTrue(body.contains("'../Config/Dump-Config.json'"), body)
+        #endif
     }
 
     // MARK: - Failure modes

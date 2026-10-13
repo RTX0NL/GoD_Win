@@ -3,7 +3,7 @@
 //  GODOps
 //
 //  The one-line `Scripts/Dump.sh` / `Scripts/Build.sh` launchers written
-//  into a new project.
+//  into a new project (`Dump.cmd` / `Build.cmd` on Windows).
 //
 
 import Foundation
@@ -39,8 +39,30 @@ enum LauncherScript {
         """
     }
 
+    /// Quotes a path for a Windows batch file.
+    ///
+    /// Windows paths can't contain `"`, so double quotes cover spaces,
+    /// parentheses, `&` and `^`. The one character quotes don't protect in a
+    /// batch file is `%`, which is variable expansion and is doubled instead.
+    static func batchQuoted(_ path: String) -> String {
+        "\"" + path.replacingOccurrences(of: "%", with: "%%") + "\""
+    }
+
+    /// Windows equivalent of `body`: a `.cmd` launcher that changes to its
+    /// own folder (`%~dp0`) for the same reason the POSIX script does.
+    /// CRLF line endings, because `cmd` misparses some LF-only scripts.
+    static func batchBody(executablePath: String, configFile: File) -> String {
+        let relativeConfig = Folder("..").file(configFile.path).nativePath
+        return [
+            "@echo off",
+            "cd /d \"%~dp0\" || exit /b 1",
+            "\(batchQuoted(executablePath)) \(batchQuoted(relativeConfig))",
+        ].joined(separator: "\r\n") + "\r\n"
+    }
+
     /// Writes a launcher for each config into `projectFolder/Scripts/`,
-    /// named after the config (`Dump-Config.json` -> `Dump.sh`).
+    /// named after the config (`Dump-Config.json` -> `Dump.sh`, or `Dump.cmd`
+    /// on Windows).
     static func write(
         for configFiles: [File],
         in projectFolder: Folder,
@@ -48,9 +70,14 @@ enum LauncherScript {
     ) throws {
         guard let executablePath = Bundle.main.executablePath else { return }
         for config in configFiles {
+            #if os(Windows)
+            let name = config.fileName.replacingOccurrences(of: "-Config.json", with: ".cmd")
+            let script = batchBody(executablePath: executablePath, configFile: config)
+            #else
             let name = config.fileName.replacingOccurrences(of: "-Config.json", with: ".sh")
-            let file = projectFolder.folder("Scripts").file(name)
             let script = body(executablePath: executablePath, configFile: config)
+            #endif
+            let file = projectFolder.folder("Scripts").file(name)
             try fileSystem.writeFile(script.data(format: .utf8), at: file, overwrite: false)
             // A no-op on trees without permissions.
             fileSystem.setExecutable(file: file)
