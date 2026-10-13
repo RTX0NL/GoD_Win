@@ -461,5 +461,13 @@ let swiftUIOnlyTargets: Set<String> = ["GoD Tool UI", "BaseApp", "GoDGUI"]
 let swiftUIOnlyProducts: Set<String> = ["GoD Tool App", "BaseApp"]
 package.targets = package.targets.filter { !swiftUIOnlyTargets.contains($0.name) }
 package.products = package.products.filter { !swiftUIOnlyProducts.contains($0.name) }
+
+// Without a longPathAware manifest Windows caps paths at MAX_PATH (260), and
+// DOL disassembly writes paths longer than that (mangled C++ symbol names).
+// Embedding the manifest lets the OS-wide LongPathsEnabled setting apply.
+let longPathManifest = Context.packageDirectory + "/Windows/GODDESS.exe.manifest"
+package.targets.first { $0.name == "GODDESS" }?.linkerSettings = [
+    .unsafeFlags(["-Xlinker", "/MANIFEST:EMBED", "-Xlinker", "/MANIFESTINPUT:\(longPathManifest)"])
+]
 #endif
 
