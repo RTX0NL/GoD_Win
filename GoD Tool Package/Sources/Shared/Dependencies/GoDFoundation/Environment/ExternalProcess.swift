@@ -159,8 +159,13 @@ public enum ExternalProcess {
     /// turns that into the `EPIPE` the write above swallows. Done once, on
     /// the first launch, rather than at module load: a process that never
     /// spawns anything keeps the platform's default disposition.
+    ///
+    /// Windows has no SIGPIPE: a write to a closed pipe already fails with an
+    /// error instead of killing the writer, so there is nothing to ignore.
     private static let ignoreBrokenPipes: Void = {
+        #if !os(Windows)
         signal(SIGPIPE, SIG_IGN)
+        #endif
     }()
     #endif
 }
