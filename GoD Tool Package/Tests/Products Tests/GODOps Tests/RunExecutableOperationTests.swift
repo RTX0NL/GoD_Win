@@ -120,9 +120,13 @@ final class RunExecutableOperationTests: XCTestCase {
 
     // MARK: - Exit status
 
+    // The program is looked up before the assertion: inside its autoclosure,
+    // the helper's XCTSkip would be caught as the error under test and
+    // reported as a failure instead of a skip.
     func testThrowsWhenTheProgramExitsNonZero() throws {
         let fst = InMemoryFST()
-        XCTAssertThrowsError(try run(.init(executablePath: try falseProgram), in: fst)) { error in
+        let falseProgram = try falseProgram
+        XCTAssertThrowsError(try run(.init(executablePath: falseProgram), in: fst)) { error in
             guard case let RunExecutableErrors.exitedNonZero(_, code, _, _) = error else {
                 return XCTFail("expected exitedNonZero, got \(error)")
             }
@@ -132,8 +136,9 @@ final class RunExecutableOperationTests: XCTestCase {
 
     func testToleratesANonZeroExitWhenAsked() throws {
         let fst = InMemoryFST()
+        let falseProgram = try falseProgram
         XCTAssertNoThrow(try run(
-            .init(executablePath: try falseProgram, failOnNonZeroExit: false),
+            .init(executablePath: falseProgram, failOnNonZeroExit: false),
             in: fst
         ))
     }
@@ -210,8 +215,9 @@ final class RunExecutableOperationTests: XCTestCase {
 
     func testThrowsWhenTheWorkingDirectoryIsMissing() throws {
         let fst = InMemoryFST()
+        let echo = try echo
         XCTAssertThrowsError(try run(.init(
-            executablePath: try echo,
+            executablePath: echo,
             workingDirectory: Folder("/no/such/folder/anywhere")
         ), in: fst)) { error in
             guard case let RunExecutableErrors.couldNotLaunch(reason, _) = error else {
