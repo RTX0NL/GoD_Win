@@ -128,19 +128,33 @@ public extension GeniusSonorityEngine {
         // An ISF sound is two entries — the `I_SF` header and the ADPCM
         // stream it describes — which the audio dump pairs by filename stem.
         // Nameless halves would otherwise be numbered separately and stop
-        // looking like a pair, so an archive holding exactly one of each
-        // gives both the header's index.
+        // looking like a pair, so a stream is given its header's index.
         //
-        // Deliberately only that case: `stm_se_nakigoe_archive` holds 388
-        // pairs whose halves interleave rather than running in step (its
-        // first header's stream is the *second* stream entry), so numbering
-        // those in parallel would pair them confidently and wrongly. They
-        // keep their own indices and stay unpaired instead.
+        // An archive holding exactly one of each is a pair as it stands.
+        // One holding many (`stm_se_nakigoe_archive`: XD's 388 cries) doesn't
+        // run in step, so numbering in parallel would pair them confidently
+        // and wrongly; `ISFPairing` accepts a match only when the stream's
+        // content confirms it, and anything it can't place is reported and
+        // keeps its own index.
         let isfHeaders = archive.entries.enumerated().filter { $0.element.metadata.fileType == "ish" }
         let isfStreams = archive.entries.enumerated().filter { $0.element.metadata.fileType == "isd" }
         var pairedEntryIndex = [Int: Int]()
         if isfHeaders.count == 1, isfStreams.count == 1 {
             pairedEntryIndex[isfStreams[0].offset] = isfHeaders[0].offset
+        } else if !isfHeaders.isEmpty, !isfStreams.isEmpty {
+            let half = { (pair: (offset: Int, element: FSYSArchive.Entry)) in
+                ISFPairing.Half(entryIndex: pair.offset, identifier: pair.element.metadata.identifier, data: pair.element.data)
+            }
+            let pairing = ISFPairing.pair(headers: isfHeaders.map(half), streams: isfStreams.map(half))
+            pairedEntryIndex = pairing.streamToHeader
+            if !pairing.unpairedHeaders.isEmpty {
+                warnings.append(
+                    "\(archiveName): \(pairing.unpairedHeaders.count) of \(isfHeaders.count) ISF headers "
+                    + "have no stream that matches them unambiguously (entries "
+                    + pairing.unpairedHeaders.map(String.init).joined(separator: ", ")
+                    + "); they keep their own names and won't convert to WAV."
+                )
+            }
         }
 
         for (entryIndex, entry) in archive.entries.enumerated() {

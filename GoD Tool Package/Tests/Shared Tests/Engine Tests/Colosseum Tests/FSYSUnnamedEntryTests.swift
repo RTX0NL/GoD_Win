@@ -249,9 +249,45 @@ final class FSYSUnnamedEntryTests: XCTestCase {
         )
     }
 
-    /// …but an archive holding many pairs is left alone: their halves don't
-    /// run in step, so numbering them in parallel would pair them wrongly.
-    /// Separate names keep them unpaired, which is the honest outcome.
+    /// An archive holding many sounds pairs each header with the stream its
+    /// content confirms (XD's `stm_se_nakigoe_archive`, whose halves don't
+    /// run in step), so every pair shares a stem and converts to WAV.
+    func testManySoundsInOneArchiveArePairedByContent() throws {
+        let engine = engine()
+        func isf(_ type: String, _ id: Int, _ data: GoDData) -> FSYSArchive.Entry {
+            FSYSArchive.Entry(
+                metadata: .init(name: placeholder, fileType: type, identifier: id,
+                                compress: false, includesFullFilename: nil),
+                filename: "\(placeholder).\(type)", data: data
+            )
+        }
+        let disc = try makeDisc([(
+            "stm_se_nakigoe_archive.fsys",
+            try archiveBytes([
+                isf("ish", 10, ISFPairingTests.header(scales: [0x21, 0x31])),
+                isf("ish", 20, ISFPairingTests.header(scales: [0x22, 0x32])),
+                isf("ish", 30, ISFPairingTests.header(scales: [0x23, 0x33])),
+                isf("isd", 21, ISFPairingTests.stream(scales: [0x22, 0x32])),
+                isf("isd", 11, ISFPairingTests.stream(scales: [0x21, 0x31])),
+                isf("isd", 31, ISFPairingTests.stream(scales: [0x23, 0x33])),
+            ], engine: engine)
+        )], engine: engine)
+
+        let output = try engine.unpackProject(from: discRoot, fileSystem: disc)
+        let registry = try registry(output, forArchive: "stm_se_nakigoe_archive.fsys")
+        XCTAssertEqual(registry.entries.map { File($0.file.path).fileName }, [
+            "stm_se_nakigoe_archive_000.ish",
+            "stm_se_nakigoe_archive_001.ish",
+            "stm_se_nakigoe_archive_002.ish",
+            "stm_se_nakigoe_archive_001.isd",
+            "stm_se_nakigoe_archive_000.isd",
+            "stm_se_nakigoe_archive_002.isd",
+        ])
+    }
+
+    /// …but halves whose content can't confirm a pair are left alone:
+    /// numbering them in parallel would pair them wrongly. Separate names
+    /// keep them unpaired, which is the honest outcome.
     func testManySoundsInOneArchiveAreNotPairedByPosition() throws {
         let engine = engine()
         let disc = try makeDisc([(
@@ -574,6 +610,41 @@ final class FSYSUnnamedEntryTests: XCTestCase {
             entry(name: placeholder, type: "ish", identifier: 2, payload: "first header"),
             entry(name: placeholder, type: "isd", identifier: 3, payload: "second cry"),
             entry(name: placeholder, type: "ish", identifier: 4, payload: "second header"),
+        ], engine: engine)
+        let disc = try makeDisc([("stm_se_nakigoe_archive.fsys", nakigoe)], engine: engine)
+
+        let output = try engine.unpackProject(from: discRoot, fileSystem: disc)
+        let built = InMemoryFST()
+        try copyTree(output, into: built, at: Folder("/project"))
+        try engine.packProject(
+            fstRegistryFile: Folder("/project").file("FST.json"),
+            outputFolder: Folder("/built"),
+            overwrite: true,
+            fileSystem: built
+        )
+
+        XCTAssertEqual(
+            built.readFile(at: Folder("/built/files").file("stm_se_nakigoe_archive.fsys"))?.allData?.rawBytes,
+            nakigoe.rawBytes
+        )
+    }
+
+    /// Pairing renames streams after their headers; pack reads the names from
+    /// the registry, so the archive must still rebuild byte for byte.
+    func testUnpackThenPackReproducesAnArchiveWhoseSoundsWerePaired() throws {
+        let engine = engine()
+        func isf(_ type: String, _ id: Int, _ data: GoDData) -> FSYSArchive.Entry {
+            FSYSArchive.Entry(
+                metadata: .init(name: placeholder, fileType: type, identifier: id,
+                                compress: false, includesFullFilename: nil),
+                filename: "\(placeholder).\(type)", data: data
+            )
+        }
+        let nakigoe = try archiveBytes([
+            isf("ish", 10, ISFPairingTests.header(scales: [0x21, 0x31])),
+            isf("ish", 20, ISFPairingTests.header(scales: [0x22, 0x32])),
+            isf("isd", 21, ISFPairingTests.stream(scales: [0x22, 0x32])),
+            isf("isd", 11, ISFPairingTests.stream(scales: [0x21, 0x31])),
         ], engine: engine)
         let disc = try makeDisc([("stm_se_nakigoe_archive.fsys", nakigoe)], engine: engine)
 
