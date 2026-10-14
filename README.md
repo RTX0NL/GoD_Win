@@ -227,6 +227,18 @@ During development you can also run it directly:
 swift run GODDESS path/to/game.iso
 ```
 
+### Windows
+
+The same commands build `GODDESS.exe` with the Swift toolchain for Windows
+(tested with Swift 6.4.1 on Windows 11).
+
+A dump writes paths longer than Windows' 260-character `MAX_PATH`. The exe
+embeds a `longPathAware` manifest, but Windows only honours it when long
+paths are enabled for the machine. Set the DWORD `LongPathsEnabled` to `1`
+under `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem` (needs admin
+rights), or keep projects in a short folder such as `C:\gd`. A write that
+fails past `MAX_PATH` says which of the two is missing.
+
 ## How to develop
 
 The package lives in `GoD Tool Package/`:
