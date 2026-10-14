@@ -12,6 +12,19 @@ import Foundation
 import GoDFoundation
 import GeniusSonority
 
+/// A batch dump reports this once per skipped file, so it is one plain line:
+/// what is missing and why the file was skipped, with no source trace.
+enum AudioDumpError: GoDError {
+    case missingDataHalf(ish: File, isd: File)
+
+    var description: String {
+        switch self {
+        case let .missingDataHalf(ish, isd):
+            return "\(ish.fileName) has no matching \(isd.fileName) beside it, so it can't be decoded"
+        }
+    }
+}
+
 extension ColoXD {
 
     private static let isfManifestSuffix = ".isf.json"
@@ -121,7 +134,7 @@ extension ColoXD {
             throw FSTErrors.fileNotFound(ishFile, .init())
         }
         guard let isdData = fileSystem.readFile(at: isdFile)?.allData else {
-            throw FSTErrors.fileNotFound(isdFile, .init())
+            throw AudioDumpError.missingDataHalf(ish: ishFile, isd: isdFile)
         }
         return try ISFFile(ish: ishData, isd: isdData, name: stem).outputs
     }
