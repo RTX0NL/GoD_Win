@@ -19,10 +19,11 @@ Pokémon Colosseum and Pokémon XD.
 
 | Area | Result |
 |---|---|
-| Build | `GODDESS.exe` builds with SwiftPM, both debug and release. |
+| Build | `GODDESS.exe` builds with SwiftPM, both debug and release, including from a fresh clone of this repo with Git for Windows' default settings. |
 | Tests | 2,367 cases: 2,232 pass, 131 skip, 4 fail. The 4 failures are stale upstream tests, listed under [Known issues](#known-issues). |
 | Project setup + dump | Both games dump completely: 0 case collisions, CRLF-free text output, and per-archive file counts match the FSYS registries. |
 | Rebuild | Both games rebuild. `DolphinTool verify` reports no problems, and the rebuilt discs boot in Dolphin (Colosseum to the title screen, XD to the health-and-safety screen). |
+| Edit → rebuild | Edited title-screen textures in Colosseum. The rebuilt disc changed only the two archives that contain them, and the edits show in Dolphin. |
 | MCP server | `GODDESS mcp` runs over stdio, and `setup_project`, `unpack_fsys` and `run_config` accept native `C:\...` paths. |
 | Disc containers | ISO and RVZ (zstd) give byte-identical projects: the decoded RVZ matches the original disc's SHA-256. Uncompressed WIA works too. |
 
@@ -84,6 +85,7 @@ claude mcp add goddess -- "C:\path\to\GODDESS.exe" mcp
 | `b1a6f5b`, `956cec9` | Embed the `longPathAware` manifest, with a test that it stays embedded. |
 | `82c6678` | Decode native Windows paths in config JSON instead of crashing. |
 | `0c9dbb8` | Name `MAX_PATH` and `LongPathsEnabled` when a long write fails. |
+| `0b77301` | Make a fresh clone build and test cleanly: `.gitattributes` keeps the byte-exact fixtures as LF despite `core.autocrlf=true`, and the resource copies that `swift build` leaves in the package root are ignored. |
 
 ## Known issues
 
