@@ -5,3 +5,10 @@
 xcuserdata/
 DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+
+# On Windows, `swift build` also copies the engines' bundled resources into
+# the package root. They're build output; the originals live under Sources/.
+/Info.plist
+/*.map
+/*.json
+/*.csv

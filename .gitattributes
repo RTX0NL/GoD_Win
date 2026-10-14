@@ -1,0 +1,5 @@
+# Check out every file exactly as committed. Git for Windows defaults to
+# core.autocrlf=true, which turns LF into CRLF on checkout; the golden
+# fixtures and the embedded configuration reference are compared byte for
+# byte, so six tests fail in such a clone.
+* -text
