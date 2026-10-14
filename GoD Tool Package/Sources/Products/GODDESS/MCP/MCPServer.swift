@@ -213,13 +213,7 @@ private func handleToolCall(_ params: CallTool.Parameters, logger: GoDFoundation
         guard let path = args[key]?.stringValue, !path.isEmpty else {
             throw MCPToolError.missingArgument(key)
         }
-        #if os(Windows)
-        // Clients send native `C:\...` paths, which `File` cannot hold
-        // (`Folder.init` traps on them); convert like the CLI does for argv.
-        return File(nativePath: path)
-        #else
-        return File(path)
-        #endif
+        return GODOps.inputFile(fromArgument: path)
     }
 
     switch params.name {

@@ -65,6 +65,18 @@ public enum GODOps {
         }
     }
 
+    /// The `File` for a path argument as an MCP client sends it. On Windows
+    /// clients send native `C:\...` paths, which `File` cannot hold as
+    /// written (`Folder.init` traps on them), so convert them like the CLI
+    /// does for argv.
+    public static func inputFile(fromArgument path: String) -> File {
+        #if os(Windows)
+        return File(nativePath: path)
+        #else
+        return File(path)
+        #endif
+    }
+
     // MARK: - Project setup
 
     /// Set up an editing project from a GameCube/Wii disc image (raw, or a
