@@ -57,7 +57,7 @@ final class ISFPairingTests: XCTestCase {
             streams: [half(2, id: 11, Self.stream(scales: [0x42, 0x52])),   // id+1 of header 0, content of header 1
                       half(3, id: 99, Self.stream(scales: [0x41, 0x51]))]
         )
-        XCTAssertEqual(result, .init(streamToHeader: [3: 0, 2: 1], unpairedHeaders: []))
+        XCTAssertEqual(result, .init(streamToHeader: [3: 0, 2: 1], unpairedHeaders: [], contentOnly: [3: 0, 2: 1]))
     }
 
     /// Two free streams that both fit one header: guessing would decode one

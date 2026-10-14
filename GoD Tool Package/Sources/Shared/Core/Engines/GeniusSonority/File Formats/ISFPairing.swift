@@ -44,6 +44,9 @@ enum ISFPairing {
         var streamToHeader: [Int: Int]
         /// Header entry indices left without a stream, in archive order.
         var unpairedHeaders: [Int]
+        /// The pass-2 subset of `streamToHeader`: pairs backed by content
+        /// alone, which the caller reports so they can be audited.
+        var contentOnly: [Int: Int] = [:]
     }
 
     static func pair(headers: [Half], streams: [Half]) -> Result {
@@ -63,30 +66,29 @@ enum ISFPairing {
             pairedHeaders.insert(header.entryIndex)
         }
 
-        // Pass 2: leftovers, only where the content match is unique both ways.
-        var changed = true
-        while changed {
-            changed = false
-            let freeStreams = streams.filter { streamToHeader[$0.entryIndex] == nil }
-            let openHeaders = headers.filter { !pairedHeaders.contains($0.entryIndex) }
-            var candidates = [Int: [Int]]()        // header → streams
-            var claimants = [Int: Int]()           // stream → number of headers it fits
-            for header in openHeaders {
-                let fitting = freeStreams.filter { fits(header: header.data, stream: $0.data) }.map(\.entryIndex)
-                candidates[header.entryIndex] = fitting
-                for stream in fitting { claimants[stream, default: 0] += 1 }
-            }
-            for header in openHeaders {
-                guard let fitting = candidates[header.entryIndex], fitting.count == 1,
-                      let stream = fitting.first, claimants[stream] == 1 else { continue }
-                streamToHeader[stream] = header.entryIndex
-                pairedHeaders.insert(header.entryIndex)
-                changed = true
-            }
+        // Pass 2: leftovers, only where the content match is unique both
+        // ways. One round is all there is: an accepted stream fitted no
+        // other open header, so accepting it can't make another match unique.
+        let freeStreams = streams.filter { streamToHeader[$0.entryIndex] == nil }
+        let openHeaders = headers.filter { !pairedHeaders.contains($0.entryIndex) }
+        var candidates = [Int: [Int]]()        // header → streams it fits
+        var claimants = [Int: Int]()           // stream → number of headers it fits
+        for header in openHeaders {
+            let fitting = freeStreams.filter { fits(header: header.data, stream: $0.data) }.map(\.entryIndex)
+            candidates[header.entryIndex] = fitting
+            for stream in fitting { claimants[stream, default: 0] += 1 }
+        }
+        var contentOnly = [Int: Int]()
+        for header in openHeaders {
+            guard let fitting = candidates[header.entryIndex], fitting.count == 1,
+                  let stream = fitting.first, claimants[stream] == 1 else { continue }
+            streamToHeader[stream] = header.entryIndex
+            contentOnly[stream] = header.entryIndex
+            pairedHeaders.insert(header.entryIndex)
         }
 
         let unpaired = headers.map(\.entryIndex).filter { !pairedHeaders.contains($0) }
-        return Result(streamToHeader: streamToHeader, unpairedHeaders: unpaired)
+        return Result(streamToHeader: streamToHeader, unpairedHeaders: unpaired, contentOnly: contentOnly)
     }
 
     /// Whether every channel's first predictor/scale byte in `stream` is the

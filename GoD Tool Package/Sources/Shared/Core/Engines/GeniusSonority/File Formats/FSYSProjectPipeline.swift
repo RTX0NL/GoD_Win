@@ -147,6 +147,15 @@ public extension GeniusSonorityEngine {
             }
             let pairing = ISFPairing.pair(headers: isfHeaders.map(half), streams: isfStreams.map(half))
             pairedEntryIndex = pairing.streamToHeader
+            if !pairing.contentOnly.isEmpty {
+                warnings.append(
+                    "\(archiveName): \(pairing.contentOnly.count) ISF pairs matched by content alone "
+                    + "(header entry → stream entry: "
+                    + pairing.contentOnly.sorted { $0.value < $1.value }
+                        .map { "\($0.value)→\($0.key)" }.joined(separator: ", ")
+                    + "); check these by ear if a cry sounds wrong."
+                )
+            }
             if !pairing.unpairedHeaders.isEmpty {
                 warnings.append(
                     "\(archiveName): \(pairing.unpairedHeaders.count) of \(isfHeaders.count) ISF headers "
