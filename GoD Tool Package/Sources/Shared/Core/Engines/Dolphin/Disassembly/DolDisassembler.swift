@@ -190,7 +190,10 @@ public struct DolDisassembler {
 
                     // Write text section manifest for ordering
                     let manifest = TextSectionManifest(section: sectionName, files: manifestFiles)
-                    if let manifestJSON: GoDData = try? JSONEncoder().encode(manifest) {
+                    // Sorted keys, so two dumps of the same DOL write the same bytes.
+                    let encoder = JSONEncoder()
+                    encoder.outputFormatting = .sortedKeys
+                    if let manifestJSON: GoDData = try? encoder.encode(manifest) {
                         try output.writeFile(manifestJSON, at: sectionFolder.file("manifest.json"), overwrite: true)
                     }
                 } else {

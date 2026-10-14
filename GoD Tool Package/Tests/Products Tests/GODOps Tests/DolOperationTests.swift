@@ -113,6 +113,7 @@ final class DolOperationTests: XCTestCase {
     private func disassemble(
         in fst: InMemoryFST,
         dolphinFolder: Folder,
+        symbolMapPath: File? = nil,
         typeMapPath: File? = nil,
         engines: [Folder]? = nil,
         registry: FileFormatRegistry = .all(),
@@ -121,6 +122,7 @@ final class DolOperationTests: XCTestCase {
         let config = DolDisassembly.Config(
             dolPath: File("/project/main.dol"),
             outputFolder: Folder("/project/Disassembly"),
+            symbolMapPath: symbolMapPath,
             dolphinEngine: dolphinFolder,
             typeMapPath: typeMapPath,
             engines: engines
@@ -190,6 +192,31 @@ final class DolOperationTests: XCTestCase {
         let asmText = asm.string(format: .utf8)
         XCTAssertTrue(asmText.contains(".section .text0"))
         XCTAssertTrue(asmText.contains("blr"))
+    }
+
+    /// With a symbol map, each text section gets a `manifest.json` listing
+    /// its function files in order. Its keys must come out in a fixed order:
+    /// an unsorted encoder follows the per-process hash seed, so two dumps of
+    /// the same disc differed in exactly these files.
+    func testTextSectionManifestHasStableKeyOrder() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        try seedDol(in: fst, engine: engine)
+        let map = File("/project/dol.map")
+        try fst.writeFile(
+            GoDData(string: """
+            .text section layout
+            80003100 00000018 80003100 0 __start\tos.a __start.o
+            """, format: .utf8),
+            at: map, overwrite: true
+        )
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, symbolMapPath: map)
+
+        let manifest = try XCTUnwrap(
+            fst.readFile(at: File("/project/Disassembly/main/text0/manifest.json"))?.allData,
+            "a symbol map should produce a per-function text section with a manifest"
+        ).string(format: .utf8)
+        XCTAssertTrue(manifest.hasPrefix("{\"files\":["), "keys must be sorted: \(manifest)")
+        XCTAssertTrue(manifest.hasSuffix(",\"section\":\"text0\"}"), "keys must be sorted: \(manifest)")
     }
 
     func testDolDisassembleAssembleRoundTrip() throws {
