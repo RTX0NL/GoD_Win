@@ -83,6 +83,45 @@ final class PathConventionTests: XCTestCase {
         }
     }
 
+    // MARK: - Decoding
+
+    /// Configs may name absolute paths, and on Windows a user writes those in
+    /// native spelling. Decoding converts them like argv; `Folder` used to trap.
+    func testDecodingNativeWindowsPathsYieldsLogicalPaths() throws {
+        try XCTSkipUnless(PathConvention.current == .windows, "Windows-only decoding")
+        for json in [#""C:/Games/Pokemon XD""#, #""C:\\Games\\Pokemon XD""#] {
+            let data = Data(json.utf8)
+            XCTAssertEqual(try JSONDecoder().decode(Folder.self, from: data).path, "/C:/Games/Pokemon XD", json)
+            XCTAssertEqual(try JSONDecoder().decode(File.self, from: data).path, "/C:/Games/Pokemon XD", json)
+        }
+    }
+
+    /// Registries and generated configs store logical paths; decoding must
+    /// leave every one of them exactly as written, on any host.
+    func testDecodingLeavesLogicalPathsUnchanged() throws {
+        for path in ["/Assets/Models/a (2).dat", "/C:/Games/rom.iso", "./Build/ISO", "../up", "..", ".", "/"] {
+            let data = Data("\"\(path)\"".utf8)
+            XCTAssertEqual(try JSONDecoder().decode(Folder.self, from: data).path, path)
+            XCTAssertEqual(try JSONDecoder().decode(File.self, from: data).path, path)
+        }
+        // Archive manifests and ATX frame lists store bare relative names that
+        // get joined onto a folder later; a `./` prefix would break the join.
+        for path in ["homeBtn/arc/one.brlan", "0000.bin", "atx_sample_frame_000.png"] {
+            let data = Data("\"\(path)\"".utf8)
+            XCTAssertEqual(try JSONDecoder().decode(File.self, from: data).path, path)
+        }
+    }
+
+    func testOnlyNativeSpellingsAreConverted() {
+        for native in ["C:/Games/x", "C:\\Games\\x", "d:\\x", "Config\\a.json", "C:"] {
+            XCTAssertTrue(PlatformPath.isNativeSpelling(native, convention: .windows), native)
+        }
+        for logical in ["/C:/Games/x", "./Build", "homeBtn/arc/one.brlan", "0000.bin", "..", "/"] {
+            XCTAssertFalse(PlatformPath.isNativeSpelling(logical, convention: .windows), logical)
+        }
+        XCTAssertFalse(PlatformPath.isNativeSpelling("C:\\Games\\x", convention: .posix))
+    }
+
     // MARK: - Host behavior
 
     /// On this build the convention is POSIX, so `nativePath` matches `path`.

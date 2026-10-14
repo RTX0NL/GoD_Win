@@ -52,7 +52,13 @@ extension File: Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let path = try container.decode(String.self)
+        #if os(Windows)
+        // A config may spell an absolute path natively (`C:\...`); logical
+        // paths, including bare relative names, pass through unchanged.
+        self.init(PlatformPath.isNativeSpelling(path) ? PlatformPath.logical(from: path) : path)
+        #else
         self.init(path)
+        #endif
     }
 }
 

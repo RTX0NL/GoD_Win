@@ -75,6 +75,19 @@ public enum PlatformPath {
             : first + "\\" + components.joined(separator: "\\")
     }
 
+    /// Whether `path` is spelled the platform's way rather than logically: it
+    /// names a drive (`C:`, `C:/…`, `C:\…`) or uses `\` separators. Logical
+    /// paths, bare relative names included, never are.
+    public static func isNativeSpelling(
+        _ path: String,
+        convention: PathConvention = .current
+    ) -> Bool {
+        guard convention == .windows else { return false }
+        if path.contains("\\") { return true }
+        let first = path.split(separator: "/", omittingEmptySubsequences: false).first ?? ""
+        return isDrive(String(first))
+    }
+
     /// Native path -> the logical form `File` and `Folder` store.
     ///
     /// Use this wherever a path arrives from outside: command-line arguments,
