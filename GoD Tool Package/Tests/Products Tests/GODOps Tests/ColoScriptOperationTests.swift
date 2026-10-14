@@ -158,7 +158,8 @@ final class ColoScriptOperationTests: XCTestCase {
             return XCTFail("no .py output written")
         }
         XCTAssertTrue(
-            source.contains("soundPlayPokemonCry(PokemonSpecies.PIKACHU)"),
+            // Calls are written with keyword arguments since 7fd017a.
+            source.contains("soundPlayPokemonCry(pokemon=PokemonSpecies.PIKACHU)"),
             "species 25 should render as its case name; got:\n\(source)"
         )
 

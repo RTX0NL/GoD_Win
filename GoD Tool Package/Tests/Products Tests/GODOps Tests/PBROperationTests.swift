@@ -327,9 +327,11 @@ final class PBROperationTests: XCTestCase {
     }
 
     /// A "padding" run that differs from row to row carries information, so
-    /// the record is wrong about it. The table keeps its binary rather than
-    /// becoming a CSV that silently drops those bytes.
-    func testPaddingThatVariesBetweenRowsDemotesTheTable() throws {
+    /// the record is wrong about it. Since 02a1850 the table is no longer
+    /// demoted to its binary: it becomes a CSV like any other, and the varying
+    /// run isn't recorded as a fill, so a rebuild writes zeroes there and the
+    /// audit shows the difference instead of hiding it.
+    func testPaddingThatVariesBetweenRowsIsNotRecordedAsAFill() throws {
         let (fst, unpacked, binary) = try makeUnpackedTree(
             tableIndex: 19, entryCount: 4, stride: 0x28
         )
@@ -346,11 +348,17 @@ final class PBROperationTests: XCTestCase {
         let logger = RecordingLogger()
         try typeTables(fst, unpacked, japanese: false, logger: logger)
 
-        XCTAssertNotNil(fst.readFile(at: unpacked.file(binary.path)), "the raw member stays")
-        XCTAssertNil(fst.readFile(at: unpacked.file("/Data/Common/Items/Items.csv")))
-        XCTAssertTrue(
-            logger.warnings.contains { $0.contains("Items") },
-            "the demotion should name the table: \(logger.warnings)"
+        XCTAssertNotNil(
+            fst.readFile(at: unpacked.file("/Data/Common/Items/Items.csv")),
+            "the table is still written as a CSV"
+        )
+        let registry: FSYSRegistry = try fst.decodeJSON(
+            from: unpacked.folder("Archives").file("common.fsys.json")
+        )
+        let dataTable = try XCTUnwrap(registry.entries.first { $0.dataTable != nil }?.dataTable)
+        XCTAssertFalse(
+            (dataTable.entryPaddingFills ?? []).contains { $0.offset == 0x13 },
+            "a run that varies between rows must not be replayed as a constant fill: \(String(describing: dataTable.entryPaddingFills))"
         )
     }
 }
