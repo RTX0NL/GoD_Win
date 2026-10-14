@@ -319,7 +319,7 @@ func runMCPServer() async {
             let message = try handleToolCall(params, logger: logger)
             return CallTool.Result(content: [.text(message)], isError: false)
         } catch {
-            return CallTool.Result(content: [.text("Error: \(error)")], isError: true)
+            return CallTool.Result(content: [.text(GODOps.userMessage(for: error))], isError: true)
         }
     }
 

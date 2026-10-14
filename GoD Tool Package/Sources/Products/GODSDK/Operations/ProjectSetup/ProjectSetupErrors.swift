@@ -11,17 +11,17 @@ public enum ProjectSetupErrors: GoDError {
     public var description: String {
         switch self {
         case let .isoNotFound(file, errorTrace):
-            return "Error: Couldn't load iso file: \(file)\n\(errorTrace)"
+            return "Error: Couldn't load iso file: \(file.nativePath)\n\(errorTrace)"
         case let .gciNotFound(file, errorTrace):
-            return "Error: Couldn't load gci file: \(file)\n\(errorTrace)"
+            return "Error: Couldn't load gci file: \(file.nativePath)\n\(errorTrace)"
         case let .fsysNotFound(file, errorTrace):
-            return "Error: Couldn't load fsys file: \(file)\n\(errorTrace)"
+            return "Error: Couldn't load fsys file: \(file.nativePath)\n\(errorTrace)"
         case let .fsysParseFailed(file, underlying, errorTrace):
-            return "Error: Couldn't parse \(file) as an FSYS archive with any known engine (XD, Colosseum, PBR). Last error: \(underlying)\n\(errorTrace)"
+            return "Error: Couldn't parse \(file.nativePath) as an FSYS archive with any known engine (XD, Colosseum, PBR). Last error: \(underlying)\n\(errorTrace)"
         case let .invalidGameID(errorTrace):
             return "Error: Couldn't read Game ID\n\(errorTrace)"
         case let .unsupportedInputFormat(format, reason, file, errorTrace):
-            return "Error: \(file.path) is a \(format) image, which setup can't open: \(reason)\n\(errorTrace)"
+            return "Error: \(file.nativePath) is a \(format) image, which setup can't open: \(reason)\n\(errorTrace)"
         }
     }
 }
