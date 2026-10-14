@@ -1,3 +1,121 @@
+# GoD_Win — GODDESS on Windows
+
+A Windows port of **GODDESS**, the CLI and MCP server from
+[StarsMmd/GoD-Tool](https://github.com/StarsMmd/GoD-Tool). The port is the
+upstream code base plus a small set of Windows fixes on top of upstream
+`c39f010`. Every change is behind `#if os(Windows)` or is Windows-neutral, so
+macOS and Linux builds behave as upstream.
+
+The upstream README follows [below](#god-tool--goddess) and still applies.
+This section covers only what is different on Windows.
+
+> No game data is included. Use GODDESS only with discs you have dumped
+> yourself.
+
+## Status
+
+Verified on 2026-10-14 on Windows 11 with Swift 6.4.1, using the US discs of
+Pokémon Colosseum and Pokémon XD.
+
+| Area | Result |
+|---|---|
+| Build | `GODDESS.exe` builds with SwiftPM, both debug and release. |
+| Tests | 2,367 cases: 2,232 pass, 131 skip, 4 fail. The 4 failures are stale upstream tests, listed under [Known issues](#known-issues). |
+| Project setup + dump | Both games dump completely: 0 case collisions, CRLF-free text output, and per-archive file counts match the FSYS registries. |
+| Rebuild | Both games rebuild. `DolphinTool verify` reports no problems, and the rebuilt discs boot in Dolphin (Colosseum to the title screen, XD to the health-and-safety screen). |
+| MCP server | `GODDESS mcp` runs over stdio, and `setup_project`, `unpack_fsys` and `run_config` accept native `C:\...` paths. |
+| Disc containers | ISO and RVZ (zstd) give byte-identical projects: the decoded RVZ matches the original disc's SHA-256. Uncompressed WIA works too. |
+
+## Requirements
+
+- Windows 10 or 11, x64.
+- The Swift toolchain for Windows (tested with 6.4.1) and the Visual Studio
+  components it needs. See [swift.org/install/windows](https://www.swift.org/install/windows/).
+- **Long paths enabled.** DOL disassembly writes files named after mangled
+  C++ symbols, so paths reach 270+ characters. `GODDESS.exe` embeds a
+  `longPathAware` manifest, but Windows only honours it when the machine
+  setting is on. Run this once in an elevated PowerShell:
+
+  ```powershell
+  New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' `
+    -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force
+  ```
+
+  Without it, a write past 260 characters fails with an error that names
+  `MAX_PATH` and this setting.
+
+## Build
+
+```powershell
+cd "GoD Tool Package"
+swift build -c release --product GODDESS   # .build\release\GODDESS.exe
+swift test                                 # optional: the full suite
+```
+
+On Windows, SwiftPM rewrites `Package.resolved`. The vendored MCP SDK replaces
+the upstream package, so the macOS-only pins drop out. That's expected; don't
+commit the change.
+
+## Use
+
+```powershell
+GODDESS.exe "C:\Games\Pokemon XD.iso"
+```
+
+This creates `Pokemon XD project\` next to the disc, with `Dump.cmd` and
+`Build.cmd` launchers that run the dump and build configs. Every other
+command in the upstream README works the same, with native Windows paths.
+
+To register the MCP server with Claude Code:
+
+```powershell
+claude mcp add goddess -- "C:\path\to\GODDESS.exe" mcp
+```
+
+## What the port changes
+
+| Commit | Change |
+|---|---|
+| `489d800` | Build GoDFoundation on Windows: no SIGPIPE, no CoreFoundation, and an `autoreleasepool` stub. |
+| `e239ac7` | Build GODDESS and run its MCP server: a Windows stdio transport, stdout kept protocol-only, and a vendored swift-sdk 0.12.1 with a one-line `os(Windows)` fix (see `Vendored/swift-sdk/README.md`). |
+| `a9e1840` | Write `.cmd` project launchers instead of POSIX `sh` scripts. |
+| `547bd5c` | Skip `RunExecutable` tests cleanly when a utility is missing. |
+| `75626e3`, `ada481e` | Accept native `C:\...` paths in MCP tool arguments (previously the server crashed on the first call), with tests. |
+| `b1a6f5b`, `956cec9` | Embed the `longPathAware` manifest, with a test that it stays embedded. |
+| `82c6678` | Decode native Windows paths in config JSON instead of crashing. |
+| `0c9dbb8` | Name `MAX_PATH` and `LongPathsEnabled` when a long write fails. |
+
+## Known issues
+
+These come from upstream and fail the same way on every platform. They are
+reported, not patched here.
+
+- **Rebuilds are not byte-identical to the retail disc.** Textures are
+  re-encoded from PNG, FSYS group IDs that aren't in the TOC reset to 0, and
+  files are packed tightly instead of at retail offsets. Rebuilds are
+  deterministic, though: the same project always gives the same disc.
+- **388 of XD's 515 audio pairs don't export to WAV.** The Pokémon cries'
+  header and data halves get different index names, so `dumpAudios` can't
+  pair them, and it skips them without a warning.
+- **WIA/RVZ decode only `none` and `zstd` compression.** RVZ works, but WIA
+  made with Dolphin's usual LZMA setting is rejected. The upstream note below
+  that says WIA/RVZ aren't decodable at all is out of date.
+- **Invalid paths crash the process** (`Folder.init` calls
+  `preconditionFailure`). The port fixes the Windows paths that triggered
+  this, but the trap itself is upstream.
+- **4 stale tests fail:** `MSGTests` ×2 and `PBROperationTests` ×1 (broken
+  upstream by `02a1850`), and `ColoScriptOperationTests` ×1 (the decompiler
+  now writes `f(pokemon=x)`).
+- **Untested:** NKit input on Windows.
+
+## License
+
+GPL-3.0, the same as upstream (see `LICENSE`). `Vendored/swift-sdk` keeps its
+own license (MIT / Apache-2.0, see its `LICENSE`). All credit for GODDESS goes
+to StarsMmd and the upstream contributors.
+
+---
+
 # GoD-Tool — GODDESS
 
 **GODDESS** is a command-line tool for unpacking, editing, and rebuilding
