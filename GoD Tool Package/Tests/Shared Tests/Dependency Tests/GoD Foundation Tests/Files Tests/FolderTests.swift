@@ -10,7 +10,36 @@ import GoDFoundation
 import XCTest
 
 class GoDFolderTests: XCTestCase {
-    
+
+    /// A folder path in a config that `Folder.init` can't hold used to trap
+    /// and take the process down, the MCP server included. Decoding must
+    /// fail with an error instead.
+    func testDecodingAnInvalidFolderPathThrows() {
+        for bad in ["Engines", "Build/Unpacked", ""] {
+            XCTAssertThrowsError(
+                try JSONDecoder().decode(Folder.self, from: Data("\"\(bad)\"".utf8)), bad
+            ) { error in
+                guard case DecodingError.dataCorrupted(let context) = error else {
+                    return XCTFail("\(bad): expected dataCorrupted, got \(error)")
+                }
+                XCTAssertTrue(context.debugDescription.contains("\"\(bad)\""), context.debugDescription)
+            }
+        }
+    }
+
+    func testDecodingValidFolderPathsStillWorks() throws {
+        for good in ["/Assets", "./Build", "../Engines", ".", "..", "/"] {
+            XCTAssertNoThrow(try JSONDecoder().decode(Folder.self, from: Data("\"\(good)\"".utf8)), good)
+        }
+    }
+
+    func testIsValidPathMatchesInit() {
+        XCTAssertTrue(Folder.isValidPath("/a/"))
+        XCTAssertTrue(Folder.isValidPath("./a"))
+        XCTAssertFalse(Folder.isValidPath("a/b"))
+        XCTAssertFalse(Folder.isValidPath(""))
+    }
+
     func testInit() {
         let folder = Folder("/initTest")
         XCTAssertEqual(folder.path, "/initTest")

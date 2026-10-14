@@ -213,7 +213,7 @@ private func handleToolCall(_ params: CallTool.Parameters, logger: GoDFoundation
         guard let path = args[key]?.stringValue, !path.isEmpty else {
             throw MCPToolError.missingArgument(key)
         }
-        return GODOps.inputFile(fromArgument: path)
+        return try GODOps.inputFile(fromArgument: path)
     }
 
     switch params.name {

@@ -25,11 +25,14 @@ public enum GODOps {
     public enum DispatchError: Error, CustomStringConvertible {
         case unsupportedFileType(String, File)
         case noFileExtension(File)
+        case relativePathArgument(String)
 
         private static let recognized = "iso, gcm, ciso, wbfs, wia, rvz, gci, fsys, json"
 
         public var description: String {
             switch self {
+            case let .relativePathArgument(path):
+                return "Expected an absolute path, got \"\(path)\""
             case let .unsupportedFileType(ext, file):
                 return "Unsupported file type '\(ext)' for file \(file.path). Recognized: \(Self.recognized)"
             case let .noFileExtension(file):
@@ -69,12 +72,20 @@ public enum GODOps {
     /// clients send native `C:\...` paths, which `File` cannot hold as
     /// written (`Folder.init` traps on them), so convert them like the CLI
     /// does for argv.
-    public static func inputFile(fromArgument path: String) -> File {
+    ///
+    /// The path must be absolute. A relative one would resolve against the
+    /// server's working directory, which means nothing to the client, and a
+    /// bare one like `foo/x.iso` trapped on the way to its parent folder.
+    public static func inputFile(fromArgument path: String) throws -> File {
         #if os(Windows)
-        return File(nativePath: path)
+        let file = File(nativePath: path)
         #else
-        return File(path)
+        let file = File(path)
         #endif
+        guard file.path.hasPrefix("/") else {
+            throw DispatchError.relativePathArgument(path)
+        }
+        return file
     }
 
     // MARK: - Project setup

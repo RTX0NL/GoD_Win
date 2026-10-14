@@ -11,18 +11,34 @@ public struct Folder: PathRepresentable, Hashable, Equatable {
     public let path: String
 
     public init(_ path: String) {
+        let cleanPath = Self.clean(path)
+        if !Self.isValidClean(cleanPath) {
+            preconditionFailure("Folder path must be absolute (/...), relative (./... or ../...), or the current directory (. or ..): got \"\(path)\"")
+        }
+        self.path = cleanPath
+    }
+
+    /// Whether `init` accepts `path`. Code that takes paths from outside
+    /// (config JSON, MCP arguments) checks this first and reports an error,
+    /// rather than letting `init` trap and take the whole process down.
+    public static func isValidPath(_ path: String) -> Bool {
+        isValidClean(clean(path))
+    }
+
+    private static func clean(_ path: String) -> String {
         var cleanPath = path
         if cleanPath.last == "/", cleanPath != "/" {
             cleanPath.removeLast()
         }
-        if cleanPath.first != "/",
-           !cleanPath.startsWith("../"),
-           !cleanPath.startsWith("./"),
-           cleanPath != "..",
-           cleanPath != "." {
-            preconditionFailure("Folder path must be absolute (/...), relative (./... or ../...), or the current directory (. or ..): got \"\(path)\"")
-        }
-        self.path = cleanPath
+        return cleanPath
+    }
+
+    private static func isValidClean(_ path: String) -> Bool {
+        path.first == "/"
+            || path.startsWith("../")
+            || path.startsWith("./")
+            || path == ".."
+            || path == "."
     }
 
     public var folderName: String {
@@ -129,9 +145,16 @@ extension Folder: Codable {
         #if os(Windows)
         // A config may spell an absolute path natively (`C:\...`); logical
         // paths pass through unchanged.
-        self.init(PlatformPath.isNativeSpelling(path) ? PlatformPath.logical(from: path) : path)
+        let logical = PlatformPath.isNativeSpelling(path) ? PlatformPath.logical(from: path) : path
         #else
-        self.init(path)
+        let logical = path
         #endif
+        guard Self.isValidPath(logical) else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Folder path must be absolute (/...) or relative (./... or ../...): got \"\(path)\""
+            )
+        }
+        self.init(logical)
     }
 }
