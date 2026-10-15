@@ -1,0 +1,45 @@
+# Builds GODDESS and runs the full test suite on Windows.
+#
+# The suite is expected to pass with 0 failures. Tests that need real disc
+# data or an external utility skip themselves on the runner, which has
+# neither. No game data is ever used here.
+name: Windows build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: GoD Tool Package
+    steps:
+      - name: Install Swift 6.4.1
+        uses: compnerd/gha-setup-swift@bbae8ce86bac5a3449f3992b3d88bc4ca25f2057 # v0.5.0
+        with:
+          swift-version: swift-6.4.1-release
+          swift-build: 6.4.1-RELEASE
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build GODDESS (release)
+        run: swift build -c release --product GODDESS
+
+      - name: Run the test suite
+        run: swift test
