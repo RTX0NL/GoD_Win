@@ -26,7 +26,11 @@ Pokémon Colosseum and Pokémon XD.
 | Rebuild | Both games rebuild. `DolphinTool verify` reports no problems, and the rebuilt discs boot in Dolphin (Colosseum to the title screen, XD to the health-and-safety screen). |
 | Edit → rebuild | Edited title-screen textures in Colosseum. The rebuilt disc changed only the two archives that contain them, and the edits show in Dolphin. |
 | MCP server | `GODDESS mcp` runs over stdio, and `setup_project`, `unpack_fsys` and `run_config` accept native `C:\...` paths. |
-| Disc containers | ISO and RVZ (zstd) give byte-identical projects: the decoded RVZ matches the original disc's SHA-256. Uncompressed WIA works too. |
+| Disc containers | ISO, RVZ (zstd), uncompressed WIA, CISO and GameCube NKit all decode to the original disc's SHA-256. `nkitBuild` output was also checked with Nanook's NKit 3, which expands it to the original disc. |
+| Saves | Colosseum `.gci` saves (two samples) round-trip byte for byte, and a rebuilt save loads in-game. Datel `.sav` saves convert with `sav_to_gci.py` in Shadow Saga's tools. |
+| Patches | `createPatch` and `applyPatch` reproduce an edited disc exactly as UPS, BPS and xdelta. Use xdelta for disc patches: about 1 MB, against about 1.46 GB for UPS/BPS, because a rebuild moves files. |
+| Paths | Non-ASCII names, `%` and `&` in folder names (including the `.cmd` launchers), `subst` drives, forward slashes and relative CLI paths. |
+| Coverage | Of the 47 operations: 15 tested on real data on Windows, 22 by unit tests, 10 not applicable (no Wii or PBR disc). |
 
 ## Requirements
 
@@ -115,7 +119,28 @@ These come from upstream and fail the same way on every platform.
   that says WIA/RVZ aren't decodable at all is out of date.
 - **Colosseum audio (MusyX) has no WAV export.**
 - **XD scripts have no decompile operation** (Colosseum's do).
-- **Untested:** NKit input on Windows.
+- **Untested:** XD saves (the only sample found was malformed; see the verification notes).
+
+## Staying in sync with upstream
+
+This fork tracks [StarsMmd/GoD-Tool](https://github.com/StarsMmd/GoD-Tool) as
+the `origin` remote; this repo is a second remote. Checked 2026-10-15:
+upstream `main` is still `c39f010`, the commit the port is based on.
+
+1. `git fetch origin`, then `git log --oneline HEAD..origin/main` to see what's
+   new.
+2. **Merge, don't rebase:** `git merge origin/main`. This repo's `main` is
+   published, so its history must not be rewritten. Conflicts are most likely
+   in this README and in `Package.swift` (the `#if os(Windows)` block at the
+   bottom).
+3. Check the merge before pushing:
+   - `swift test` gives 0 failures;
+   - a fresh clone of this repo builds and passes the same suite;
+   - one disc dump of each game still works, with the release exe.
+4. Push. The Windows workflow runs the suite again on GitHub.
+
+Never commit `Package.resolved`: on Windows, SwiftPM rewrites it without the
+macOS-only pins, and that change is local.
 
 ## License
 
