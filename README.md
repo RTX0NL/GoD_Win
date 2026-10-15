@@ -3,11 +3,12 @@
 A Windows port of **GODDESS**, the CLI and MCP server from
 [StarsMmd/GoD-Tool](https://github.com/StarsMmd/GoD-Tool). The port is the
 upstream code base plus a small set of Windows fixes on top of upstream
-`c39f010`. Every change is behind `#if os(Windows)` or is Windows-neutral, so
-macOS and Linux builds behave as upstream.
+`c39f010`. The Windows fixes are behind `#if os(Windows)` or are
+Windows-neutral. A few further fixes change behaviour on every platform;
+they are listed under [Fixes beyond the port](#fixes-beyond-the-port).
 
 The upstream README follows [below](#god-tool--goddess) and still applies.
-This section covers only what is different on Windows.
+This section covers only what is different in this fork.
 
 > No game data is included. Use GODDESS only with discs you have dumped
 > yourself.
@@ -20,7 +21,7 @@ Pokémon Colosseum and Pokémon XD.
 | Area | Result |
 |---|---|
 | Build | `GODDESS.exe` builds with SwiftPM, both debug and release, including from a fresh clone of this repo with Git for Windows' default settings. |
-| Tests | 2,367 cases: 2,232 pass, 131 skip, 4 fail. The 4 failures are stale upstream tests, listed under [Known issues](#known-issues). |
+| Tests | 2,385 cases: 2,253 pass, 132 skip, **0 fail**, also from a fresh clone. |
 | Project setup + dump | Both games dump completely: 0 case collisions, CRLF-free text output, and per-archive file counts match the FSYS registries. |
 | Rebuild | Both games rebuild. `DolphinTool verify` reports no problems, and the rebuilt discs boot in Dolphin (Colosseum to the title screen, XD to the health-and-safety screen). |
 | Edit → rebuild | Edited title-screen textures in Colosseum. The rebuilt disc changed only the two archives that contain them, and the edits show in Dolphin. |
@@ -87,27 +88,33 @@ claude mcp add goddess -- "C:\path\to\GODDESS.exe" mcp
 | `0c9dbb8` | Name `MAX_PATH` and `LongPathsEnabled` when a long write fails. |
 | `0b77301` | Make a fresh clone build and test cleanly: `.gitattributes` keeps the byte-exact fixtures as LF despite `core.autocrlf=true`, and the resource copies that `swift build` leaves in the package root are ignored. |
 
+### Fixes beyond the port
+
+These fix behaviour that is the same on every platform. They live in this
+fork and haven't been sent upstream.
+
+| Commit | Change |
+|---|---|
+| `652f163`, `88dae96` | **XD Pokémon cries convert to WAV.** The 388 cry headers and streams in `stm_se_nakigoe_archive` are paired at unpack by FSYS identifier, confirmed by each channel's ADPCM predictor/scale byte. On the US disc all 388 pair (9 by content alone, listed in a warning), giving 515/515 WAVs. Checked against an independent decode, and the archive still rebuilds byte for byte. |
+| `dc3be4b` | `dumpAudios` says why it skips a header: `x.ish has no matching x.isd`. |
+| `c13ffea` | Invalid folder paths in config JSON, and relative MCP path arguments, return an error instead of crashing the process. |
+| `8df9261` | MCP tool errors are one clean `Error: …` line, without a source trace and with native Windows paths. |
+| `c74bc09` | DOL disassembly manifests use sorted JSON keys, so two dumps of the same disc are identical. |
+| `1e40b45` | Four tests left stale by intentional upstream changes are updated. One real codec gap (rebuilding a truncated MSG control code byte for byte) is kept as an explicit skip. |
+
 ## Known issues
 
-These come from upstream and fail the same way on every platform. They are
-reported, not patched here.
+These come from upstream and fail the same way on every platform.
 
 - **Rebuilds are not byte-identical to the retail disc.** Textures are
   re-encoded from PNG, FSYS group IDs that aren't in the TOC reset to 0, and
   files are packed tightly instead of at retail offsets. Rebuilds are
   deterministic, though: the same project always gives the same disc.
-- **388 of XD's 515 audio pairs don't export to WAV.** The Pokémon cries'
-  header and data halves get different index names, so `dumpAudios` can't
-  pair them, and it skips them without a warning.
 - **WIA/RVZ decode only `none` and `zstd` compression.** RVZ works, but WIA
   made with Dolphin's usual LZMA setting is rejected. The upstream note below
   that says WIA/RVZ aren't decodable at all is out of date.
-- **Invalid paths crash the process** (`Folder.init` calls
-  `preconditionFailure`). The port fixes the Windows paths that triggered
-  this, but the trap itself is upstream.
-- **4 stale tests fail:** `MSGTests` ×2 and `PBROperationTests` ×1 (broken
-  upstream by `02a1850`), and `ColoScriptOperationTests` ×1 (the decompiler
-  now writes `f(pokemon=x)`).
+- **Colosseum audio (MusyX) has no WAV export.**
+- **XD scripts have no decompile operation** (Colosseum's do).
 - **Untested:** NKit input on Windows.
 
 ## License
