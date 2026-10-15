@@ -140,7 +140,12 @@ upstream `main` is still `c39f010`, the commit the port is based on.
 4. Push. The Windows workflow runs the suite again on GitHub.
 
 Never commit `Package.resolved`: on Windows, SwiftPM rewrites it without the
-macOS-only pins, and that change is local.
+macOS-only pins, and that change is local. To keep it out of `git status`, mark
+it with `git update-index --skip-worktree "GoD Tool Package/Package.resolved"`.
+If a merge then stops with "would be overwritten" for that file, run
+`git update-index --no-skip-worktree "GoD Tool Package/Package.resolved"` and
+`git checkout -- "GoD Tool Package/Package.resolved"`, merge, run
+`swift build` (which rewrites it again), and set `--skip-worktree` again.
 
 ## License
 
