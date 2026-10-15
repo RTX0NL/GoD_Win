@@ -169,12 +169,22 @@ public extension GeniusSonorityEngine {
         for (entryIndex, entry) in archive.entries.enumerated() {
             // `fileExtension` rather than the optional type: neither game's
             // `fileTypeFolders` maps "bin" anywhere but the default folder, so
-            // a nil-typed entry routes exactly where it did before.
-            let fileType = entry.metadata.fileExtension
+            // a nil-typed entry routes exactly where it did before. Where the
+            // bytes plainly contradict the archive's type, the project file
+            // takes the type the content has (`projectFileType`); the registry
+            // keeps the archive's own type, which is what the repack writes.
+            let fileType = Self.projectFileType(
+                archiveType: entry.metadata.fileType, data: entry.data
+            )
+            // A 3D font still lives with the other fonts.
+            let routingType = fileType == "f3d" ? "fnt" : fileType
+            let entryFilename = fileType == entry.metadata.fileExtension
+                ? entry.filename
+                : entry.filename.withoutExtensions + "." + fileType
 
             var targetFolder = self.resolveFolder(
-                forFileType: fileType,
-                entryFilename: entry.filename,
+                forFileType: routingType,
+                entryFilename: entryFilename,
                 archiveName: archiveName
             ).resolvedFolder
 
@@ -190,10 +200,10 @@ public extension GeniusSonorityEngine {
             // `world_map` and `M2_enter_1F` — each name two different fonts.
             let projectName = self.projectFilename(
                 forEntryNamed: entry.metadata.name,
-                filename: entry.filename,
+                filename: entryFilename,
                 index: pairedEntryIndex[entryIndex] ?? entryIndex,
                 archiveName: archiveName,
-                indexed: fileType == "fnt"
+                indexed: routingType == "fnt"
             )
 
             // THH half of a paired video — combine with its THD sibling

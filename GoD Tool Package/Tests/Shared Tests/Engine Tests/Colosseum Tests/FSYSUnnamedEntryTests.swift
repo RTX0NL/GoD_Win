@@ -285,6 +285,53 @@ final class FSYSUnnamedEntryTests: XCTestCase {
         ])
     }
 
+    /// PBR US stores string table 1 (`mes_common.fsys`) with no file type and
+    /// a 3D font typed `fnt`. Both used to be invisible to the operations that
+    /// find their files by extension. The project files now take the type
+    /// their bytes have, and the archive still rebuilds byte for byte because
+    /// the registry keeps the stored type.
+    func testFilesWhoseBytesContradictTheirTypeAreNamedByContentAndStillRoundTrip() throws {
+        let engine = engine(.battleRevolution)
+        var mesg = Array("MESG".utf8) + [0, 0, 0, 1, 0, 0, 0, 1] + Array("USUK".utf8)
+        mesg += [UInt8](repeating: 0, count: 16)
+        let font3D = Array("F3".utf8) + [0x01, 0xE6] + [UInt8](repeating: 0x11, count: 28)
+        func raw(_ type: String?, _ id: Int, _ bytes: [UInt8]) -> FSYSArchive.Entry {
+            FSYSArchive.Entry(
+                metadata: .init(name: placeholder, fileType: type, identifier: id,
+                                compress: false, includesFullFilename: nil),
+                filename: "\(placeholder).\(type ?? "bin")",
+                data: GoDData(byteStream: bytes, byteOrder: .big)
+            )
+        }
+        let original = try archiveBytes([
+            raw(nil, 1, mesg),
+            raw("fnt", 2, font3D),
+            raw(nil, 3, [1, 2, 3, 4, 5, 6, 7, 8]),
+        ], engine: engine)
+        let disc = try makeDisc([("mes_common.fsys", original)], engine: engine)
+
+        let output = try engine.unpackProject(from: discRoot, fileSystem: disc)
+        let registry = try registry(output, forArchive: "mes_common.fsys")
+        let files = registry.entries.map(\.file)
+        XCTAssertEqual(files.map(\.fileType), ["msg", "f3d", "bin"], files.map(\.path).description)
+        XCTAssertEqual(registry.entries.map(\.metadata.fileType), [nil, "fnt", nil], "the registry keeps the archive's types")
+        XCTAssertEqual(output.readFile(at: files[0])?.allData?.rawBytes, mesg)
+        XCTAssertEqual(output.readFile(at: files[1])?.allData?.rawBytes, font3D)
+
+        let built = InMemoryFST()
+        try copyTree(output, into: built, at: Folder("/project"))
+        try engine.packProject(
+            fstRegistryFile: Folder("/project").file("FST.json"),
+            outputFolder: Folder("/built"),
+            overwrite: true,
+            fileSystem: built
+        )
+        XCTAssertEqual(
+            built.readFile(at: Folder("/built/files").file("mes_common.fsys"))?.allData?.rawBytes,
+            original.rawBytes
+        )
+    }
+
     /// …but halves whose content can't confirm a pair are left alone:
     /// numbering them in parallel would pair them wrongly. Separate names
     /// keep them unpaired, which is the honest outcome.
