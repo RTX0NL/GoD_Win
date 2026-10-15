@@ -31,7 +31,7 @@ Pokémon Colosseum and Pokémon XD.
 | Patches | `createPatch` and `applyPatch` reproduce an edited disc exactly as UPS, BPS and xdelta. Use xdelta for disc patches: about 1 MB, against about 1.46 GB for UPS/BPS, because a rebuild moves files. |
 | Paths | Non-ASCII names, `%` and `&` in folder names (including the `.cmd` launchers), `subst` drives, forward slashes and relative CLI paths. |
 | Wii / Battle Revolution | From a full RVZ dump, GODDESS decodes the disc to **the same SHA-1 as Dolphin** (Wii partitions re-encrypted and hash trees rebuilt exactly). From a scrubbed WBFS: decrypt, asset dump and DOL disassembly work, and repack, re-encrypt and fakesign gives a disc that verifies without data errors and boots in Dolphin. Strings dump and rebuild all 34 message binaries byte for byte; 29 of 30 fonts round-trip byte for byte (the 3D font is re-triangulated by design), and a disc rebuilt with re-derived strings and fonts boots to the title screen. |
-| Coverage | Of the 47 operations: 23 tested on real data on Windows, 22 by unit tests, and 2 single-file font forms covered by their bulk forms. |
+| Coverage | **All 47 operations have run on real data on Windows.** Among the results: GODDESS's LZSS compressor matches the game's own bytes, all 167 Colosseum map RELs and all 19 Battle Revolution U8/NARC archives rebuild byte for byte, and `runExecutable` passes spaces, quotes and non-ASCII arguments verbatim. Exceptions are listed under known issues. |
 
 ## Requirements
 
@@ -91,6 +91,8 @@ claude mcp add goddess -- "C:\path\to\GODDESS.exe" mcp
 | `b1a6f5b`, `956cec9` | Embed the `longPathAware` manifest, with a test that it stays embedded. |
 | `82c6678` | Decode native Windows paths in config JSON instead of crashing. |
 | `0c9dbb8` | Name `MAX_PATH` and `LongPathsEnabled` when a long write fails. |
+| `648d975` | `runExecutable` reports a non-zero exit as an exit code, not as "killed by signal" (Foundation gives every non-zero exit `.uncaughtSignal` on Windows). |
+| `02d82d3` | Corpus tests build their temp folder from the native temp path instead of trapping. |
 | `0b77301` | Make a fresh clone build and test cleanly: `.gitattributes` keeps the byte-exact fixtures as LF despite `core.autocrlf=true`, and the resource copies that `swift build` leaves in the package root are ignored. |
 
 ### Fixes beyond the port
@@ -121,6 +123,15 @@ These come from upstream and fail the same way on every platform.
   that says WIA/RVZ aren't decodable at all is out of date.
 - **Colosseum audio (MusyX) has no WAV export.**
 - **XD scripts have no decompile operation** (Colosseum's do).
+- **`commonRelBuild` drops unreferenced strings.** Colosseum's `common.rel`
+  rebuilds 60 bytes short: an embedded string table holds two strings no
+  entry points at (Japanese debug leftovers), and the message encoder writes
+  only referenced strings. The map RELs are unaffected.
+- **Recursive `nintendoArchivesDump` overwrites same-named archives** from
+  different folders (for example `homeBtn.arc` in both `HomeButton2/` and
+  `HomeButton3/`). The single-archive operations are fine.
+- **Windows: `runExecutable` can't pass an empty-string argument.**
+  Foundation's `Process` drops it when it builds the command line.
 - **PBR 3D fonts are re-triangulated on build.** `.f3d` keeps only glyph
   contours, so `pbrFontsBuild` rebuilds a valid but different file. It's off
   in the default Build-Config; enable it only when editing that font.
