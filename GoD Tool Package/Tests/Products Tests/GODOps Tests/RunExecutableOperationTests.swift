@@ -175,6 +175,47 @@ final class RunExecutableOperationTests: XCTestCase {
         }
     }
 
+    // MARK: - Exit status on Windows
+
+    // The POSIX tests above skip on Windows (no /bin/sh), which is how a
+    // plain non-zero exit came to be reported as "killed by signal" there:
+    // Foundation's Process gives every non-zero exit the `.uncaughtSignal`
+    // termination reason on Windows, a platform without signals.
+
+    private var windowsShell: File {
+        get throws {
+            guard PathConvention.current == .windows else { throw XCTSkip("Windows-only") }
+            let path = #"C:\Windows\System32\cmd.exe"#
+            guard FileManager.default.isExecutableFile(atPath: path) else { throw XCTSkip("no cmd.exe") }
+            return File(nativePath: path)
+        }
+    }
+
+    func testWindowsNonZeroExitIsAnExitCode() throws {
+        let shell = try windowsShell
+        let fst = InMemoryFST()
+        XCTAssertThrowsError(try run(.init(
+            executablePath: shell,
+            arguments: ["/c", "echo diagnosis& exit /b 3"],
+            outputFile: File("/project/out.txt")
+        ), in: fst)) { error in
+            guard case let RunExecutableErrors.exitedNonZero(_, code, _, _) = error else {
+                return XCTFail("expected exitedNonZero, got \(error)")
+            }
+            XCTAssertEqual(code, 3)
+        }
+        XCTAssertTrue(try text(at: "/project/out.txt", in: fst).contains("diagnosis"))
+    }
+
+    func testWindowsToleratesANonZeroExitWhenAsked() throws {
+        let shell = try windowsShell
+        let fst = InMemoryFST()
+        XCTAssertNoThrow(try run(
+            .init(executablePath: shell, arguments: ["/c", "exit /b 3"], failOnNonZeroExit: false),
+            in: fst
+        ))
+    }
+
     /// A program killed by a signal never chose a status, so there is
     /// nothing for `failOnNonZeroExit` to tolerate.
     func testASignalIsAnErrorEvenWithFailuresTolerated() throws {

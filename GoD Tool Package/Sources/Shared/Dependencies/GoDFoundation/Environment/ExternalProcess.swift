@@ -142,7 +142,13 @@ public enum ExternalProcess {
         process.waitUntilExit()
         group.wait()
 
+        #if os(Windows)
+        // Windows has no signals, but Foundation reports every non-zero exit
+        // there as `.uncaughtSignal`; the status is always the exit code.
+        let killedBy: Int32? = nil
+        #else
         let killedBy: Int32? = process.terminationReason == .uncaughtSignal ? process.terminationStatus : nil
+        #endif
         return Result(
             exitCode: killedBy == nil ? process.terminationStatus : 0,
             terminatingSignal: killedBy,
