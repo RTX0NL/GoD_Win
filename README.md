@@ -30,7 +30,8 @@ Pokémon Colosseum and Pokémon XD.
 | Saves | Colosseum `.gci` saves (two samples) round-trip byte for byte, and a rebuilt save loads in-game. Datel `.sav` saves convert with `sav_to_gci.py` in Shadow Saga's tools. |
 | Patches | `createPatch` and `applyPatch` reproduce an edited disc exactly as UPS, BPS and xdelta. Use xdelta for disc patches: about 1 MB, against about 1.46 GB for UPS/BPS, because a rebuild moves files. |
 | Paths | Non-ASCII names, `%` and `&` in folder names (including the `.cmd` launchers), `subst` drives, forward slashes and relative CLI paths. |
-| Coverage | Of the 47 operations: 15 tested on real data on Windows, 22 by unit tests, 10 not applicable (no Wii or PBR disc). |
+| Wii / Battle Revolution | From a full RVZ dump, GODDESS decodes the disc to **the same SHA-1 as Dolphin** (Wii partitions re-encrypted and hash trees rebuilt exactly). From a scrubbed WBFS: decrypt, asset dump and DOL disassembly work, and repack, re-encrypt and fakesign gives a disc that verifies without data errors and boots in Dolphin. 29 of 30 fonts round-trip byte for byte. |
+| Coverage | Of the 47 operations: 21 tested on real data on Windows, 24 by unit tests (2 of them, PBR strings, blocked on the US disc by an upstream bug), and 2 single-file font forms covered by their bulk forms. |
 
 ## Requirements
 
@@ -119,6 +120,11 @@ These come from upstream and fail the same way on every platform.
   that says WIA/RVZ aren't decodable at all is out of date.
 - **Colosseum audio (MusyX) has no WAV export.**
 - **XD scripts have no decompile operation** (Colosseum's do).
+- **PBR strings can't be dumped from the US disc.** String table 1 sits in
+  untyped `mes_common.fsys` entries, which unpack writes as `.bin`, so
+  `pbrStringsDump` finds only tables 2–4 and stops.
+- **One PBR 3D font is misnamed.** `common_034.fnt` is really `.f3d`, so the
+  bulk font dump skips it. The data is untouched.
 - **Untested:** XD saves (the only sample found was malformed; see the verification notes).
 
 ## Staying in sync with upstream
