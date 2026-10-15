@@ -53,7 +53,7 @@ final class CommonRelTableCSVCorpusTests: XCTestCase {
     }
 
     private var scratch: Folder {
-        Folder(NSTemporaryDirectory()).folder("goddess-common-rel-csv-corpus")
+        Folder(nativePath: NSTemporaryDirectory()).folder("goddess-common-rel-csv-corpus")
     }
 
     private func env(_ key: String, default value: String) -> String {

@@ -127,7 +127,7 @@ final class CommonRelRoundTripCorpusTests: XCTestCase {
                 XCTFail("\(sample.label): no bundled common.rel type map for \(sample.gameID)")
                 continue
             }
-            let scratch = Folder(NSTemporaryDirectory()).folder("goddess-common-rel-round-trip")
+            let scratch = Folder(nativePath: NSTemporaryDirectory()).folder("goddess-common-rel-round-trip")
             try? fileSystem.deleteFolder(at: scratch)
             defer { try? fileSystem.deleteFolder(at: scratch) }
 

@@ -59,7 +59,7 @@ final class DolTableCSVCorpusTests: XCTestCase {
     }
 
     private var scratch: Folder {
-        Folder(NSTemporaryDirectory()).folder("goddess-dol-table-csv-corpus")
+        Folder(nativePath: NSTemporaryDirectory()).folder("goddess-dol-table-csv-corpus")
     }
 
     private func env(_ key: String, default value: String) -> String {

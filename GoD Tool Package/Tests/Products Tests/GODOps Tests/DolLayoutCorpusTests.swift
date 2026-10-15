@@ -38,7 +38,7 @@ final class DolLayoutCorpusTests: XCTestCase {
     }
 
     private var scratch: Folder {
-        Folder(NSTemporaryDirectory()).folder("goddess-dol-layout-corpus")
+        Folder(nativePath: NSTemporaryDirectory()).folder("goddess-dol-layout-corpus")
     }
 
     func testARebuiltDolKeepsItsSizeAndSectionTable() throws {
