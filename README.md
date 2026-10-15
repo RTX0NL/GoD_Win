@@ -27,7 +27,7 @@ Pokémon Colosseum and Pokémon XD.
 | Edit → rebuild | Edited title-screen textures in Colosseum. The rebuilt disc changed only the two archives that contain them, and the edits show in Dolphin. |
 | MCP server | `GODDESS mcp` runs over stdio, and `setup_project`, `unpack_fsys` and `run_config` accept native `C:\...` paths. |
 | Disc containers | ISO, RVZ (zstd), uncompressed WIA, CISO and GameCube NKit all decode to the original disc's SHA-256. `nkitBuild` output was also checked with Nanook's NKit 3, which expands it to the original disc. |
-| Saves | Colosseum `.gci` saves (two samples) round-trip byte for byte, and a rebuilt save loads in-game. Datel `.sav` saves convert with `sav_to_gci.py` in Shadow Saga's tools. |
+| Saves | Colosseum `.gci` saves (two samples) round-trip byte for byte, and a rebuilt save loads in-game. An XD save round-trips every typed section, and both an unmodified and an edited (money) rebuild load in-game. Datel `.sav` saves convert with `sav_to_gci.py` in Shadow Saga's tools. |
 | Patches | `createPatch` and `applyPatch` reproduce an edited disc exactly as UPS, BPS and xdelta. Use xdelta for disc patches: about 1 MB, against about 1.46 GB for UPS/BPS, because a rebuild moves files. |
 | Paths | Non-ASCII names, `%` and `&` in folder names (including the `.cmd` launchers), `subst` drives, forward slashes and relative CLI paths. |
 | Wii / Battle Revolution | From a full RVZ dump, GODDESS decodes the disc to **the same SHA-1 as Dolphin** (Wii partitions re-encrypted and hash trees rebuilt exactly). From a scrubbed WBFS: decrypt, asset dump and DOL disassembly work, and repack, re-encrypt and fakesign gives a disc that verifies without data errors and boots in Dolphin. Strings dump and rebuild all 34 message binaries byte for byte; 29 of 30 fonts round-trip byte for byte (the 3D font is re-triangulated by design), and a disc rebuilt with re-derived strings and fonts boots to the title screen. |
@@ -124,7 +124,10 @@ These come from upstream and fail the same way on every platform.
 - **PBR 3D fonts are re-triangulated on build.** `.f3d` keeps only glyph
   contours, so `pbrFontsBuild` rebuilds a valid but different file. It's off
   in the default Build-Config; enable it only when editing that font.
-- **Untested:** XD saves (the only sample found was malformed; see the verification notes).
+- **XD save rebuilds zero-fill unmapped bytes.** About 19 KB of filler in the
+  slot (gaps between fields and the tail after the last section) comes back
+  as zeros. Every typed section round-trips, the checksum is valid, and the
+  game loads the rebuilt save, so the difference is cosmetic.
 
 ## Staying in sync with upstream
 
