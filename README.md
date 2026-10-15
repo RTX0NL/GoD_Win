@@ -30,8 +30,8 @@ Pokémon Colosseum and Pokémon XD.
 | Saves | Colosseum `.gci` saves (two samples) round-trip byte for byte, and a rebuilt save loads in-game. Datel `.sav` saves convert with `sav_to_gci.py` in Shadow Saga's tools. |
 | Patches | `createPatch` and `applyPatch` reproduce an edited disc exactly as UPS, BPS and xdelta. Use xdelta for disc patches: about 1 MB, against about 1.46 GB for UPS/BPS, because a rebuild moves files. |
 | Paths | Non-ASCII names, `%` and `&` in folder names (including the `.cmd` launchers), `subst` drives, forward slashes and relative CLI paths. |
-| Wii / Battle Revolution | From a full RVZ dump, GODDESS decodes the disc to **the same SHA-1 as Dolphin** (Wii partitions re-encrypted and hash trees rebuilt exactly). From a scrubbed WBFS: decrypt, asset dump and DOL disassembly work, and repack, re-encrypt and fakesign gives a disc that verifies without data errors and boots in Dolphin. 29 of 30 fonts round-trip byte for byte. |
-| Coverage | Of the 47 operations: 21 tested on real data on Windows, 24 by unit tests (2 of them, PBR strings, blocked on the US disc by an upstream bug), and 2 single-file font forms covered by their bulk forms. |
+| Wii / Battle Revolution | From a full RVZ dump, GODDESS decodes the disc to **the same SHA-1 as Dolphin** (Wii partitions re-encrypted and hash trees rebuilt exactly). From a scrubbed WBFS: decrypt, asset dump and DOL disassembly work, and repack, re-encrypt and fakesign gives a disc that verifies without data errors and boots in Dolphin. Strings dump and rebuild all 34 message binaries byte for byte; 29 of 30 fonts round-trip byte for byte (the 3D font is re-triangulated by design), and a disc rebuilt with re-derived strings and fonts boots to the title screen. |
+| Coverage | Of the 47 operations: 23 tested on real data on Windows, 22 by unit tests, and 2 single-file font forms covered by their bulk forms. |
 
 ## Requirements
 
@@ -105,6 +105,7 @@ fork and haven't been sent upstream.
 | `c13ffea` | Invalid folder paths in config JSON, and relative MCP path arguments, return an error instead of crashing the process. |
 | `8df9261` | MCP tool errors are one clean `Error: …` line, without a source trace and with native Windows paths. |
 | `c74bc09` | DOL disassembly manifests use sorted JSON keys, so two dumps of the same disc are identical. |
+| `ffd5012` | **Battle Revolution (US) strings and 3D font.** Files whose bytes contradict their archive type take the type the content has: untyped `MESG` string tables become `.msg`, an `F3` font typed `fnt` becomes `.f3d`. The US string dump now works (table 1: 9,995 strings), and archives still rebuild byte for byte. |
 | `1e40b45` | Four tests left stale by intentional upstream changes are updated. One real codec gap (rebuilding a truncated MSG control code byte for byte) is kept as an explicit skip. |
 
 ## Known issues
@@ -120,11 +121,9 @@ These come from upstream and fail the same way on every platform.
   that says WIA/RVZ aren't decodable at all is out of date.
 - **Colosseum audio (MusyX) has no WAV export.**
 - **XD scripts have no decompile operation** (Colosseum's do).
-- **PBR strings can't be dumped from the US disc.** String table 1 sits in
-  untyped `mes_common.fsys` entries, which unpack writes as `.bin`, so
-  `pbrStringsDump` finds only tables 2–4 and stops.
-- **One PBR 3D font is misnamed.** `common_034.fnt` is really `.f3d`, so the
-  bulk font dump skips it. The data is untouched.
+- **PBR 3D fonts are re-triangulated on build.** `.f3d` keeps only glyph
+  contours, so `pbrFontsBuild` rebuilds a valid but different file. It's off
+  in the default Build-Config; enable it only when editing that font.
 - **Untested:** XD saves (the only sample found was malformed; see the verification notes).
 
 ## Staying in sync with upstream
