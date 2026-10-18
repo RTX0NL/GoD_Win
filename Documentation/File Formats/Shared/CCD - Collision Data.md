@@ -19,18 +19,46 @@ CCD is the collision detection mesh format used in Pokemon Colosseum and Pokemon
 
 ## Entry Table
 
-Each entry is 0x40 bytes and defines a collision region:
+Each entry is 0x40 bytes. Measured on all 284 collision files of the US Colosseum and XD discs:
 
 | Offset | Size | Type | Field | Notes |
 |--------|------|------|-------|-------|
-| 0x00 | 36 | - | Region metadata | Bounding box, flags, region type |
-| 0x24 | 4 | UInt32 | Triangle data pointer 1 | Offset to primary triangle list |
-| 0x28 | 4 | UInt32 | Triangle data pointer 2 | Offset to secondary triangle list |
-| 0x2C | 4 | UInt32 | Triangle data pointer 3 | Offset to additional triangle data |
-| 0x30 | 4 | UInt32 | Triangle data pointer 4 | Offset to additional triangle data |
-| 0x34 | 12 | - | Special region data | Pointers for warps, doors, PC zones, etc. |
+| 0x00 | 12 | Float32 ×3 | Translation | 0 in every file |
+| 0x0C | 12 | Float32 ×3 | Rotation | 0 in every file |
+| 0x18 | 12 | Float32 ×3 | Scale | 1, 1, 1 in every file |
+| 0x24 | 20 | UInt32 ×5 | Block pointers | One per slot; 0 = unused |
+| 0x38 | 8 | - | Not decoded | |
 
-Not all pointer fields are used by every entry. Unused pointers are set to 0.
+### Blocks
+
+A block pointer leads to a block of triangles:
+
+| Offset | Size | Type | Field |
+|--------|------|------|-------|
+| 0x00 | 4 | UInt32 | Triangle list offset |
+| 0x04 | 4 | UInt32 | Triangle count |
+
+Blocks in slots 0, 1, 2 and 4 continue with a uniform grid over their triangles, for 0x24 bytes in all:
+
+| Offset | Size | Type | Field |
+|--------|------|------|-------|
+| 0x08 | 4 | UInt32 | Grid cell table offset (8 bytes per cell) |
+| 0x0C | 4 | UInt32 | Triangle index list offset |
+| 0x10 | 4 | UInt16 ×2 | Grid columns, rows |
+| 0x14 | 8 | Float32 ×2 | Cell size (40 × 40 in the rooms checked) |
+| 0x1C | 8 | Float32 ×2 | Grid origin (X, Z) |
+
+Slot 3's blocks have no grid; their triangles follow the 8-byte header.
+
+What each slot is for is inferred from the triangles:
+
+| Slot | Holds | Evidence |
+|------|-------|----------|
+| 0 | Floors | Mostly upward-facing; surface types 0xFF00 and nearby |
+| 1 | Walls | Vertical; surface types 1–7 |
+| 2 | Trigger walls | The only slot whose interaction indexes aren't all 0 |
+| 3 | A short list of walls | No grid |
+| 4 | Walls | The same triangle counts as slot 1 |
 
 ## Triangle Data
 
