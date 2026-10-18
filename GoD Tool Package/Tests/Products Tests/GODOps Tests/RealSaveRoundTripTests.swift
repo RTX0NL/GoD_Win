@@ -31,7 +31,8 @@ import Colosseum
 
 final class RealSaveRoundTripTests: XCTestCase {
 
-    private let downloads = "/Users/stars/Downloads"
+    /// The folder holding the saves; GODDESS_SAVE_SAMPLES overrides it.
+    private let downloads = ProcessInfo.processInfo.environment["GODDESS_SAVE_SAMPLES"] ?? "/Users/stars/Downloads"
 
     private func loadGCIBody(_ filename: String) throws -> GoDData? {
         let path = "\(downloads)/\(filename)"

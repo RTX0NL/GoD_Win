@@ -86,6 +86,18 @@ public enum PlatformPath {
             : first + "\\" + components.joined(separator: "\\")
     }
 
+    /// Splits a list of paths held in one string — an environment variable,
+    /// say — the way the platform splits PATH: on `;` on Windows, where `:`
+    /// is part of every drive-qualified path, and on `:` elsewhere. Empty
+    /// entries are dropped.
+    public static func pathList(
+        _ list: String,
+        convention: PathConvention = .current
+    ) -> [String] {
+        let separator: Character = convention == .windows ? ";" : ":"
+        return list.split(separator: separator).map(String.init)
+    }
+
     /// Whether `path` is spelled the platform's way rather than logically: it
     /// names a drive (`C:`, `C:/…`, `C:\…`) or uses `\` separators. Logical
     /// paths, bare relative names included, never are.

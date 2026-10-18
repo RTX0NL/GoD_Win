@@ -13,8 +13,9 @@
 //       encoder didn't match Genius Sonority's, nothing downstream could.
 //    2. Parsing an archive and repacking it reproduces the original file.
 //
-//  Point the suite at other dumps with GODDESS_FSYS_CORPUS (colon-separated
-//  `<game>=<folder>` pairs, game being `colo` or `xd`).
+//  Point the suite at other dumps with GODDESS_FSYS_CORPUS: `<game>=<folder>`
+//  pairs, game being `colo` or `xd`, separated like PATH (`;` on Windows,
+//  `:` elsewhere).
 //
 
 import XCTest
@@ -41,7 +42,7 @@ final class FSYSRealCorpusFidelityTests: XCTestCase {
 
     private var corpora: [Corpus] {
         if let raw = ProcessInfo.processInfo.environment["GODDESS_FSYS_CORPUS"] {
-            return raw.split(separator: ":").compactMap { spec in
+            return PlatformPath.pathList(raw).compactMap { spec in
                 let parts = spec.split(separator: "=", maxSplits: 1).map(String.init)
                 guard parts.count == 2 else { return nil }
                 let game: GSGame? = parts[0] == "colo" ? .colosseum

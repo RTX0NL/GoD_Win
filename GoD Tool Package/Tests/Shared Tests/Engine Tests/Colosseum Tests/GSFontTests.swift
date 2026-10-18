@@ -9,7 +9,9 @@ import GeniusSonority
 /// parsed struct — no roundtrips.
 final class GSFontTests: XCTestCase {
 
-    private let samplesDir = "/Users/stars/Documents/Projects/GoD-Tool/scripts/XD project/Build/Unpacked/Assets/Text/Fonts"
+    /// GODDESS_FONT_SAMPLES overrides the folder of sample fonts.
+    private let samplesDir = ProcessInfo.processInfo.environment["GODDESS_FONT_SAMPLES"]
+        ?? "/Users/stars/Documents/Projects/GoD-Tool/scripts/XD project/Build/Unpacked/Assets/Text/Fonts"
 
     private func loadSampleData(_ name: String) -> GoDData? {
         let url = URL(fileURLWithPath: samplesDir).appendingPathComponent(name)

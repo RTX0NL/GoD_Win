@@ -19,7 +19,8 @@
 //
 //  Skips cleanly when no saves are present, so it is safe on a machine
 //  without them. Point it elsewhere with GODDESS_GCI_CORPUS
-//  (colon-separated folders, searched recursively).
+//  (folders, searched recursively, separated like PATH:
+//  `;` on Windows, `:` elsewhere).
 //
 
 import XCTest
@@ -33,7 +34,7 @@ final class GCIRealCorpusTests: XCTestCase {
 
     private var searchRoots: [String] {
         if let raw = ProcessInfo.processInfo.environment["GODDESS_GCI_CORPUS"] {
-            return raw.split(separator: ":").map(String.init)
+            return PlatformPath.pathList(raw)
         }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return [

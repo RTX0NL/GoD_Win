@@ -9,7 +9,8 @@
 //
 //  It skips cleanly when no dump is present, so it is safe to keep in the
 //  suite on a machine without ROMs. Point it elsewhere with
-//  GODDESS_NINTENDO_ARCHIVES (colon-separated folders, searched recursively).
+//  GODDESS_NINTENDO_ARCHIVES (folders, searched recursively, separated like PATH:
+//  `;` on Windows, `:` elsewhere).
 //
 
 import XCTest
@@ -21,7 +22,7 @@ final class NintendoArchiveRealCorpusTests: XCTestCase {
 
     private var searchRoots: [String] {
         if let raw = ProcessInfo.processInfo.environment["GODDESS_NINTENDO_ARCHIVES"] {
-            return raw.split(separator: ":").map(String.init)
+            return PlatformPath.pathList(raw)
         }
         return [
             "/Users/stars/Documents/Projects/GoD-Tool/scripts/PBR PAL project/Build/Unpacked/Assets/Archives",

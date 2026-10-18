@@ -63,6 +63,18 @@ final class PathConventionTests: XCTestCase {
         XCTAssertTrue(PlatformPath.isNativeSpelling("\\\\nas\\games", convention: .windows))
     }
 
+    /// A list of paths in one environment variable is split the way the
+    /// platform splits PATH. On Windows that can't be `:`, which every path
+    /// there contains.
+    func testPathListsSplitLikePATH() {
+        XCTAssertEqual(PlatformPath.pathList("/a/b:/c/d", convention: .posix), ["/a/b", "/c/d"])
+        XCTAssertEqual(
+            PlatformPath.pathList(#"C:\Dumps\XD;/D:/Dumps/Colo;;"#, convention: .windows),
+            [#"C:\Dumps\XD"#, "/D:/Dumps/Colo"]
+        )
+        XCTAssertEqual(PlatformPath.pathList("colo=C:\\a;xd=C:\\b", convention: .windows), ["colo=C:\\a", "xd=C:\\b"])
+    }
+
     /// A logical path with no drive is rooted on the current drive, which is
     /// what a leading separator means on Windows.
     func testDrivelessAbsolutePathsRootOnCurrentDrive() {

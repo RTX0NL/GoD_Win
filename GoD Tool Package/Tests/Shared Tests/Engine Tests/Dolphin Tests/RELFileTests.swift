@@ -21,7 +21,7 @@ final class RELFileTests: XCTestCase {
             "/Users/stars/Documents/Projects/GoD-Tool/scripts/Colo US project/Build/Unpacked/Data/Relocatable Modules",
         ]
         if let extra = ProcessInfo.processInfo.environment["GODDESS_REL_CORPUS"] {
-            paths += extra.split(separator: ":").map(String.init)
+            paths += PlatformPath.pathList(extra)
         }
         return paths
     }()

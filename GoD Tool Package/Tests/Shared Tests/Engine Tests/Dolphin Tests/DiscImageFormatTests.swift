@@ -139,7 +139,8 @@ final class DiscImageFormatTests: XCTestCase {
     // MARK: - Against a real ISO (if present)
 
     func testDetect_realColoISO() throws {
-        let path = "/Users/stars/Documents/Projects/GoD-Tool/scripts/Colo US.iso"
+        let path = ProcessInfo.processInfo.environment["GODDESS_COLO_ISO"]
+            ?? "/Users/stars/Documents/Projects/GoD-Tool/scripts/Colo US.iso"
         guard FileManager.default.fileExists(atPath: path),
               let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             throw XCTSkip("Colo US.iso not available")
