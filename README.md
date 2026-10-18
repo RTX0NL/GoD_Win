@@ -21,7 +21,7 @@ Pokémon Colosseum and Pokémon XD.
 | Area | Result |
 |---|---|
 | Build | `GODDESS.exe` builds with SwiftPM, both debug and release, including from a fresh clone of this repo with Git for Windows' default settings. |
-| Tests | 2,385 cases: 2,253 pass, 132 skip, **0 fail**, also from a fresh clone. |
+| Tests | 2,419 cases: 2,287 pass, 132 skip, **0 fail** (2026-10-18; the fresh-clone check was at 2,385 cases). |
 | Project setup + dump | Both games dump completely: 0 case collisions, CRLF-free text output, and per-archive file counts match the FSYS registries. |
 | Rebuild | Both games rebuild. `DolphinTool verify` reports no problems, and the rebuilt discs boot in Dolphin (Colosseum to the title screen, XD to the health-and-safety screen). |
 | Edit → rebuild | Edited title-screen textures in Colosseum. The rebuilt disc changed only the two archives that contain them, and the edits show in Dolphin. |
@@ -110,6 +110,12 @@ fork and haven't been sent upstream.
 | `7c10204` | **Unreferenced MSG strings between referenced ones are kept.** Colosseum's `common.rel` used to rebuild 60 bytes short (two Japanese debug strings in String Table 3); it now rebuilds byte for byte, as does XD's. All 379 real `.msg` files still round-trip. |
 | `8e62b74` | **Bulk Nintendo archive dump and build mirror folders.** Same-named archives in different folders (Battle Revolution's `hb/HomeButton2/` and `hb/HomeButton3/`) no longer overwrite each other: 19 of 19 archives rebuild byte for byte. |
 | `ffd5012` | **Battle Revolution (US) strings and 3D font.** Files whose bytes contradict their archive type take the type the content has: untyped `MESG` string tables become `.msg`, an `F3` font typed `fnt` becomes `.f3d`. The US string dump now works (table 1: 9,995 strings), and archives still rebuild byte for byte. |
+| `998ee07` | **DOL and REL builds stop on a chunk they can't rebuild.** A missing chunk file, or table CSV or struct JSON with a typo in it, used to drop the chunk with a warning: the section came out short, every later symbol moved, and the build reported success. Rows added to a table nothing counts, and artifacts their handler rejects, are errors too, instead of being dropped or replaced by the original bytes. |
+| `8fb9a24` | **Colosseum scripts: `goto` labels are checked.** A `goto` to an undeclared label trapped (taking the MCP server down) or compiled a jump to offset 0; it is now a parse error with the line, as is a label declared twice. |
+| `b4a4721` | **Each config and MCP call gets its own working directory.** `run_config` left the current directory at its `rootFolder`, so a later `run_operation` resolved `./` paths against it. Directories are now restored, `run_operation` takes an optional `rootFolder`, and MCP tool calls run one at a time. |
+| `f632708`, `2631c59` | A settings file that doesn't decode stops the run instead of silently dropping its settings (a missing one still falls back to the defaults, with a warning). An absolute `rootFolder` in a config is kept as written. |
+| `2aaf012` | UNC paths (`\\server\share\…`) map to `/UNC/server/share/…` instead of a folder on the current drive, and the `\\?\` prefix is dropped. |
+| `a64630a`, `cbc9b0d` | The CLI prints the same one-line error as the MCP server (`GODDESS_TRACE` gives the full one). Corpus tests split their path lists like `PATH`, so they find Windows dumps. |
 | `1e40b45` | Four tests left stale by intentional upstream changes are updated. One real codec gap (rebuilding a truncated MSG control code byte for byte) is kept as an explicit skip. |
 
 ## Known issues
@@ -204,10 +210,9 @@ Multiple arguments are processed in order.
 GODDESS "Pokemon XD.iso"
 ```
 
-Raw `.iso`/`.gcm` and `.ciso` are fully supported (CISO is converted to raw
-ISO automatically). NKit GameCube images are partially supported
-(trailing-truncated only); NKit Wii and `.wia`/`.rvz` are recognised but not
-yet decodable — convert those to a raw `.iso` first. The game is auto-detected
+Raw `.iso`/`.gcm`, `.ciso`, `.wbfs`, `.rvz` and GameCube NKit images are
+supported; containers are decoded to a raw ISO first. `.wia` works when it is
+uncompressed or zstd-compressed. Wii NKit isn't supported. The game is auto-detected
 and a project folder is created next to the input:
 
 ```
@@ -302,49 +307,53 @@ is left untouched so the two can be diffed to validate the rebuild.
 
 ### Available operations
 
-These operations are fully implemented and round-trip end to end:
+All 47 operations run end to end. Every operation's JSON fields are documented
+in the [GODDESS Configuration Reference](Documentation/GODDESS%20Configuration%20Reference.md),
+and `describe_operation` serves the same text over MCP.
 
 | Group | Operations | Purpose |
 |---|---|---|
 | GameCube disc | `gamecubeDump`, `gamecubeBuild` | Unpack / rebuild a GameCube ISO (boot, FST, DOL, apploader, filesystem). |
-| Wii disc | `wiiDump`, `wiiBuild` | Decrypt / re-encrypt Wii partitions (AES-128-CBC, hash tree). Rebuild is functionally correct but fakesigned — valid for Dolphin/homebrew loaders, not retail-signed. |
-| CISO images | `cisoDump`, `cisoBuild` | Compressed disc image ↔ raw ISO. |
-| Colo/XD assets | `coloXDDump`, `coloXDBuild` | FSYS archives ↔ organized asset folders: fonts, flash menus, messages (Colo/XD), textures, audio. Re-packs (re-compresses) on build. |
-| DOL executable | `dolDisassembly`, `dolAssembly` | `main.dol` ↔ PowerPC assembly. Instruction round-trip is byte-exact. |
-| GCI saves | `gciDump`, `gciBuild` | Memory-card save envelope ↔ header manifest + region binaries (byte-identical). |
-
-Every operation's JSON fields are documented in the
-[GODDESS Configuration Reference](Documentation/GODDESS%20Configuration%20Reference.md)
-(which catalogs the full config surface, including operations still in progress
-below).
+| Wii disc | `wiiDump`, `wiiBuild` | Decrypt / re-encrypt Wii partitions (AES-128-CBC, hash tree). The rebuild is fakesigned: valid for Dolphin and homebrew loaders, not retail-signed. |
+| Disc containers | `cisoDump`, `cisoBuild`, `nkitDump`, `nkitBuild`, `rvzDump` | CISO and GameCube NKit ↔ raw ISO; RVZ/WIA → raw ISO. Project setup also decodes WBFS, WIA and RVZ input directly. |
+| Colo/XD assets | `coloXDDump`, `coloXDBuild` | FSYS archives ↔ organized asset folders: textures (PNG), animated textures, fonts, flash menus, messages, streamed audio (WAV), and Colosseum scripts. Re-packs and re-compresses on build. |
+| Battle Revolution | `pbrDump`, `pbrBuild`, `pbrFontDump`/`pbrFontsDump`, `pbrFontBuild`/`pbrFontsBuild`, `pbrStringsDump`, `pbrStringsBuild` | PBR archives, the common and deck tables (CSV), fonts (PNG, and SVG for the 3D font) and strings (JSON). |
+| DOL executable | `dolDisassembly`, `dolAssembly` | `main.dol` ↔ PowerPC assembly, with typed data tables as CSV/JSON. Instruction round-trip is byte-exact. |
+| RELs | `relDisassembly`, `relAssembly`, `commonRelDump`, `commonRelBuild`, `relsDump`, `relsBuild` | `common.rel` and the map RELs ↔ assembly plus typed CSV tables (Pokémon, moves, trainers, NPCs, warps, …). |
+| Saves | `gciDump`, `gciBuild`, `xdSaveDump`, `xdSaveBuild`, `coloSaveDump`, `coloSaveBuild`, `saveSectionsDump`, `saveSectionsBuild` | Memory-card save envelope ↔ header manifest + region binaries, and decrypted Colosseum/XD save slots ↔ typed sections (JSON) that rebuild into a save the game loads. |
+| Nintendo archives | `nintendoArchiveDump`, `nintendoArchiveBuild`, `nintendoArchivesDump`, `nintendoArchivesBuild` | U8 and NARC ↔ folders. |
+| Compression | `compress`, `decompress`, `compressFiles`, `decompressFiles` | Yaz0, Yay0 and LZSS. |
+| Patches | `createPatch`, `applyPatch` | UPS, IPS, BPS and xdelta. |
+| Conversion | `convert` | One file or struct table to or from its editable form (`decodeFile`, `encodeFile`, `decodeStruct`, `decodeStructTable`, …). |
+| Programs | `runExecutable` | Run an external program as a config step. |
 
 ### Partial support
 
-These run but don't yet round-trip fully — dumping works, rebuilding is
-incomplete:
+These run, with a limit:
 
-- **Save editing** (`xdSaveDump`/`xdSaveBuild`, `coloSaveDump`/`coloSaveBuild`)
-  — decryption and per-slot dumps are solid. On rebuild, XD applies edits to
-  the four struct-backed sections (Config, Trainer, PC box, Daycare) via their
-  JSON sidecars but ignores `.bin` sub-block edits; Colosseum currently
-  re-encrypts the raw slot verbatim, so only whole-slot edits survive.
-- **Animated textures (ATX)** within `coloXDDump`/`coloXDBuild` — single-sprite
-  frames round-trip; frames with multiple sprites are skipped on dump and
-  rejected on build.
+- **Animated textures (ATX):** frames with one sprite round-trip; frames with
+  several sprites are skipped on dump and rejected on build.
+- **WIA:** only uncompressed and zstd WIA decode. Dolphin's usual WIA setting
+  (LZMA) is rejected with an error; RVZ always works.
+- **NKit:** GameCube only. Wii NKit images are rejected.
+- **XD scripts:** parsed, but there is no dump or build operation yet
+  (Colosseum scripts have both).
+- **Rebuilds** are deterministic but not byte-identical to the retail disc:
+  textures are re-encoded from PNG, FSYS group IDs that aren't in the TOC
+  reset to 0, and files are packed tightly instead of at retail offsets.
 
-### Not yet operational
+### Not supported
 
-Recognised by the config/dispatch layer but not functional — listed for
-transparency:
+These files come out of a dump unchanged, with no converter:
 
-- **REL disassembly & reassembly** (`relDisassembly`/`relAssembly`,
-  `commonRelDump`/`commonRelBuild`, `mapRelDump`/`mapRelsDump`/`mapRelBuild`/`mapRelsBuild`)
-  — the underlying `RELFile` parse/serialize core is complete and tested, but
-  the operations are gated off pending the disassembly↔reassembly workflow.
-- **Battle Revolution** (`pbrDump`) — stub only; no PBR asset extraction or
-  rebuild yet.
-- **NKit Wii / WIA / RVZ disc images** — detected but not decodable (no
-  bzip2/lzma/zstd decompressor); convert to raw ISO first.
+- 3D models, skeletons and animations (HAL `.dat`, `.pkx`, `.wzx`), and
+  Battle Revolution's `sdr`/`odr`/`mdr` models. The
+  [Blender addon](https://github.com/StarsMmd/Blender-Addon-Gamecube-Models)
+  imports the Colosseum and XD ones.
+- Collision (`.col`, `.ccd`), cameras (`.cam`) and particles (`.gpt1`).
+- MusyX audio (`.samp`, `.sdir`, `.pool`, `.proj`): all of Colosseum's music
+  and its sound effects.
+- THP video stays `.thp` (the two halves are joined into a playable file).
 
 ### 5. Run as an MCP server
 
