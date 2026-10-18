@@ -107,6 +107,8 @@ fork and haven't been sent upstream.
 | `c13ffea` | Invalid folder paths in config JSON, and relative MCP path arguments, return an error instead of crashing the process. |
 | `8df9261` | MCP tool errors are one clean `Error: …` line, without a source trace and with native Windows paths. |
 | `c74bc09` | DOL disassembly manifests use sorted JSON keys, so two dumps of the same disc are identical. |
+| `7c10204` | **Unreferenced MSG strings between referenced ones are kept.** Colosseum's `common.rel` used to rebuild 60 bytes short (two Japanese debug strings in String Table 3); it now rebuilds byte for byte, as does XD's. All 379 real `.msg` files still round-trip. |
+| `8e62b74` | **Bulk Nintendo archive dump and build mirror folders.** Same-named archives in different folders (Battle Revolution's `hb/HomeButton2/` and `hb/HomeButton3/`) no longer overwrite each other: 19 of 19 archives rebuild byte for byte. |
 | `ffd5012` | **Battle Revolution (US) strings and 3D font.** Files whose bytes contradict their archive type take the type the content has: untyped `MESG` string tables become `.msg`, an `F3` font typed `fnt` becomes `.f3d`. The US string dump now works (table 1: 9,995 strings), and archives still rebuild byte for byte. |
 | `1e40b45` | Four tests left stale by intentional upstream changes are updated. One real codec gap (rebuilding a truncated MSG control code byte for byte) is kept as an explicit skip. |
 
@@ -123,13 +125,6 @@ These come from upstream and fail the same way on every platform.
   that says WIA/RVZ aren't decodable at all is out of date.
 - **Colosseum audio (MusyX) has no WAV export.**
 - **XD scripts have no decompile operation** (Colosseum's do).
-- **`commonRelBuild` drops unreferenced strings.** Colosseum's `common.rel`
-  rebuilds 60 bytes short: an embedded string table holds two strings no
-  entry points at (Japanese debug leftovers), and the message encoder writes
-  only referenced strings. The map RELs are unaffected.
-- **Recursive `nintendoArchivesDump` overwrites same-named archives** from
-  different folders (for example `homeBtn.arc` in both `HomeButton2/` and
-  `HomeButton3/`). The single-archive operations are fine.
 - **Windows: `runExecutable` can't pass an empty-string argument.**
   Foundation's `Process` drops it when it builds the command line.
 - **PBR 3D fonts are re-triangulated on build.** `.f3d` keeps only glyph
