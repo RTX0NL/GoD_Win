@@ -245,6 +245,19 @@ unpacked disc. Nested operations:
   | `engines` | [path]? | Engine folders whose enums resolve a signature's `enumRef` parameter types, consulted in order (first match wins). Absent = just `gameEngine`, which carries every enum its own signatures currently name. |
 - `dumpColoScript` — single-file variant (`scdFile` in place of
   `scriptsFolder`, same remaining fields).
+- `dumpXDDecks` — XD only. Every trainer deck (`DeckData_*.bin`) under a
+  folder to a folder per deck: `Trainers.csv`, `Pokemon.csv`, `AI.csv` (or
+  `ShadowPokemon.csv` for `DeckData_DarkPokemon`), `Strings.json` with the
+  trainer tag strings, and `<deck>.deck.json`, which records the section
+  order and header words. Species, items, moves and types come out by name.
+  A section that wouldn't rebuild byte for byte from text is kept as
+  `<n>-<tag>.bin`; on the US disc every section is text.
+  | Field | Type | Meaning |
+  |---|---|---|
+  | `decksFolder` | path | Input folder of `DeckData_*.bin` files. |
+  | `outputFolder` | path | Output folder; each deck gets a subfolder. |
+  | `overwrite` | bool | Replace existing output. |
+  | `engines` | [path] | Engine folders whose structs (`DeckTrainer`, `DeckTrainerPokemon`, `DeckTrainerAI`, `DeckShadowPokemon`) and enums read the records, in order: the XD engine first. |
 
 **`coloXDBuild`** *(container)* — rebuild Genius Sonority assets and repack.
 Nested operations:
@@ -290,6 +303,17 @@ Nested operations:
   | `engines` | [path]? | Engine folders resolving `EnumName.case` constants in the source, in order. A constant naming an enum none of them declares fails the build rather than compiling to a guess. |
 - `buildColoScript` — single-file variant (`sourceFile`, `outputFile`,
   `overwrite`, `gameEngine`, `engines`).
+- `buildXDDecks` — XD only. Rebuild every deck folder `dumpXDDecks` wrote.
+  A CSV's row count is its section's record count, so rows can be added or
+  removed. A trainer's `stringID` is the byte offset of its tag in
+  `Strings.json`; a string that changes length would move the ones after
+  it, so the build stops and names it instead. Run it before the FSYS pack.
+  | Field | Type | Meaning |
+  |---|---|---|
+  | `sourceFolder` | path | The folder `dumpXDDecks` wrote. |
+  | `outputFolder` | path | Where the rebuilt `DeckData_*.bin` files go (the unpacked `Data/Decks` folder). |
+  | `overwrite` | bool | Replace existing files. |
+  | `engines` | [path] | As for `dumpXDDecks`. |
 
 ### Battle Revolution
 

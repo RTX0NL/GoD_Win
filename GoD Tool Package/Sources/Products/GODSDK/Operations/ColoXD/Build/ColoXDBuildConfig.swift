@@ -96,6 +96,12 @@ extension ColoXD {
                 gameEngine: Folder,
                 engines: [Folder]? = nil
             )
+            case buildXDDecks(
+                sourceFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool,
+                engines: [Folder]
+            )
         }
 
         let operations: [OperationConfig<Operations>]

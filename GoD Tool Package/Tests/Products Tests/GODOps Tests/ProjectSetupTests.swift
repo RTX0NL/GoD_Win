@@ -408,6 +408,44 @@ final class ProjectSetupTests: XCTestCase {
         XCTAssertNil(fst.inspectFile(at: project.folder("Config").file("Dump-Scripts-Config.json")))
     }
 
+    /// XD trainer decks get a dump and a build step, disabled like the other
+    /// asset steps, reading and writing where the FSYS unpack puts them.
+    func testXDConfigsCarryDisabledDeckSteps() throws {
+        let (fst, project) = try runSetup(gameID: PokemonXD.gameIDUS)
+        let dump = try decodeConfig(project.folder("Config").file("Dump-Config.json"), in: fst)
+        let dumpSteps = dump.operations.flatMap { entry -> [OperationConfig<ColoXD.DumpConfig.Operations>] in
+            guard case let .coloXDDump(config) = entry.operation else { return [] }
+            return config.operations.filter { if case .dumpXDDecks = $0.operation { return true }; return false }
+        }
+        guard case let .dumpXDDecks(decksFolder, outputFolder, _, engines)? = dumpSteps.first?.operation else {
+            return XCTFail("Expected a dumpXDDecks step")
+        }
+        XCTAssertEqual(dumpSteps.first?.enabled, .no)
+        XCTAssertEqual(decksFolder, Folder("./Build/Unpacked/Data/Decks"))
+        XCTAssertEqual(outputFolder, Folder("./Source/Data/Decks"))
+        XCTAssertEqual(engines.first, Folder("./Engines/XD Engine"), "the XD engine's structs come first")
+
+        let build = try decodeConfig(project.folder("Config").file("Build-Config.json"), in: fst)
+        let buildSteps = build.operations.flatMap { entry -> [OperationConfig<ColoXD.BuildConfig.Operations>] in
+            guard case let .coloXDBuild(config) = entry.operation else { return [] }
+            return config.operations.filter { if case .buildXDDecks = $0.operation { return true }; return false }
+        }
+        guard case let .buildXDDecks(sourceFolder, buildOutput, _, _)? = buildSteps.first?.operation else {
+            return XCTFail("Expected a buildXDDecks step")
+        }
+        XCTAssertEqual(sourceFolder, Folder("./Source/Data/Decks"))
+        XCTAssertEqual(buildOutput, Folder("./Build/Unpacked/Data/Decks"))
+    }
+
+    func testColosseumConfigsCarryNoDeckSteps() throws {
+        let (fst, project) = try runSetup(gameID: PokemonColosseum.gameIDUS)
+        let dump = try decodeConfig(project.folder("Config").file("Dump-Config.json"), in: fst)
+        for entry in dump.operations {
+            guard case let .coloXDDump(config) = entry.operation else { continue }
+            XCTAssertFalse(config.operations.contains { if case .dumpXDDecks = $0.operation { return true }; return false })
+        }
+    }
+
     /// The standalone configs are the runnable half: enabled, overwriting, and
     /// each with a launcher of its own.
     func testColosseumProjectShipsStandaloneScriptConfigs() throws {

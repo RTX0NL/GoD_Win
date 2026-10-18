@@ -535,6 +535,10 @@ enum Project {
             // Disassembled source for common.rel — sits alongside the
             // DOL disassembly output under /Source/Code.
             let commonRelSourceFolder = sourceFolder.folder("Code").folder("common_rel")
+            // FSYS unpack puts XD's trainer decks (`DeckData_*.bin`) here.
+            let decksFolder = unpackedFolder.folder("Data").folder("Decks")
+            // One folder of CSVs per deck.
+            let decksSourceFolder = sourceFolder.folder("Data").folder("Decks")
             // Every other REL — maps, menu modules, tableres2 — is routed by
             // the game engine's REL route table. Its source lands under here
             // at the REL's own unpacked path, so the two trees mirror.
@@ -584,6 +588,19 @@ enum Project {
                     ), enabled: .no),
                 ]
             )
+            // Only XD has `DeckData_*.bin`; Colosseum's trainers are tables
+            // in common.rel, which the commonRel steps cover.
+            .conditionalAppend(
+                profile?.family == .galeOfDarkness,
+                contents: [
+                    OperationConfig(operation: .buildXDDecks(
+                        sourceFolder: decksSourceFolder.prefixed("."),
+                        outputFolder: decksFolder.prefixed("."),
+                        overwrite: true,
+                        engines: typedDataEngines
+                    ), enabled: .no),
+                ]
+            )
 
             let assetDumpSteps: [OperationConfig<ColoXD.DumpConfig.Operations>] = [
                 OperationConfig(operation: .dumpFlashMenus(
@@ -617,6 +634,17 @@ enum Project {
                         overwrite: false,
                         language: .python,
                         gameEngine: gameEngineFolder.prefixed(".")
+                    ), enabled: .no),
+                ]
+            )
+            .conditionalAppend(
+                profile?.family == .galeOfDarkness,
+                contents: [
+                    OperationConfig(operation: .dumpXDDecks(
+                        decksFolder: decksFolder.prefixed("."),
+                        outputFolder: decksSourceFolder.prefixed("."),
+                        overwrite: false,
+                        engines: typedDataEngines
                     ), enabled: .no),
                 ]
             )

@@ -154,6 +154,12 @@ extension ColoXD {
                     gameEngine: gameEngine, engines: engines,
                     fileSystem: fileSystem, logger: logger
                 )
+
+            case let .buildXDDecks(sourceFolder, outputFolder, overwrite, engines):
+                try buildXDDecks(
+                    in: sourceFolder, outputFolder: outputFolder, overwrite: overwrite,
+                    engines: engines, fileSystem: fileSystem, logger: logger
+                )
             }
         }
     }
