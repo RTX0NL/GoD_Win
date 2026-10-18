@@ -437,6 +437,23 @@ final class ProjectSetupTests: XCTestCase {
         XCTAssertEqual(buildOutput, Folder("./Build/Unpacked/Data/Decks"))
     }
 
+    /// XD scripts decompile but don't compile, so the dump config carries a
+    /// disabled decompile step and the build config nothing for scripts.
+    func testXDDumpConfigCarriesADisabledDecompileStep() throws {
+        let (fst, project) = try runSetup(gameID: PokemonXD.gameIDUS)
+        let dump = try decodeConfig(project.folder("Config").file("Dump-Config.json"), in: fst)
+        let steps = dump.operations.flatMap { entry -> [OperationConfig<ColoXD.DumpConfig.Operations>] in
+            guard case let .coloXDDump(config) = entry.operation else { return [] }
+            return config.operations.filter { if case .dumpXDScripts = $0.operation { return true }; return false }
+        }
+        guard case let .dumpXDScripts(scriptsFolder, outputFolder, _)? = steps.first?.operation else {
+            return XCTFail("Expected a dumpXDScripts step")
+        }
+        XCTAssertEqual(steps.first?.enabled, .no)
+        XCTAssertEqual(scriptsFolder, Folder("./Build/Unpacked/Assets/Scripts"))
+        XCTAssertEqual(outputFolder, Folder("./Source/Scripts"))
+    }
+
     func testColosseumConfigsCarryNoDeckSteps() throws {
         let (fst, project) = try runSetup(gameID: PokemonColosseum.gameIDUS)
         let dump = try decodeConfig(project.folder("Config").file("Dump-Config.json"), in: fst)

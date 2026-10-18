@@ -149,6 +149,12 @@ extension ColoXD {
                     fileSystem: fileSystem, logger: logger
                 )
 
+            case let .dumpXDScripts(scriptsFolder, outputFolder, overwrite):
+                try dumpXDScripts(
+                    in: scriptsFolder, outputFolder: outputFolder, overwrite: overwrite,
+                    fileSystem: fileSystem, logger: logger
+                )
+
             case let .dumpXDDecks(decksFolder, outputFolder, overwrite, engines):
                 try dumpXDDecks(
                     in: decksFolder, outputFolder: outputFolder, overwrite: overwrite,

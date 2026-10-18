@@ -574,9 +574,9 @@ enum Project {
                     overwrite: true
                 ), enabled: .no),
             ]
-            // Only Colosseum: XD's `.scd` dialect has a parser and an opcode
-            // table but no emitter, compiler or operation yet, so an XD
-            // project gets no script step rather than one that always throws.
+            // Only Colosseum: XD's `.scd` dialect has a decompiler but no
+            // compiler, so an XD project gets no script build step rather
+            // than one that always throws. Its dump step is with the decks.
             .conditionalAppend(
                 profile?.family == .colosseum,
                 contents: [
@@ -640,6 +640,13 @@ enum Project {
             .conditionalAppend(
                 profile?.family == .galeOfDarkness,
                 contents: [
+                    // Decompile only: XD's dialect has no compiler yet, so
+                    // there is no matching build step.
+                    OperationConfig(operation: .dumpXDScripts(
+                        scriptsFolder: scriptsFolder.prefixed("."),
+                        outputFolder: scriptsSourceFolder.prefixed("."),
+                        overwrite: false
+                    ), enabled: .no),
                     OperationConfig(operation: .dumpXDDecks(
                         decksFolder: decksFolder.prefixed("."),
                         outputFolder: decksSourceFolder.prefixed("."),

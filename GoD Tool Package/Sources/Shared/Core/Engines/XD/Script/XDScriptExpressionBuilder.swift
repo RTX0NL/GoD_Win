@@ -13,6 +13,8 @@ public indirect enum XDExpr {
     case call(Int, [XDExpr], String?)                   // script function call
     case callStandard(Int, Int, [XDExpr])                // classID, methodID, args
     case variableAssignment(XDExpr, XDExpr)
+    /// `variable.vx = value` (dimension 0 = x, 1 = y, 2 = z).
+    case vectorAssignment(XDVarRef, Int, XDExpr)
     case yield(XDExpr)
     case returnVoid
     case returnResult(XDExpr)
@@ -173,11 +175,13 @@ public struct XDExpressionBuilder {
             case .setVariable:
                 let varRef = XDVarRef(level: inst.level, index: inst.parameter)
                 let value = safePop(&stack)
-                stack.append(.variableAssignment(.variable(varRef), value))
+                expressions.append(.variableAssignment(.variable(varRef), value))
 
             case .setVector:
-                // upper nibble = dimension (0=x, 1=y, 2=z), lower = level
-                break // TODO: vector component assignment
+                // Upper nibble = dimension (0 = x, 1 = y, 2 = z), lower = level.
+                let varRef = XDVarRef(level: inst.level, index: inst.parameter)
+                let value = safePop(&stack)
+                expressions.append(.vectorAssignment(varRef, inst.subOpCodeUpper, value))
 
             case .pop:
                 // Automatically consumed by call/callStandard lookahead — skip
@@ -195,17 +199,19 @@ public struct XDExpressionBuilder {
                     params.append(safePop(&stack))
                 }
                 params.reverse()
-                stack.append(.call(funcAddr, params, funcEntry?.name))
+                expressions.append(.call(funcAddr, params, funcEntry?.name))
 
                 // Skip the pop instruction we consumed
                 if paramCount > 0 { i += 1 }
 
             case .returnOp:
-                // Check if top of stack is an assignment to arg0
-                if let top = stack.last,
-                   case .variableAssignment(.variable(let v), let value) = top,
+                // `return x` compiles to an assignment to arg0 just before
+                // the return.
+                flushStatements(&stack, into: &expressions)
+                if let last = expressions.last,
+                   case .variableAssignment(.variable(let v), let value) = last,
                    v.isLocal && v.index == 0 {
-                    stack.removeLast()
+                    expressions.removeLast()
                     expressions.append(.returnResult(value))
                 } else {
                     flushStatements(&stack, into: &expressions)
@@ -224,7 +230,7 @@ public struct XDExpressionBuilder {
                     params.append(safePop(&stack))
                 }
                 params.reverse()
-                stack.append(.callStandard(classID, methodID, params))
+                expressions.append(.callStandard(classID, methodID, params))
 
                 // Skip the pop instruction we consumed
                 if paramCount > 0 { i += 1 }
@@ -269,11 +275,18 @@ public struct XDExpressionBuilder {
         return max(0, next.subOpCode)
     }
 
+    // Calls and assignments are appended to `expressions` as they run: a
+    // call's return value goes to the `result` register, not the stack, and
+    // an assignment leaves nothing behind, so the stack only ever holds
+    // operands. Calls used to stay on the stack, where a later operator took
+    // one as its operand: a value pushed before the call then printed as a
+    // stray statement and the comparison read the call instead of it.
     private func flushStatements(_ stack: inout [XDExpr], into expressions: inout [XDExpr]) {
-        // Move statement-like expressions from stack to expression list
-        while let expr = stack.popLast() {
-            expressions.append(expr)
-        }
+        // Whatever is still on the stack ran in the order it was pushed, so
+        // it is emitted in that order. Popping it off reversed every run of
+        // statements that ended at a jump, a label or a return.
+        expressions.append(contentsOf: stack)
+        stack.removeAll()
     }
 }
 
@@ -288,14 +301,78 @@ public struct XDExpressionCompound {
         result = compoundIfStatements(result)
         result = compoundWhileLoops(result)
         result = compoundElseStatements(result)
+        result = compoundInfiniteLoops(result)
+        return removeUnusedLabels(result, used: Self.jumpTargets(in: result))
+    }
+
+    /// `L: body; goto L` with nothing else jumping to `L` is `while true`.
+    /// Event loops — run, yield a frame, go round — are mostly this shape.
+    private func compoundInfiniteLoops(_ exprs: [XDExpr]) -> [XDExpr] {
+        var result = [XDExpr]()
+        var i = 0
+        while i < exprs.count {
+            if case .location(let label) = exprs[i],
+               let end = exprs[(i + 1)...].firstIndex(where: { if case .jump(label) = $0 { return true }; return false }) {
+                let body = Array(exprs[(i + 1) ..< end])
+                let elsewhere = Self.jumpTargets(in: body) + Self.jumpTargets(in: Array(exprs[(end + 1)...]))
+                    + Self.jumpTargets(in: Array(exprs[..<i]))
+                if !elsewhere.contains(label) {
+                    result.append(.whileLoop(.constant(.integer(1)), compoundInfiniteLoops(body)))
+                    i = end + 1
+                    continue
+                }
+            }
+            result.append(Self.mapBodies(exprs[i], compoundInfiniteLoops))
+            i += 1
+        }
         return result
+    }
+
+    /// Labels the compounding left behind that no remaining jump targets.
+    private func removeUnusedLabels(_ exprs: [XDExpr], used: [Int]) -> [XDExpr] {
+        exprs.compactMap { expr in
+            if case .location(let label) = expr, !used.contains(label) { return nil }
+            return Self.mapBodies(expr) { removeUnusedLabels($0, used: used) }
+        }
+    }
+
+    /// Every jump target in `exprs`, nested bodies included.
+    static func jumpTargets(in exprs: [XDExpr]) -> [Int] {
+        exprs.flatMap { expr -> [Int] in
+            switch expr {
+            case .jump(let target), .jumpTrue(_, let target), .jumpFalse(_, let target):
+                return [target]
+            case .ifStatement(let branches):
+                return branches.flatMap { jumpTargets(in: $0.1) }
+            case .whileLoop(_, let body):
+                return jumpTargets(in: body)
+            default:
+                return []
+            }
+        }
+    }
+
+    /// `expr` with `transform` applied to the statement lists inside it.
+    private static func mapBodies(_ expr: XDExpr, _ transform: ([XDExpr]) -> [XDExpr]) -> XDExpr {
+        switch expr {
+        case .ifStatement(let branches):
+            return .ifStatement(branches.map { ($0.0, transform($0.1)) })
+        case .whileLoop(let condition, let body):
+            return .whileLoop(condition, transform(body))
+        default:
+            return expr
+        }
     }
 
     private func compoundIfStatements(_ exprs: [XDExpr]) -> [XDExpr] {
         var result = [XDExpr]()
         var i = 0
         while i < exprs.count {
-            if case .jumpFalse(let condition, let target) = exprs[i] {
+            // Only a jump to a label later in this same list is an `if`. One
+            // whose target is behind it, or outside this block, used to
+            // swallow everything after it into the body; it stays a goto.
+            if case .jumpFalse(let condition, let target) = exprs[i],
+               exprs[(i + 1)...].contains(where: { if case .location(target) = $0 { return true }; return false }) {
                 var body = [XDExpr]()
                 i += 1
                 while i < exprs.count {
@@ -337,43 +414,49 @@ public struct XDExpressionCompound {
         return result
     }
 
-    private func compoundElseStatements(_ exprs: [XDExpr]) -> [XDExpr] {
+    /// `if c { A; goto t }; B; t:` is `if c { A } else { B }`.
+    ///
+    /// `end` is the label the end of `exprs` falls through to, when that is
+    /// known: inside a branch of such an `if`, the jump to `t` that ends a
+    /// nested `if` skips only to where the branch would end anyway, so the
+    /// nested one is an `if`/`else` too, with the rest of the branch as its
+    /// else. That is what turns a run of `if … { …; goto END }` into an
+    /// `if`/`else if` chain instead of a list of gotos. A nested `if` that
+    /// isn't last in its list doesn't end where its parent does, so it only
+    /// inherits `end` through that rule, never directly.
+    private func compoundElseStatements(_ exprs: [XDExpr], end: Int? = nil) -> [XDExpr] {
         var result = [XDExpr]()
         var i = 0
         while i < exprs.count {
-            if case .ifStatement(var branches) = exprs[i] {
-                if let lastBranch = branches.last,
-                   let lastInBody = lastBranch.1.last,
-                   case .jump(let jumpTarget) = lastInBody {
-                    var elseBody = [XDExpr]()
-                    var j = i + 1
-                    var foundEnd = false
-                    while j < exprs.count {
-                        if case .location(let loc) = exprs[j], loc == jumpTarget {
-                            foundEnd = true
-                            break
-                        }
-                        elseBody.append(exprs[j])
-                        j += 1
-                    }
-                    if foundEnd && !elseBody.isEmpty {
-                        var thenBody = Array(lastBranch.1.dropLast())
-                        thenBody = compoundElseStatements(thenBody)
-                        elseBody = compoundElseStatements(elseBody)
-                        branches[branches.count - 1] = (lastBranch.0, thenBody)
-                        branches.append((.constant(.integer(1)), elseBody))
-                        result.append(.ifStatement(branches))
-                        i = j + 1
-                        continue
-                    }
-                }
-                let compounded = branches.map { (cond, body) in
-                    (cond, compoundElseStatements(body))
-                }
-                result.append(.ifStatement(compounded))
-            } else {
-                result.append(exprs[i])
+            guard case .ifStatement(var branches) = exprs[i] else {
+                result.append(Self.mapBodies(exprs[i]) { compoundElseStatements($0) })
+                i += 1
+                continue
             }
+            let isLast = i == exprs.count - 1
+            if let lastBranch = branches.last,
+               let lastInBody = lastBranch.1.last,
+               case .jump(let target) = lastInBody {
+                let labelIndex = exprs[(i + 1)...].firstIndex { if case .location(target) = $0 { return true }; return false }
+                if labelIndex != nil || target == end {
+                    let elseEnd = labelIndex ?? exprs.count
+                    let thenBody = compoundElseStatements(Array(lastBranch.1.dropLast()), end: target)
+                    let elseBody = compoundElseStatements(Array(exprs[(i + 1) ..< elseEnd]), end: target)
+                    branches[branches.count - 1] = (lastBranch.0, thenBody)
+                    if case .ifStatement(let nested)? = elseBody.first, elseBody.count == 1 {
+                        branches += nested          // else { if … } reads as else if
+                    } else if !elseBody.isEmpty {
+                        branches.append((.constant(.integer(1)), elseBody))
+                    }
+                    result.append(.ifStatement(branches))
+                    // The label stays: a goto the chain didn't absorb may
+                    // still use it, and unused labels are dropped at the end.
+                    i = elseEnd
+                    continue
+                }
+            }
+            let inherited = isLast ? end : nil
+            result.append(.ifStatement(branches.map { ($0.0, compoundElseStatements($0.1, end: inherited)) }))
             i += 1
         }
         return result
@@ -387,17 +470,21 @@ public struct XDExprFormatter {
     public let classNames: [Int: String]
     public let methodNames: [Int: [Int: String]]  // classID → methodID → name
     public let enums: [String: Enum]
+    /// Script function names by code offset, for calls between them.
+    public let functionNames: [Int: String]
     public let indent: String
 
     public init(
         classNames: [Int: String] = [:],
         methodNames: [Int: [Int: String]] = [:],
         enums: [String: Enum] = [:],
+        functionNames: [Int: String] = [:],
         indent: String = "    "
     ) {
         self.classNames = classNames
         self.methodNames = methodNames
         self.enums = enums
+        self.functionNames = functionNames
         self.indent = indent
     }
 
@@ -417,9 +504,9 @@ public struct XDExprFormatter {
             switch expr {
             case .variableAssignment(let target, let value):
                 lines.append("\(prefix)\(formatExpr(target)) = \(formatExpr(value))")
-            case .call(_, let args, let name):
+            case .call(let address, let args, let name):
                 let argStr = args.map { formatExpr($0) }.joined(separator: ", ")
-                lines.append("\(prefix)\(name ?? "function")(\(argStr))")
+                lines.append("\(prefix)\(functionName(address, name))(\(argStr))")
             case .callStandard(let classID, let methodID, let args):
                 let className = classNames[classID] ?? "Class\(classID)"
                 let methodName = methodNames[classID]?[methodID] ?? "method\(methodID)"
@@ -444,10 +531,26 @@ public struct XDExprFormatter {
                 }
                 lines.append("\(prefix)}")
             case .whileLoop(let condition, let body):
-                lines.append("\(prefix)while \(formatExpr(condition)) {")
+                let test = { if case .constant(.integer(1)) = condition { return "true" }; return formatExpr(condition) }()
+                lines.append("\(prefix)while \(test) {")
                 lines += formatExprs(body, depth: depth + 1)
                 lines.append("\(prefix)}")
-            case .exit, .nop, .location, .jump, .setLine:
+            case .vectorAssignment(let variable, let dimension, let value):
+                lines.append("\(prefix)\(variable.text).\(Self.vectorComponent(dimension)) = \(formatExpr(value))")
+            // Jumps the compounder couldn't fold into an if or a while stay
+            // as gotos and labels. Dropping them printed code that read as
+            // straight-line when it isn't.
+            case .location(let offset):
+                lines.append("\(Self.label(offset)):")
+            case .jump(let target):
+                lines.append("\(prefix)goto \(Self.label(target))")
+            case .jumpFalse(let condition, let target):
+                lines.append("\(prefix)if !(\(formatExpr(condition))) { goto \(Self.label(target)) }")
+            case .jumpTrue(let condition, let target):
+                lines.append("\(prefix)if \(formatExpr(condition)) { goto \(Self.label(target)) }")
+            case .exit:
+                lines.append("\(prefix)exit()")
+            case .nop, .setLine:
                 break
             default:
                 let text = formatExpr(expr)
@@ -456,6 +559,29 @@ public struct XDExprFormatter {
         }
 
         return lines
+    }
+
+    /// A script function's name: the table's, else the one in the file,
+    /// else its code offset. Scripts on the disc store empty names, which
+    /// used to print a call as a bare `()`.
+    private func functionName(_ address: Int, _ name: String?) -> String {
+        if let known = functionNames[address] { return known }
+        if let name, !name.isEmpty { return name }
+        return "function_at_\(String(address, radix: 16, uppercase: true))"
+    }
+
+    /// A jump target's label: its word offset in CODE, in hex.
+    public static func label(_ offset: Int) -> String {
+        "L_" + String(offset, radix: 16, uppercase: true)
+    }
+
+    static func vectorComponent(_ dimension: Int) -> String {
+        switch dimension {
+        case 0: return "vx"
+        case 1: return "vy"
+        case 2: return "vz"
+        default: return "v\(dimension)"
+        }
     }
 
     public func formatExpr(_ expr: XDExpr) -> String {
@@ -467,15 +593,18 @@ public struct XDExprFormatter {
         case .lastResult:
             return "result"
         case .operation(let op, let operands):
+            if [.getVX, .getVY, .getVZ].contains(op), operands.count == 1 {
+                return "\(formatExpr(operands[0]))\(op.symbol)"
+            }
             if op.isUnary && operands.count == 1 {
                 return "\(op.symbol)(\(formatExpr(operands[0])))"
             } else if operands.count == 2 {
                 return "(\(formatExpr(operands[0])) \(op.symbol) \(formatExpr(operands[1])))"
             }
             return "op(\(operands.map { formatExpr($0) }.joined(separator: ", ")))"
-        case .call(_, let args, let name):
+        case .call(let address, let args, let name):
             let argStr = args.map { formatExpr($0) }.joined(separator: ", ")
-            return "\(name ?? "function")(\(argStr))"
+            return "\(functionName(address, name))(\(argStr))"
         case .callStandard(let classID, let methodID, let args):
             let className = classNames[classID] ?? "Class\(classID)"
             let methodName = methodNames[classID]?[methodID] ?? "method\(methodID)"
@@ -483,6 +612,10 @@ public struct XDExprFormatter {
             return "\(className).\(methodName)(\(argStr))"
         case .variableAssignment(let target, let value):
             return "\(formatExpr(target)) = \(formatExpr(value))"
+        case .vectorAssignment(let variable, let dimension, let value):
+            return "\(variable.text).\(Self.vectorComponent(dimension)) = \(formatExpr(value))"
+        case .yield(let frames):
+            return "yield(\(formatExpr(frames)))"
         default:
             return ""
         }

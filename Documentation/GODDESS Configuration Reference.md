@@ -221,7 +221,7 @@ unpacked disc. Nested operations:
   variants of the above (`gswFile` / `msgFile` + `variant` / `atxFile` /
   `ishFile` + `isdFile` respectively, plus `outputFolder`, `overwrite`).
 - `dumpColoScripts` — decompile every `.scd` under a folder to source text.
-  Colosseum only; XD's script dialect has no compiler yet.
+  Colosseum only; XD scripts have `dumpXDScripts`, which can't be rebuilt.
   | Field | Type | Meaning |
   |---|---|---|
   | `scriptsFolder` | path | Input folder of `.scd` files. Searched recursively, so Colosseum's `Battlefields/` subfolder is mirrored into the output. |
@@ -232,6 +232,18 @@ unpacked disc. Nested operations:
   | `engines` | [path]? | Engine folders whose enums resolve a signature's `enumRef` parameter types, consulted in order (first match wins). Absent = just `gameEngine`, which carries every enum its own signatures currently name. |
 - `dumpColoScript` — single-file variant (`scdFile` in place of
   `scriptsFolder`, same remaining fields).
+- `dumpXDScripts` — XD only. Decompile every `.scd` under a folder to
+  readable source, one `<name>.xds` file per script. Decompile only: XD's
+  dialect has no compiler, so there is no build counterpart. Class and
+  method names come from GODDESS's XD script name table; structure is
+  recovered as `if`/`else if`/`while`, and a jump that doesn't fit one is
+  printed as `goto L_<word offset>`. A call's value is `result`, as in the
+  game's script VM.
+  | Field | Type | Meaning |
+  |---|---|---|
+  | `scriptsFolder` | path | Input folder of `.scd` files, searched recursively; its layout is mirrored into the output. |
+  | `outputFolder` | path | Output folder for the `.xds` files. |
+  | `overwrite` | bool | Replace existing output. |
 - `dumpXDDecks` — XD only. Every trainer deck (`DeckData_*.bin`) under a
   folder to a folder per deck: `Trainers.csv`, `Pokemon.csv`, `AI.csv` (or
   `ShadowPokemon.csv` for `DeckData_DarkPokemon`), `Strings.json` with the
