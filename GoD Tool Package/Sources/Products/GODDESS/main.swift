@@ -19,6 +19,9 @@
 //  Each input is still attempted independently — one bad file doesn't
 //  abandon the rest of the batch.
 //
+//  A failure prints one line, `Error: …`, as the MCP server does. Set
+//  GODDESS_TRACE to get the full error with its source trace instead.
+//
 
 import Foundation
 import GoDFoundation
@@ -58,7 +61,13 @@ if first == "--version" || first == "-v" || first == "version" {
         do {
             try GODOps.process(inputFile: inputFile, toolVersion: Version.semanticVersion)
         } catch {
-            FileHandle.standardError.write(Data("\(error)\n".utf8))
+            // The same one-line message the MCP server returns. The source
+            // trace behind it is for debugging GODDESS itself, so it only
+            // comes with GODDESS_TRACE set.
+            let message = ProcessInfo.processInfo.environment["GODDESS_TRACE"] == nil
+                ? GODOps.userMessage(for: error)
+                : "\(error)"
+            FileHandle.standardError.write(Data("\(message)\n".utf8))
             failed = true
         }
     }
