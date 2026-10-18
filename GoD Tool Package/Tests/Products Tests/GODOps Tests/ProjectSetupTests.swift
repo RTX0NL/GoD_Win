@@ -454,6 +454,26 @@ final class ProjectSetupTests: XCTestCase {
         XCTAssertEqual(outputFolder, Folder("./Source/Scripts"))
     }
 
+    /// Both games keep MusyX banks: the directories come out of the FSYS
+    /// unpack, the `.samp` banks sit loose in the disc's `sound/` folder.
+    func testDumpConfigsCarryADisabledMusyXStep() throws {
+        for gameID in [PokemonColosseum.gameIDUS, PokemonXD.gameIDUS] {
+            let (fst, project) = try runSetup(gameID: gameID)
+            let dump = try decodeConfig(project.folder("Config").file("Dump-Config.json"), in: fst)
+            let steps = dump.operations.flatMap { entry -> [OperationConfig<ColoXD.DumpConfig.Operations>] in
+                guard case let .coloXDDump(config) = entry.operation else { return [] }
+                return config.operations.filter { if case .dumpMusyXSamples = $0.operation { return true }; return false }
+            }
+            guard case let .dumpMusyXSamples(sdirFolder, sampFolder, outputFolder, _)? = steps.first?.operation else {
+                return XCTFail("\(gameID): expected a dumpMusyXSamples step")
+            }
+            XCTAssertEqual(steps.first?.enabled, .no)
+            XCTAssertEqual(sdirFolder, Folder("./Build/Unpacked/Assets/Sounds/Sequenced"))
+            XCTAssertEqual(sampFolder, Folder("./Build/Contents/files/sound"))
+            XCTAssertEqual(outputFolder, Folder("./Source/Audio/MusyX"))
+        }
+    }
+
     func testColosseumConfigsCarryNoDeckSteps() throws {
         let (fst, project) = try runSetup(gameID: PokemonColosseum.gameIDUS)
         let dump = try decodeConfig(project.folder("Config").file("Dump-Config.json"), in: fst)

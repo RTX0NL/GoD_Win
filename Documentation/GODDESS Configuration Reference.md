@@ -232,6 +232,19 @@ unpacked disc. Nested operations:
   | `engines` | [path]? | Engine folders whose enums resolve a signature's `enumRef` parameter types, consulted in order (first match wins). Absent = just `gameEngine`, which carries every enum its own signatures currently name. |
 - `dumpColoScript` — single-file variant (`scdFile` in place of
   `scriptsFolder`, same remaining fields).
+- `dumpMusyXSamples` — every sample of every MusyX bank to WAV: the
+  instruments of Colosseum's music and the sound effects of both games.
+  For each `<bank>.sdir` under `sdirFolder` it reads `<bank>.samp` from
+  `sampFolder` and writes `<bank>/<sample id>.wav` plus
+  `<bank>/<bank>.samples.json` (rate, sample count, base pitch, loop). Dump
+  only: which sound or song note plays which sample is in the bank's
+  `.proj`/`.pool`, which this doesn't read.
+  | Field | Type | Meaning |
+  |---|---|---|
+  | `sdirFolder` | path | Folder of `.sdir` sample directories (the FSYS unpack puts them in `Assets/Sounds/Sequenced`). |
+  | `sampFolder` | path | Folder of the matching `.samp` banks (the disc's `files/sound`). |
+  | `outputFolder` | path | Output folder; each bank gets a subfolder. |
+  | `overwrite` | bool | Replace existing output. |
 - `dumpXDScripts` — XD only. Decompile every `.scd` under a folder to
   readable source, one `<name>.xds` file per script. Decompile only: XD's
   dialect has no compiler, so there is no build counterpart. Class and

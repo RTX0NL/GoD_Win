@@ -34,19 +34,32 @@ enum ISFDSPADPCM {
     /// output length to match the ISH's declared sample count (the raw
     /// frame stream is always a multiple of 14 samples, often padded
     /// beyond the real end).
-    static func decode(adpcm: [UInt8], coefficients: [Int16], sampleLimit: Int) -> [Int16] {
-        guard coefficients.count >= 32 else { return [] }
+    ///
+    /// `coefficients` holds the eight predictor pairs (16 values; ISF
+    /// passes its own table). `history` is the decoder state before the
+    /// first sample: zero for ISF, while a MusyX sample directory stores
+    /// the state each sample starts from.
+    static func decode(
+        adpcm: [UInt8],
+        coefficients: [Int16],
+        sampleLimit: Int,
+        history: (hist1: Int16, hist2: Int16) = (0, 0)
+    ) -> [Int16] {
+        guard coefficients.count >= 16 else { return [] }
         var out: [Int16] = []
         out.reserveCapacity(sampleLimit)
 
-        var hist1: Int32 = 0
-        var hist2: Int32 = 0
+        var hist1 = Int32(history.hist1)
+        var hist2 = Int32(history.hist2)
 
         var frameStart = 0
         while frameStart + 8 <= adpcm.count && out.count < sampleLimit {
             let header = adpcm[frameStart]
             let scale: Int32 = 1 << Int32(header & 0x0F)
             let coefIndex = Int((header >> 4) & 0x0F)
+            // A frame naming a pair the table doesn't have is corrupt data;
+            // stop rather than read past the table.
+            guard coefIndex * 2 + 1 < coefficients.count else { break }
             let coef1 = Int32(coefficients[coefIndex * 2])
             let coef2 = Int32(coefficients[coefIndex * 2 + 1])
 

@@ -88,6 +88,12 @@ extension ColoXD {
                 gameEngine: Folder,
                 engines: [Folder]? = nil
             )
+            case dumpMusyXSamples(
+                sdirFolder: Folder,
+                sampFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
             case dumpXDScripts(
                 scriptsFolder: Folder,
                 outputFolder: Folder,

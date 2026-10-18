@@ -535,6 +535,11 @@ enum Project {
             // Disassembled source for common.rel — sits alongside the
             // DOL disassembly output under /Source/Code.
             let commonRelSourceFolder = sourceFolder.folder("Code").folder("common_rel")
+            // MusyX sample directories come out of the FSYS unpack here; their
+            // `.samp` banks are plain files in the disc's `sound/` folder.
+            let musyxDirectoriesFolder = unpackedFolder.folder("Assets").folder("Sounds").folder("Sequenced")
+            let musyxBanksFolder = contentsFolder.folder("files").folder("sound")
+            let musyxSourceFolder = sourceFolder.folder("Audio").folder("MusyX")
             // FSYS unpack puts XD's trainer decks (`DeckData_*.bin`) here.
             let decksFolder = unpackedFolder.folder("Data").folder("Decks")
             // One folder of CSVs per deck.
@@ -622,6 +627,13 @@ enum Project {
                 OperationConfig(operation: .dumpATXs(
                     atxFolder: atxFolder.prefixed("."),
                     outputFolder: atxSourceFolder.prefixed("."),
+                    overwrite: false
+                ), enabled: .no),
+                // Dump only: nothing rebuilds a .samp from WAVs yet.
+                OperationConfig(operation: .dumpMusyXSamples(
+                    sdirFolder: musyxDirectoriesFolder.prefixed("."),
+                    sampFolder: musyxBanksFolder.prefixed("."),
+                    outputFolder: musyxSourceFolder.prefixed("."),
                     overwrite: false
                 ), enabled: .no),
             ]

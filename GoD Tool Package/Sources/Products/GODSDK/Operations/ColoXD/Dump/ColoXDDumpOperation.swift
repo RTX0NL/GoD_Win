@@ -149,6 +149,12 @@ extension ColoXD {
                     fileSystem: fileSystem, logger: logger
                 )
 
+            case let .dumpMusyXSamples(sdirFolder, sampFolder, outputFolder, overwrite):
+                try dumpMusyXSamples(
+                    sdirFolder: sdirFolder, sampFolder: sampFolder, outputFolder: outputFolder,
+                    overwrite: overwrite, fileSystem: fileSystem, logger: logger
+                )
+
             case let .dumpXDScripts(scriptsFolder, outputFolder, overwrite):
                 try dumpXDScripts(
                     in: scriptsFolder, outputFolder: outputFolder, overwrite: overwrite,
