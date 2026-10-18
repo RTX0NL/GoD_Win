@@ -211,13 +211,22 @@ public struct MSGFile: FileFormat, Equatable {
         let lastEnd = sortedOffsets.last.flatMap { offset in
             stringOffsets.firstIndex(of: offset).map { offset + entries[$0].poolBytes.count + 2 }
         }
-        let (detached, trailing) = MSGFile.poolRemainder(
+        let (outerDetached, trailing) = MSGFile.poolRemainder(
             in: data,
             poolStart: tableEnd,
             firstClaimed: sortedOffsets.first,
             endOfClaimed: lastEnd,
             format: variant.stringFormat
         )
+        var detached = outerDetached
+        for offset in sortedOffsets {
+            guard let bound = nextStringStart[offset],
+                  let index = stringOffsets.firstIndex(of: offset) else { continue }
+            detached += MSGFile.stringsBetween(
+                claimed: entries[index], at: offset, nextClaimed: bound,
+                in: data, format: variant.stringFormat
+            )
+        }
 
         // The pool's layout is a permutation of the entry table: rank every
         // string by the address it was read from, and both directions agree
@@ -312,6 +321,48 @@ public struct MSGFile: FileFormat, Equatable {
             ? (data.read(atAddress: cursor, length: data.length - cursor)?.rawBytes ?? [])
             : []
         return (found, trailing)
+    }
+
+    /// Unreferenced strings between a claimed string and the next one.
+    ///
+    /// An entry's extent runs up to the next claimed string, so strings no
+    /// entry points at that sit there were read as the entry's tail and
+    /// dropped. Colosseum US's `common.rel` String Table 3 holds two such
+    /// runs, 60 bytes in all.
+    ///
+    /// The run is taken as strings only when that reading is exact: the
+    /// entry's own string plus terminator, and then each string in the run,
+    /// must re-encode to exactly the bytes they were read from and fill the
+    /// run to its last byte. That separates a real unreferenced string from
+    /// bytes left over by a control code the codec misread, which keep
+    /// failing loudly, as `entry` intends.
+    private static func stringsBetween(
+        claimed entry: Entry,
+        at offset: Int,
+        nextClaimed bound: Int,
+        in data: GoDData,
+        format: StringFormats
+    ) -> [(offset: Int, string: GSString)] {
+        func matches(_ bytes: [UInt8], at address: Int) -> Bool {
+            address + bytes.count <= bound
+                && data.read(atAddress: address, length: bytes.count)?.rawBytes == bytes
+        }
+
+        let claimedBytes = entry.poolBytes + [0, 0]
+        var cursor = offset + claimedBytes.count
+        guard cursor < bound, matches(claimedBytes, at: offset) else { return [] }
+
+        var found: [(offset: Int, string: GSString)] = []
+        while cursor < bound {
+            guard let region = data.read(atAddress: cursor, length: bound - cursor) else { return [] }
+            region.setByteOrder(.big)
+            let string = region.readGSStringSafely(atAddress: 0, format: format)
+            let bytes = string.rawData(byteOrder: .big).rawBytes + [0, 0]
+            guard matches(bytes, at: cursor) else { return [] }
+            found.append((cursor, string))
+            cursor += bytes.count
+        }
+        return found
     }
 
     /// Maps each pool address to its position in address order.

@@ -181,6 +181,36 @@ final class MSGTests: XCTestCase {
         XCTAssertEqual(try reparsed.binaryData.rawBytes, bytes.rawBytes)
     }
 
+    /// A pool string no entry points at can also sit *between* two that
+    /// are pointed at. Colosseum US's `common.rel` String Table 3 has two
+    /// such runs (44 and 16 bytes of Japanese debug text); read as the tail
+    /// of the string before them, they were dropped and the module came
+    /// back 60 bytes short.
+    func testUnreferencedStringsBetweenClaimedOnesSurvive() throws {
+        let original = MSGFile(
+            variant: .xd,
+            entries: [
+                .init(id: 1, string: GSString(string: "first", format: .gsXD), poolOrder: 0),
+                .init(id: 2, string: GSString(string: "last", format: .gsXD), poolOrder: 3),
+            ],
+            detachedStrings: [
+                .init(poolOrder: 1, string: GSString(string: "orphan one", format: .gsXD)),
+                .init(poolOrder: 2, string: GSString(string: "orphan two", format: .gsXD)),
+            ]
+        )
+        let bytes = try original.binaryData
+        let reparsed = try MSGFile(binary: bytes, variant: .xd)
+        XCTAssertEqual(
+            reparsed.detachedStrings.map { $0.string.string(format: .gsXD) },
+            ["orphan one", "orphan two"]
+        )
+        XCTAssertEqual(try reparsed.binaryData.rawBytes, bytes.rawBytes, "the file must rebuild byte-for-byte")
+        XCTAssertEqual(
+            try MSGFile(outputs: try reparsed.outputs).binaryData.rawBytes, bytes.rawBytes,
+            "through the JSON artifact too"
+        )
+    }
+
     /// A table embedded in a DOL or REL arrives padded out to a 4-byte
     /// boundary by its container. Dropping those bytes shrank the chunk and
     /// shifted every symbol after it; they are kept verbatim instead.
