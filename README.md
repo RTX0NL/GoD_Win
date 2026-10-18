@@ -21,7 +21,7 @@ Pokémon Colosseum and Pokémon XD.
 | Area | Result |
 |---|---|
 | Build | `GODDESS.exe` builds with SwiftPM, both debug and release, including from a fresh clone of this repo with Git for Windows' default settings. |
-| Tests | 2,419 cases: 2,287 pass, 132 skip, **0 fail** (2026-10-18; the fresh-clone check was at 2,385 cases). |
+| Tests | 2,445 cases: 2,310 pass, 135 skip, **0 fail** (2026-10-18; the fresh-clone check was at 2,385 cases). |
 | Project setup + dump | Both games dump completely: 0 case collisions, CRLF-free text output, and per-archive file counts match the FSYS registries. |
 | Rebuild | Both games rebuild. `DolphinTool verify` reports no problems, and the rebuilt discs boot in Dolphin (Colosseum to the title screen, XD to the health-and-safety screen). |
 | Edit → rebuild | Edited title-screen textures in Colosseum. The rebuilt disc changed only the two archives that contain them, and the edits show in Dolphin. |
@@ -116,6 +116,8 @@ fork and haven't been sent upstream.
 | `f632708`, `2631c59` | A settings file that doesn't decode stops the run instead of silently dropping its settings (a missing one still falls back to the defaults, with a warning). An absolute `rootFolder` in a config is kept as written. |
 | `2aaf012` | UNC paths (`\\server\share\…`) map to `/UNC/server/share/…` instead of a folder on the current drive, and the `\\?\` prefix is dropped. |
 | `a64630a`, `cbc9b0d` | The CLI prints the same one-line error as the MCP server (`GODDESS_TRACE` gives the full one). Corpus tests split their path lists like `PATH`, so they find Windows dumps. |
+| `1c392e1` | **XD trainer decks dump to CSV and rebuild.** `dumpXDDecks` writes each `DeckData_*.bin` as `Trainers.csv`, `Pokemon.csv`, `AI.csv` (or `ShadowPokemon.csv`) with species, items and moves by name, plus the tag strings; `buildXDDecks` rebuilds them, and rows can be added. All 16 US decks rebuild byte for byte. |
+| `0de1bf9` | **XD scripts decompile.** `dumpXDScripts` turns every `.scd` into readable `.xds` source with named classes and methods, `if`/`else if`/`while`, and `goto` only where nothing else fits. It fixes several bugs in the unused upstream builder (calls taken as operands, statements reversed, dropped vector assignments). Decompile only. |
 | `1e40b45` | Four tests left stale by intentional upstream changes are updated. One real codec gap (rebuilding a truncated MSG control code byte for byte) is kept as an explicit skip. |
 
 ## Known issues
@@ -130,7 +132,7 @@ These come from upstream and fail the same way on every platform.
   made with Dolphin's usual LZMA setting is rejected. The upstream note below
   that says WIA/RVZ aren't decodable at all is out of date.
 - **Colosseum audio (MusyX) has no WAV export.**
-- **XD scripts have no decompile operation** (Colosseum's do).
+- **XD scripts decompile but can't be rebuilt** (Colosseum's round-trip).
 - **Windows: `runExecutable` can't pass an empty-string argument.**
   Foundation's `Process` drops it when it builds the command line.
 - **PBR 3D fonts are re-triangulated on build.** `.f3d` keeps only glyph
@@ -316,7 +318,7 @@ and `describe_operation` serves the same text over MCP.
 | GameCube disc | `gamecubeDump`, `gamecubeBuild` | Unpack / rebuild a GameCube ISO (boot, FST, DOL, apploader, filesystem). |
 | Wii disc | `wiiDump`, `wiiBuild` | Decrypt / re-encrypt Wii partitions (AES-128-CBC, hash tree). The rebuild is fakesigned: valid for Dolphin and homebrew loaders, not retail-signed. |
 | Disc containers | `cisoDump`, `cisoBuild`, `nkitDump`, `nkitBuild`, `rvzDump` | CISO and GameCube NKit ↔ raw ISO; RVZ/WIA → raw ISO. Project setup also decodes WBFS, WIA and RVZ input directly. |
-| Colo/XD assets | `coloXDDump`, `coloXDBuild` | FSYS archives ↔ organized asset folders: textures (PNG), animated textures, fonts, flash menus, messages, streamed audio (WAV), and Colosseum scripts. Re-packs and re-compresses on build. |
+| Colo/XD assets | `coloXDDump`, `coloXDBuild` | FSYS archives ↔ organized asset folders: textures (PNG), animated textures, fonts, flash menus, messages, streamed audio (WAV), Colosseum scripts, XD trainer decks (CSV), and XD scripts (decompile only). Re-packs and re-compresses on build. |
 | Battle Revolution | `pbrDump`, `pbrBuild`, `pbrFontDump`/`pbrFontsDump`, `pbrFontBuild`/`pbrFontsBuild`, `pbrStringsDump`, `pbrStringsBuild` | PBR archives, the common and deck tables (CSV), fonts (PNG, and SVG for the 3D font) and strings (JSON). |
 | DOL executable | `dolDisassembly`, `dolAssembly` | `main.dol` ↔ PowerPC assembly, with typed data tables as CSV/JSON. Instruction round-trip is byte-exact. |
 | RELs | `relDisassembly`, `relAssembly`, `commonRelDump`, `commonRelBuild`, `relsDump`, `relsBuild` | `common.rel` and the map RELs ↔ assembly plus typed CSV tables (Pokémon, moves, trainers, NPCs, warps, …). |
@@ -336,8 +338,8 @@ These run, with a limit:
 - **WIA:** only uncompressed and zstd WIA decode. Dolphin's usual WIA setting
   (LZMA) is rejected with an error; RVZ always works.
 - **NKit:** GameCube only. Wii NKit images are rejected.
-- **XD scripts:** parsed, but there is no dump or build operation yet
-  (Colosseum scripts have both).
+- **XD scripts:** `dumpXDScripts` decompiles them, but there is no compiler,
+  so they can't be rebuilt (Colosseum scripts round-trip).
 - **Rebuilds** are deterministic but not byte-identical to the retail disc:
   textures are re-encoded from PNG, FSYS group IDs that aren't in the TOC
   reset to 0, and files are packed tightly instead of at retail offsets.
