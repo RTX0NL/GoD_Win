@@ -534,6 +534,31 @@ final class RelOperationTests: XCTestCase {
         }
     }
 
+    /// A table nothing counts holds a fixed number of rows. A row added to
+    /// its CSV used to be dropped with a warning while the build succeeded;
+    /// now it stops the build.
+    func testARowAddedToAnUncountedTableIsABuildError() throws {
+        let fst = InMemoryFST()
+        let typeMap = #"{"chunks": [{"table": {"name": "Pokespots", "start": "Pokespots", "entryType": "Pokespot"}}]}"#
+        let (engine, dolphin) = try writeCountedRel(countWord: 2, typeMap: typeMap, in: fst)
+        try disassembleSpots(engine: engine, dolphin: dolphin, fst: fst)
+
+        let csvFile = File("/project/Out/data2/Pokespots.csv")
+        var lines = try XCTUnwrap(fst.readFile(at: csvFile)?.allData).string(format: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        lines.append(try XCTUnwrap(lines.last))
+        writeText(lines.joined(separator: "\n") + "\n", at: csvFile, in: fst)
+
+        XCTAssertThrowsError(try assembleSpots(engine: engine, fst: fst)) { error in
+            guard case let RelAssemblerErrors.tableHasSurplusRows(label, rows, count, _) = error else {
+                return XCTFail("expected tableHasSurplusRows, got \(error)")
+            }
+            XCTAssertEqual(label, "Pokespots")
+            XCTAssertEqual(rows, 3)
+            XCTAssertEqual(count, 2)
+        }
+    }
+
     /// The build holds a hand-edited manifest to the same rule.
     func testAManifestCountOfANonTableIsABuildError() throws {
         let fst = InMemoryFST()

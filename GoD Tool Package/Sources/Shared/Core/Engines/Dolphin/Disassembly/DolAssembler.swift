@@ -472,8 +472,12 @@ public struct DolAssembler {
     ///   via `StructData(definition:json:)`, resolve label fields to
     ///   addresses through `labelTable`, and re-emit the resulting
     ///   bytes the same way — so JSON edits land in the built DOL.
-    ///   The JSON is the only source; a chunk whose JSON is missing
-    ///   or undecodable is dropped with a warning.
+    ///   The JSON is the only source.
+    ///
+    /// A chunk that can't be rebuilt — its file missing, its JSON or CSV
+    /// undecodable, its artifacts rejected by their format handler — stops
+    /// the assembly. Dropping it would shorten the section and move every
+    /// symbol after it while the run still reported success.
     private static func collectDataSectionFiles(
         _ sectionName: String,
         codeFolder: Folder,
@@ -500,7 +504,9 @@ public struct DolAssembler {
                             source.assemblySizes[chunk.file] = (label: chunk.label, recorded: recorded)
                         }
                     } else {
-                        logger?.log(.warning("Assembly chunk '\(chunk.label)' dropped: \(chunk.file) missing — section \(sectionName) will come out short"))
+                        throw DolAssemblyErrors.missingChunk(
+                            section: sectionName, label: chunk.label, file: chunk.file, .init()
+                        )
                     }
                 case .binary:
                     if let data = fileSystem.readFile(at: file)?.allData {
@@ -517,31 +523,30 @@ public struct DolAssembler {
                             )
                         ))
                     } else {
-                        logger?.log(.warning("Binary chunk '\(chunk.label)' dropped: \(chunk.file) missing — section \(sectionName) will come out short"))
+                        throw DolAssemblyErrors.missingChunk(
+                            section: sectionName, label: chunk.label, file: chunk.file, .init()
+                        )
                     }
                 case .file:
-                    if let data = Self.fileChunkBinary(
+                    let data = try Self.fileChunkBinary(
                         chunk: chunk,
+                        sectionName: sectionName,
                         sectionFolder: sectionFolder,
                         fileSystem: fileSystem,
-                        registry: registry,
-                        logger: logger
-                    ) {
-                        source.files.append((
-                            name: "\(chunk.label).synthesized.s",
-                            content: renderByteBlocksAsAssembly(
-                                sectionName: sectionName,
-                                chunkLabel: chunk.label,
-                                blocks: try Self.fitToRecordedSize(
-                                    Self.splitAtInteriorLabels(data, chunk: chunk, logger: logger),
-                                    chunk: chunk, sectionName: sectionName,
-                                    allowResizedChunks: allowResizedChunks, logger: logger
-                                )
+                        registry: registry
+                    )
+                    source.files.append((
+                        name: "\(chunk.label).synthesized.s",
+                        content: renderByteBlocksAsAssembly(
+                            sectionName: sectionName,
+                            chunkLabel: chunk.label,
+                            blocks: try Self.fitToRecordedSize(
+                                Self.splitAtInteriorLabels(data, chunk: chunk, logger: logger),
+                                chunk: chunk, sectionName: sectionName,
+                                allowResizedChunks: allowResizedChunks, logger: logger
                             )
-                        ))
-                    } else {
-                        logger?.log(.warning("File chunk '\(chunk.label)' dropped: no rebuildable artifacts for \(chunk.file) — section \(sectionName) will come out short"))
-                    }
+                        )
+                    ))
                 case .count:
                     let entries = counts.tableCounts[chunk.countOf ?? ""] ?? 0
                     let type = chunk.countType ?? .uint32
@@ -560,30 +565,28 @@ public struct DolAssembler {
                         )
                     ))
                 case .struct, .table:
-                    if let blocks = Self.typedChunkBlocks(
+                    let blocks = try Self.typedChunkBlocks(
                         chunk: chunk,
                         sizedByCSV: counts.countedTables.contains(chunk.label),
+                        sectionName: sectionName,
                         sectionFolder: sectionFolder,
                         fileSystem: fileSystem,
                         structs: structs,
                         labelTable: labelTable,
                         logger: logger
-                    ) {
-                        source.files.append((
-                            name: "\(chunk.label).synthesized.s",
-                            content: renderByteBlocksAsAssembly(
-                                sectionName: sectionName,
-                                chunkLabel: chunk.label,
-                                blocks: try Self.fitToRecordedSize(
-                                    blocks,
-                                    chunk: chunk, sectionName: sectionName,
-                                    allowResizedChunks: allowResizedChunks, logger: logger
-                                )
+                    )
+                    source.files.append((
+                        name: "\(chunk.label).synthesized.s",
+                        content: renderByteBlocksAsAssembly(
+                            sectionName: sectionName,
+                            chunkLabel: chunk.label,
+                            blocks: try Self.fitToRecordedSize(
+                                blocks,
+                                chunk: chunk, sectionName: sectionName,
+                                allowResizedChunks: allowResizedChunks, logger: logger
                             )
-                        ))
-                    } else {
-                        logger?.log(.warning("Typed chunk '\(chunk.label)' dropped: JSON missing or undecodable — section \(sectionName) will come out short"))
-                    }
+                        )
+                    ))
                 }
             }
             return source
@@ -831,52 +834,66 @@ public struct DolAssembler {
     /// in the built DOL. Chunks dumped as raw bytes (unregistered
     /// extension, or a dump-time registry failure) read straight from
     /// the manifest's file.
+    ///
+    /// Artifacts the handler rejects are an error, not a cue to fall back
+    /// to the raw bytes: the artifacts are what gets edited, so falling
+    /// back would throw the edit away without a word.
     private static func fileChunkBinary(
         chunk: DataSectionManifest.Chunk,
+        sectionName: String,
         sectionFolder: Folder,
         fileSystem: FileSystemTree,
-        registry: FileFormatRegistry,
-        logger: Logger?
-    ) -> GoDData? {
+        registry: FileFormatRegistry
+    ) throws -> GoDData {
         if let ext = chunk.fileExtension, registry.isRegistered(ext) {
             let chunkFolder = sectionFolder.folder(chunk.label)
             if fileSystem.inspectFolder(at: chunkFolder) != nil {
                 do {
                     return try registry.buildSingle(extension: ext, from: chunkFolder, fileSystem: fileSystem)
                 } catch {
-                    logger?.log(.warning("Registry build failed for file chunk '\(chunk.label)' (.\(ext)): \(error). Falling back to raw bytes."))
+                    throw DolAssemblyErrors.fileChunkBuildFailed(
+                        section: sectionName, label: chunk.label, fileExtension: ext, underlying: error, .init()
+                    )
                 }
             }
         }
-        return fileSystem.readFile(at: sectionFolder.file(chunk.file))?.allData
+        guard let data = fileSystem.readFile(at: sectionFolder.file(chunk.file))?.allData else {
+            throw DolAssemblyErrors.missingChunk(
+                section: sectionName, label: chunk.label, file: chunk.file, .init()
+            )
+        }
+        return data
     }
 
     /// Decode a `.struct` chunk's JSON or a `.table` chunk's CSV into the
-    /// labelled byte blocks it rebuilds to. Returns nil when the file is
-    /// missing, its struct type is unresolved, or decoding fails — the
-    /// caller drops the chunk with a warning.
+    /// labelled byte blocks it rebuilds to. Throws when the file is
+    /// missing, its struct type is unresolved, decoding fails, or an
+    /// uncounted table has more rows than it holds.
     ///
     /// Blocks rather than finished assembly text so the caller can measure
     /// the chunk against its recorded size, and pad it, before rendering.
     private static func typedChunkBlocks(
         chunk: DataSectionManifest.Chunk,
         sizedByCSV: Bool,
+        sectionName: String,
         sectionFolder: Folder,
         fileSystem: FileSystemTree,
         structs: [String: StructDefinition],
         labelTable: LabelTable,
         logger: Logger?
-    ) -> [(label: String?, bytes: GoDData)]? {
+    ) throws -> [(label: String?, bytes: GoDData)] {
         guard let structType = chunk.structType else {
-            logger?.log(.warning("Typed chunk '\(chunk.label)' has no structType in the manifest"))
-            return nil
+            throw DolAssemblyErrors.untypedChunk(section: sectionName, label: chunk.label, .init())
         }
         guard let definition = structs[structType] else {
-            logger?.log(.warning("Struct type '\(structType)' for chunk '\(chunk.label)' not resolved — is typeMapPath set in the config?"))
-            return nil
+            throw DolAssemblyErrors.structNotResolved(
+                section: sectionName, label: chunk.label, type: structType, .init()
+            )
         }
         guard let chunkData = fileSystem.readFile(at: sectionFolder.file(chunk.file))?.allData else {
-            return nil
+            throw DolAssemblyErrors.missingChunk(
+                section: sectionName, label: chunk.label, file: chunk.file, .init()
+            )
         }
         let importer = TypedDataImporter()
 
@@ -887,19 +904,18 @@ public struct DolAssembler {
                 let bytes = importer.importStruct(structData: structData, labelTable: labelTable, byteOrder: .big)
                 return [(label: nil, bytes: bytes)]
             } catch {
-                logger?.log(.warning("Struct chunk '\(chunk.label)' JSON failed to decode: \(error)"))
-                return nil
+                throw DolAssemblyErrors.chunkUndecodable(
+                    section: sectionName, label: chunk.label, underlying: error, .init()
+                )
             }
 
         case .table:
             // Tables are CSV. A `.json` here is a dump from before that
             // change — say so rather than failing to parse it as CSV.
             guard chunk.file.hasSuffix(".csv") else {
-                logger?.log(.warning(
-                    "Table chunk '\(chunk.label)' is '\(chunk.file)', not a .csv — "
-                    + "this disassembly predates CSV tables. Re-run the disassembly to regenerate it."
-                ))
-                return nil
+                throw DolAssemblyErrors.notCSV(
+                    section: sectionName, label: chunk.label, file: chunk.file, .init()
+                )
             }
 
             let decoded: StructTableCSV.DecodeResult
@@ -908,8 +924,9 @@ public struct DolAssembler {
                     chunkData.string(format: .utf8), definition: definition, byteOrder: .big
                 )
             } catch {
-                logger?.log(.warning("Table chunk '\(chunk.label)' failed to decode: \(error)"))
-                return nil
+                throw DolAssemblyErrors.chunkUndecodable(
+                    section: sectionName, label: chunk.label, underlying: error, .init()
+                )
             }
             for warning in decoded.warnings {
                 logger?.log(.warning("Table '\(chunk.label)': \(warning)"))
@@ -917,13 +934,17 @@ public struct DolAssembler {
 
             // Pad-or-truncate to the manifest's declared count so the
             // section layout stays stable even if the CSV was
-            // hand-edited to add/remove rows — unless something counts the
+            // hand-edited to remove rows — unless something counts the
             // table, in which case the CSV is its length and the count
             // follows. The chunk is still held to its recorded size after
             // this, so a counted table that grows needs allowResizedChunks.
+            // An uncounted table can't grow at all: added rows are an error
+            // rather than rows that silently never reach the DOL.
             let count = sizedByCSV ? decoded.entries.count : (chunk.count ?? decoded.entries.count)
             if decoded.entries.count > count {
-                logger?.log(.warning("Table '\(chunk.label)': \(decoded.entries.count - count) surplus entries dropped (manifest count is \(count))"))
+                throw DolAssemblyErrors.tableHasSurplusRows(
+                    section: sectionName, label: chunk.label, rows: decoded.entries.count, count: count, .init()
+                )
             } else if decoded.entries.count < count {
                 logger?.log(.warning("Table '\(chunk.label)': \(count - decoded.entries.count) missing entries zero-filled (manifest count is \(count))"))
             }
@@ -945,7 +966,8 @@ public struct DolAssembler {
             return blocks
 
         case .assembly, .binary, .file, .count:
-            return nil
+            // The only caller switches on the chunk type first.
+            preconditionFailure("typedChunkBlocks called for a \(chunk.type) chunk")
         }
     }
 
@@ -1010,9 +1032,34 @@ public enum DolAssemblyErrors: Error, CustomStringConvertible {
     case sectionOverflow(section: String, recorded: Int, assembled: Int, ErrorTrace)
     case countTargetNotATable(section: String, label: String, table: String?, ErrorTrace)
     case countOverflow(section: String, label: String, table: String, entries: Int, type: String, ErrorTrace)
+    case missingChunk(section: String, label: String, file: String, ErrorTrace)
+    case untypedChunk(section: String, label: String, ErrorTrace)
+    case structNotResolved(section: String, label: String, type: String, ErrorTrace)
+    case chunkUndecodable(section: String, label: String, underlying: Error, ErrorTrace)
+    case notCSV(section: String, label: String, file: String, ErrorTrace)
+    case tableHasSurplusRows(section: String, label: String, rows: Int, count: Int, ErrorTrace)
+    case fileChunkBuildFailed(section: String, label: String, fileExtension: String, underlying: Error, ErrorTrace)
 
     public var description: String {
         switch self {
+        case let .missingChunk(section, label, file, trace):
+            return "\(section) chunk '\(label)' is missing its file \(file)\n\(trace)"
+        case let .untypedChunk(section, label, trace):
+            return "\(section) chunk '\(label)' is typed but its manifest entry names no struct type\n\(trace)"
+        case let .structNotResolved(section, label, type, trace):
+            return "\(section) chunk '\(label)' needs struct '\(type)', which no engine folder resolved — are `typeMapPath` and `engines` set in the config?\n\(trace)"
+        case let .chunkUndecodable(section, label, underlying, trace):
+            return "\(section) chunk '\(label)' could not be decoded: \(underlying)\n\(trace)"
+        case let .notCSV(section, label, file, trace):
+            return "\(section) table '\(label)' is '\(file)', not a .csv — this disassembly predates CSV tables; re-run the disassembly\n\(trace)"
+        case let .tableHasSurplusRows(section, label, rows, count, trace):
+            return """
+            \(section) table '\(label)' has \(rows) rows, but it holds exactly \(count) and nothing in the DOL \
+            counts it, so the extra \(rows - count) can't be added. Remove them, or edit existing rows instead.
+            \(trace)
+            """
+        case let .fileChunkBuildFailed(section, label, ext, underlying, trace):
+            return "\(section) file chunk '\(label)' (.\(ext)) could not be rebuilt from its artifacts: \(underlying)\n\(trace)"
         case let .sectionsFileNotFound(file, trace):
             return "sections.txt not found: \(file)\n\(trace)"
         case let .chunkOverflow(section, label, recorded, assembled, trace):

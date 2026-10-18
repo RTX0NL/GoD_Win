@@ -35,7 +35,8 @@ private struct TestBlobFormat: FileFormat {
     }
 
     init(outputs: [FileData]) throws {
-        guard let first = outputs.first else { throw Self.invalidFileError }
+        // An empty artifact stands in for an edit the handler rejects.
+        guard let first = outputs.first, first.data.length > 0 else { throw Self.invalidFileError }
         raw = first.data.rawBytes.map { $0 ^ 0xFF }
     }
 
@@ -865,6 +866,101 @@ final class DolOperationTests: XCTestCase {
         let bytes = try Dol(data: try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.dol"))?.allData), dolphinEngine: engine)
             .dataSections[0].data.rawBytes
         XCTAssertEqual(Array(bytes[24..<26]), [0x00, 0x03], "with the resize allowed, the count reports three rows")
+    }
+
+    // MARK: - Chunks that can't be rebuilt stop the assembly
+
+    // A chunk the assembly can't rebuild used to be dropped with a warning,
+    // so the section came out short, every symbol after it moved, and the
+    // run still reported success. An edit with a typo in it must stop the
+    // build instead.
+
+    func testAMissingTableCSVStopsTheAssembly() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let engineFolder = try installTableEngine(in: fst)
+        try seedDol(in: fst, engine: engine, dataBytes: Self.tableDataBytes)
+        let typeMapPath = try writeTableTypeMap(in: fst)
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+
+        try fst.deleteFile(at: File("/project/Disassembly/main/data0/TestTable.csv"))
+        XCTAssertThrowsError(
+            try assemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+        ) { error in
+            guard case DolAssemblyErrors.missingChunk(_, let label, _, _) = error else {
+                return XCTFail("expected missingChunk, got \(error)")
+            }
+            XCTAssertEqual(label, "lbl_80004000")
+        }
+        XCTAssertNil(fst.readFile(at: File("/project/rebuilt.dol")), "no DOL is written")
+    }
+
+    func testAnUndecodableTableCSVStopsTheAssembly() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let engineFolder = try installTableEngine(in: fst)
+        try seedDol(in: fst, engine: engine, dataBytes: Self.tableDataBytes)
+        let typeMapPath = try writeTableTypeMap(in: fst)
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+
+        try editRows(fst) { rows in [rows[0], rows[1].replacingOccurrences(of: "5,", with: "five,"), rows[2]] }
+        XCTAssertThrowsError(
+            try assemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+        ) { error in
+            guard case DolAssemblyErrors.chunkUndecodable(_, let label, _, _) = error else {
+                return XCTFail("expected chunkUndecodable, got \(error)")
+            }
+            XCTAssertEqual(label, "lbl_80004000")
+        }
+    }
+
+    /// A table nothing counts has a fixed number of rows. A row added to
+    /// its CSV has nowhere to go, so it is an error rather than a row that
+    /// silently never reaches the DOL.
+    func testARowAddedToAnUncountedTableStopsTheAssembly() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let engineFolder = try installTableEngine(in: fst)
+        try seedDol(in: fst, engine: engine, dataBytes: Self.tableDataBytes)
+        let typeMapPath = try writeTableTypeMap(in: fst)
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+
+        try editRows(fst) { $0 + [$0[1]] }
+        XCTAssertThrowsError(
+            try assemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, engines: [engineFolder])
+        ) { error in
+            guard case DolAssemblyErrors.tableHasSurplusRows(_, let label, let rows, let count, _) = error else {
+                return XCTFail("expected tableHasSurplusRows, got \(error)")
+            }
+            XCTAssertEqual(label, "lbl_80004000")
+            XCTAssertEqual(rows, 3)
+            XCTAssertEqual(count, 2)
+        }
+    }
+
+    /// An artifact edit the format handler rejects must not quietly fall
+    /// back to the original bytes: the edit would be lost without a word.
+    func testAFileChunkArtifactThatFailsToBuildStopsTheAssembly() throws {
+        let (fst, dolphinFolder, engine) = try makeProject()
+        let dataBytes: [UInt8] = [
+            0x80, 0x00, 0x40, 0x08,
+            0xDE, 0xAD, 0xBE, 0xEF,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+            0x00, 0x00,
+        ]
+        try seedDol(in: fst, engine: engine, dataBytes: dataBytes)
+        let typeMapPath = try writeTypeMap(in: fst, blobSize: 6)
+        let registry = blobRegistry()
+        try disassemble(in: fst, dolphinFolder: dolphinFolder, typeMapPath: typeMapPath, registry: registry)
+
+        try fst.writeFile(
+            GoDData(byteOrder: .big),
+            at: File("/project/Disassembly/main/data0/lbl_80004008/blob.blob.enc"),
+            overwrite: true
+        )
+        XCTAssertThrowsError(try assemble(in: fst, dolphinFolder: dolphinFolder, registry: registry)) { error in
+            guard case DolAssemblyErrors.fileChunkBuildFailed(_, let label, _, _, _) = error else {
+                return XCTFail("expected fileChunkBuildFailed, got \(error)")
+            }
+            XCTAssertEqual(label, "lbl_80004008")
+        }
     }
 
     /// A value that disagrees with its table keeps its bytes.

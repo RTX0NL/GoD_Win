@@ -434,10 +434,14 @@ public struct RelAssembler {
             // The manifest's count fixes the size of a table nothing counts,
             // so a hand-edited CSV can't silently shift everything after it.
             // A counted table is sized by its CSV: its count word follows it.
+            // Rows added to an uncounted table have nowhere to go, so they
+            // are an error rather than rows that never reach the module.
             let count = sizedByCSV ? decoded.entries.count : (chunk.count ?? decoded.entries.count)
             tableCounts[chunk.label] = count
             if decoded.entries.count > count {
-                logger?.log(.warning("Table '\(chunk.label)': \(decoded.entries.count - count) surplus entries dropped (manifest count is \(count))"))
+                throw RelAssemblerErrors.tableHasSurplusRows(
+                    label: chunk.label, rows: decoded.entries.count, count: count, .init()
+                )
             } else if decoded.entries.count < count {
                 logger?.log(.warning("Table '\(chunk.label)': \(count - decoded.entries.count) missing entries zero-filled (manifest count is \(count))"))
             }
@@ -459,7 +463,8 @@ public struct RelAssembler {
 
     /// Bytes for an embedded-file chunk: rebuilt through the registry when
     /// the dump routed it there (a per-chunk folder of artifacts), else the
-    /// raw file the manifest names.
+    /// raw file the manifest names. Artifacts the handler rejects are an
+    /// error: falling back to the raw file would discard the edit silently.
     private func embeddedFileBinary(
         _ chunk: DataSectionManifest.Chunk,
         file: File,
@@ -472,7 +477,9 @@ public struct RelAssembler {
             do {
                 return try registry.buildSingle(extension: ext, from: chunkFolder, fileSystem: fileSystem)
             } catch {
-                logger?.log(.warning("Registry build failed for file chunk '\(chunk.label)' (.\(ext)): \(error). Falling back to raw bytes."))
+                throw RelAssemblerErrors.fileChunkBuildFailed(
+                    label: chunk.label, fileExtension: ext, underlying: error, .init()
+                )
             }
         }
         guard let data = fileSystem.readFile(at: file)?.allData else {
@@ -586,6 +593,8 @@ public enum RelAssemblerErrors: Error, CustomStringConvertible {
     case unsupportedDataRelocation(symbol: String, kind: String, section: Int, ErrorTrace)
     case countTargetNotATable(count: String, table: String?, ErrorTrace)
     case countOverflow(count: String, table: String, entries: Int, type: String, ErrorTrace)
+    case tableHasSurplusRows(label: String, rows: Int, count: Int, ErrorTrace)
+    case fileChunkBuildFailed(label: String, fileExtension: String, underlying: Error, ErrorTrace)
 
     public var description: String {
         switch self {
@@ -617,6 +626,14 @@ public enum RelAssemblerErrors: Error, CustomStringConvertible {
             return "Count chunk '\(count)' counts '\(table ?? "(nothing)")', which isn't a table chunk in this module\n\(trace)"
         case let .countOverflow(count, table, entries, type, trace):
             return "Count '\(count)' is a \(type), which can't hold the \(entries) entries '\(table)' now has\n\(trace)"
+        case let .tableHasSurplusRows(label, rows, count, trace):
+            return """
+            Table '\(label)' has \(rows) rows, but it holds exactly \(count) and nothing in the module \
+            counts it, so the extra \(rows - count) can't be added. Remove them, or edit existing rows instead.
+            \(trace)
+            """
+        case let .fileChunkBuildFailed(label, ext, underlying, trace):
+            return "REL file chunk '\(label)' (.\(ext)) could not be rebuilt from its artifacts: \(underlying)\n\(trace)"
         }
     }
 }
