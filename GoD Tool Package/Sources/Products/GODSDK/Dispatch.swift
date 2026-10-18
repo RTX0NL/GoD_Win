@@ -205,10 +205,7 @@ public enum GODOps {
         // The config's root holds for the whole run and is put back after
         // it, so the next caller doesn't inherit it.
         try fileSystem.withCurrentDirectory(config.rootFolder) {
-            let settings: GoddessSettings = (try? config.settingsFile.flatMap { file in
-                try fileSystem.decodeJSON(from: file)
-            }) ?? GoddessSettings.default
-
+            let settings = try loadSettings(config.settingsFile, fileSystem: fileSystem, logger: logger)
             let log = logger ?? PrintLogger(verbose: settings.verbose)
 
             let enabledOps = config.operations.enabledEntries
@@ -217,6 +214,30 @@ public enum GODOps {
                 try run(operation: operation, settings: settings, fileSystem: fileSystem, logger: log, handler: handler)
                 log.log(.info("Operation \(index + 1)/\(enabledOps.count) completed"))
             }
+        }
+    }
+
+    /// A config's settings. A settings file that isn't there falls back to
+    /// the defaults, with a warning, since the defaults lack things like the
+    /// Wii common key and the error that eventually surfaces wouldn't say
+    /// why. One that is there but doesn't decode stops the run: running on
+    /// defaults would hide the mistake in it.
+    static func loadSettings(
+        _ file: File?,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws -> GoddessSettings {
+        guard let file else { return .default }
+        guard fileSystem.readFile(at: file) != nil else {
+            (logger ?? PrintLogger(verbose: false)).log(.warning(
+                "Settings file \(fileSystem.resolvedPath(of: file).path) not found; using the default settings"
+            ))
+            return .default
+        }
+        do {
+            return try fileSystem.decodeJSON(from: file)
+        } catch {
+            throw ConfigErrors.settingsFileUndecodable(fileSystem.resolvedPath(of: file), underlying: error, .init())
         }
     }
 
