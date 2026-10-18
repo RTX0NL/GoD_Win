@@ -108,7 +108,7 @@ let goddessTools: [Tool] = [
         dump/build config files.
         """,
         inputSchema: objectSchema(
-            properties: ["path": (type: "string", description: "Absolute path to a disc image (.iso/.gcm/.ciso) or a .gci save")],
+            properties: ["path": (type: "string", description: "Absolute path to a disc image (.iso/.gcm/.ciso/.wbfs/.wia/.rvz) or a .gci save")],
             required: ["path"]
         ),
         annotations: .init(readOnlyHint: false, destructiveHint: false, openWorldHint: false)
