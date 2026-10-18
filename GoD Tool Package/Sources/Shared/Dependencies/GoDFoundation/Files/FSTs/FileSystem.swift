@@ -13,14 +13,32 @@ public class FileSystem: FileSystemTree {
     /// Seeded from the process working directory so relative paths behave
     /// the way a shell user expects; `changeDirectory` then re-points it at
     /// the running config's `rootFolder`.
-    private(set) var currentDirectory: Folder
+    public private(set) var currentDirectory: Folder
+    /// The process working directory at launch: what relative paths mean to
+    /// an entry point that brings no root of its own.
+    public let launchDirectory: Folder
     private let fm = FileManager.default
 
     public static let shared = FileSystem()
     private init() {
         // argv-adjacent input: a native path, converted on the way in.
         let cwd = PlatformPath.logical(from: FileManager.default.currentDirectoryPath)
-        currentDirectory = Folder(cwd.hasPrefix("/") ? cwd : "/")
+        launchDirectory = Folder(cwd.hasPrefix("/") ? cwd : "/")
+        currentDirectory = launchDirectory
+    }
+
+    /// Runs `body` with the current directory at `folder`, then puts the
+    /// previous one back, whether `body` returns or throws.
+    ///
+    /// The current directory is process-wide, so an entry point that moves
+    /// it and leaves it moved changes what the *next* caller's relative paths
+    /// mean — in a long-lived MCP server, a `run_operation` would resolve
+    /// `./` against whichever config happened to run before it.
+    public func withCurrentDirectory<T>(_ folder: Folder, _ body: () throws -> T) rethrows -> T {
+        let previous = currentDirectory
+        changeDirectory(folder)
+        defer { currentDirectory = previous }
+        return try body()
     }
     
     /// Answers "is anything here?" with one `stat`.

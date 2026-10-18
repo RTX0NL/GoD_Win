@@ -88,6 +88,16 @@ public enum GODOps {
         return file
     }
 
+    /// The folder counterpart of `inputFile(fromArgument:)`, under the same
+    /// rules: a native or logical absolute path, and an error, not a trap,
+    /// for anything relative.
+    public static func inputFolder(fromArgument path: String) throws -> Folder {
+        // Through `File` because `Folder.init` traps on a relative path that
+        // `File.init` accepts, and the check below is what rejects it.
+        let file = try inputFile(fromArgument: path)
+        return Folder(file.path)
+    }
+
     // MARK: - Project setup
 
     /// Set up an editing project from a GameCube/Wii disc image (raw, or a
@@ -149,12 +159,14 @@ public enum GODOps {
     public static func runOperation(
         json: Data,
         settingsJSON: Data? = nil,
+        rootFolder: Folder? = nil,
         fileSystem: FileSystem = FileSystem.shared,
         logger: Logger? = nil
     ) throws {
         try runOperation(
             json: json,
             settingsJSON: settingsJSON,
+            rootFolder: rootFolder,
             fileSystem: StreamedFileSystem(fileSystem),
             logger: logger,
             handler: EngineOperationHandler()
@@ -165,6 +177,7 @@ public enum GODOps {
     static func runOperation(
         json: Data,
         settingsJSON: Data?,
+        rootFolder: Folder? = nil,
         fileSystem: StreamedFileSystem,
         logger: Logger?,
         handler: OperationHandler
@@ -174,7 +187,11 @@ public enum GODOps {
             try JSONDecoder().decode(GoddessSettings.self, from: $0)
         } ?? GoddessSettings.default
         let log = logger ?? PrintLogger(verbose: settings.verbose)
-        try run(operation: operation, settings: settings, fileSystem: fileSystem, logger: log, handler: handler)
+        // Relative paths resolve against `rootFolder`, or where the process
+        // started — never against a directory an earlier call left behind.
+        try fileSystem.withCurrentDirectory(rootFolder) {
+            try run(operation: operation, settings: settings, fileSystem: fileSystem, logger: log, handler: handler)
+        }
     }
 
     // MARK: - Internals
@@ -185,18 +202,21 @@ public enum GODOps {
         logger: Logger?,
         handler: OperationHandler
     ) throws {
-        fileSystem.changeDirectory(config.rootFolder)
-        let settings: GoddessSettings = (try? config.settingsFile.flatMap { file in
-            try fileSystem.decodeJSON(from: file)
-        }) ?? GoddessSettings.default
+        // The config's root holds for the whole run and is put back after
+        // it, so the next caller doesn't inherit it.
+        try fileSystem.withCurrentDirectory(config.rootFolder) {
+            let settings: GoddessSettings = (try? config.settingsFile.flatMap { file in
+                try fileSystem.decodeJSON(from: file)
+            }) ?? GoddessSettings.default
 
-        let log = logger ?? PrintLogger(verbose: settings.verbose)
+            let log = logger ?? PrintLogger(verbose: settings.verbose)
 
-        let enabledOps = config.operations.enabledEntries
-        for (index, operation) in enabledOps.enumerated() {
-            fileSystem.changeDirectory(config.rootFolder)
-            try run(operation: operation, settings: settings, fileSystem: fileSystem, logger: log, handler: handler)
-            log.log(.info("Operation \(index + 1)/\(enabledOps.count) completed"))
+            let enabledOps = config.operations.enabledEntries
+            for (index, operation) in enabledOps.enumerated() {
+                fileSystem.changeDirectory(config.rootFolder)
+                try run(operation: operation, settings: settings, fileSystem: fileSystem, logger: log, handler: handler)
+                log.log(.info("Operation \(index + 1)/\(enabledOps.count) completed"))
+            }
         }
     }
 

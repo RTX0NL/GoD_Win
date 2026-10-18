@@ -63,6 +63,24 @@ public final class StreamedFileSystem: FileSystemTree {
         disk?.changeDirectory(folder)
     }
 
+    /// Runs `body` with the backing file system's current directory at
+    /// `folder` — or, with no folder, at the directory the process started
+    /// in — and restores the previous one afterwards. A relative `folder`
+    /// resolves against the launch directory too, never against whatever an
+    /// earlier caller left behind. A no-op wrapper for in-memory trees.
+    public func withCurrentDirectory<T>(_ folder: Folder?, _ body: () throws -> T) rethrows -> T {
+        guard let disk else { return try body() }
+        let target: Folder
+        if let folder, folder.path.hasPrefix("/") {
+            target = folder
+        } else if let folder {
+            target = disk.launchDirectory.folder(folder.path)
+        } else {
+            target = disk.launchDirectory
+        }
+        return try disk.withCurrentDirectory(target, body)
+    }
+
     /// Resolution is the backing tree's, not this wrapper's — the same
     /// current directory `changeDirectory` above moves.
     public func resolvedPath(of file: File) -> File { backing.resolvedPath(of: file) }

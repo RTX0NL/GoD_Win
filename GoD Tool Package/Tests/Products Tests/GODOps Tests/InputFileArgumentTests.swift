@@ -38,6 +38,22 @@ final class InputFileArgumentTests: XCTestCase {
         XCTAssertEqual(file.fileType, "fsys")
     }
 
+    func testFolderArgumentBecomesLogicalPath() throws {
+        let folder = try GODOps.inputFolder(fromArgument: "/project/Build")
+        XCTAssertEqual(folder.path, "/project/Build")
+        guard PathConvention.current == .windows else { return }
+        XCTAssertEqual(try GODOps.inputFolder(fromArgument: #"C:\Games\Project"#).path, "/C:/Games/Project")
+        XCTAssertEqual(try GODOps.inputFolder(fromArgument: #"C:\Games\Project\"#).path, "/C:/Games/Project")
+    }
+
+    func testRelativeFolderArgumentsAreRejected() {
+        for argument in ["foo", "foo/bar", ".", "./x", "../x"] {
+            XCTAssertThrowsError(try GODOps.inputFolder(fromArgument: argument), argument) { error in
+                XCTAssertTrue("\(error)".contains("absolute"), "\(argument): \(error)")
+            }
+        }
+    }
+
     /// A relative argument would resolve against the server's working
     /// directory, which means nothing to the client, and a bare one like
     /// "foo/x.iso" trapped in Folder.init on the way to its parent folder.

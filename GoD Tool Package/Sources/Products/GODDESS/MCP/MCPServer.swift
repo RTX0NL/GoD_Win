@@ -194,6 +194,13 @@ let goddessTools: [Tool] = [
                     "type": .string("object"),
                     "description": .string("Optional GoddessSettings overrides (verbose, wiiCommonKeyFile)"),
                 ]),
+                "rootFolder": .object([
+                    "type": .string("string"),
+                    "description": .string(
+                        "Optional absolute folder that ./ and ../ paths in the operation resolve against. "
+                        + "Without it they resolve against the directory the server was started in."
+                    ),
+                ]),
             ]),
             "required": .array([.string("operation")]),
         ]),
@@ -271,11 +278,24 @@ private func handleToolCall(_ params: CallTool.Parameters, logger: GoDFoundation
         let settingsData: Data? = try args["settings"].map { (value: Value) -> Data in
             try JSONEncoder().encode(value)
         }
-        try GODOps.runOperation(json: operationData, settingsJSON: settingsData, logger: logger)
+        let rootFolder = try args["rootFolder"]?.stringValue.map(GODOps.inputFolder(fromArgument:))
+        try GODOps.runOperation(json: operationData, settingsJSON: settingsData, rootFolder: rootFolder, logger: logger)
         return "Ran operation."
 
     default:
         throw MCPToolError.unknownTool(params.name)
+    }
+}
+
+/// Runs tool calls one at a time.
+///
+/// The server handles requests as concurrent tasks, but operations share
+/// process-wide state — the file system's current directory above all — so
+/// two at once could resolve each other's relative paths. An actor's
+/// synchronous method can't interleave with another call to it.
+private actor ToolCallQueue {
+    func run(_ params: CallTool.Parameters, logger: GoDFoundation.Logger) throws -> String {
+        try handleToolCall(params, logger: logger)
     }
 }
 
@@ -313,10 +333,11 @@ func runMCPServer() async {
         ListTools.Result(tools: goddessTools)
     }
 
+    let toolCalls = ToolCallQueue()
     await server.withMethodHandler(CallTool.self) { params in
         let logger = MCPLogger(server: server)
         do {
-            let message = try handleToolCall(params, logger: logger)
+            let message = try await toolCalls.run(params, logger: logger)
             return CallTool.Result(content: [.text(message)], isError: false)
         } catch {
             return CallTool.Result(content: [.text(GODOps.userMessage(for: error))], isError: true)
