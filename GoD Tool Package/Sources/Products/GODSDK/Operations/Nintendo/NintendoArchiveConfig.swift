@@ -50,6 +50,9 @@ enum NintendoArchiveDump {
     /// Bulk — scan `archivesFolder` and unpack everything that matches.
     /// Each archive lands in its own subfolder of `outputFolder`, named
     /// after the archive, so `homeBtn.arc` → `<outputFolder>/homeBtn.arc/`.
+    /// A recursive dump mirrors the folders it walked, so `hb/x/homeBtn.arc`
+    /// → `<outputFolder>/hb/x/homeBtn.arc/`: two folders can hold archives
+    /// with the same name.
     struct BatchConfig: Codable {
         let archivesFolder: Folder
         let outputFolder: Folder
@@ -104,6 +107,10 @@ enum NintendoArchiveBuild {
 
     /// Bulk — every manifest under `inputFolder` produces one rebuilt
     /// archive in `outputFolder`, named by the manifest's `archiveName`.
+    /// The archive goes where its manifest's folder sits, mirrored under
+    /// `outputFolder`, so a bulk dump's `hb/x/homeBtn.arc/` builds back to
+    /// `<outputFolder>/hb/x/homeBtn.arc`. Two manifests that would build to
+    /// the same file stop the run instead of overwriting each other.
     struct BatchConfig: Codable {
         let inputFolder: Folder
         let outputFolder: Folder

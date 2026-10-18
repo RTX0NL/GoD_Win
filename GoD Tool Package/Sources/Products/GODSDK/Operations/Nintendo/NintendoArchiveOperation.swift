@@ -36,13 +36,12 @@ extension NintendoArchiveDump {
         logger: Logger? = nil
     ) throws {
         let engine = try loadEngine(config.nintendoEngine, fileSystem: fileSystem)
-        let candidates = collectFiles(
-            in: config.archivesFolder, recursive: config.recursive, fileSystem: fileSystem
-        )
+        let candidates = fileSystem.scan(config.archivesFolder, recursive: config.recursive) { _ in true }
 
         var unpacked = 0
         var skipped = 0
-        for file in candidates {
+        for candidate in candidates {
+            let file = candidate.file
             // Identify by magic, not by extension: the point of the
             // discriminator is that the file says what it is. A file that
             // isn't an archive is skipped silently — a bulk dump is
@@ -57,11 +56,16 @@ extension NintendoArchiveDump {
                 continue
             }
             // One subfolder per archive keeps two archives holding the same
-            // internal filename from overwriting each other.
+            // internal filename from overwriting each other, and mirroring
+            // the folder it came from keeps two same-named archives in
+            // different folders apart (`hb/HomeButton2/` and `hb/HomeButton3/`
+            // on Battle Revolution share eight names).
             try engine.unpackArchive(
                 data: data,
                 archiveName: file.fileName,
-                into: config.outputFolder.folder(file.fileName),
+                into: config.outputFolder
+                    .folder(candidate.relativeFolder.path)
+                    .folder(file.fileName),
                 fileSystem: fileSystem,
                 overwrite: config.overwrite,
                 logger: logger
@@ -112,20 +116,31 @@ extension NintendoArchiveBuild {
         logger: Logger? = nil
     ) throws {
         let engine = try loadEngine(config.nintendoEngine, fileSystem: fileSystem)
-        let candidates = collectFiles(
-            in: config.inputFolder, recursive: config.recursive, fileSystem: fileSystem
-        )
+        let candidates = fileSystem.scan(config.inputFolder, withExtension: "json", recursive: config.recursive)
 
         var packed = 0
-        for file in candidates where file.fileType?.lowercased() == "json" {
+        var written = [String: File]()
+        for candidate in candidates {
+            let file = candidate.file
             // Any JSON in the tree could be something else's manifest, so
             // decoding is the filter: one that isn't ours is skipped.
             guard let registry: NintendoArchiveRegistry = try? fileSystem.decodeJSON(from: file) else {
                 continue
             }
+            // A bulk dump puts each archive's manifest in a folder of its
+            // own, so the archive belongs where that folder sits: the
+            // manifest's folder, one level up, mirrored under the output.
+            let destination = config.outputFolder
+                .folder((candidate.relativeFolder.parentFolder ?? Folder(".")).path)
+                .file(registry.archiveName)
+            if let earlier = written[destination.path] {
+                throw NintendoArchiveErrors.duplicateOutput(
+                    destination: destination, manifests: [earlier, file], .init()
+                )
+            }
             let data = try engine.packArchive(manifestFile: file, fileSystem: fileSystem)
-            let destination = config.outputFolder.file(registry.archiveName)
             try fileSystem.writeFile(data, at: destination, overwrite: config.overwrite)
+            written[destination.path] = file
             packed += 1
         }
 
@@ -140,16 +155,14 @@ private func loadEngine(_ folder: Folder?, fileSystem: FileSystemTree) throws ->
     return try NintendoEngine(from: folder, in: fileSystem)
 }
 
-/// Every regular file under `folder`, optionally descending. Order is
-/// stable so a bulk run reports the same sequence every time.
-private func collectFiles(
-    in folder: Folder, recursive: Bool, fileSystem: FileSystemTree
-) -> [File] {
-    guard let contents = fileSystem.inspectFolder(at: folder) else { return [] }
-    var found = contents.files.sorted { $0.path < $1.path }
-    guard recursive else { return found }
-    for sub in contents.subFolders.sorted(by: { $0.path < $1.path }) {
-        found += collectFiles(in: sub, recursive: true, fileSystem: fileSystem)
+enum NintendoArchiveErrors: Error, CustomStringConvertible {
+    case duplicateOutput(destination: File, manifests: [File], ErrorTrace)
+
+    var description: String {
+        switch self {
+        case let .duplicateOutput(destination, manifests, trace):
+            let names = manifests.map(\.path).joined(separator: " and ")
+            return "Two manifests would both be built to \(destination.path): \(names)\n\(trace)"
+        }
     }
-    return found
 }

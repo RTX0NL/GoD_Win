@@ -221,7 +221,33 @@ final class NintendoArchiveOperationTests: XCTestCase {
             settings: .default, fileSystem: fst, logger: SilentLogger()
         )
 
-        XCTAssertNotNil(fst.readFile(at: File("/out/deep.arc/deep.arc.json")))
+        XCTAssertNotNil(fst.readFile(at: File("/out/nested/deep.arc/deep.arc.json")))
+    }
+
+    /// Battle Revolution keeps eight same-named archives in both
+    /// `hb/HomeButton2/` and `hb/HomeButton3/`. A recursive dump that dropped
+    /// the folder wrote both to one place, so the second overwrote the first.
+    func testRecursiveDumpAndBuildKeepSameNamedArchivesApart() throws {
+        let fst = InMemoryFST()
+        let first = try u8Bytes()
+        let second = try u8Bytes(byteOrder: .little)
+        XCTAssertNotEqual(first.rawBytes, second.rawBytes)
+        try fst.writeFile(first, at: File("/files/hb/HomeButton2/homeBtn.arc"), overwrite: true)
+        try fst.writeFile(second, at: File("/files/hb/HomeButton3/homeBtn.arc"), overwrite: true)
+
+        try NintendoArchiveDump.dump(
+            config: .init(archivesFolder: Folder("/files"), outputFolder: Folder("/out"), recursive: true),
+            settings: .default, fileSystem: fst, logger: SilentLogger()
+        )
+        XCTAssertNotNil(fst.readFile(at: File("/out/hb/HomeButton2/homeBtn.arc/homeBtn.arc.json")))
+        XCTAssertNotNil(fst.readFile(at: File("/out/hb/HomeButton3/homeBtn.arc/homeBtn.arc.json")))
+
+        try NintendoArchiveBuild.build(
+            config: .init(inputFolder: Folder("/out"), outputFolder: Folder("/built")),
+            settings: .default, fileSystem: fst, logger: SilentLogger()
+        )
+        XCTAssertEqual(fst.readFile(at: File("/built/hb/HomeButton2/homeBtn.arc"))?.allData?.rawBytes, first.rawBytes)
+        XCTAssertEqual(fst.readFile(at: File("/built/hb/HomeButton3/homeBtn.arc"))?.allData?.rawBytes, second.rawBytes)
     }
 
     // MARK: - Bulk build
@@ -265,6 +291,29 @@ final class NintendoArchiveOperationTests: XCTestCase {
             settings: .default, fileSystem: fst, logger: SilentLogger()
         )
         XCTAssertNotNil(fst.readFile(at: File("/built/a.arc")))
+    }
+
+    /// Two manifests that name the same archive in one folder can't both be
+    /// built; the run stops rather than letting the second overwrite the
+    /// first.
+    func testBulkBuildRefusesTwoManifestsForOneArchive() throws {
+        let fst = InMemoryFST()
+        try fst.writeFile(try u8Bytes(), at: File("/files/a.arc"), overwrite: true)
+        try NintendoArchiveDump.dump(
+            config: .init(archivePath: File("/files/a.arc"), outputFolder: Folder("/out")),
+            settings: .default, fileSystem: fst, logger: SilentLogger()
+        )
+        let manifest = try XCTUnwrap(fst.readFile(at: File("/out/a.arc.json"))?.allData)
+        try fst.writeFile(manifest, at: File("/out/copy.json"), overwrite: true)
+
+        XCTAssertThrowsError(
+            try NintendoArchiveBuild.build(
+                config: .init(inputFolder: Folder("/out"), outputFolder: Folder("/built")),
+                settings: .default, fileSystem: fst, logger: SilentLogger()
+            )
+        ) { error in
+            XCTAssertTrue(String(describing: error).contains("/built/a.arc"), "\(error)")
+        }
     }
 
     // MARK: - Byte order
