@@ -20,6 +20,25 @@ import GoDFoundation
 ///   unused by the original compiler).
 public struct ColoExprLowering {
 
+    /// Input the lowering can't turn into bytecode. The parser rejects
+    /// source that would produce any of these, so seeing one means an
+    /// expression list built some other way; it is reported rather than
+    /// trapping (which would take an MCP server down) or emitting a jump to
+    /// offset 0.
+    public enum LoweringError: Error, CustomStringConvertible {
+        case undefinedLabel(Int)
+        case unexpected(String)
+
+        public var description: String {
+            switch self {
+            case .undefinedLabel(let label):
+                return "script lowering: jump to label \(label), which nothing declares"
+            case .unexpected(let what):
+                return "script lowering: unexpected \(what)"
+            }
+        }
+    }
+
     public init() {}
 
     /// Lower a flat expression list to instructions with absolute offsets
@@ -29,7 +48,7 @@ public struct ColoExprLowering {
     /// expression builder) or symbolic labels — negative integers paired with
     /// matching `.location(label)` markers (as produced by
     /// `ColoExprUncompound`). Labels are resolved to byte offsets after layout.
-    public func lower(_ expressions: [ColoExpr], startOffset: Int) -> [ColoScriptInstruction] {
+    public func lower(_ expressions: [ColoExpr], startOffset: Int) throws -> [ColoScriptInstruction] {
         var opcodes = [ColoScriptOpcode]()
         var labelIndex = [Int: Int]()  // symbolic label → opcode index
 
@@ -38,7 +57,7 @@ public struct ColoExprLowering {
                 if label < 0 { labelIndex[label] = opcodes.count }
                 continue
             }
-            lowerStatement(expression, into: &opcodes)
+            try lowerStatement(expression, into: &opcodes)
         }
 
         var instructions = [ColoScriptInstruction]()
@@ -53,23 +72,22 @@ public struct ColoExprLowering {
 
         // Fixup: resolve symbolic labels (encoded as sign-extended UInt32s)
         for (index, instruction) in instructions.enumerated() {
-            let resolve: (UInt32) -> UInt32? = { raw in
+            let resolve: (UInt32) throws -> UInt32? = { raw in
                 let value = Int(Int32(bitPattern: raw))
                 guard value < 0 else { return nil }
                 guard let opcodeIndex = labelIndex[value] else {
-                    assertionFailure("Jump to undefined label \(value)")
-                    return 0
+                    throw LoweringError.undefinedLabel(value)
                 }
                 return UInt32(byteOffsets[opcodeIndex])
             }
             switch instruction.opcode {
             case .jump(let target):
-                if let resolved = resolve(target) {
+                if let resolved = try resolve(target) {
                     instructions[index] = ColoScriptInstruction(
                         offset: instruction.offset, opcode: .jump(offset: resolved))
                 }
             case .jumpFalse(let target):
-                if let resolved = resolve(target) {
+                if let resolved = try resolve(target) {
                     instructions[index] = ColoScriptInstruction(
                         offset: instruction.offset, opcode: .jumpFalse(offset: resolved))
                 }
@@ -82,10 +100,10 @@ public struct ColoExprLowering {
 
     // MARK: - Statements
 
-    private func lowerStatement(_ expression: ColoExpr, into out: inout [ColoScriptOpcode]) {
+    private func lowerStatement(_ expression: ColoExpr, into out: inout [ColoScriptOpcode]) throws {
         switch expression {
         case .variableAssignment(let target, let value):
-            lowerAssignment(target: target, value: value, into: &out)
+            try lowerAssignment(target: target, value: value, into: &out)
             // The statement pop's mask follows the assignment *target* type
             if case .variable(let targetVar, _, _) = target {
                 appendPop(for: targetVar.valueType, into: &out)
@@ -97,27 +115,27 @@ public struct ColoExprLowering {
             // copyStruct: builder pops arg2 (dest index) last-pushed, arg1 first
             if case .variable(let sourceVar, let sourceIndex, _) = source,
                case .variable(let destVar, let destIndex, _) = dest {
-                lowerValue(sourceIndex, into: &out)
-                lowerValue(destIndex, into: &out)
+                try lowerValue(sourceIndex, into: &out)
+                try lowerValue(destIndex, into: &out)
                 out.append(.copyStruct(source: sourceVar, dest: destVar, length: UInt16(length)))
             }
 
         case .call(let functionID, let returnCount, let args):
-            lowerCall(functionID: functionID, returnCount: returnCount, args: args, into: &out)
+            try lowerCall(functionID: functionID, returnCount: returnCount, args: args, into: &out)
             appendPop(for: returnCount == 0 ? .void : .integer, into: &out)
 
         case .callBuiltIn:
-            lowerValue(expression, into: &out)
+            try lowerValue(expression, into: &out)
             appendPop(for: .integer, into: &out)
 
         case .printf(let format, let args):
             out.append(.pushImmediate(type: .integer, value: stringOffset(from: format)))
-            for arg in args { lowerValue(arg, into: &out) }
+            for arg in args { try lowerValue(arg, into: &out) }
             out.append(.printf(unused: 0, argCount: UInt16(args.count + 1)))
             appendPop(for: .void, into: &out)
 
         case .yield(let frames):
-            lowerValue(frames, into: &out)
+            try lowerValue(frames, into: &out)
             out.append(.yield(unused: 0, argCount: 1))
             appendPop(for: .void, into: &out)
 
@@ -130,10 +148,10 @@ public struct ColoExprLowering {
             let sourceVar: ColoScriptVar
             if case .variable(let source, let inner, _) = value {
                 sourceVar = source
-                lowerValue(inner, into: &out)
+                try lowerValue(inner, into: &out)
             } else {
                 sourceVar = literalVar(.integer)
-                lowerValue(value, into: &out)
+                try lowerValue(value, into: &out)
             }
             let target = ColoScriptVar(valueType: .integer, isLocal: true, isLiteral: false,
                                        isPointer: false, flag0x20: false)
@@ -145,7 +163,7 @@ public struct ColoExprLowering {
             out.append(.jump(offset: UInt32(bitPattern: Int32(target))))
 
         case .jumpFalse(let condition, let target):
-            lowerValue(condition, into: &out)
+            try lowerValue(condition, into: &out)
             out.append(.jumpFalse(offset: UInt32(bitPattern: Int32(target))))
 
         case .location:
@@ -158,30 +176,30 @@ public struct ColoExprLowering {
             out.append(.nop)
 
         case .ifStatement, .whileLoop:
-            assertionFailure("Lowering expects uncompounded (flat) expressions")
+            throw LoweringError.unexpected("an if or while statement that wasn't flattened first")
 
         default:
             // Leftover stack value flushed as a bare statement: pushes only
-            lowerValue(expression, into: &out)
+            try lowerValue(expression, into: &out)
         }
     }
 
-    private func lowerAssignment(target: ColoExpr, value: ColoExpr, into out: inout [ColoScriptOpcode]) {
+    private func lowerAssignment(target: ColoExpr, value: ColoExpr, into out: inout [ColoScriptOpcode]) throws {
         guard case .variable(let targetVar, let targetIndex, _) = target,
               case .variable(let sourceVar, let sourceValue, _) = value else {
             // Malformed assignment — lower operands as plain values
-            lowerValue(target, into: &out)
-            lowerValue(value, into: &out)
+            try lowerValue(target, into: &out)
+            try lowerValue(value, into: &out)
             return
         }
-        lowerValue(targetIndex, into: &out)
-        lowerValue(sourceValue, into: &out)
+        try lowerValue(targetIndex, into: &out)
+        try lowerValue(sourceValue, into: &out)
         out.append(.setVar(source: sourceVar, target: targetVar))
     }
 
     // MARK: - Values
 
-    private func lowerValue(_ expression: ColoExpr, into out: inout [ColoScriptOpcode]) {
+    private func lowerValue(_ expression: ColoExpr, into out: inout [ColoScriptOpcode]) throws {
         switch expression {
         case .constant(let constant):
             out.append(pushConstant(constant))
@@ -189,9 +207,9 @@ public struct ColoExprLowering {
         case .variable(let variable, let index, let form):
             if variable.isLiteral {
                 // Literal wraps carry no push of their own
-                lowerValue(index, into: &out)
+                try lowerValue(index, into: &out)
             } else {
-                lowerValue(index, into: &out)
+                try lowerValue(index, into: &out)
                 switch form {
                 case .single: out.append(.pushVar(var1: variable))
                 case .single2: out.append(.pushVar2(var1: variable))
@@ -201,40 +219,40 @@ public struct ColoExprLowering {
             }
 
         case .operation(let op, let operands):
-            lowerOperation(op, operands: operands, into: &out)
+            try lowerOperation(op, operands: operands, into: &out)
 
         case .call(let functionID, let returnCount, let args):
-            lowerCall(functionID: functionID, returnCount: returnCount, args: args, into: &out)
+            try lowerCall(functionID: functionID, returnCount: returnCount, args: args, into: &out)
 
         case .callBuiltIn(let functionID, let args):
             // Object reference (local 0), function ID, then arguments
             out.append(.pushImmediate(type: .integer, value: 0))
             out.append(.pushMultiVar(var1: localIntVar, count: 1))
-            lowerValue(functionID, into: &out)
-            lowerValues(args, into: &out)
+            try lowerValue(functionID, into: &out)
+            try lowerValues(args, into: &out)
             out.append(.callStandard(returnCount: 1, argCount: UInt16(args.count + 1)))
 
         case .variableAssignment(let target, let value):
             // Assignment used as a value (e.g. pending return value)
-            lowerAssignment(target: target, value: value, into: &out)
+            try lowerAssignment(target: target, value: value, into: &out)
 
         case .yield(let frames):
-            lowerValue(frames, into: &out)
+            try lowerValue(frames, into: &out)
             out.append(.yield(unused: 0, argCount: 1))
 
         default:
-            assertionFailure("Unexpected expression in value position: \(expression)")
+            throw LoweringError.unexpected("\(expression) where a value was expected")
         }
     }
 
     /// Script-internal call: a value-returning call is preceded by a
     /// return-slot push (`local0`) below its arguments.
-    private func lowerCall(functionID: Int, returnCount: Int, args: [ColoExpr], into out: inout [ColoScriptOpcode]) {
+    private func lowerCall(functionID: Int, returnCount: Int, args: [ColoExpr], into out: inout [ColoScriptOpcode]) throws {
         if returnCount == 1 {
             out.append(.pushImmediate(type: .integer, value: 0))
             out.append(.pushMultiVar(var1: localIntVar, count: 1))
         }
-        lowerValues(args, into: &out)
+        try lowerValues(args, into: &out)
         out.append(.call(functionID: UInt32(functionID),
                          returnCount: UInt16(returnCount),
                          argCount: UInt16(args.count)))
@@ -244,7 +262,7 @@ public struct ColoExprLowering {
     /// resolved variable `count` times — the builder models that as `count`
     /// identical expressions, so collapse adjacent repeats back into the
     /// single multi-push.
-    private func lowerValues(_ expressions: [ColoExpr], into out: inout [ColoScriptOpcode]) {
+    private func lowerValues(_ expressions: [ColoExpr], into out: inout [ColoScriptOpcode]) throws {
         var index = 0
         while index < expressions.count {
             let expression = expressions[index]
@@ -255,10 +273,10 @@ public struct ColoExprLowering {
                       isSameExpression(expressions[index + repeats], expression) {
                     repeats += 1
                 }
-                lowerValue(expression, into: &out)  // emits pushMultiVar(count)
+                try lowerValue(expression, into: &out)  // emits pushMultiVar(count)
                 index += repeats
             } else {
-                lowerValue(expression, into: &out)
+                try lowerValue(expression, into: &out)
                 index += 1
             }
         }
@@ -270,13 +288,13 @@ public struct ColoExprLowering {
         String(describing: lhs) == String(describing: rhs)
     }
 
-    private func lowerOperation(_ op: ColoOperator, operands: [ColoExpr], into out: inout [ColoScriptOpcode]) {
+    private func lowerOperation(_ op: ColoOperator, operands: [ColoExpr], into out: inout [ColoScriptOpcode]) throws {
         if operands.count == 1, case .variable(let variable, let inner, _) = operands[0] {
-            lowerValue(inner, into: &out)
+            try lowerValue(inner, into: &out)
             switch op {
             case .not: out.append(.not(var1: variable))
             case .negate: out.append(.negate(var1: variable))
-            default: assertionFailure("Unary lowering for non-unary operator \(op)")
+            default: throw LoweringError.unexpected("operator \(op) with one operand")
             }
             return
         }
@@ -284,13 +302,12 @@ public struct ColoExprLowering {
         guard operands.count == 2,
               case .variable(let rhsVar, let rhsInner, _) = operands[0],
               case .variable(let lhsVar, let lhsInner, _) = operands[1] else {
-            assertionFailure("Binary operation without variable-wrapped operands")
-            return
+            throw LoweringError.unexpected("operator \(op) without two typed operands")
         }
 
         // Push order: LHS first, RHS on top (builder pops RHS first)
-        lowerValue(lhsInner, into: &out)
-        lowerValue(rhsInner, into: &out)
+        try lowerValue(lhsInner, into: &out)
+        try lowerValue(rhsInner, into: &out)
 
         switch op {
         case .and: out.append(.bitwiseAnd(var1: rhsVar, var2: lhsVar))
@@ -309,7 +326,7 @@ public struct ColoExprLowering {
         case .logicalAnd: out.append(.logicalAnd(var1: rhsVar, var2: lhsVar))
         case .logicalOr: out.append(.logicalOr(var1: rhsVar, var2: lhsVar))
         case .not, .negate:
-            assertionFailure("Unary operator with two operands")
+            throw LoweringError.unexpected("operator \(op) with two operands")
         }
     }
 

@@ -62,8 +62,8 @@ final class ColoScriptRoundTripTests: XCTestCase {
             offset += opcode.length
         }
         let (expressions, _) = ColoExpressionBuilder().buildExpressions(instructions: instructions)
-        let lowered = ColoExprLowering().lower(expressions, startOffset: startOffset)
-        XCTAssertEqual(lowered, instructions, file: file, line: line)
+        XCTAssertEqual(try ColoExprLowering().lower(expressions, startOffset: startOffset), instructions,
+                       file: file, line: line)
     }
 
     /// instructions → expressions → compound → uncompound → instructions
@@ -82,8 +82,8 @@ final class ColoScriptRoundTripTests: XCTestCase {
         let (expressions, _) = ColoExpressionBuilder().buildExpressions(instructions: instructions)
         let compounded = ColoExpressionCompound().compound(expressions)
         let flattened = ColoExprUncompound().uncompound(compounded)
-        let lowered = ColoExprLowering().lower(flattened, startOffset: startOffset)
-        XCTAssertEqual(lowered, instructions, file: file, line: line)
+        XCTAssertEqual(try ColoExprLowering().lower(flattened, startOffset: startOffset), instructions,
+                       file: file, line: line)
     }
 
     // MARK: - 1. Opcode codec: every opcode round-trips byte-exactly
@@ -534,13 +534,13 @@ final class ColoScriptRoundTripTests: XCTestCase {
             // Stages 2+3: expression and structure round trips per code run
             for run in script.codeRuns {
                 let (expressions, _) = ColoExpressionBuilder().buildExpressions(instructions: run.instructions)
-                if ColoExprLowering().lower(expressions, startOffset: run.start) != run.instructions {
+                if (try? ColoExprLowering().lower(expressions, startOffset: run.start)) != run.instructions {
                     failures.append("\(name): stage 2 (expressions) diverged in run @0x\(String(run.start, radix: 16))")
                     break
                 }
                 let structured = ColoExpressionCompound().compound(expressions)
                 let flattened = ColoExprUncompound().uncompound(structured)
-                if ColoExprLowering().lower(flattened, startOffset: run.start) != run.instructions {
+                if (try? ColoExprLowering().lower(flattened, startOffset: run.start)) != run.instructions {
                     failures.append("\(name): stage 3 (structures) diverged in run @0x\(String(run.start, radix: 16))")
                     break
                 }

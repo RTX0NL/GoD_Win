@@ -57,7 +57,7 @@ public struct ColoScriptCompiler {
                 body.append(.returnVoid)
             }
             let flattened = uncompounder.uncompound(body)
-            let instructions = lowering.lower(flattened, startOffset: offset)
+            let instructions = try lowering.lower(flattened, startOffset: offset)
             functionOffsets[function.index] = UInt32(offset)
             loweredRuns.append((instructions, offset))
             offset += instructions.reduce(0) { $0 + $1.length }

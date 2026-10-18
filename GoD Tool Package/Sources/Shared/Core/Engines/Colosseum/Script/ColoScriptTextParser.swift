@@ -54,8 +54,19 @@ public struct ColoScriptTextParser {
         /// labels are positional documentation — reordering them the way
         /// Python allows is not supported.
         case argumentLabelMismatch(expected: String, got: String, line: Int)
+        /// `goto` to a label the function never declares. Labels are local
+        /// to a function, so this is also what a jump into another
+        /// function looks like.
+        case undefinedLabel(String, line: Int)
+        /// A label declared twice in one function: a `goto` couldn't say
+        /// which of the two it means.
+        case duplicateLabel(String, line: Int)
         public var description: String {
             switch self {
+            case .undefinedLabel(let name, let line):
+                return "parse error at line \(line): 'goto \(name)', but this function declares no label '\(name)'"
+            case .duplicateLabel(let name, let line):
+                return "parse error at line \(line): label '\(name)' is already declared in this function"
             case .unexpected(let what, let line):
                 return "parse error at line \(line): \(what)"
             case .unknownEnum(let name, let line):
@@ -87,6 +98,11 @@ public struct ColoScriptTextParser {
     /// a distinct negative range so they never collide with the fresh labels
     /// `ColoExprUncompound` allocates from -1 downwards.
     private var labelIDs = [String: Int]()
+    /// Labels declared in the current function, and the first line each
+    /// `goto` target is used on, checked against each other once the
+    /// function's body is parsed.
+    private var declaredLabels = Set<String>()
+    private var labelUses = [String: Int]()
     private static let parserLabelBase = -1_000_000
     /// Declared argument types of the function being parsed (by display index)
     private var currentArgTypes = [ColoValueType]()
@@ -476,8 +492,15 @@ public struct ColoScriptTextParser {
                 if !pythonStub, stream.matchSymbol("{") {
                     currentLocalArgBase = returns ? 1 : 0
                     labelIDs = [:]
+                    declaredLabels = []
+                    labelUses = [:]
                     currentArgTypes = argTypes
                     let body = try parseBlock(&stream, localArgBase: currentLocalArgBase)
+                    if let (name, line) = labelUses
+                        .filter({ !declaredLabels.contains($0.key) })
+                        .min(by: { ($0.value, $0.key) < ($1.value, $1.key) }) {
+                        throw ParseError.undefinedLabel(name, line: line)
+                    }
                     script.functions.append(ParsedFunction(
                         index: index, argCount: argCount, returnsValue: returns,
                         isStub: false, body: body))
@@ -576,12 +599,16 @@ public struct ColoScriptTextParser {
 
         if stream.matchIdentifier("goto") {
             let label = try stream.expectIdentifier()
+            if labelUses[label] == nil { labelUses[label] = line }
             return [.jump(labelID(label))]
         }
 
         // Label statement: `L_xxxx:`
         if case .identifier(let name)? = stream.current?.kind, name.hasPrefix("L_"),
            case .symbol(":")? = stream.peekKind(1) {
+            guard declaredLabels.insert(name).inserted else {
+                throw ParseError.duplicateLabel(name, line: line)
+            }
             _ = stream.advance()
             _ = stream.advance()
             return [.location(labelID(name))]
