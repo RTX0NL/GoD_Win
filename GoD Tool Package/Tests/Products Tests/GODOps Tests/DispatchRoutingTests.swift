@@ -891,6 +891,59 @@ final class DispatchRoutingTests: XCTestCase {
         XCTAssertNil(call.settings.wiiCommonKeyFile)
     }
 
+    /// Falling back is right for a settings file that isn't there, but it
+    /// shouldn't be silent: the defaults have no Wii common key, and the
+    /// error that eventually surfaces says nothing about settings.
+    func testMissingSettingsFileIsReported() throws {
+        let fst = InMemoryFST()
+        writeText("""
+        { "name": "t", "rootFolder": ".", "settingsFile": "/project/nope.json",
+          "operations": [ { "operation": \(cisoDumpJSON), "enabled": "YES" } ] }
+        """, at: File("/project/config.json"), in: fst)
+        let logger = RecordingLogger()
+        try GODOps.runConfig(at: File("/project/config.json"), fileSystem: StreamedFileSystem(materializing: fst), logger: logger, handler: SpyOperationHandler())
+        XCTAssertTrue(logger.warnings.contains { $0.contains("/project/nope.json") }, "\(logger.warnings)")
+    }
+
+    /// A settings file that is there but doesn't decode is a mistake in it —
+    /// a typo in the key path, say — and running on defaults would hide it.
+    func testUndecodableSettingsFileStopsTheRun() {
+        let spy = SpyOperationHandler()
+        XCTAssertThrowsError(try route(
+            entries: [(cisoDumpJSON, "YES")],
+            settingsJSON: #"{ "verbose": true, "wiiCommonKeyFile": "/project/keys/common-key.txt" "#,
+            handler: spy
+        )) { error in
+            guard case ConfigErrors.settingsFileUndecodable(let file, _, _) = error else {
+                return XCTFail("expected settingsFileUndecodable, got \(error)")
+            }
+            XCTAssertEqual(file, File("/project/settings.json"))
+        }
+        XCTAssertTrue(spy.calls.isEmpty, "no operation runs on settings that didn't load")
+    }
+
+    /// An absolute rootFolder means that folder, not a folder of that name
+    /// under the config's own location.
+    func testAnAbsoluteRootFolderIsKept() throws {
+        let fst = InMemoryFST()
+        writeText("""
+        { "name": "t", "rootFolder": "/elsewhere/root", "operations": [] }
+        """, at: File("/project/sub/config.json"), in: fst)
+        let config = try GoddessConfig.decodeFromFile(File("/project/sub/config.json"), fileSystem: fst)
+        XCTAssertEqual(config.rootFolder, Folder("/elsewhere/root"))
+    }
+
+    func testARelativeRootFolderResolvesAgainstTheConfigsFolder() throws {
+        let fst = InMemoryFST()
+        for (root, expected) in [(".", "/project/sub"), ("./Build", "/project/sub/Build"), ("..", "/project")] {
+            writeText("""
+            { "name": "t", "rootFolder": "\(root)", "operations": [] }
+            """, at: File("/project/sub/config.json"), in: fst)
+            let config = try GoddessConfig.decodeFromFile(File("/project/sub/config.json"), fileSystem: fst)
+            XCTAssertEqual(config.rootFolder, Folder(expected), root)
+        }
+    }
+
     func testHandlerErrorStopsExecutionAndPropagates() throws {
         struct TestError: Error {}
         let failing = SpyOperationHandler()

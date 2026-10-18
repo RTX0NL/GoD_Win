@@ -66,7 +66,9 @@ struct GoddessConfig: Codable {
     
     static func decodeFromFile(_ file: File, fileSystem: FileSystemTree) throws -> GoddessConfig {
         var config: GoddessConfig = try fileSystem.decodeJSON(from: file)
-        if let parentFolder = file.parentFolder {
+        // A relative root is relative to the config file; an absolute one is
+        // already where it means.
+        if let parentFolder = file.parentFolder, !config.rootFolder.path.hasPrefix("/") {
             config.rootFolder = parentFolder.folder(config.rootFolder.path)
         }
         return config
