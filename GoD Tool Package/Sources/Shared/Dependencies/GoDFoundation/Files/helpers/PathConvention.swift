@@ -24,6 +24,11 @@
 //  reversible, keeps logical paths absolute, and leaves the drive visible
 //  rather than silently dropped.
 //
+//  A network share has no drive, so it gets a root of its own:
+//  `\\server\share\a.iso` <-> `/UNC/server/share/a.iso`, the name Windows
+//  itself gives that namespace in `\\?\UNC\…`. The `\\?\` prefix only turns
+//  off Win32 path parsing, so it is dropped on the way in.
+//
 
 import Foundation
 
@@ -42,6 +47,9 @@ public enum PathConvention {
 }
 
 public enum PlatformPath {
+
+    /// The logical root of a network share: `/UNC/server/share/…`.
+    private static let uncRoot = "UNC"
 
     /// Matches a logical path's leading drive component, e.g. `/C:/…`.
     private static let driveComponent = try! NSRegularExpression(pattern: "^[A-Za-z]:$")
@@ -64,6 +72,9 @@ public enum PlatformPath {
         }
 
         var components = logical.split(separator: "/").map(String.init)
+        if components.count >= 3, components[0] == uncRoot {
+            return #"\\"# + components.dropFirst().joined(separator: "\\")
+        }
         guard let first = components.first, isDrive(first) else {
             // No drive in the logical path: keep it rooted on the current
             // drive, which is what a leading separator means on Windows.
@@ -100,9 +111,20 @@ public enum PlatformPath {
     ) -> String {
         guard convention == .windows else { return native }
 
-        let unified = native.replacingOccurrences(of: "\\", with: "/")
+        var unified = native.replacingOccurrences(of: "\\", with: "/")
+        // `\\?\C:\…` and `\\?\UNC\server\…` are ordinary paths with parsing
+        // switched off: what follows the prefix is the path.
+        if unified.hasPrefix("//?/") {
+            unified.removeFirst(4)
+            if unified.hasPrefix(uncRoot + "/") {
+                unified = "//" + unified.dropFirst(uncRoot.count + 1)
+            }
+        }
         let components = unified.split(separator: "/").map(String.init)
 
+        if unified.hasPrefix("//"), components.count >= 2 {
+            return "/" + ([uncRoot] + components).joined(separator: "/")
+        }
         if let first = components.first, isDrive(first) {
             return "/" + components.joined(separator: "/")
         }

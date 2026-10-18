@@ -35,6 +35,34 @@ final class PathConventionTests: XCTestCase {
         }
     }
 
+    /// A network share has no drive letter. It used to lose its leading
+    /// `\\` and become a folder on the current drive, so a project on a NAS
+    /// was read and written somewhere else entirely.
+    func testUNCPathsRoundTripThroughAnUNCRoot() {
+        let pairs = [
+            ("/UNC/nas/games/Colosseum.iso", "\\\\nas\\games\\Colosseum.iso"),
+            ("/UNC/nas/games",               "\\\\nas\\games"),
+        ]
+        for (logical, native) in pairs {
+            XCTAssertEqual(PlatformPath.native(from: logical, convention: .windows), native, logical)
+            XCTAssertEqual(PlatformPath.logical(from: native, convention: .windows), logical, native)
+        }
+        XCTAssertEqual(PlatformPath.logical(from: "//nas/games/a.iso", convention: .windows), "/UNC/nas/games/a.iso")
+    }
+
+    /// The `\\?\` prefix only switches off Win32 path parsing; the path after
+    /// it is an ordinary drive or UNC path and means the same thing.
+    func testExtendedLengthPrefixIsDropped() {
+        XCTAssertEqual(PlatformPath.logical(from: "\\\\?\\C:\\Games\\rom.iso", convention: .windows), "/C:/Games/rom.iso")
+        XCTAssertEqual(PlatformPath.logical(from: "\\\\?\\UNC\\nas\\games\\rom.iso", convention: .windows), "/UNC/nas/games/rom.iso")
+    }
+
+    func testUNCPathsAreAcceptedByFolder() {
+        let folder = Folder(PlatformPath.logical(from: "\\\\nas\\games\\Project", convention: .windows))
+        XCTAssertEqual(folder.path, "/UNC/nas/games/Project")
+        XCTAssertTrue(PlatformPath.isNativeSpelling("\\\\nas\\games", convention: .windows))
+    }
+
     /// A logical path with no drive is rooted on the current drive, which is
     /// what a leading separator means on Windows.
     func testDrivelessAbsolutePathsRootOnCurrentDrive() {
