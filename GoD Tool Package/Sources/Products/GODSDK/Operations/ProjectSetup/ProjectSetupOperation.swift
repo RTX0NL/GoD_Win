@@ -636,6 +636,11 @@ enum Project {
                     outputFolder: musyxSourceFolder.prefixed("."),
                     overwrite: false
                 ), enabled: .no),
+                OperationConfig(operation: .dumpMusyXSongs(
+                    songsFolder: musyxDirectoriesFolder.prefixed("."),
+                    outputFolder: sourceFolder.folder("Audio").folder("Songs").prefixed("."),
+                    overwrite: false
+                ), enabled: .no),
             ]
             .conditionalAppend(
                 profile?.family == .colosseum,

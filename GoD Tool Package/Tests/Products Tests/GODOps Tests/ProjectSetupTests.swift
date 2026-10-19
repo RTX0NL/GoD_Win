@@ -471,6 +471,17 @@ final class ProjectSetupTests: XCTestCase {
             XCTAssertEqual(sdirFolder, Folder("./Build/Unpacked/Assets/Sounds/Sequenced"))
             XCTAssertEqual(sampFolder, Folder("./Build/Contents/files/sound"))
             XCTAssertEqual(outputFolder, Folder("./Source/Audio/MusyX"))
+
+            let songSteps = dump.operations.flatMap { entry -> [OperationConfig<ColoXD.DumpConfig.Operations>] in
+                guard case let .coloXDDump(config) = entry.operation else { return [] }
+                return config.operations.filter { if case .dumpMusyXSongs = $0.operation { return true }; return false }
+            }
+            guard case let .dumpMusyXSongs(songsFolder, songsOutput, _)? = songSteps.first?.operation else {
+                return XCTFail("\(gameID): expected a dumpMusyXSongs step")
+            }
+            XCTAssertEqual(songSteps.first?.enabled, .no)
+            XCTAssertEqual(songsFolder, Folder("./Build/Unpacked/Assets/Sounds/Sequenced"))
+            XCTAssertEqual(songsOutput, Folder("./Source/Audio/Songs"))
         }
     }
 

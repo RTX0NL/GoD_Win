@@ -94,6 +94,11 @@ extension ColoXD {
                 outputFolder: Folder,
                 overwrite: Bool
             )
+            case dumpMusyXSongs(
+                songsFolder: Folder,
+                outputFolder: Folder,
+                overwrite: Bool
+            )
             case dumpXDScripts(
                 scriptsFolder: Folder,
                 outputFolder: Folder,

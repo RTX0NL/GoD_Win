@@ -88,6 +88,67 @@ extension ColoXD {
         }
     }
 
+    /// What `<song>.song.json` says about a song beside its MIDI file.
+    struct MusyXSongSummary: Codable {
+        struct Track: Codable {
+            let index: Int
+            let channel: Int
+            let notes: Int
+            let programs: [Int]
+            let loops: Bool
+        }
+        let name: String
+        let bpm: Double
+        let tempoChanges: Int
+        let tracks: [Track]
+    }
+
+    /// Every MusyX song under `songsFolder` (the FSYS unpack names them
+    /// `<name>_song.samp`) to a Standard MIDI File plus a summary.
+    static func dumpMusyXSongs(
+        songsFolder: Folder,
+        outputFolder: Folder,
+        overwrite: Bool,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try dumpBatch(
+            in: songsFolder,
+            matching: { $0.fileName.hasSuffix("_song.samp") },
+            label: "MusyX song",
+            outputFolder: outputFolder,
+            overwrite: overwrite,
+            fileSystem: fileSystem,
+            logger: logger,
+            artifacts: { file, stem in
+                guard let bytes = fileSystem.readFile(at: file)?.allData?.rawBytes else {
+                    throw FSTErrors.fileNotFound(file, .init())
+                }
+                let name = String(stem.dropLast("_song".count))
+                let song = try MusyXSong(bytes: bytes)
+                let summary = MusyXSongSummary(
+                    name: name, bpm: song.bpm, tempoChanges: song.tempo.count,
+                    tracks: song.tracks.map { track in
+                        MusyXSongSummary.Track(
+                            index: track.index, channel: track.channel, notes: track.noteCount,
+                            programs: Array(Set(track.events.compactMap {
+                                if case let .program(_, program) = $0 { return program }; return nil
+                            })).sorted(),
+                            loops: track.events.contains { if case .loop = $0 { return true }; return false }
+                        )
+                    }
+                )
+                return [
+                    FileData(fileName: name + ".mid", data: GoDData(byteStream: song.midi(name: name), byteOrder: .big)),
+                    FileData(fileName: name + ".song.json",
+                             data: GoDData(byteStream: [UInt8](try encoder.encode(summary)), byteOrder: .big)),
+                ]
+            }
+        )
+    }
+
     private static func record(_ sample: MusyXSampleDirectory.Sample, wav: String?, skipped: String?) -> MusyXSampleRecord {
         MusyXSampleRecord(id: sample.id, wav: wav, sampleRate: sample.sampleRate, sampleCount: sample.sampleCount,
                           basePitch: sample.basePitch, loopStart: sample.loopStart, loopLength: sample.loopLength,

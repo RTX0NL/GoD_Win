@@ -245,6 +245,18 @@ unpacked disc. Nested operations:
   | `sampFolder` | path | Folder of the matching `.samp` banks (the disc's `files/sound`). |
   | `outputFolder` | path | Output folder; each bank gets a subfolder. |
   | `overwrite` | bool | Replace existing output. |
+- `dumpMusyXSongs` — every MusyX song (the FSYS unpack names them
+  `<name>_song.samp`) to a type-1 Standard MIDI File at 384 ticks per
+  quarter note, plus `<name>.song.json` (tempo, and per track its channel,
+  note count, programs and whether it loops). Programs are MusyX program
+  numbers: they pick an entry of the bank's song page table, not General
+  MIDI instruments. A track's loop is marked with `loopStart`/`loopEnd`
+  markers. Dump only.
+  | Field | Type | Meaning |
+  |---|---|---|
+  | `songsFolder` | path | Folder of `*_song.samp` files (`Assets/Sounds/Sequenced`). |
+  | `outputFolder` | path | Output folder. |
+  | `overwrite` | bool | Replace existing output. |
 - `dumpXDScripts` — XD only. Decompile every `.scd` under a folder to
   readable source, one `<name>.xds` file per script. Decompile only: XD's
   dialect has no compiler, so there is no build counterpart. Class and
