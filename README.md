@@ -118,6 +118,7 @@ fork and haven't been sent upstream.
 | `a64630a`, `cbc9b0d` | The CLI prints the same one-line error as the MCP server (`GODDESS_TRACE` gives the full one). Corpus tests split their path lists like `PATH`, so they find Windows dumps. |
 | `1c392e1` | **XD trainer decks dump to CSV and rebuild.** `dumpXDDecks` writes each `DeckData_*.bin` as `Trainers.csv`, `Pokemon.csv`, `AI.csv` (or `ShadowPokemon.csv`) with species, items and moves by name, plus the tag strings; `buildXDDecks` rebuilds them, and rows can be added. All 16 US decks rebuild byte for byte. |
 | `0de1bf9` | **XD scripts decompile.** `dumpXDScripts` turns every `.scd` into readable `.xds` source with named classes and methods, `if`/`else if`/`while`, and `goto` only where nothing else fits. It fixes several bugs in the unused upstream builder (calls taken as operands, statements reversed, dropped vector assignments). Decompile only. |
+| `98b201c`, `2ad2c37` | **MusyX audio.** `dumpMusyXSamples` decodes every sample of every MusyX bank to WAV (all 742 on the US Colosseum disc, identical to an independent decoder), and `dumpMusyXSongs` converts every song to MIDI (all 78), following the game's own sequencer in the Colosseum decompilation. Dump only; programs are MusyX program numbers, not General MIDI. |
 | `1e40b45` | Four tests left stale by intentional upstream changes are updated. One real codec gap (rebuilding a truncated MSG control code byte for byte) is kept as an explicit skip. |
 
 ## Known issues
@@ -131,7 +132,7 @@ These come from upstream and fail the same way on every platform.
 - **WIA/RVZ decode only `none` and `zstd` compression.** RVZ works, but WIA
   made with Dolphin's usual LZMA setting is rejected. The upstream note below
   that says WIA/RVZ aren't decodable at all is out of date.
-- **Colosseum audio (MusyX) has no WAV export.**
+- **MusyX audio dumps but can't be rebuilt.** Samples come out as WAV and songs as MIDI; nothing writes a `.samp` or a song back.
 - **XD scripts decompile but can't be rebuilt** (Colosseum's round-trip).
 - **Windows: `runExecutable` can't pass an empty-string argument.**
   Foundation's `Process` drops it when it builds the command line.
@@ -338,6 +339,8 @@ These run, with a limit:
 - **WIA:** only uncompressed and zstd WIA decode. Dolphin's usual WIA setting
   (LZMA) is rejected with an error; RVZ always works.
 - **NKit:** GameCube only. Wii NKit images are rejected.
+- **MusyX audio:** samples dump to WAV and songs to MIDI, but nothing
+  rebuilds a bank or a song.
 - **XD scripts:** `dumpXDScripts` decompiles them, but there is no compiler,
   so they can't be rebuilt (Colosseum scripts round-trip).
 - **Rebuilds** are deterministic but not byte-identical to the retail disc:
@@ -353,8 +356,9 @@ These files come out of a dump unchanged, with no converter:
   [Blender addon](https://github.com/StarsMmd/Blender-Addon-Gamecube-Models)
   imports the Colosseum and XD ones.
 - Collision (`.col`, `.ccd`), cameras (`.cam`) and particles (`.gpt1`).
-- MusyX audio (`.samp`, `.sdir`, `.pool`, `.proj`): all of Colosseum's music
-  and its sound effects.
+- MusyX instrument definitions (`.proj`, `.pool`): samples and songs dump
+  (see `dumpMusyXSamples` and `dumpMusyXSongs`), but which sample a song
+  program plays isn't resolved here.
 - THP video stays `.thp` (the two halves are joined into a playable file).
 
 ### 5. Run as an MCP server
