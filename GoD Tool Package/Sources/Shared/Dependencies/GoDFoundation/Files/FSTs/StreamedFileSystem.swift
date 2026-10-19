@@ -40,18 +40,23 @@ public final class StreamedFileSystem: FileSystemTree {
     /// be streamed. Nil means `streamFile` falls back to a whole-file read.
     private let disk: FileSystem?
 
+    /// Told about every change before it is made, and able to refuse it.
+    private let observer: FileSystemObserver?
+
     /// Streams from an on-disk file system.
-    public init(_ fileSystem: FileSystem = .shared) {
+    public init(_ fileSystem: FileSystem = .shared, observer: FileSystemObserver? = nil) {
         self.backing = fileSystem
         self.disk = fileSystem
+        self.observer = observer
     }
 
     /// Wraps a tree with no files behind it — an in-memory tree in a test, or
     /// a pipeline stage. Reads materialize; nothing streams, and nothing
     /// pretends to.
-    public init(materializing tree: FileSystemTree) {
+    public init(materializing tree: FileSystemTree, observer: FileSystemObserver? = nil) {
         self.backing = tree
         self.disk = nil
+        self.observer = observer
     }
 
     /// Moves the backing file system's current directory.
@@ -86,10 +91,21 @@ public final class StreamedFileSystem: FileSystemTree {
     public func resolvedPath(of file: File) -> File { backing.resolvedPath(of: file) }
     public func resolvedPath(of folder: Folder) -> Folder { backing.resolvedPath(of: folder) }
 
+    /// A path as the observer is told it: resolved, with `.` and `..` gone.
+    private func observed(_ file: File) -> File {
+        File(FileSystemChange.normalized(resolvedPath(of: file).path))
+    }
+
+    private func observed(_ folder: Folder) -> Folder {
+        Folder(FileSystemChange.normalized(resolvedPath(of: folder).path))
+    }
+
     // MARK: - FileSystemTree
     //
     // Everything else is the backing tree's job. Nothing is reinterpreted on
-    // the way through: this is the same file system, read differently.
+    // the way through: this is the same file system, read differently. Each
+    // change is put to the observer first, with its paths resolved, so a
+    // refused change never reaches the backing tree.
 
     public func inspectFile(at path: File) -> FileMetaData? {
         backing.inspectFile(at: path)
@@ -111,14 +127,17 @@ public final class StreamedFileSystem: FileSystemTree {
     }
 
     public func moveFile(at path: File, to newPath: File, overwrite: Bool) throws {
+        try observer?.willChange(.moveFile(from: observed(path), to: observed(newPath)))
         try backing.moveFile(at: path, to: newPath, overwrite: overwrite)
     }
 
     public func writeFile(_ file: GoDReadable, at path: File, overwrite: Bool) throws {
+        try observer?.willChange(.writeFile(observed(path)))
         try backing.writeFile(file, at: path, overwrite: overwrite)
     }
 
     public func deleteFile(at path: File) throws {
+        try observer?.willChange(.deleteFile(observed(path)))
         try backing.deleteFile(at: path)
     }
 
@@ -127,14 +146,17 @@ public final class StreamedFileSystem: FileSystemTree {
     }
 
     public func moveFolder(at path: Folder, to newPath: Folder, overwrite: Bool) throws {
+        try observer?.willChange(.moveFolder(from: observed(path), to: observed(newPath)))
         try backing.moveFolder(at: path, to: newPath, overwrite: overwrite)
     }
 
     public func createFolder(at path: Folder, overwrite: Bool) throws {
+        try observer?.willChange(.createFolder(observed(path)))
         try backing.createFolder(at: path, overwrite: overwrite)
     }
 
     public func deleteFolder(at path: Folder) throws {
+        try observer?.willChange(.deleteFolder(observed(path)))
         try backing.deleteFolder(at: path)
     }
 
@@ -143,10 +165,15 @@ public final class StreamedFileSystem: FileSystemTree {
     }
 
     public func resizeFile(at path: File, to length: Int) throws {
+        try observer?.willChange(.resizeFile(observed(path)))
         try backing.resizeFile(at: path, to: length)
     }
 
     public func setExecutable(file: File) {
         backing.setExecutable(file: file)
+    }
+
+    public func tally(of folder: Folder) -> FolderTally? {
+        backing.tally(of: folder)
     }
 }

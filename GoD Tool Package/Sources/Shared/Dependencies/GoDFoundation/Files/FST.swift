@@ -97,6 +97,10 @@ public protocol FileSystemTree {
     /// directory rather than the running config's `rootFolder`.
     func resolvedPath(of file: File) -> File
     func resolvedPath(of folder: Folder) -> Folder
+
+    /// Files under `folder`, all the way down, and their bytes; nil if
+    /// there is no such folder. See `FolderTally.swift`.
+    func tally(of folder: Folder) -> FolderTally?
 }
 
 public extension FileSystemTree {

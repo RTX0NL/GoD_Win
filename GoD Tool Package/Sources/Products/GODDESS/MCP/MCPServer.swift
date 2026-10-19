@@ -78,8 +78,8 @@ number is printed by `GODDESS --version`.
 A project is bound to the GODDESS version that dumped it. Its engine folders, \
 registries and manifests are written in that version's layout, and a different \
 version cannot be assumed to read them correctly. setup_project records the \
-version that wrote a project in its Engines/Version.txt; read that file before \
-working on a project you did not create in this session.
+version that wrote a project in its Engines/Version.txt; call project_info (which \
+reads it) before working on a project you did not create in this session.
 
 To move a project to a different GODDESS version, never point the new version \
 at the old project. Instead:
@@ -105,7 +105,7 @@ let goddessTools: [Tool] = [
         memory-card save (.gci). Creates a '<name> project' (disc) or \
         '<name> save project' (save) folder next to the input, containing the \
         unpacked contents, exported engine definitions, and ready-to-run \
-        dump/build config files.
+        dump/build config files. Returns a summary of the files it wrote.
         """,
         inputSchema: objectSchema(
             properties: ["path": (type: "string", description: "Absolute path to a disc image (.iso/.gcm/.ciso/.wbfs/.wia/.rvz) or a .gci save")],
@@ -133,7 +133,10 @@ let goddessTools: [Tool] = [
         Run the enabled operations in a GODDESS JSON config file, in order. Use \
         this when a project already has a config (e.g. the generated \
         Dump-Config.json / Build-Config.json). Paths inside the config resolve \
-        relative to the config file's own location.
+        relative to the config file's own location. Returns a summary of the \
+        files the run wrote. Sends progress notifications when the request \
+        has a progress token; cancelling the request stops the run before its \
+        next file write.
         """,
         inputSchema: objectSchema(
             properties: ["path": (type: "string", description: "Absolute path to a GODDESS .json config file")],
@@ -181,7 +184,9 @@ let goddessTools: [Tool] = [
         {"dolDisassembly": {"config": {...}}}). Optional 'settings' overrides \
         logging/keys. Operations: \(OperationName.allCases.map(\.rawValue).joined(separator: ", ")). \
         Call describe_operation for an operation's fields and an example. Use \
-        for one-off steps; use run_config for a pipeline.
+        for one-off steps; use run_config for a pipeline. Returns a summary of \
+        the files it wrote, and reports progress and stops on cancel like \
+        run_config.
         """,
         inputSchema: .object([
             "type": .string("object"),
@@ -206,14 +211,34 @@ let goddessTools: [Tool] = [
         ]),
         annotations: .init(readOnlyHint: false, destructiveHint: true, openWorldHint: false)
     ),
+    Tool(
+        name: "project_info",
+        description: """
+        Describe a GODDESS project folder: the GODDESS version that dumped it \
+        (from Engines/Version.txt) and whether it matches this server, the \
+        game, each config in Config/ with the operations it would run, and the \
+        file count and size of each top-level folder. Read-only. Call it \
+        before working on a project you did not create in this session.
+        """,
+        inputSchema: objectSchema(
+            properties: ["path": (type: "string", description: "Absolute path to a project folder, or to any file or folder inside one")],
+            required: ["path"]
+        ),
+        annotations: .init(readOnlyHint: true, destructiveHint: false, openWorldHint: false)
+    ),
 ]
 
 // MARK: - Tool dispatch
 
 /// Executes a tool call synchronously against `GODOps`. Runs on the request
 /// task; the (potentially long) operation blocks it while `logger` streams
-/// progress out of band.
-private func handleToolCall(_ params: CallTool.Parameters, logger: GoDFoundation.Logger) throws -> String {
+/// its lines out of band. `monitor` follows the runs that write files: it
+/// stops them on cancel, reports their progress, and lists their outputs.
+private func handleToolCall(
+    _ params: CallTool.Parameters,
+    logger: GoDFoundation.Logger,
+    monitor: RunMonitor
+) throws -> String {
     let args = params.arguments ?? [:]
 
     func requiredFile(_ key: String = "path") throws -> File {
@@ -234,8 +259,8 @@ private func handleToolCall(_ params: CallTool.Parameters, logger: GoDFoundation
         // here while setup handled it, so the MCP path refused a file the
         // CLI accepted.
         case "iso", "gcm", "ciso", "wbfs", "wia", "rvz":
-            try GODOps.setupProject(discImage: file, toolVersion: Version.semanticVersion)
-            return "Set up editing project from \(file.fileName)."
+            try GODOps.setupProject(discImage: file, toolVersion: Version.semanticVersion, monitor: monitor)
+            return "Set up editing project from \(file.fileName).\n" + monitor.outputSummary()
         case "gci":
             try GODOps.setupSaveProject(gci: file, toolVersion: Version.semanticVersion)
             return "Set up save-editing project from \(file.fileName)."
@@ -250,8 +275,8 @@ private func handleToolCall(_ params: CallTool.Parameters, logger: GoDFoundation
 
     case "run_config":
         let file = try requiredFile()
-        try GODOps.runConfig(at: file, logger: logger)
-        return "Ran config \(file.fileName)."
+        try GODOps.runConfig(at: file, logger: logger, monitor: monitor)
+        return "Ran config \(file.fileName).\n" + monitor.outputSummary()
 
     case "list_operations":
         return OperationCatalog.listing
@@ -279,8 +304,13 @@ private func handleToolCall(_ params: CallTool.Parameters, logger: GoDFoundation
             try JSONEncoder().encode(value)
         }
         let rootFolder = try args["rootFolder"]?.stringValue.map(GODOps.inputFolder(fromArgument:))
-        try GODOps.runOperation(json: operationData, settingsJSON: settingsData, rootFolder: rootFolder, logger: logger)
-        return "Ran operation."
+        try GODOps.runOperation(
+            json: operationData, settingsJSON: settingsData, rootFolder: rootFolder, logger: logger, monitor: monitor
+        )
+        return "Ran operation.\n" + monitor.outputSummary()
+
+    case "project_info":
+        return try GODOps.projectInfo(at: requiredFile(), toolVersion: Version.semanticVersion)
 
     default:
         throw MCPToolError.unknownTool(params.name)
@@ -292,10 +322,12 @@ private func handleToolCall(_ params: CallTool.Parameters, logger: GoDFoundation
 /// The server handles requests as concurrent tasks, but operations share
 /// process-wide state — the file system's current directory above all — so
 /// two at once could resolve each other's relative paths. An actor's
-/// synchronous method can't interleave with another call to it.
+/// synchronous method can't interleave with another call to it. A call
+/// cancelled while it waited its turn doesn't start.
 private actor ToolCallQueue {
-    func run(_ params: CallTool.Parameters, logger: GoDFoundation.Logger) throws -> String {
-        try handleToolCall(params, logger: logger)
+    func run(_ params: CallTool.Parameters, logger: GoDFoundation.Logger, monitor: RunMonitor) throws -> String {
+        try monitor.checkCancellation()
+        return try handleToolCall(params, logger: logger, monitor: monitor)
     }
 }
 
@@ -335,13 +367,30 @@ func runMCPServer() async {
 
     let toolCalls = ToolCallQueue()
     await server.withMethodHandler(CallTool.self) { params in
-        let logger = MCPLogger(server: server)
+        let outbox = MCPOutbox(server: server)
+        let progress = params._meta?.progressToken.map { MCPProgress(token: $0, outbox: outbox) }
+        let monitor = RunMonitor(onProgress: progress?.report)
+        let result: CallTool.Result
         do {
-            let message = try await toolCalls.run(params, logger: logger)
-            return CallTool.Result(content: [.text(message)], isError: false)
+            // The SDK cancels this task when the client sends
+            // notifications/cancelled. The run is synchronous and never sees
+            // the task, so the cancel is passed on to the monitor, which
+            // refuses the run's next write.
+            let message = try await withTaskCancellationHandler {
+                try await toolCalls.run(params, logger: MCPLogger(outbox: outbox), monitor: monitor)
+            } onCancel: {
+                monitor.cancel()
+            }
+            result = CallTool.Result(content: [.text(message)], isError: false)
         } catch {
+            await outbox.finish()
+            // A cancelled request gets no response (the SDK drops it on
+            // CancellationError), so don't dress it up as a tool error.
+            if monitor.isCancelled { throw CancellationError() }
             return CallTool.Result(content: [.text(GODOps.userMessage(for: error))], isError: true)
         }
+        await outbox.finish()
+        return result
     }
 
     do {

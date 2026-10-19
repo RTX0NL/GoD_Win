@@ -104,8 +104,10 @@ public enum GODOps {
     /// CISO / WBFS / GameCube NKit / WIA / RVZ container, which are decoded
     /// first).
     /// `toolVersion` is stamped into the project's `/Engines/Version.txt`.
-    public static func setupProject(discImage: File, toolVersion: String) throws {
-        try Project.setup(iso: discImage, toolVersion: toolVersion)
+    /// A `monitor` sees the files setup writes, and can stop it writing more.
+    public static func setupProject(discImage: File, toolVersion: String, monitor: RunMonitor? = nil) throws {
+        try Project.setup(iso: discImage, toolVersion: toolVersion, fileSystem: StreamedFileSystem(observer: monitor))
+        try monitor?.checkCancellation()
     }
 
     /// Set up a save-editing project from a `.gci` memory-card save.
@@ -122,16 +124,19 @@ public enum GODOps {
     // MARK: - Config execution
 
     /// Decode a `.json` config and run its enabled operations in order.
+    /// A `monitor` follows the run, and can stop it.
     public static func runConfig(
         at file: File,
         fileSystem: FileSystem = FileSystem.shared,
-        logger: Logger? = nil
+        logger: Logger? = nil,
+        monitor: RunMonitor? = nil
     ) throws {
         try runConfig(
             at: file,
-            fileSystem: StreamedFileSystem(fileSystem),
+            fileSystem: StreamedFileSystem(fileSystem, observer: monitor),
             logger: logger,
-            handler: EngineOperationHandler()
+            handler: EngineOperationHandler(),
+            monitor: monitor
         )
     }
 
@@ -143,14 +148,18 @@ public enum GODOps {
     /// here means no operation has to probe at runtime for what it was handed.
     /// Wrapping an in-memory tree (`StreamedFileSystem(materializing:)`) is how
     /// tests opt out; reads then materialize, which is all they can do anyway.
+    ///
+    /// A `monitor` must also be the tree's observer to see the run's writes;
+    /// here it only hears about operations.
     static func runConfig(
         at file: File,
         fileSystem: StreamedFileSystem,
         logger: Logger?,
-        handler: OperationHandler
+        handler: OperationHandler,
+        monitor: RunMonitor? = nil
     ) throws {
         let config = try GoddessConfig.decodeFromFile(file, fileSystem: fileSystem)
-        try run(config, fileSystem: fileSystem, logger: logger, handler: handler)
+        try run(config, fileSystem: fileSystem, logger: logger, handler: handler, monitor: monitor)
     }
 
     /// Run a single operation supplied as JSON — either an `OperationConfig`
@@ -161,15 +170,17 @@ public enum GODOps {
         settingsJSON: Data? = nil,
         rootFolder: Folder? = nil,
         fileSystem: FileSystem = FileSystem.shared,
-        logger: Logger? = nil
+        logger: Logger? = nil,
+        monitor: RunMonitor? = nil
     ) throws {
         try runOperation(
             json: json,
             settingsJSON: settingsJSON,
             rootFolder: rootFolder,
-            fileSystem: StreamedFileSystem(fileSystem),
+            fileSystem: StreamedFileSystem(fileSystem, observer: monitor),
             logger: logger,
-            handler: EngineOperationHandler()
+            handler: EngineOperationHandler(),
+            monitor: monitor
         )
     }
 
@@ -180,7 +191,8 @@ public enum GODOps {
         rootFolder: Folder? = nil,
         fileSystem: StreamedFileSystem,
         logger: Logger?,
-        handler: OperationHandler
+        handler: OperationHandler,
+        monitor: RunMonitor? = nil
     ) throws {
         let operation = try decodeOperation(json: json)
         let settings = try settingsJSON.map {
@@ -190,7 +202,9 @@ public enum GODOps {
         // Relative paths resolve against `rootFolder`, or where the process
         // started — never against a directory an earlier call left behind.
         try fileSystem.withCurrentDirectory(rootFolder) {
+            try monitor?.operationStarted(operation.name, index: 1, of: 1)
             try run(operation: operation, settings: settings, fileSystem: fileSystem, logger: log, handler: handler)
+            try monitor?.operationCompleted()
         }
     }
 
@@ -200,7 +214,8 @@ public enum GODOps {
         _ config: GoddessConfig,
         fileSystem: StreamedFileSystem,
         logger: Logger?,
-        handler: OperationHandler
+        handler: OperationHandler,
+        monitor: RunMonitor? = nil
     ) throws {
         // The config's root holds for the whole run and is put back after
         // it, so the next caller doesn't inherit it.
@@ -210,8 +225,10 @@ public enum GODOps {
 
             let enabledOps = config.operations.enabledEntries
             for (index, operation) in enabledOps.enumerated() {
+                try monitor?.operationStarted(operation.name, index: index + 1, of: enabledOps.count)
                 fileSystem.changeDirectory(config.rootFolder)
                 try run(operation: operation, settings: settings, fileSystem: fileSystem, logger: log, handler: handler)
+                try monitor?.operationCompleted()
                 log.log(.info("Operation \(index + 1)/\(enabledOps.count) completed"))
             }
         }
