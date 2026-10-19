@@ -119,6 +119,7 @@ fork and haven't been sent upstream.
 | `1c392e1` | **XD trainer decks dump to CSV and rebuild.** `dumpXDDecks` writes each `DeckData_*.bin` as `Trainers.csv`, `Pokemon.csv`, `AI.csv` (or `ShadowPokemon.csv`) with species, items and moves by name, plus the tag strings; `buildXDDecks` rebuilds them, and rows can be added. All 16 US decks rebuild byte for byte. |
 | `0de1bf9` | **XD scripts decompile.** `dumpXDScripts` turns every `.scd` into readable `.xds` source with named classes and methods, `if`/`else if`/`while`, and `goto` only where nothing else fits. It fixes several bugs in the unused upstream builder (calls taken as operands, statements reversed, dropped vector assignments). Decompile only. |
 | `98b201c`, `2ad2c37` | **MusyX audio.** `dumpMusyXSamples` decodes every sample of every MusyX bank to WAV (all 742 on the US Colosseum disc, identical to an independent decoder), and `dumpMusyXSongs` converts every song to MIDI (all 78), following the game's own sequencer in the Colosseum decompilation. Dump only; programs are MusyX program numbers, not General MIDI. |
+| `bc9db96` | **MCP: cancel, progress, `project_info`, outputs.** A cancelled tool call stops at its next file write instead of running to the end (checked mid-dump on the release build: 44 files, then nothing). Calls with a progress token get progress notifications, and log lines arrive in order. `project_info` describes a project before a client touches it: 0.3 s for the Colosseum project, because on Windows folder sizes come from the directory listing (`FindFirstFileExW`) instead of one query per file. `setup_project`, `run_config` and `run_operation` say which files they wrote. |
 | `1e40b45` | Four tests left stale by intentional upstream changes are updated. One real codec gap (rebuilding a truncated MSG control code byte for byte) is kept as an explicit skip. |
 
 ## Known issues
@@ -376,7 +377,7 @@ Register it with a client — for example, Claude Code:
 claude mcp add goddess -- /path/to/GODDESS mcp
 ```
 
-The server drives the exact same code paths as the CLI and exposes six tools:
+The server drives the exact same code paths as the CLI and exposes seven tools:
 
 | Tool | Purpose |
 |---|---|
@@ -386,8 +387,14 @@ The server drives the exact same code paths as the CLI and exposes six tools:
 | `run_operation` | Run a single operation from an inline JSON object, no config file needed. |
 | `list_operations` | Every operation with its shape and a one-line summary. |
 | `describe_operation` | One operation's fields, nested operations and example JSON, on demand. |
+| `project_info` | What a project folder is: the GODDESS version that dumped it (and whether it is this one), the game, each config with the operations it would run, and the size of each folder. Read-only. |
 
-Long operations stream progress to the client via MCP log notifications. The
+`setup_project`, `run_config` and `run_operation`:
+- **report the files they wrote**: how many, under which folder, and how many in each folder below it;
+- **send progress notifications** when the request carries a progress token: each operation's start and end, and the running count of files written (at most twice a second);
+- **stop when the client cancels the request**: the run's next file write is refused and the run ends without a response, as the protocol asks. A call cancelled while it waits for an earlier one never starts.
+
+Log lines go out as MCP log notifications, in the order they were logged and before the call's result. The
 [Configuration Reference](Documentation/GODDESS%20Configuration%20Reference.md)
 is embedded in the binary, so `describe_operation` serves the same text a
 reader of that document sees; `run_operation`'s description names every
