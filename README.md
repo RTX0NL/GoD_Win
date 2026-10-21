@@ -21,7 +21,7 @@ Pokémon Colosseum and Pokémon XD.
 | Area | Result |
 |---|---|
 | Build | `GODDESS.exe` builds with SwiftPM, both debug and release, including from a fresh clone of this repo with Git for Windows' default settings. |
-| Tests | 2,445 cases: 2,310 pass, 135 skip, **0 fail** (2026-10-18; the fresh-clone check was at 2,385 cases). |
+| Tests | 2,487 cases: 2,351 pass, 136 skip, **0 fail** (2026-10-21; the fresh-clone check was at 2,385 cases). |
 | Project setup + dump | Both games dump completely: 0 case collisions, CRLF-free text output, and per-archive file counts match the FSYS registries. |
 | Rebuild | Both games rebuild. `DolphinTool verify` reports no problems, and the rebuilt discs boot in Dolphin (Colosseum to the title screen, XD to the health-and-safety screen). |
 | Edit → rebuild | Edited title-screen textures in Colosseum. The rebuilt disc changed only the two archives that contain them, and the edits show in Dolphin. |
@@ -121,6 +121,8 @@ fork and haven't been sent upstream.
 | `98b201c`, `2ad2c37` | **MusyX audio.** `dumpMusyXSamples` decodes every sample of every MusyX bank to WAV (all 742 on the US Colosseum disc, identical to an independent decoder), and `dumpMusyXSongs` converts every song to MIDI (all 78), following the game's own sequencer in the Colosseum decompilation. Dump only; programs are MusyX program numbers, not General MIDI. |
 | `bc9db96` | **MCP: cancel, progress, `project_info`, outputs.** A cancelled tool call stops at its next file write instead of running to the end (checked mid-dump on the release build: 44 files, then nothing). Calls with a progress token get progress notifications, and log lines arrive in order. `project_info` describes a project before a client touches it: 0.3 s for the Colosseum project, because on Windows folder sizes come from the directory listing (`FindFirstFileExW`) instead of one query per file. `setup_project`, `run_config` and `run_operation` say which files they wrote. |
 | `1e40b45` | Four tests left stale by intentional upstream changes are updated. One real codec gap (rebuilding a truncated MSG control code byte for byte) is kept as an explicit skip. |
+| `6009a8a` | **REL dumps type single structs.** A type map's `single` entry dumps as `<label>.json` with its pointer fields named through their relocations, as on the DOL path, instead of raw bytes with a warning. It stays raw (with a warning) when the struct would run over the next symbol. No bundled type map declares one, so shipped dumps don't change. |
+| `13eee9c` | **A control code cut off by its string's end rebuilds byte for byte.** A string that ends on a bare `FFFF 09` (one string in the JP move viewer's `fight.msg`) reads as `{09}` instead of taking half the null word as its parameter and growing the file by one byte. The skip from `1e40b45` is gone. |
 
 ## Known issues
 
