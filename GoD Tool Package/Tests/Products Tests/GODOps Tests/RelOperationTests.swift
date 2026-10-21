@@ -570,6 +570,138 @@ final class RelOperationTests: XCTestCase {
         XCTAssertThrowsError(try assembleSpots(engine: engine, fst: fst))
     }
 
+    // MARK: - Single structs
+
+    /// One `Pokespot` (0x1C bytes) at symbol `Spot`, its pointer relocated
+    /// to a DOL address, then a word the struct doesn't cover. `nextSymbol`
+    /// puts a second symbol, `Next`, at that offset.
+    private func writeSingleSpotRel(nextSymbol: UInt32?, in fst: InMemoryFST) throws -> (engine: Folder, dolphin: Folder) {
+        let own: UInt32 = 0x2A
+        let dol: UInt32 = 0
+        var text: [RELFile.TextInstruction] = [
+            .init(raw: 0x4E800020),
+            .init(raw: 0, ref: .init(moduleID: own, section: 2, offset: 0x00), fixup: .addr32),
+        ]
+        if let nextSymbol {
+            text.append(.init(raw: 0, ref: .init(moduleID: own, section: 2, offset: nextSymbol), fixup: .addr32))
+        }
+        let data: [RELFile.DataChunk] = [
+            .binary(bytes: (0 ..< 6).flatMap { [0, 0, 0, 1 + UInt8($0)] }),
+            .pointer(ref: .init(moduleID: dol, section: 11, offset: 0x804E89B4), restValue: 0),
+            .binary(bytes: [0xDE, 0xAD, 0xBE, 0xEF]),
+        ]
+        var rel = RELFile(
+            moduleID: own, version: 3,
+            sections: [
+                .init(index: 0, body: .empty(fileOffset: 0)),
+                .init(index: 1, body: .text(text)),
+                .init(index: 2, body: .data(data)),
+            ],
+            importedModules: [own, dol]
+        )
+        rel.name = "spots"
+        rel.prologSection = 1
+        rel.sectionAlign = 4
+        rel.bssAlign = 8
+        try fst.writeFile(try rel.binaryData, at: File("/project/spots.rel"), overwrite: true)
+        // Text relocations are indexed first, so `Next` is index 1 when present.
+        let symbols = nextSymbol == nil ? #"{"0": "Spot"}"# : #"{"0": "Spot", "1": "Next"}"#
+        writeText(#"{"symbols": \#(symbols)}"#, at: File("/project/symbols.json"), in: fst)
+        writeText(#"{"chunks": [{"single": {"label": "Spot", "type": "Pokespot"}}]}"#, at: File("/project/typemap.json"), in: fst)
+        let engine = try installXDEngine(in: fst)
+        let dolphin = installEngine(try DolphinEngine.defaults(), under: Folder("/project/Engines"), in: fst)
+        return (engine, dolphin)
+    }
+
+    /// A type map can name a single struct, not only a table. The REL path
+    /// used to warn and dump it as raw bytes; it now writes the struct as
+    /// JSON, as the DOL path does, with the pointer field named through its
+    /// relocation, and the bytes after it stay a chunk of their own.
+    func testSingleStructDumpsAsJSONWithItsPointerNamed() throws {
+        let fst = InMemoryFST()
+        let (engine, dolphin) = try writeSingleSpotRel(nextSymbol: nil, in: fst)
+        let original = try XCTUnwrap(fst.readFile(at: File("/project/spots.rel"))?.allData?.rawBytes)
+        let logger = RecordingLogger()
+        try disassembleSpots(engine: engine, dolphin: dolphin, fst: fst, logger: logger)
+
+        let manifest = try RelManifest(json: try XCTUnwrap(fst.readFile(at: File("/project/Out/spots.rel.json"))?.allData))
+        let chunks = try XCTUnwrap(manifest.sections.first { $0.index == 2 }?.chunks)
+        XCTAssertEqual(chunks.map(\.label), ["Spot", "Spot_tail"])
+        XCTAssertEqual(chunks[0].type, .struct)
+        XCTAssertEqual(chunks[0].file, "data2/Spot.json")
+        XCTAssertEqual(chunks[0].structType, "Pokespot")
+        XCTAssertEqual(chunks[0].size, 0x1C)
+        XCTAssertFalse(logger.warnings.contains { $0.contains("single-struct") }, "\(logger.warnings)")
+
+        let json = try XCTUnwrap(fst.readFile(at: File("/project/Out/data2/Spot.json"))?.allData)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(json.rawBytes)) as? [String: Any])
+        XCTAssertEqual(object["type"] as? String, "Pokespot")
+        let fields = try XCTUnwrap(object["data"] as? [String: Any])
+        XCTAssertEqual(fields["encounter_table_pointer"] as? String, "dol_804E89B4", "relocated pointer names its target")
+        XCTAssertEqual(fields["snack_count_flag_id"] as? Int, 1)
+        XCTAssertEqual(fields["unknown_flag_id_3"] as? Int, 6)
+
+        _ = try assembleSpots(engine: engine, fst: fst)
+        XCTAssertEqual(fst.readFile(at: File("/project/rebuilt.rel"))?.allData?.rawBytes, original,
+                       "untouched, the struct JSON reproduces the module")
+    }
+
+    /// The JSON is the struct: an edited field reaches the rebuilt module,
+    /// and the pointer stays a relocation.
+    func testEditedSingleStructJSONLandsInRebuiltRel() throws {
+        let fst = InMemoryFST()
+        let (engine, dolphin) = try writeSingleSpotRel(nextSymbol: nil, in: fst)
+        try disassembleSpots(engine: engine, dolphin: dolphin, fst: fst)
+
+        let jsonFile = File("/project/Out/data2/Spot.json")
+        var object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(try XCTUnwrap(fst.readFile(at: jsonFile)?.allData).rawBytes))
+                as? [String: Any]
+        )
+        var fields = try XCTUnwrap(object["data"] as? [String: Any])
+        fields["snack_count_flag_id"] = 99
+        object["data"] = fields
+        let edited = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+        try fst.writeFile(GoDData(byteStream: [UInt8](edited), byteOrder: .big), at: jsonFile, overwrite: true)
+
+        let bytes = try assembleSpots(engine: engine, fst: fst)
+        XCTAssertEqual(bytes.count, 0x20)
+        XCTAssertEqual(Array(bytes[0 ..< 4]), [0, 0, 0, 99], "the edited field is in the binary")
+        XCTAssertEqual(Array(bytes[0x1C...]), [0xDE, 0xAD, 0xBE, 0xEF], "the bytes after the struct are untouched")
+
+        let rebuilt = try RELFile(binary: try XCTUnwrap(fst.readFile(at: File("/project/rebuilt.rel"))?.allData), name: "spots")
+        guard case .data(let chunks) = rebuilt.sections[2].body else { return XCTFail("section 2 should still be data") }
+        var offset = 0
+        var pointers: [Int: RELFile.SymbolRef] = [:]
+        for chunk in chunks {
+            switch chunk {
+            case .binary(let b): offset += b.count
+            case .pointer(let ref, _): pointers[offset] = ref; offset += 4
+            }
+        }
+        XCTAssertEqual(pointers[0x18], .init(moduleID: 0, section: 11, offset: 0x804E89B4), "the pointer is still a relocation")
+    }
+
+    /// A symbol inside the struct is a relocation target the JSON has no
+    /// place for, so the chunk stays raw (with a warning) rather than
+    /// swallowing it, and the module still rebuilds byte-for-byte.
+    func testASingleStructThatRunsOverTheNextSymbolStaysRaw() throws {
+        let fst = InMemoryFST()
+        let (engine, dolphin) = try writeSingleSpotRel(nextSymbol: 0x10, in: fst)
+        let original = try XCTUnwrap(fst.readFile(at: File("/project/spots.rel"))?.allData?.rawBytes)
+        let logger = RecordingLogger()
+        try disassembleSpots(engine: engine, dolphin: dolphin, fst: fst, logger: logger)
+
+        let manifest = try RelManifest(json: try XCTUnwrap(fst.readFile(at: File("/project/Out/spots.rel.json"))?.allData))
+        let chunks = try XCTUnwrap(manifest.sections.first { $0.index == 2 }?.chunks)
+        XCTAssertEqual(chunks.map(\.label), ["Spot", "Next"])
+        XCTAssertNotEqual(chunks[0].type, .struct)
+        XCTAssertTrue(logger.warnings.contains { $0.contains("Spot") && $0.contains("Next") }, "\(logger.warnings)")
+
+        _ = try assembleSpots(engine: engine, fst: fst)
+        XCTAssertEqual(fst.readFile(at: File("/project/rebuilt.rel"))?.allData?.rawBytes, original)
+    }
+
     // MARK: - relsDump / relsBuild
 
     /// Two RELs sharing one matcher, one with its own, one routed file the

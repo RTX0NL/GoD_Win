@@ -819,7 +819,8 @@ public func resolveStructTypes(
     return resolved
 }
 
-private extension JSONEncoder {
+// Shared with the REL path, so a struct's JSON reads the same from either.
+extension JSONEncoder {
     static let prettyPrinted: JSONEncoder = {
         let e = JSONEncoder()
         e.outputFormatting = [.prettyPrinted, .sortedKeys]

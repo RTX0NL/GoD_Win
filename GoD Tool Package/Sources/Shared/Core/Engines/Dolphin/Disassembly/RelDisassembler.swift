@@ -136,28 +136,19 @@ public struct RelDisassembler {
 
         var typeChunkBySymbol: [String: TypeMap.Chunk] = [:]
         var counters: [String: TypeMap.Chunk.Count] = [:]
-        var unsupportedSingles = [String]()
         if let typeMap = inputs.typeMap {
             try typeMap.validate()
             for chunk in typeMap.chunks {
                 switch chunk {
                 case .table(let t): typeChunkBySymbol[t.start] = chunk
                 case .file(let f): typeChunkBySymbol[f.label] = chunk
-                case .single(let s): unsupportedSingles.append(s.label)
+                case .single(let s): typeChunkBySymbol[s.label] = chunk
                 // Rendered as a plain word first; `deriveCounts` converts it
                 // once every table's dumped count is known, since a count
                 // can sit before its table or in another section.
                 case .count(let c): counters[c.label] = c
                 }
             }
-        }
-        if !unsupportedSingles.isEmpty {
-            logger?.log(.warning(
-                "Type map declares \(unsupportedSingles.count) single-struct chunk(s) "
-                + "(\(unsupportedSingles.prefix(3).joined(separator: ", "))"
-                + "\(unsupportedSingles.count > 3 ? ", …" : "")) — the REL path only types "
-                + "tables and files, so these will be emitted as raw chunks."
-            ))
         }
 
         // ---- Sections ----
@@ -675,6 +666,17 @@ public struct RelDisassembler {
                         "Table '\(label)' names struct '\(table.entryType)', which no engine resolved; emitting raw."
                     ))
                 }
+            } else if case .single(let single) = typeChunkBySymbol[label] {
+                let nextLabel = i + 1 < boundaries.count ? labelsAtOffset[UInt32(boundaries[i + 1])] : nil
+                if let written = try writeSingle(
+                    single, label: label, bytes: bytes, start: start,
+                    nextBoundary: nextBoundary, nextLabel: nextLabel,
+                    pointers: pointers, sectionName: sectionName, names: names, exporter: exporter,
+                    into: folder, fileSystem: fileSystem, logger: logger
+                ) {
+                    result.chunks.append(written.chunk)
+                    consumed = written.size
+                }
             }
 
             if consumed == 0 {
@@ -816,6 +818,76 @@ public struct RelDisassembler {
             entryLabels: namesByIndex.isEmpty ? nil : namesByIndex
         )
         return (chunk, tableSize)
+    }
+
+    /// Writes one struct as JSON, as the DOL path does. Returns nil — and the
+    /// caller emits the span raw — when no engine resolves the type, the
+    /// struct would run over the next symbol or the section's end, or a
+    /// pointer inside it is not on a label field.
+    ///
+    /// A symbol inside the struct is a relocation target, and a `.struct`
+    /// chunk has nowhere to put it back, so the struct must fit before the
+    /// next symbol; bytes it doesn't cover become the caller's `_tail`.
+    private func writeSingle(
+        _ single: TypeMap.Chunk.Single,
+        label: String,
+        bytes: [UInt8],
+        start: Int,
+        nextBoundary: Int,
+        nextLabel: String?,
+        pointers: [Int: RELFile.SymbolRef],
+        sectionName: String,
+        names: SymbolNames,
+        exporter: TypedDataExporter,
+        into folder: Folder,
+        fileSystem: FileSystemTree,
+        logger: Logger?
+    ) throws -> (chunk: DataSectionManifest.Chunk, size: Int)? {
+        guard let definition = inputs.structs[single.type] else {
+            logger?.log(.warning(
+                "Struct '\(label)' names type '\(single.type)', which no engine resolved; emitting raw."
+            ))
+            return nil
+        }
+        let size = definition.length
+        guard size > 0 else { return nil }
+        guard start + size <= nextBoundary else {
+            let limit = nextLabel.map { "symbol '\($0)' at +0x\(String(nextBoundary - start, radix: 16))" }
+                ?? "the end of the section, 0x\(String(nextBoundary - start, radix: 16)) bytes on"
+            logger?.log(.warning(
+                "Struct '\(label)' (\(single.type), 0x\(String(size, radix: 16)) bytes) runs over \(limit); emitting raw."
+            ))
+            return nil
+        }
+
+        let labelColumns = StructCSVSchema.columns(of: definition).filter { $0.labelKey != nil }
+        let labelOffsets = Set(labelColumns.map(\.offset))
+        var pointerLabels = [Int: String]()
+        for (offset, ref) in pointers where offset >= start && offset < start + size {
+            guard labelOffsets.contains(offset - start) else {
+                logger?.log(.warning(
+                    "Struct '\(label)': a relocation at offset 0x\(String(offset - start, radix: 16)) is not on a "
+                    + "label field of \(definition.name); emitting it raw."
+                ))
+                return nil
+            }
+            pointerLabels[offset - start] = names.name(for: ref)
+        }
+
+        let structData = exporter.exportStruct(
+            data: GoDData(byteStream: Array(bytes[start..<start + size]), byteOrder: .big),
+            definition: definition, addressToLabel: [:], pointerLabels: pointerLabels
+        )
+        // Same policy as tables: JSON only, no round-trip check. A struct
+        // that describes its bytes badly shows up as a module that doesn't
+        // rebuild byte-identically, not as a warning and a raw chunk.
+        let path = "\(sectionName)/\(label).json"
+        let json: GoDData = try JSONEncoder.prettyPrinted.encode(structData)
+        try fileSystem.writeFile(json, at: folder.file(path), overwrite: true)
+        let chunk = DataSectionManifest.Chunk(
+            label: label, type: .struct, file: path, structType: single.type, size: size
+        )
+        return (chunk, size)
     }
 
     // MARK: - Rendering helpers
