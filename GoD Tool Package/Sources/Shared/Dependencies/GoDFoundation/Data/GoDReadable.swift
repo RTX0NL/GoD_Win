@@ -177,6 +177,16 @@ public extension GoDReadable {
                 case 0x8: paramsLength = 4
                 default: paramsLength = 0
                 }
+                // A code can end a string without its parameter: one string
+                // in the JP move viewer's `fight.msg` ends on a bare
+                // `FFFF 09`. Read bounded by the next string, all that
+                // follows such a code is the null word that ends the string,
+                // and taking a parameter from it would leave half that word
+                // behind and write the code back one byte longer.
+                if paramsLength > 0, length - (address + 3) == 2,
+                   read(atAddress: address + 3, length: 2)?.rawBytes == [0, 0] {
+                    return GSCharacter.special([charID])
+                }
                 guard let paramData = read(atAddress: address + 3, length: paramsLength) else { return nil }
                 let paramBytes = paramData.rawBytes
                 return GSCharacter.special([charID] + paramBytes)

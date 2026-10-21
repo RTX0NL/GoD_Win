@@ -259,13 +259,11 @@ final class MSGTests: XCTestCase {
         )
     }
 
-    /// Since 02a1850 a string keeps no copy of its original bytes, so a
-    /// truncated control code is written back with its parameter byte and
-    /// the file grows by one byte. That commit names this as a codec gap
-    /// ("needs two robustness fixes"); until the codec can carry a truncated
-    /// code, this expectation is skipped rather than deleted.
+    /// Since 02a1850 a string keeps no copy of its original bytes, so the
+    /// codec itself has to carry a truncated control code: read as the bare
+    /// code (`{09}`), not as a code whose parameter is half the null word,
+    /// which wrote it back with a parameter byte and grew the file by one.
     func testATruncatedControlCodeRebuildsByteForByte() throws {
-        try XCTSkipIf(true, "Known codec gap since 02a1850: a truncated control code is rewritten with its parameter byte")
         var bytes: [UInt8] = [0, 0, 0, 0, 0, 2, 0x55, 0x53]
         bytes += [UInt8](repeating: 0, count: 8)
         bytes += [0, 0, 0, 1, 0, 0, 0, 0x20]
@@ -279,6 +277,22 @@ final class MSGTests: XCTestCase {
             try MSGFile(outputs: try parsed.outputs).binaryData.rawBytes, bytes,
             "through the JSON artifact too"
         )
+    }
+
+    /// The truncation rule must not take a real parameter: `{White}` is
+    /// `FFFF 38 00`, and right before the null word its `00` still belongs
+    /// to the code, because three bytes follow it, not two.
+    func testAZeroParameterBeforeTheNullWordStaysAParameter() throws {
+        var bytes: [UInt8] = [0, 0, 0, 0, 0, 2, 0x55, 0x53]
+        bytes += [UInt8](repeating: 0, count: 8)
+        bytes += [0, 0, 0, 1, 0, 0, 0, 0x20]
+        bytes += [0, 0, 0, 2, 0, 0, 0, 0x28]
+        bytes += [0x30, 0x42, 0xFF, 0xFF, 0x38, 0x00, 0x00, 0x00] // "あ{White}"
+        bytes += [0x30, 0x44, 0x00, 0x00]
+
+        let parsed = try MSGFile(binary: GoDData(byteStream: bytes, byteOrder: .big), variant: .colo)
+        XCTAssertEqual(parsed.entries[0].string.string(format: .gsColo), "\u{3042}{White}")
+        XCTAssertEqual(try parsed.binaryData.rawBytes, bytes)
     }
 
     /// Since 02a1850 every string is written as editable `text`; the JSON no
